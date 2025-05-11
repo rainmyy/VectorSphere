@@ -32,6 +32,7 @@ var pool = PoolLib.GetInstance()
 // Setup /**
 func (app *AppServer) Setup() {
 	_ = conf.Intance().Init()
+	
 	//注册执行函数
 	pool := pool.Init(ServiceLen, ServiceLen)
 	for i := 0; i < ServiceLen; i++ {
