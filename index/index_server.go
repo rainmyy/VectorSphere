@@ -11,7 +11,7 @@ import (
 
 type IndexServer struct {
 	db           db.KvDb
-	reverseIndex IRverseIndex
+	reverseIndex IReverseIndex
 	maxIntId     uint64
 }
 
@@ -46,7 +46,7 @@ func (is IndexServer) AddDoc(doc Document) (int, error) {
 		return -1, errors.New("error setting doc: " + err.Error())
 	}
 	is.reverseIndex.Add(doc)
-	return int(val.Len()), nil
+	return val.Len(), nil
 }
 
 func (is *IndexServer) DelDoc(docId string) int {

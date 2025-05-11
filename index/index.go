@@ -23,8 +23,8 @@ func (kw Keyword) ToString() string {
 
 type Document struct {
 	Id          string     `protobuf:"bytes,1,opt,name=Id,proto3" json:"id,omitempty"`
-	FloatId     float64    `protobuf:"varint,2,opt,name=IntId,proto3" json:"intId,omitempty"`
-	BitsFeature uint64     `protobuf:"varint,3,opt,name=IntId,proto3" json:"bitsFeature,omitempty"`
+	FloatId     float64    `protobuf:"variant,2,opt,name=FloatId,proto3" json:"floatId,omitempty"`
+	BitsFeature uint64     `protobuf:"variant,3,opt,name=BitsFeature,proto3" json:"bitsFeature,omitempty"`
 	KeyWords    []*Keyword `protobuf:"bytes,4,rep,name=KeyWords,proto3" json:"keyWords,omitempty"`
 	Bytes       []byte     `protobuf:"byte,5,opt,name=Bytes,proto3" json:"bytes,omitempty"`
 }
@@ -38,13 +38,13 @@ type SkipListValue struct {
 	Id          string
 	BitsFeature uint64
 }
-type IRverseIndex interface {
+type IReverseIndex interface {
 	Add(doc Document)
 	Delete(floatId float64, keyword *Keyword)
 	Search(query *TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) []string
 }
 
-var _ IRverseIndex = (*SkipListInvertedIndex)(nil)
+var _ IReverseIndex = (*SkipListInvertedIndex)(nil)
 
 type SkipListInvertedIndex struct {
 	table *collect.HashMap
@@ -143,7 +143,7 @@ func (index *SkipListInvertedIndex) searchQuery(query *TermQuery, onFlag uint64,
 			results = append(results, index.searchQuery(q, offFlag, offFlag, orFlags))
 		}
 
-		return index.IntersectionList(results...)
+		return index.UnionList(results...)
 	}
 
 	return nil
