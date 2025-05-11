@@ -1,4 +1,4 @@
-module github.com/rainmyy/easyDB
+module github.com/rainmyy/seetaSearch
 
 go 1.23.0
 
@@ -7,6 +7,7 @@ toolchain go1.23.6
 require (
 	github.com/dgraph-io/badger/v4 v4.7.0
 	github.com/leemcloughlin/gofarmhash v0.0.0-20160919192320-0a055c5b87a8
+	github.com/wangbin/jiebago v0.3.2
 	go.etcd.io/bbolt v1.3.11
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0
 	gopkg.in/yaml.v2 v2.4.0

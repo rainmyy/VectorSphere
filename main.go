@@ -3,11 +3,11 @@ package main
 import (
 	"fmt"
 
-	"github.com/rainmyy/easyDB/bootstrap"
+	"github.com/rainmyy/seetaSearch/bootstrap"
 )
 
 /***
-* easydb 服务端入库
+* julySearch 服务端入库
  */
 func main() {
 	bootstrap.GenInstance().Setup()

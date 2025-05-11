@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
-	. "github.com/rainmyy/easyDB/library/common"
-	. "github.com/rainmyy/easyDB/library/strategy"
+	. "github.com/rainmyy/seetaSearch/library/common"
+	. "github.com/rainmyy/seetaSearch/library/strategy"
 )
 
 // File /**

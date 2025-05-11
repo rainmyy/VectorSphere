@@ -2,7 +2,7 @@ package json
 
 import (
 	"encoding/json"
-	. "github.com/rainmyy/easyDB/library/strategy"
+	. "github.com/rainmyy/seetaSearch/library/strategy"
 	"io"
 	"os"
 )

@@ -2,8 +2,8 @@ package index
 
 import (
 	farmhash "github.com/leemcloughlin/gofarmhash"
-	"github.com/rainmyy/easyDB/library/collect"
-	"github.com/rainmyy/easyDB/library/strategy"
+	"github.com/rainmyy/seetaSearch/library/collect"
+	"github.com/rainmyy/seetaSearch/library/strategy"
 	"runtime"
 	"sync"
 )
@@ -164,7 +164,9 @@ func (index *SkipListInvertedIndex) FilterBits(bits, onFlag, offFlag uint64, orF
 
 	return true
 }
-
+func (index *SkipListInvertedIndex) UnionList(lists ...*strategy.SkipList) *strategy.SkipList {
+	return nil
+}
 func (index *SkipListInvertedIndex) IntersectionList(lists ...*strategy.SkipList) *strategy.SkipList {
 	if len(lists) == 0 {
 		return nil

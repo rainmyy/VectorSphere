@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"sync"
 
-	. "github.com/rainmyy/easyDB/library/bind"
-	. "github.com/rainmyy/easyDB/library/common"
-	. "github.com/rainmyy/easyDB/library/file"
+	. "github.com/rainmyy/seetaSearch/library/bind"
+	. "github.com/rainmyy/seetaSearch/library/common"
+	. "github.com/rainmyy/seetaSearch/library/file"
 )
 
 // DefaultConf /**

@@ -3,7 +3,7 @@ package db
 import (
 	"errors"
 	"github.com/dgraph-io/badger/v4"
-	"github.com/rainmyy/easyDB/library/log"
+	"github.com/rainmyy/seetaSearch/library/log"
 	"os"
 	"sync/atomic"
 )

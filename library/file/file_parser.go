@@ -3,7 +3,7 @@ package file
 import (
 	"bufio"
 	"fmt"
-	"github.com/rainmyy/easyDB/library/json"
+	"github.com/rainmyy/seetaSearch/library/json"
 	"io"
 	"math"
 	"os"
@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	. "github.com/rainmyy/easyDB/library/common"
-	. "github.com/rainmyy/easyDB/library/strategy"
+	. "github.com/rainmyy/seetaSearch/library/common"
+	. "github.com/rainmyy/seetaSearch/library/strategy"
 )
 
 /**

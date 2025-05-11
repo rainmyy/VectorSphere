@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/rainmyy/easyDB/library/conf"
-	PoolLib "github.com/rainmyy/easyDB/library/pool"
+	"github.com/rainmyy/seetaSearch/library/conf"
+	PoolLib "github.com/rainmyy/seetaSearch/library/pool"
 )
 
 /**
@@ -26,15 +26,15 @@ const (
 	WRITESERVICE
 )
 
-var SERVICELEN = 4
+var ServiceLen = 4
 var pool = PoolLib.GetInstance()
 
 // Setup /**
 func (app *AppServer) Setup() {
 	_ = conf.Intance().Init()
 	//注册执行函数
-	pool := pool.Init(SERVICELEN, SERVICELEN)
-	for i := 0; i < SERVICELEN; i++ {
+	pool := pool.Init(ServiceLen, ServiceLen)
+	for i := 0; i < ServiceLen; i++ {
 		app.mutex.Add(1)
 		go func(num int) {
 			defer app.mutex.Done()

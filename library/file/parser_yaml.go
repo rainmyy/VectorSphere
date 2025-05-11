@@ -3,8 +3,8 @@ package file
 import (
 	"log"
 
-	. "github.com/rainmyy/easyDB/library/bind"
-	. "github.com/rainmyy/easyDB/library/strategy"
+	. "github.com/rainmyy/seetaSearch/library/bind"
+	. "github.com/rainmyy/seetaSearch/library/strategy"
 	"gopkg.in/yaml.v2"
 )
 

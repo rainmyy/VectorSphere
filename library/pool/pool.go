@@ -3,7 +3,7 @@ package pool
 import (
 	"sync"
 
-	. "github.com/rainmyy/easyDB/library/res"
+	. "github.com/rainmyy/seetaSearch/library/res"
 )
 
 const (

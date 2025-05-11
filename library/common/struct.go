@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"unsafe"
 
-	"github.com/rainmyy/easyDB/library/strategy"
+	"github.com/rainmyy/seetaSearch/library/strategy"
 )
 
 func TreeStruct2Bytes(treeList []*strategy.TreeStruct) [][]byte {

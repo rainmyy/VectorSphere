@@ -1,7 +1,7 @@
 package bind
 
 import (
-	. "github.com/rainmyy/easyDB/library/strategy"
+	. "github.com/rainmyy/seetaSearch/library/strategy"
 )
 
 type Binder interface {

@@ -3,8 +3,8 @@ package file
 import (
 	"fmt"
 
-	. "github.com/rainmyy/easyDB/library/common"
-	. "github.com/rainmyy/easyDB/library/strategy"
+	. "github.com/rainmyy/seetaSearch/library/common"
+	. "github.com/rainmyy/seetaSearch/library/strategy"
 )
 
 // ParserIniContent /**

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"reflect"
 
-	. "github.com/rainmyy/easyDB/library/res"
+	. "github.com/rainmyy/seetaSearch/library/res"
 )
 
 func FuncCall(function interface{}, args ...interface{}) []interface{} {
