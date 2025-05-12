@@ -5,20 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="b6fa113e-1e79-4851-b2b9-1ee8b86da88f" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.idea/seetaSearch.iml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/server/endpoint.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/.gitignore" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/easyDB.iml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/modules.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.vscode/launch.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.vscode/settings.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/db/badger_db.go" beforeDir="false" afterPath="$PROJECT_DIR$/db/badger_db.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/go.mod" beforeDir="false" afterPath="$PROJECT_DIR$/go.mod" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/go.sum" beforeDir="false" afterPath="$PROJECT_DIR$/go.sum" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/balancer.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/balancer.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/etcd_hub.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/etcd_hub.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/hub_proxy.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/hub_proxy.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/server/sentinel.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/sentinel.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />

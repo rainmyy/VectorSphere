@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -72,4 +73,23 @@ func (s *Sentinel) DelDoc(docId string) int {
 	var n int32
 	wg := sync.WaitGroup{}
 	wg.Add(len(endpoints))
+	for _, endpoint := range endpoints {
+		go func(endpoint EndPoint) {
+			defer wg.Done()
+			conn := s.GetGrpcConn(endpoint)
+			if conn == nil {
+				return
+			}
+			client := NewIndexClient(conn)
+			affected, err := client.DeleteDoc(context.Background(), &DocId(docId))
+			if err != nil {
+				return
+			}
+			if affected.Count > 0 {
+				atomic.AddInt32(&n, affected.Count)
+			}
+		}(endpoint)
+	}
+	wg.Wait()
+	return int(atomic.LoadInt32(&n))
 }
