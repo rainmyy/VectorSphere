@@ -17,7 +17,9 @@ type Sentinel struct {
 	connPool sync.Map
 }
 
-var _ IndexInterface = (*Sentinel)(nil)
+const IndexService = "index_service"
+
+var _ index.IndexInterface = (*Sentinel)(nil)
 
 func NewSentinel(serviceNames []string) *Sentinel {
 	return &Sentinel{
@@ -57,7 +59,7 @@ func (s *Sentinel) AddDoc(doc index.Document) (int, error) {
 	if conn == nil {
 		return -1, errors.New("无法连接到" + endPoint.address)
 	}
-	client := NewServiceClient(conn)
+	client := index.NewIndexClient(conn)
 	affected, err := client.AddDoc(context.Background(), &doc)
 	if err != nil {
 		return -1, err
@@ -80,8 +82,8 @@ func (s *Sentinel) DelDoc(docId string) int {
 			if conn == nil {
 				return
 			}
-			client := NewIndexClient(conn)
-			affected, err := client.DeleteDoc(context.Background(), &DocId(docId))
+			client := index.NewIndexClient(conn)
+			affected, err := client.DeleteDoc(context.Background(), &index.DocId{Id: docId})
 			if err != nil {
 				return
 			}
@@ -92,4 +94,94 @@ func (s *Sentinel) DelDoc(docId string) int {
 	}
 	wg.Wait()
 	return int(atomic.LoadInt32(&n))
+}
+
+func (s *Sentinel) Search(query *index.TermQuery, onFlag, offFlag uint64, orFlags []uint64) []*index.Document {
+	endpoints := s.hub.GetServiceEndpoints(IndexService)
+	if len(endpoints) == 0 {
+		return nil
+	}
+
+	docs := make([]*index.Document, 0, 1000)
+	resultChan := make(chan *index.Document, 1000)
+
+	var wg sync.WaitGroup
+	wg.Add(len(endpoints))
+
+	for _, endpoint := range endpoints {
+		go func(endpoint EndPoint) {
+			defer wg.Done()
+			conn := s.GetGrpcConn(endpoint)
+			if conn == nil {
+				return
+			}
+			client := index.NewIndexClient(conn)
+
+			searchResult, err := client.Search(context.Background(), &SearchRequest{query, onFlag, offFlag, orFlags})
+			if err != nil {
+				return
+			}
+			if len(searchResult.Results) > 0 {
+				for _, doc := range searchResult.Results {
+					resultChan <- doc
+				}
+			}
+		}(endpoint)
+	}
+
+	signalChan := make(chan bool)
+	go func() {
+		for doc := range resultChan {
+			docs = append(docs, doc)
+		}
+
+		signalChan <- true
+	}()
+
+	wg.Wait()         // 等待所有goroutine完成
+	close(resultChan) // 关闭结果通道 当resultChan关闭时，上面协程range循环结束
+	<-signalChan      // 等待结果处理完成
+	return docs
+}
+
+func (s *Sentinel) Count() int {
+	endpoints := s.hub.GetServiceEndpoints(IndexService)
+	if len(endpoints) == 0 {
+		return 0
+	}
+
+	var count int32
+	var wg sync.WaitGroup
+	wg.Add(len(endpoints))
+
+	for _, endpoint := range endpoints {
+		go func(endpoint EndPoint) {
+			defer wg.Done()
+			conn := s.GetGrpcConn(endpoint)
+			if conn == nil {
+
+				return
+			}
+			client := index.NewIndexClient(conn)
+			countResult, err := client.Count(context.Background(), &index.CountRequest{})
+			if err != nil {
+				return
+			}
+			if countResult.Count > 0 {
+				atomic.AddInt32(&count, countResult.Count)
+			}
+		}(endpoint)
+	}
+	wg.Wait()
+	return int(atomic.LoadInt32(&count))
+}
+
+func (s *Sentinel) Close() (err error) {
+	s.connPool.Range(func(key, value any) bool {
+		conn := value.(*grpc.ClientConn)
+		err = conn.Close()
+		return true
+	})
+	s.hub.Close()
+	return
 }

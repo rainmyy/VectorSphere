@@ -24,7 +24,7 @@ cloud.google.com/go/asset v1.14.1 h1:vlHdznX70eYW4V1y1PxocvF6tEwxJTTarwIGwOhFF3U
 cloud.google.com/go/asset v1.14.1/go.mod h1:4bEJ3dnHCqWCDbWJ/6Vn7GVI9LerSi7Rfdi03hd+WTQ=
 cloud.google.com/go/assuredworkloads v1.11.1 h1:yaO0kwS+SnhVSTF7BqTyVGt3DTocI6Jqo+S3hHmCwNk=
 cloud.google.com/go/assuredworkloads v1.11.1/go.mod h1:+F04I52Pgn5nmPG36CWFtxmav6+7Q+c5QyJoL18Lry0=
-cloud.google.com/go/automl v1.13.1 h1:iP9iQurb0qbz+YOOMfKSEjhONA/WcoOIjt6/m+6pIgo=
+cloud.google.com/go/automl v1.13.1 h1:iP9iQurb0qbz+YOOMfKSEjhONA/WcoOIjt6/a+6pIgo=
 cloud.google.com/go/automl v1.13.1/go.mod h1:1aowgAHWYZU27MybSCFiukPO7xnyawv7pt3zK4bheQE=
 cloud.google.com/go/baremetalsolution v1.1.1 h1:0Ge9PQAy6cZ1tRrkc44UVgYV15nw2TVnzJzYsMHXF+E=
 cloud.google.com/go/baremetalsolution v1.1.1/go.mod h1:D1AV6xwOksJMV4OSlWHtWuFNZZYujJknMAP4Qa27QIA=

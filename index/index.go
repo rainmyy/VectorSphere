@@ -1,208 +1,148 @@
 package index
 
 import (
-	farmhash "github.com/leemcloughlin/gofarmhash"
-	"github.com/rainmyy/seetaSearch/library/collect"
-	"github.com/rainmyy/seetaSearch/library/strategy"
-	"runtime"
-	"sync"
+	"bytes"
+	"encoding/gob"
+	"errors"
+	"github.com/rainmyy/seetaSearch/db"
+	"strings"
+	"sync/atomic"
 )
 
-type Keyword struct {
-	Field string `protobuf:"bytes,1,opt,name=Field,proto3" json:"Field,omitempty"`
-	Word  string `protobuf:"bytes,2,opt,name=Word,proto3" json:"Word,omitempty"`
+type Index struct {
+	db           db.KvDb
+	reverseIndex IReverseIndex
+	maxIntId     uint64
+}
+type IndexInterface interface {
+	AddDoc(doc Document) (int, error)
+	DelDoc(docId string) int
+	Search(query *TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) []*Document
+	Count() int
+	Close() error
 }
 
-func (kw Keyword) ToString() string {
-	if len(kw.Word) > 0 {
-		return kw.Field + "\001" + kw.Word
+func (is Index) NewIndexServer(docNumEstimate int, dbType int, bucket, dbDir string) error {
+	kvDb, err := db.GetDb(dbType, dbDir, bucket)
+	if err != nil {
+		return err
+	}
+	reIndex := NewSkipListInvertedIndex(docNumEstimate)
+	is.reverseIndex = reIndex
+	is.db = kvDb
+	return nil
+}
+
+func (is Index) Close() error {
+	return is.db.Close()
+}
+
+func (is Index) AddDoc(doc Document) (int, error) {
+	docId := strings.TrimSpace(doc.Id)
+	if len(docId) == 0 {
+		return -1, errors.New("empty doc id")
+	}
+	is.DelDoc(docId)
+	doc.FloatId = float64(atomic.AddUint64(&is.maxIntId, 1))
+	var val bytes.Buffer
+	encode := gob.NewEncoder(&val)
+	if err := encode.Encode(doc); err != nil {
+		return -1, errors.New("error encoding doc: " + err.Error())
+	}
+	if err := is.db.Set([]byte(docId), val.Bytes()); err != nil {
+		return -1, errors.New("error setting doc: " + err.Error())
+	}
+	is.reverseIndex.Add(doc)
+	return val.Len(), nil
+}
+
+func (is *Index) DelDoc(docId string) int {
+	if len(docId) == 0 {
+		return -1
+	}
+	dbKey := []byte(docId)
+	docBytes, err := is.db.Get(dbKey)
+	if err != nil {
+		return -1
+	}
+	if len(docBytes) == 0 {
+		return -1
 	}
 
-	return ""
-}
-
-type Document struct {
-	Id          string     `protobuf:"bytes,1,opt,name=Id,proto3" json:"id,omitempty"`
-	FloatId     float64    `protobuf:"variant,2,opt,name=FloatId,proto3" json:"floatId,omitempty"`
-	BitsFeature uint64     `protobuf:"variant,3,opt,name=BitsFeature,proto3" json:"bitsFeature,omitempty"`
-	KeyWords    []*Keyword `protobuf:"bytes,4,rep,name=KeyWords,proto3" json:"keyWords,omitempty"`
-	Bytes       []byte     `protobuf:"byte,5,opt,name=Bytes,proto3" json:"bytes,omitempty"`
-}
-
-type TermQuery struct {
-	Keyword *Keyword     `protobuf:"bytes,1,opt,name=Keyword,proto3" json:"Keyword,omitempty"`
-	Must    []*TermQuery `protobuf:"bytes,2,rep,name=Must,proto3" json:"Must,omitempty"`
-	Should  []*TermQuery `protobuf:"bytes,3,rep,name=Should,proto3" json:"Should,omitempty"`
-}
-type SkipListValue struct {
-	Id          string
-	BitsFeature uint64
-}
-type IReverseIndex interface {
-	Add(doc Document)
-	Delete(floatId float64, keyword *Keyword)
-	Search(query *TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) []string
-}
-
-var _ IReverseIndex = (*SkipListInvertedIndex)(nil)
-
-type SkipListInvertedIndex struct {
-	table *collect.HashMap
-	locks []sync.RWMutex
-}
-
-func NewSkipListInvertedIndex(docNumEstimate int) *SkipListInvertedIndex {
-	return &SkipListInvertedIndex{
-		table: collect.NewHashMap(runtime.NumCPU(), docNumEstimate),
-		locks: make([]sync.RWMutex, 1000),
+	reader := bytes.NewBuffer(docBytes)
+	var doc Document
+	if err := gob.NewEncoder(reader); err != nil {
+		return -1
 	}
-}
 
-func (index *SkipListInvertedIndex) Add(doc Document) {
 	for _, keyword := range doc.KeyWords {
-		key := keyword.ToString()
-		lock := index.getLock(key)
-		skipListValue := SkipListValue{
-			Id:          doc.Id,
-			BitsFeature: doc.BitsFeature,
-		}
-		lock.Lock()
-		if value, exist := index.table.Get(key); exist {
-			list := value.(*strategy.SkipList)
-			list.Insert(doc.FloatId, skipListValue)
-		} else {
-			list := strategy.NewSkipList()
-			list.Insert(doc.FloatId, skipListValue)
-			index.table.Set(key, list)
-		}
-		lock.Unlock()
+		is.reverseIndex.Delete(doc.FloatId, keyword)
 	}
-}
-
-func (index *SkipListInvertedIndex) getLock(key string) *sync.RWMutex {
-	n := int(farmhash.Hash32WithSeed([]byte(key), 0))
-	return &index.locks[n%len(index.locks)]
-}
-
-func (index *SkipListInvertedIndex) Delete(floatId float64, keyword *Keyword) {
-	key := keyword.ToString()
-	lock := index.getLock(key)
-	lock.Lock()
-	defer lock.Unlock()
-
-	if value, ok := index.table.Get(key); ok {
-		list := value.(*strategy.SkipList)
-		list.Delete(floatId)
+	if err := is.db.Del(dbKey); err != nil {
+		return -1
 	}
+
+	return 0
 }
 
-func (index *SkipListInvertedIndex) Search(query *TermQuery, onFlag uint64, offFlag uint64, orFlag []uint64) []string {
-	result := index.searchQuery(query, onFlag, offFlag, orFlag)
-	if result == nil {
+func (is *Index) LoadIndex() (int, error) {
+	reader := bytes.NewReader([]byte{})
+	n, err := is.db.TotalDb(func(k, v []byte) error {
+		reader.Reset(v)
+		var doc Document
+		decoder := gob.NewDecoder(reader)
+		if err := decoder.Decode(&doc); err != nil {
+			return errors.New("")
+		}
+		_, err := is.AddDoc(doc)
+		if err != nil {
+			return err
+		}
 		return nil
+	})
+
+	if err != nil {
+		return -1, err
 	}
 
-	arr := make([]string, 0, result.Len())
-	node := result.Front()
-	for node != nil {
-		skipListValue := node.Value.(SkipListValue)
-		arr = append(arr, skipListValue.Id)
-		node = node.Next()
-	}
-	return arr
+	return int(n), nil
 }
 
-func (index *SkipListInvertedIndex) searchQuery(query *TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) *strategy.SkipList {
-	switch {
-	case query.Keyword != nil:
-		keyWord := query.Keyword.ToString()
-		if value, ok := index.table.Get(keyWord); ok {
-			list := value.(*strategy.SkipList)
-			result := strategy.NewSkipList()
-			node := list.Front()
-			for node != nil {
-				intId := node.Key().(float64)
-				skipListValue := node.Value.(SkipListValue)
-				flag := skipListValue.BitsFeature
-				if intId > 0 && index.FilterBits(flag, onFlag, offFlag, orFlags) {
-					result.Insert(intId, skipListValue)
-				}
-
-				node = node.Next()
-			}
-		}
-	case len(query.Must) > 0:
-		results := make([]*strategy.SkipList, 0, len(query.Must))
-		for _, q := range query.Must {
-			results = append(results, index.searchQuery(q, offFlag, offFlag, orFlags))
-		}
-		return index.IntersectionList(results...)
-	case len(query.Should) > 0:
-		results := make([]*strategy.SkipList, 0, len(query.Should))
-		for _, q := range query.Should {
-			results = append(results, index.searchQuery(q, offFlag, offFlag, orFlags))
-		}
-
-		return index.UnionList(results...)
+func (is *Index) Search(query *TermQuery, onFlag, offFlag uint64, orFlags []uint64) ([]*Document, error) {
+	docIds := is.reverseIndex.Search(query, onFlag, offFlag, orFlags)
+	if len(docIds) == 0 {
+		return nil, nil
 	}
-
-	return nil
-}
-
-func (index *SkipListInvertedIndex) FilterBits(bits, onFlag, offFlag uint64, orFlags []uint64) bool {
-	if bits&onFlag != onFlag {
-		return false
+	keys := make([][]byte, 0, len(docIds))
+	for _, docId := range docIds {
+		keys = append(keys, []byte(docId))
 	}
-	if bits&offFlag != uint64(0) {
-		return false
+	docBytes, err := is.db.BatchGet(keys)
+	if err != nil {
+		return nil, err
 	}
-	for _, orFlag := range orFlags {
-		if orFlag > 0 && bits&orFlag <= 0 {
-			return false
+	result := make([]*Document, 0, len(docIds))
+	reader := bytes.NewReader([]byte{})
+	for _, docByte := range docBytes {
+		reader.Reset(docByte)
+		decoder := gob.NewDecoder(reader)
+		var doc Document
+		err = decoder.Decode(&doc)
+		if err == nil {
+			result = append(result, &doc)
 		}
 	}
 
-	return true
+	return result, nil
 }
-func (index *SkipListInvertedIndex) UnionList(lists ...*strategy.SkipList) *strategy.SkipList {
-	return nil
-}
-func (index *SkipListInvertedIndex) IntersectionList(lists ...*strategy.SkipList) *strategy.SkipList {
-	if len(lists) == 0 {
+
+func (is *Index) Total() int {
+	n, err := is.db.TotalKey(func(k []byte) error {
 		return nil
+	})
+	if err != nil {
+		return 0
 	}
-	if len(lists) == 1 {
-		return lists[0]
-	}
-	result := strategy.NewSkipList()
-	currNodes := make([]*strategy.Element, len(lists))
-	for i, list := range lists {
-		if list == nil || list.Len() == 0 {
-			return nil
-		}
-		currNodes[i] = list.Front()
-	}
-	for {
-		maxList := make(map[int]struct{}, len(currNodes))
-		var maxValue uint64 = 0
-		for i, node := range currNodes {
-			if node.Value.(uint64) > maxValue {
-				maxValue = node.Value.(uint64)
-				maxList = make(map[int]struct{})
-				maxList[i] = struct{}{}
-			} else if node.Value.(uint64) == maxValue {
-				maxList[i] = struct{}{}
-			}
-		}
-		if len(maxList) == len(currNodes) {
-			result.Insert(currNodes[0].Key().(float64), currNodes[0].Value)
-		}
 
-		for i, node := range currNodes {
-			currNodes[i] = node.Next()
-			if currNodes[i] == nil {
-				return result
-			}
-		}
-	}
+	return int(n)
 }
