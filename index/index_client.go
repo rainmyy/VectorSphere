@@ -1,8 +1,10 @@
 package index
 
 import (
+	"errors"
 	fmt "fmt"
 	proto "github.com/gogo/protobuf/proto"
+	"io"
 	"math"
 )
 
@@ -15,20 +17,49 @@ type DocId struct {
 	Id string `protobuf:"bytes,1,opt,name=Id,proto3" json:"id,omitempty"`
 }
 
-func (d *DocId) ProtoMessage() {
+func (*DocId) ProtoMessage() {
 	//TODO implement me
 }
 
 func (d *DocId) Reset() {
 	*d = DocId{}
 }
-
+func (*DocId) Descriptor() ([]byte, []int) {
+	return []byte{}, []int{0}
+}
 func (d *DocId) String() string {
 	return proto.CompactTextString(d)
 }
 
-func (d *DocId) DoUnmarshal(b []byte) error {
-	return d.Unmarshal(b)
+func (d *DocId) Unmarshal(data []byte) error {
+	l := len(data)
+	seed := 0
+	for l > 0 {
+		preIndex := seed
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowIndex
+			}
+			if seed >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := data[seed]
+			seed++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return errors.New("proto:AffectedCount: wiretype end group")
+		}
+		if fieldNum <= 0 {
+			return errors.New("")
+		}
+	}
 }
 
 func (d *DocId) Marshal(b []byte, deterministic bool) ([]byte, error) {
