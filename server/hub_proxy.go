@@ -34,20 +34,20 @@ func GetHubProxy(etcds []string, heartBeat int64, qps int) *HubProxy {
 	return hubProxy
 }
 
-func (h *HubProxy) GetEndpoints(serviceName string) []string {
+func (h *HubProxy) GetEndpoints(serviceName string) []EndPoint {
 	if !h.limiter.Allow() {
 		return nil
 	}
 	h.WatchEndpoints(serviceName)
 	cacheEndpoints, ok := h.endpointCache.Load(serviceName)
 	if ok {
-		return cacheEndpoints.([]string)
+		return cacheEndpoints.([]EndPoint)
 	}
 	endpoints := h.EtcdServiceHub.GetServiceEndpoints(serviceName)
 	if len(endpoints) > 0 {
 		h.endpointCache.Store(serviceName, endpoints)
 	}
-	
+
 	return endpoints
 }
 

@@ -11,10 +11,10 @@ import (
 import etcdv3 "go.etcd.io/etcd/client/v3"
 
 type ServiceHub interface {
-	RegisterService(serviceName string, endpoint string, leaseId etcdv3.LeaseID) (etcdv3.LeaseID, error)
-	UnRegisterService(serviceName string, endpoint string) error
-	GetServiceEndpoints(serviceName string) []string
-	GetServiceEndpoint(serviceName string) string
+	RegisterService(serviceName string, endpoint EndPoint, leaseId etcdv3.LeaseID) (etcdv3.LeaseID, error)
+	UnRegisterService(serviceName string, endpoint EndPoint) error
+	GetServiceEndpoints(serviceName string) []EndPoint
+	GetServiceEndpoint(serviceName string) EndPoint
 	Close()
 }
 type EtcdServiceHub struct {
@@ -53,14 +53,14 @@ func GetHub(etcdServices []string, heartbeat int64) *EtcdServiceHub {
 	return etcdServiceHub
 }
 
-func (etcd *EtcdServiceHub) RegisterService(service string, endpoint string, leaseId etcdv3.LeaseID) (etcdv3.LeaseID, error) {
+func (etcd *EtcdServiceHub) RegisterService(service string, endpoint EndPoint, leaseId etcdv3.LeaseID) (etcdv3.LeaseID, error) {
 	if leaseId <= 0 {
 		leaseResp, err := etcd.client.Grant(context.Background(), etcd.heartbeat)
 		if err != nil {
 			return 0, err
 		}
-		key := ServiceRootPath + "/" + service + "/" + endpoint
-		_, err = etcd.client.Put(context.Background(), key, endpoint, etcdv3.WithLease(leaseResp.ID))
+		key := ServiceRootPath + "/" + service + "/" + endpoint.address
+		_, err = etcd.client.Put(context.Background(), key, endpoint.address, etcdv3.WithLease(leaseResp.ID))
 		if err != nil {
 			return 0, err
 		}
@@ -77,8 +77,8 @@ func (etcd *EtcdServiceHub) RegisterService(service string, endpoint string, lea
 	return leaseId, nil
 }
 
-func (etcd *EtcdServiceHub) UnRegisterService(serviceName string, endpoint string) error {
-	key := ServiceRootPath + "/" + serviceName + "/" + endpoint
+func (etcd *EtcdServiceHub) UnRegisterService(serviceName string, endpoint EndPoint) error {
+	key := ServiceRootPath + "/" + serviceName + "/" + endpoint.address
 	_, err := etcd.client.Delete(context.Background(), key)
 	if err != nil {
 		return err
@@ -87,22 +87,23 @@ func (etcd *EtcdServiceHub) UnRegisterService(serviceName string, endpoint strin
 	return nil
 }
 
-func (etcd *EtcdServiceHub) GetServiceEndpoints(serviceName string) []string {
+func (etcd *EtcdServiceHub) GetServiceEndpoints(serviceName string) []EndPoint {
 	prefix := ServiceRootPath + "/" + serviceName + "/"
 	resp, err := etcd.client.Get(context.Background(), prefix, etcdv3.WithPrefix())
 	if err != nil {
 		return nil
 	}
-	endpoints := make([]string, len(resp.Kvs))
+	endpoints := make([]EndPoint, len(resp.Kvs))
 	for _, kv := range resp.Kvs {
 		path := strings.Split(string(kv.Key), "/")
-		endpoints = append(endpoints, path[len(path)-1])
+		endpoint := EndPoint{address: path[len(path)-1]}
+		endpoints = append(endpoints, endpoint)
 	}
 
 	return endpoints
 }
 
-func (etcd *EtcdServiceHub) GetServiceEndpoint(serviceName string) string {
+func (etcd *EtcdServiceHub) GetServiceEndpoint(serviceName string) EndPoint {
 	endpoints := etcd.GetServiceEndpoints(serviceName)
 	return etcd.loadBalancer.Take(endpoints)
 }
