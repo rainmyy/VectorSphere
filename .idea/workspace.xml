@@ -5,17 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/index/Index_Server.go" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/library/common/net.go" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/server/service_server.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/go.sum" beforeDir="false" afterPath="$PROJECT_DIR$/go.sum" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/index.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/index.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/index_server.go" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/search_request.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/search_request.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/term_query.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/term_query.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/etcd_hub.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/etcd_hub.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/sentinel.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/sentinel.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/document.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/document.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -62,6 +53,7 @@
     "git-widget-placeholder": "master",
     "go.import.settings.migrated": "true",
     "go.sdk.automatically.set": "true",
+    "ignore.virus.scanning.warn.message": "true",
     "last_opened_file_path": "D:/code/seetaSearch",
     "node.js.detected.package.eslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",

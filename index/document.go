@@ -20,19 +20,19 @@ func (m *Document) String() string { return proto.CompactTextString(m) }
 func (*Document) ProtoMessage()    {}
 func (m *Document) Unmarshal(data []byte) error {
 	l := len(data)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
+	index := 0
+	for index < l {
+		preIndex := index
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
 			if shift >= 64 {
 				return errors.New("integer overflow")
 			}
-			if iNdEx >= l {
+			if index >= l {
 				return io.ErrUnexpectedEOF
 			}
-			b := data[iNdEx]
-			iNdEx++
+			b := data[index]
+			index++
 			wire |= uint64(b&0x7F) << shift
 			if b < 0x80 {
 				break
@@ -56,11 +56,11 @@ func (m *Document) Unmarshal(data []byte) error {
 				if shift >= 64 {
 					return errors.New("integer overflow")
 				}
-				if iNdEx >= l {
+				if index >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
-				iNdEx++
+				b := data[index]
+				index++
 				stringLen |= uint64(b&0x7F) << shift
 				if b < 0x80 {
 					break
@@ -70,15 +70,15 @@ func (m *Document) Unmarshal(data []byte) error {
 			if intStringLen < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
-			postIndex := iNdEx + intStringLen
+			postIndex := index + intStringLen
 			if postIndex < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Id = string(data[iNdEx:postIndex])
-			iNdEx = postIndex
+			m.Id = string(data[index:postIndex])
+			index = postIndex
 		case 2:
 			if wireType != 0 {
 				return fmt.Errorf("wrong wireType = %d for field IntId", wireType)
@@ -88,11 +88,11 @@ func (m *Document) Unmarshal(data []byte) error {
 				if shift >= 64 {
 					return errors.New("integer overflow")
 				}
-				if iNdEx >= l {
+				if index >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
-				iNdEx++
+				b := data[index]
+				index++
 				intId |= uint64(b&0x7F) << shift
 				if b < 0x80 {
 					break
@@ -108,11 +108,11 @@ func (m *Document) Unmarshal(data []byte) error {
 				if shift >= 64 {
 					return errors.New("integer overflow")
 				}
-				if iNdEx >= l {
+				if index >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
-				iNdEx++
+				b := data[index]
+				index++
 				m.BitsFeature |= uint64(b&0x7F) << shift
 				if b < 0x80 {
 					break
@@ -127,11 +127,11 @@ func (m *Document) Unmarshal(data []byte) error {
 				if shift >= 64 {
 					return errors.New("integer overflow")
 				}
-				if iNdEx >= l {
+				if index >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
-				iNdEx++
+				b := data[index]
+				index++
 				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
@@ -140,7 +140,7 @@ func (m *Document) Unmarshal(data []byte) error {
 			if msglen < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
-			postIndex := iNdEx + msglen
+			postIndex := index + msglen
 			if postIndex < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
@@ -148,10 +148,10 @@ func (m *Document) Unmarshal(data []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.KeyWords = append(m.KeyWords, &Keyword{})
-			if err := m.KeyWords[len(m.KeyWords)-1].Unmarshal(data[iNdEx:postIndex]); err != nil {
+			if err := m.KeyWords[len(m.KeyWords)-1].Unmarshal(data[index:postIndex]); err != nil {
 				return err
 			}
-			iNdEx = postIndex
+			index = postIndex
 		case 5:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Bytes", wireType)
@@ -161,11 +161,11 @@ func (m *Document) Unmarshal(data []byte) error {
 				if shift >= 64 {
 					return errors.New("integer overflow")
 				}
-				if iNdEx >= l {
+				if index >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
-				iNdEx++
+				b := data[index]
+				index++
 				byteLen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
@@ -174,35 +174,35 @@ func (m *Document) Unmarshal(data []byte) error {
 			if byteLen < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
-			postIndex := iNdEx + byteLen
+			postIndex := index + byteLen
 			if postIndex < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Bytes = append(m.Bytes[:0], data[iNdEx:postIndex]...)
+			m.Bytes = append(m.Bytes[:0], data[index:postIndex]...)
 			if m.Bytes == nil {
 				m.Bytes = []byte{}
 			}
-			iNdEx = postIndex
+			index = postIndex
 		default:
-			iNdEx = preIndex
-			skippy, err := skipDoc(data[iNdEx:])
+			index = preIndex
+			skippy, err := skipDoc(data[index:])
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if (skippy < 0) || (index+skippy) < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
-			if (iNdEx + skippy) > l {
+			if (index + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
-			iNdEx += skippy
+			index += skippy
 		}
 	}
 
-	if iNdEx > l {
+	if index > l {
 		return io.ErrUnexpectedEOF
 	}
 	return nil
@@ -285,9 +285,9 @@ func (m *Document) MarshalToSizedBuffer(data []byte) (int, error) {
 		data[i] = 0x2a
 	}
 	if len(m.KeyWords) > 0 {
-		for iNdEx := len(m.KeyWords) - 1; iNdEx >= 0; iNdEx-- {
+		for index := len(m.KeyWords) - 1; index >= 0; index-- {
 			{
-				size, err := m.KeyWords[iNdEx].MarshalToSizedBuffer(data[:i])
+				size, err := m.KeyWords[index].MarshalToSizedBuffer(data[:i])
 				if err != nil {
 					return 0, err
 				}
@@ -299,7 +299,7 @@ func (m *Document) MarshalToSizedBuffer(data []byte) (int, error) {
 		}
 	}
 	if m.BitsFeature != 0 {
-		i = encodeVarIntDoc(data, i, uint64(m.BitsFeature))
+		i = encodeVarIntDoc(data, i, m.BitsFeature)
 		i--
 		data[i] = 0x18
 	}
