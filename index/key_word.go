@@ -76,14 +76,14 @@ func (k *Keyword) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	if len(k.Word) > 0 {
 		i -= len(k.Word)
 		copy(dAtA[i:], k.Word)
-		i = encodeVarintDoc(dAtA, i, uint64(len(k.Word)))
+		i = encodeVarIntDoc(dAtA, i, uint64(len(k.Word)))
 		i--
 		dAtA[i] = 0x12
 	}
 	if len(k.Field) > 0 {
 		i -= len(k.Field)
 		copy(dAtA[i:], k.Field)
-		i = encodeVarintDoc(dAtA, i, uint64(len(k.Field)))
+		i = encodeVarIntDoc(dAtA, i, uint64(len(k.Field)))
 		i--
 		dAtA[i] = 0xa
 	}

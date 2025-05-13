@@ -11,15 +11,15 @@ import (
 
 var messageInfoDocId proto.InternalMessageInfo
 
-func encodeIndex(dAtA []byte, offset int, v uint64) int {
+func encodeIndex(data []byte, offset int, v uint64) int {
 	offset -= sovIndex(v)
 	base := offset
 	for v >= 1<<7 {
-		dAtA[offset] = uint8(v&0x7f | 0x80)
+		data[offset] = uint8(v&0x7f | 0x80)
 		v >>= 7
 		offset++
 	}
-	dAtA[offset] = uint8(v)
+	data[offset] = uint8(v)
 	return base
 }
 
@@ -106,7 +106,7 @@ func skipIndex(data []byte) (n int, err error) {
 	return 0, io.ErrUnexpectedEOF
 }
 
-func encodeVarintDoc(dAtA []byte, offset int, v uint64) int {
+func encodeVarIntDoc(dAtA []byte, offset int, v uint64) int {
 	offset -= sovDoc(v)
 	base := offset
 	for v >= 1<<7 {
@@ -121,7 +121,8 @@ func encodeVarintDoc(dAtA []byte, offset int, v uint64) int {
 func sovDoc(x uint64) (n int) {
 	return (mathbits.Len64(x|1) + 6) / 7
 }
-func encodeVarintIndex(dAtA []byte, offset int, v uint64) int {
+
+func encodeVarIntIndex(dAtA []byte, offset int, v uint64) int {
 	offset -= sovIndex(v)
 	base := offset
 	for v >= 1<<7 {
@@ -145,7 +146,7 @@ func skipDoc(dAtA []byte) (n int, err error) {
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
 			if shift >= 64 {
-				return 0, ErrIntOverflowDoc
+				return 0, errors.New("integer overflow")
 			}
 			if iNdEx >= l {
 				return 0, io.ErrUnexpectedEOF
@@ -162,7 +163,7 @@ func skipDoc(dAtA []byte) (n int, err error) {
 		case 0:
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return 0, ErrIntOverflowDoc
+					return 0, errors.New("integer overflow")
 				}
 				if iNdEx >= l {
 					return 0, io.ErrUnexpectedEOF
@@ -178,7 +179,7 @@ func skipDoc(dAtA []byte) (n int, err error) {
 			var length int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return 0, ErrIntOverflowDoc
+					return 0, errors.New("integer overflow")
 				}
 				if iNdEx >= l {
 					return 0, io.ErrUnexpectedEOF
@@ -191,23 +192,102 @@ func skipDoc(dAtA []byte) (n int, err error) {
 				}
 			}
 			if length < 0 {
-				return 0, ErrInvalidLengthDoc
+				return 0, errors.New("negative length found during unmarshalling")
 			}
 			iNdEx += length
 		case 3:
 			depth++
 		case 4:
 			if depth == 0 {
-				return 0, ErrUnexpectedEndOfGroupDoc
+				return 0, errors.New("unexpected end of group")
 			}
 			depth--
 		case 5:
 			iNdEx += 4
 		default:
-			return 0, fmt.Errorf("proto: illegal wireType %d", wireType)
+			return 0, fmt.Errorf("illegal wireType %d", wireType)
 		}
 		if iNdEx < 0 {
-			return 0, ErrInvalidLengthDoc
+			return 0, errors.New("negative length found during unmarshalling")
+		}
+		if depth == 0 {
+			return iNdEx, nil
+		}
+	}
+	return 0, io.ErrUnexpectedEOF
+}
+
+func skipTermQuery(dAtA []byte) (n int, err error) {
+	l := len(dAtA)
+	iNdEx := 0
+	depth := 0
+	for iNdEx < l {
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return 0, errors.New("integer overflow")
+			}
+			if iNdEx >= l {
+				return 0, io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= (uint64(b) & 0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		wireType := int(wire & 0x7)
+		switch wireType {
+		case 0:
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return 0, errors.New("integer overflow")
+				}
+				if iNdEx >= l {
+					return 0, io.ErrUnexpectedEOF
+				}
+				iNdEx++
+				if dAtA[iNdEx-1] < 0x80 {
+					break
+				}
+			}
+		case 1:
+			iNdEx += 8
+		case 2:
+			var length int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return 0, errors.New("integer overflow")
+				}
+				if iNdEx >= l {
+					return 0, io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				length |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if length < 0 {
+				return 0, errors.New("negative length found during unmarshalling")
+			}
+			iNdEx += length
+		case 3:
+			depth++
+		case 4:
+			if depth == 0 {
+				return 0, errors.New("unexpected end of group")
+			}
+			depth--
+		case 5:
+			iNdEx += 4
+		default:
+			return 0, fmt.Errorf("illegal wireType %d", wireType)
+		}
+		if iNdEx < 0 {
+			return 0, errors.New("negative length found during unmarshalling")
 		}
 		if depth == 0 {
 			return iNdEx, nil

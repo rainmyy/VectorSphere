@@ -116,7 +116,7 @@ func sovTermQuery(x uint64) (n int) {
 	return (mathbits.Len64(x|1) + 6) / 7
 }
 func sozTermQuery(x uint64) (n int) {
-	return sovTermQuery(uint64((x << 1) ^ uint64(int64(x)>>63)))
+	return sovTermQuery((x << 1) ^ uint64(int64(x)>>63))
 }
 func (m *TermQuery) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
@@ -151,7 +151,7 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 			if wireType != 2 {
 				return fmt.Errorf("wrong wireType = %d for field Keyword", wireType)
 			}
-			var msglen int
+			var msgLen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return errors.New("integer overflow")
@@ -161,15 +161,15 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				msglen |= int(b&0x7F) << shift
+				msgLen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
-			if msglen < 0 {
+			if msgLen < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
-			postIndex := iNdEx + msglen
+			postIndex := iNdEx + msgLen
 			if postIndex < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
@@ -187,7 +187,7 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Must", wireType)
 			}
-			var msglen int
+			var msgLen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return errors.New("integer overflow")
@@ -197,15 +197,15 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				msglen |= int(b&0x7F) << shift
+				msgLen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
-			if msglen < 0 {
+			if msgLen < 0 {
 				return errors.New("ErrInvalidLengthTermQuery")
 			}
-			postIndex := iNdEx + msglen
+			postIndex := iNdEx + msgLen
 			if postIndex < 0 {
 				return errors.New("ErrInvalidLengthTermQuery")
 			}
@@ -219,9 +219,9 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 			iNdEx = postIndex
 		case 3:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Should", wireType)
+				return fmt.Errorf("wrong wireType = %d for field Should", wireType)
 			}
-			var msglen int
+			var msgLen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return errors.New("integer overflow")
@@ -231,15 +231,15 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 				}
 				b := dAtA[iNdEx]
 				iNdEx++
-				msglen |= int(b&0x7F) << shift
+				msgLen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
-			if msglen < 0 {
+			if msgLen < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
-			postIndex := iNdEx + msglen
+			postIndex := iNdEx + msgLen
 			if postIndex < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
@@ -271,82 +271,4 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 		return io.ErrUnexpectedEOF
 	}
 	return nil
-}
-func skipTermQuery(dAtA []byte) (n int, err error) {
-	l := len(dAtA)
-	iNdEx := 0
-	depth := 0
-	for iNdEx < l {
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return 0, errors.New("integer overflow")
-			}
-			if iNdEx >= l {
-				return 0, io.ErrUnexpectedEOF
-			}
-			b := dAtA[iNdEx]
-			iNdEx++
-			wire |= (uint64(b) & 0x7F) << shift
-			if b < 0x80 {
-				break
-			}
-		}
-		wireType := int(wire & 0x7)
-		switch wireType {
-		case 0:
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return 0, errors.New("integer overflow")
-				}
-				if iNdEx >= l {
-					return 0, io.ErrUnexpectedEOF
-				}
-				iNdEx++
-				if dAtA[iNdEx-1] < 0x80 {
-					break
-				}
-			}
-		case 1:
-			iNdEx += 8
-		case 2:
-			var length int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return 0, errors.New("integer overflow")
-				}
-				if iNdEx >= l {
-					return 0, io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				length |= (int(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if length < 0 {
-				return 0, errors.New("negative length found during unmarshalling")
-			}
-			iNdEx += length
-		case 3:
-			depth++
-		case 4:
-			if depth == 0 {
-				return 0, errors.New("unexpected end of group")
-			}
-			depth--
-		case 5:
-			iNdEx += 4
-		default:
-			return 0, fmt.Errorf("illegal wireType %d", wireType)
-		}
-		if iNdEx < 0 {
-			return 0, errors.New("negative length found during unmarshalling")
-		}
-		if depth == 0 {
-			return iNdEx, nil
-		}
-	}
-	return 0, io.ErrUnexpectedEOF
 }

@@ -76,7 +76,7 @@ func (m *SearchResult) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 					return 0, err
 				}
 				i -= size
-				i = encodeVarintIndex(dAtA, i, uint64(size))
+				i = encodeVarIntIndex(dAtA, i, uint64(size))
 			}
 			i--
 			dAtA[i] = 0xa

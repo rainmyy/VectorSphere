@@ -1,6 +1,7 @@
 package index
 
 import (
+	"errors"
 	"fmt"
 	"github.com/gogo/protobuf/proto"
 	"io"
@@ -13,10 +14,10 @@ type SearchRequest struct {
 	OrFlags []uint64   `protobuf:"varint,4,rep,packed,name=OrFlags,proto3" json:"OrFlags,omitempty"`
 }
 
-func (s *SearchRequest) Reset()         { *s = SearchRequest{} }
-func (s *SearchRequest) String() string { return proto.CompactTextString(s) }
+func (m *SearchRequest) Reset()         { *m = SearchRequest{} }
+func (m *SearchRequest) String() string { return proto.CompactTextString(m) }
 func (*SearchRequest) ProtoMessage()    {}
-func (s *SearchRequest) XXX_Unmarshal(data []byte) error {
+func (m *SearchRequest) Unmarshal(data []byte) error {
 	l := len(data)
 	iNdEx := 0
 	for iNdEx < l {
@@ -24,7 +25,7 @@ func (s *SearchRequest) XXX_Unmarshal(data []byte) error {
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
 			if shift >= 64 {
-				return ErrIntOverflowIndex
+				return errors.New("integer overflow")
 			}
 			if iNdEx >= l {
 				return io.ErrUnexpectedEOF
@@ -52,7 +53,7 @@ func (s *SearchRequest) XXX_Unmarshal(data []byte) error {
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowIndex
+					return errors.New("integer overflow")
 				}
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
@@ -65,19 +66,19 @@ func (s *SearchRequest) XXX_Unmarshal(data []byte) error {
 				}
 			}
 			if msglen < 0 {
-				return ErrInvalidLengthIndex
+				return errors.New("negative length found during unmarshalling")
 			}
 			postIndex := iNdEx + msglen
 			if postIndex < 0 {
-				return ErrInvalidLengthIndex
+				return errors.New("negative length found during unmarshalling")
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			if s.Query == nil {
-				s.Query = &TermQuery{}
+			if m.Query == nil {
+				m.Query = &TermQuery{}
 			}
-			if err := s.Query.Unmarshal(data[iNdEx:postIndex]); err != nil {
+			if err := m.Query.Unmarshal(data[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -85,17 +86,17 @@ func (s *SearchRequest) XXX_Unmarshal(data []byte) error {
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field OnFlag", wireType)
 			}
-			s.OnFlag = 0
+			m.OnFlag = 0
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowIndex
+					return errors.New("integer overflow")
 				}
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
 				}
 				b := data[iNdEx]
 				iNdEx++
-				s.OnFlag |= uint64(b&0x7F) << shift
+				m.OnFlag |= uint64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -104,17 +105,17 @@ func (s *SearchRequest) XXX_Unmarshal(data []byte) error {
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field OffFlag", wireType)
 			}
-			s.OffFlag = 0
+			m.OffFlag = 0
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowIndex
+					return errors.New("integer overflow")
 				}
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
 				}
 				b := data[iNdEx]
 				iNdEx++
-				s.OffFlag |= uint64(b&0x7F) << shift
+				m.OffFlag |= uint64(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -124,7 +125,7 @@ func (s *SearchRequest) XXX_Unmarshal(data []byte) error {
 				var v uint64
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
-						return ErrIntOverflowIndex
+						return errors.New("integer overflow")
 					}
 					if iNdEx >= l {
 						return io.ErrUnexpectedEOF
@@ -136,12 +137,12 @@ func (s *SearchRequest) XXX_Unmarshal(data []byte) error {
 						break
 					}
 				}
-				s.OrFlags = append(s.OrFlags, v)
+				m.OrFlags = append(m.OrFlags, v)
 			} else if wireType == 2 {
 				var packedLen int
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
-						return ErrIntOverflowIndex
+						return errors.New("integer overflow")
 					}
 					if iNdEx >= l {
 						return io.ErrUnexpectedEOF
@@ -154,11 +155,11 @@ func (s *SearchRequest) XXX_Unmarshal(data []byte) error {
 					}
 				}
 				if packedLen < 0 {
-					return ErrInvalidLengthIndex
+					return errors.New("negative length found during unmarshalling")
 				}
 				postIndex := iNdEx + packedLen
 				if postIndex < 0 {
-					return ErrInvalidLengthIndex
+					return errors.New("negative length found during unmarshalling")
 				}
 				if postIndex > l {
 					return io.ErrUnexpectedEOF
@@ -171,14 +172,14 @@ func (s *SearchRequest) XXX_Unmarshal(data []byte) error {
 					}
 				}
 				elementCount = count
-				if elementCount != 0 && len(s.OrFlags) == 0 {
-					s.OrFlags = make([]uint64, 0, elementCount)
+				if elementCount != 0 && len(m.OrFlags) == 0 {
+					m.OrFlags = make([]uint64, 0, elementCount)
 				}
 				for iNdEx < postIndex {
 					var v uint64
 					for shift := uint(0); ; shift += 7 {
 						if shift >= 64 {
-							return ErrIntOverflowIndex
+							return errors.New("integer overflow")
 						}
 						if iNdEx >= l {
 							return io.ErrUnexpectedEOF
@@ -190,10 +191,10 @@ func (s *SearchRequest) XXX_Unmarshal(data []byte) error {
 							break
 						}
 					}
-					s.OrFlags = append(s.OrFlags, v)
+					m.OrFlags = append(m.OrFlags, v)
 				}
 			} else {
-				return fmt.Errorf("proto: wrong wireType = %d for field OrFlags", wireType)
+				return fmt.Errorf("wrong wireType = %d for field OrFlags", wireType)
 			}
 		default:
 			iNdEx = preIndex
@@ -202,7 +203,7 @@ func (s *SearchRequest) XXX_Unmarshal(data []byte) error {
 				return err
 			}
 			if (skippy < 0) || (iNdEx+skippy) < 0 {
-				return ErrInvalidLengthIndex
+				return errors.New("integer overflow")
 			}
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
@@ -216,17 +217,18 @@ func (s *SearchRequest) XXX_Unmarshal(data []byte) error {
 	}
 	return nil
 }
-func (m *SearchRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *SearchRequest) Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_SearchRequest.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
+		return messageInfoDocId.Marshal(b, m, deterministic)
 	}
+
+	b = b[:cap(b)]
+	n, err := m.MarshalToSizedBuffer(b)
+	if err != nil {
+		return nil, err
+	}
+
+	return b[:n], nil
 }
 func (m *SearchRequest) Merge(src proto.Message) {
 	messageInfoDocId.Merge(m, src)
@@ -236,4 +238,115 @@ func (m *SearchRequest) XXX_Size() int {
 }
 func (m *SearchRequest) DiscardUnknown() {
 	messageInfoDocId.DiscardUnknown(m)
+}
+
+func (m *SearchRequest) XXX_DiscardUnknown() {
+	messageInfoDocId.DiscardUnknown(m)
+}
+
+func (m *SearchRequest) GetQuery() *TermQuery {
+	if m != nil {
+		return m.Query
+	}
+	return nil
+}
+
+func (m *SearchRequest) GetOnFlag() uint64 {
+	if m != nil {
+		return m.OnFlag
+	}
+	return 0
+}
+
+func (m *SearchRequest) GetOffFlag() uint64 {
+	if m != nil {
+		return m.OffFlag
+	}
+	return 0
+}
+
+func (m *SearchRequest) GetOrFlags() []uint64 {
+	if m != nil {
+		return m.OrFlags
+	}
+	return nil
+}
+
+func (m *SearchRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SearchRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.OrFlags) > 0 {
+		dAtA2 := make([]byte, len(m.OrFlags)*10)
+		var j1 int
+		for _, num := range m.OrFlags {
+			for num >= 1<<7 {
+				dAtA2[j1] = uint8(uint64(num)&0x7f | 0x80)
+				num >>= 7
+				j1++
+			}
+			dAtA2[j1] = uint8(num)
+			j1++
+		}
+		i -= j1
+		copy(dAtA[i:], dAtA2[:j1])
+		i = encodeVarIntIndex(dAtA, i, uint64(j1))
+		i--
+		dAtA[i] = 0x22
+	}
+	if m.OffFlag != 0 {
+		i = encodeVarIntIndex(dAtA, i, m.OffFlag)
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.OnFlag != 0 {
+		i = encodeVarIntIndex(dAtA, i, m.OnFlag)
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.Query != nil {
+		{
+			size, err := m.Query.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarIntIndex(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *SearchRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Query != nil {
+		l = m.Query.Size()
+		n += 1 + l + sovIndex(uint64(l))
+	}
+	if m.OnFlag != 0 {
+		n += 1 + sovIndex(m.OnFlag)
+	}
+	if m.OffFlag != 0 {
+		n += 1 + sovIndex(m.OffFlag)
+	}
+	if len(m.OrFlags) > 0 {
+		l = 0
+		for _, e := range m.OrFlags {
+			l += sovIndex(uint64(e))
+		}
+		n += 1 + sovIndex(uint64(l)) + l
+	}
+	return n
 }

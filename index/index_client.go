@@ -27,7 +27,7 @@ func NewIndexClient(cc *grpc.ClientConn) *IndexClient {
 
 func (c *IndexClient) DeleteDoc(ctx context.Context, in *DocId, opts ...grpc.CallOption) (*Count, error) {
 	out := new(Count)
-	err := c.cc.Invoke(ctx, "/indexservice.IndexService/DeleteDoc", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/IndexService/DeleteDoc", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +36,7 @@ func (c *IndexClient) DeleteDoc(ctx context.Context, in *DocId, opts ...grpc.Cal
 
 func (c *IndexClient) AddDoc(ctx context.Context, in *Document, opts ...grpc.CallOption) (*Count, error) {
 	out := new(Count)
-	err := c.cc.Invoke(ctx, "/indexservice.IndexService/AddDoc", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/IndexService/AddDoc", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -44,8 +44,8 @@ func (c *IndexClient) AddDoc(ctx context.Context, in *Document, opts ...grpc.Cal
 }
 
 func (c *IndexClient) Search(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchResult, error) {
-	out := new(Count)
-	err := c.cc.Invoke(ctx, "/indexservice.IndexService/Search", in, out, opts...)
+	out := new(SearchResult)
+	err := c.cc.Invoke(ctx, "/IndexService/Search", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func (c *IndexClient) Search(ctx context.Context, in *SearchRequest, opts ...grp
 
 func (c *IndexClient) Count(ctx context.Context, in *CountRequest, opts ...grpc.CallOption) (*Count, error) {
 	out := new(Count)
-	err := c.cc.Invoke(ctx, "/indexservice.IndexService/Count", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/IndexService/Count", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
