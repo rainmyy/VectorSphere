@@ -140,19 +140,19 @@ func sozDoc(x uint64) (n int) {
 
 func skipDoc(data []byte) (n int, err error) {
 	l := len(data)
-	iNdEx := 0
+	index := 0
 	depth := 0
-	for iNdEx < l {
+	for index < l {
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
 			if shift >= 64 {
 				return 0, errors.New("integer overflow")
 			}
-			if iNdEx >= l {
+			if index >= l {
 				return 0, io.ErrUnexpectedEOF
 			}
-			b := data[iNdEx]
-			iNdEx++
+			b := data[index]
+			index++
 			wire |= (uint64(b) & 0x7F) << shift
 			if b < 0x80 {
 				break
@@ -165,27 +165,27 @@ func skipDoc(data []byte) (n int, err error) {
 				if shift >= 64 {
 					return 0, errors.New("integer overflow")
 				}
-				if iNdEx >= l {
+				if index >= l {
 					return 0, io.ErrUnexpectedEOF
 				}
-				iNdEx++
-				if data[iNdEx-1] < 0x80 {
+				index++
+				if data[index-1] < 0x80 {
 					break
 				}
 			}
 		case 1:
-			iNdEx += 8
+			index += 8
 		case 2:
 			var length int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return 0, errors.New("integer overflow")
 				}
-				if iNdEx >= l {
+				if index >= l {
 					return 0, io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
-				iNdEx++
+				b := data[index]
+				index++
 				length |= (int(b) & 0x7F) << shift
 				if b < 0x80 {
 					break
@@ -194,7 +194,7 @@ func skipDoc(data []byte) (n int, err error) {
 			if length < 0 {
 				return 0, errors.New("negative length found during unmarshalling")
 			}
-			iNdEx += length
+			index += length
 		case 3:
 			depth++
 		case 4:
@@ -203,15 +203,15 @@ func skipDoc(data []byte) (n int, err error) {
 			}
 			depth--
 		case 5:
-			iNdEx += 4
+			index += 4
 		default:
 			return 0, fmt.Errorf("illegal wireType %d", wireType)
 		}
-		if iNdEx < 0 {
+		if index < 0 {
 			return 0, errors.New("negative length found during unmarshalling")
 		}
 		if depth == 0 {
-			return iNdEx, nil
+			return index, nil
 		}
 	}
 	return 0, io.ErrUnexpectedEOF
@@ -219,19 +219,19 @@ func skipDoc(data []byte) (n int, err error) {
 
 func skipTermQuery(data []byte) (n int, err error) {
 	l := len(data)
-	iNdEx := 0
+	index := 0
 	depth := 0
-	for iNdEx < l {
+	for index < l {
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
 			if shift >= 64 {
 				return 0, errors.New("integer overflow")
 			}
-			if iNdEx >= l {
+			if index >= l {
 				return 0, io.ErrUnexpectedEOF
 			}
-			b := data[iNdEx]
-			iNdEx++
+			b := data[index]
+			index++
 			wire |= (uint64(b) & 0x7F) << shift
 			if b < 0x80 {
 				break
@@ -244,27 +244,27 @@ func skipTermQuery(data []byte) (n int, err error) {
 				if shift >= 64 {
 					return 0, errors.New("integer overflow")
 				}
-				if iNdEx >= l {
+				if index >= l {
 					return 0, io.ErrUnexpectedEOF
 				}
-				iNdEx++
-				if data[iNdEx-1] < 0x80 {
+				index++
+				if data[index-1] < 0x80 {
 					break
 				}
 			}
 		case 1:
-			iNdEx += 8
+			index += 8
 		case 2:
 			var length int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return 0, errors.New("integer overflow")
 				}
-				if iNdEx >= l {
+				if index >= l {
 					return 0, io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
-				iNdEx++
+				b := data[index]
+				index++
 				length |= (int(b) & 0x7F) << shift
 				if b < 0x80 {
 					break
@@ -273,7 +273,7 @@ func skipTermQuery(data []byte) (n int, err error) {
 			if length < 0 {
 				return 0, errors.New("negative length found during unmarshalling")
 			}
-			iNdEx += length
+			index += length
 		case 3:
 			depth++
 		case 4:
@@ -282,15 +282,15 @@ func skipTermQuery(data []byte) (n int, err error) {
 			}
 			depth--
 		case 5:
-			iNdEx += 4
+			index += 4
 		default:
 			return 0, fmt.Errorf("illegal wireType %d", wireType)
 		}
-		if iNdEx < 0 {
+		if index < 0 {
 			return 0, errors.New("negative length found during unmarshalling")
 		}
 		if depth == 0 {
-			return iNdEx, nil
+			return index, nil
 		}
 	}
 	return 0, io.ErrUnexpectedEOF

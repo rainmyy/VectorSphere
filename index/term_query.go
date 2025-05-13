@@ -34,28 +34,28 @@ func (m *TermQuery) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	var l int
 	_ = l
 	if len(m.Should) > 0 {
-		for iNdEx := len(m.Should) - 1; iNdEx >= 0; iNdEx-- {
+		for index := len(m.Should) - 1; index >= 0; index-- {
 			{
-				size, err := m.Should[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				size, err := m.Should[index].MarshalToSizedBuffer(dAtA[:i])
 				if err != nil {
 					return 0, err
 				}
 				i -= size
-				i = encodeVarintTermQuery(dAtA, i, uint64(size))
+				i = encodeVarIntTermQuery(dAtA, i, uint64(size))
 			}
 			i--
 			dAtA[i] = 0x1a
 		}
 	}
 	if len(m.Must) > 0 {
-		for iNdEx := len(m.Must) - 1; iNdEx >= 0; iNdEx-- {
+		for index := len(m.Must) - 1; index >= 0; index-- {
 			{
-				size, err := m.Must[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				size, err := m.Must[index].MarshalToSizedBuffer(dAtA[:i])
 				if err != nil {
 					return 0, err
 				}
 				i -= size
-				i = encodeVarintTermQuery(dAtA, i, uint64(size))
+				i = encodeVarIntTermQuery(dAtA, i, uint64(size))
 			}
 			i--
 			dAtA[i] = 0x12
@@ -68,7 +68,7 @@ func (m *TermQuery) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 				return 0, err
 			}
 			i -= size
-			i = encodeVarintTermQuery(dAtA, i, uint64(size))
+			i = encodeVarIntTermQuery(dAtA, i, uint64(size))
 		}
 		i--
 		dAtA[i] = 0xa
@@ -76,7 +76,7 @@ func (m *TermQuery) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func encodeVarintTermQuery(dAtA []byte, offset int, v uint64) int {
+func encodeVarIntTermQuery(dAtA []byte, offset int, v uint64) int {
 	offset -= sovTermQuery(v)
 	base := offset
 	for v >= 1<<7 {
@@ -118,21 +118,21 @@ func sovTermQuery(x uint64) (n int) {
 func sozTermQuery(x uint64) (n int) {
 	return sovTermQuery((x << 1) ^ uint64(int64(x)>>63))
 }
-func (m *TermQuery) Unmarshal(data []byte) error {
-	l := len(data)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
+func (m *TermQuery) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	index := 0
+	for index < l {
+		preIndex := index
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
 			if shift >= 64 {
 				return errors.New("integer overflow")
 			}
-			if iNdEx >= l {
+			if index >= l {
 				return io.ErrUnexpectedEOF
 			}
-			b := data[iNdEx]
-			iNdEx++
+			b := dAtA[index]
+			index++
 			wire |= uint64(b&0x7F) << shift
 			if b < 0x80 {
 				break
@@ -151,25 +151,25 @@ func (m *TermQuery) Unmarshal(data []byte) error {
 			if wireType != 2 {
 				return fmt.Errorf("wrong wireType = %d for field Keyword", wireType)
 			}
-			var msgLen int
+			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return errors.New("integer overflow")
 				}
-				if iNdEx >= l {
+				if index >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
-				iNdEx++
-				msgLen |= int(b&0x7F) << shift
+				b := dAtA[index]
+				index++
+				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
-			if msgLen < 0 {
+			if msglen < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
-			postIndex := iNdEx + msgLen
+			postIndex := index + msglen
 			if postIndex < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
@@ -179,33 +179,33 @@ func (m *TermQuery) Unmarshal(data []byte) error {
 			if m.Keyword == nil {
 				m.Keyword = &Keyword{}
 			}
-			if err := m.Keyword.Unmarshal(data[iNdEx:postIndex]); err != nil {
+			if err := m.Keyword.Unmarshal(dAtA[index:postIndex]); err != nil {
 				return err
 			}
-			iNdEx = postIndex
+			index = postIndex
 		case 2:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Must", wireType)
 			}
-			var msgLen int
+			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return errors.New("integer overflow")
 				}
-				if iNdEx >= l {
+				if index >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
-				iNdEx++
-				msgLen |= int(b&0x7F) << shift
+				b := dAtA[index]
+				index++
+				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
-			if msgLen < 0 {
+			if msglen < 0 {
 				return errors.New("ErrInvalidLengthTermQuery")
 			}
-			postIndex := iNdEx + msgLen
+			postIndex := index + msglen
 			if postIndex < 0 {
 				return errors.New("ErrInvalidLengthTermQuery")
 			}
@@ -213,33 +213,33 @@ func (m *TermQuery) Unmarshal(data []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Must = append(m.Must, &TermQuery{})
-			if err := m.Must[len(m.Must)-1].Unmarshal(data[iNdEx:postIndex]); err != nil {
+			if err := m.Must[len(m.Must)-1].Unmarshal(dAtA[index:postIndex]); err != nil {
 				return err
 			}
-			iNdEx = postIndex
+			index = postIndex
 		case 3:
 			if wireType != 2 {
-				return fmt.Errorf("wrong wireType = %d for field Should", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Should", wireType)
 			}
-			var msgLen int
+			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return errors.New("integer overflow")
 				}
-				if iNdEx >= l {
+				if index >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := data[iNdEx]
-				iNdEx++
-				msgLen |= int(b&0x7F) << shift
+				b := dAtA[index]
+				index++
+				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
-			if msgLen < 0 {
+			if msglen < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
-			postIndex := iNdEx + msgLen
+			postIndex := index + msglen
 			if postIndex < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
@@ -247,27 +247,27 @@ func (m *TermQuery) Unmarshal(data []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Should = append(m.Should, &TermQuery{})
-			if err := m.Should[len(m.Should)-1].Unmarshal(data[iNdEx:postIndex]); err != nil {
+			if err := m.Should[len(m.Should)-1].Unmarshal(dAtA[index:postIndex]); err != nil {
 				return err
 			}
-			iNdEx = postIndex
+			index = postIndex
 		default:
-			iNdEx = preIndex
-			skippy, err := skipTermQuery(data[iNdEx:])
+			index = preIndex
+			skippy, err := skipTermQuery(dAtA[index:])
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if (skippy < 0) || (index+skippy) < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
-			if (iNdEx + skippy) > l {
+			if (index + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
-			iNdEx += skippy
+			index += skippy
 		}
 	}
 
-	if iNdEx > l {
+	if index > l {
 		return io.ErrUnexpectedEOF
 	}
 	return nil
