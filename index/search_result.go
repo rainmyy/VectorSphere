@@ -19,7 +19,7 @@ func (m *SearchResult) XXX_Unmarshal(b []byte) error {
 }
 func (m *SearchResult) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_SearchResult.Marshal(b, m, deterministic)
+		return messageInfoDocId.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -30,16 +30,14 @@ func (m *SearchResult) XXX_Marshal(b []byte, deterministic bool) ([]byte, error)
 	}
 }
 func (m *SearchResult) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_SearchResult.Merge(m, src)
+	messageInfoDocId.Merge(m, src)
 }
 func (m *SearchResult) XXX_Size() int {
 	return m.Size()
 }
 func (m *SearchResult) XXX_DiscardUnknown() {
-	xxx_messageInfo_SearchResult.DiscardUnknown(m)
+	messageInfoDocId.DiscardUnknown(m)
 }
-
-var xxx_messageInfo_SearchResult proto.InternalMessageInfo
 
 func (m *SearchResult) GetResults() []*Document {
 	if m != nil {
@@ -63,26 +61,26 @@ func (m *SearchResult) MarshalTo(dAtA []byte) (int, error) {
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *SearchResult) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
+func (m *SearchResult) MarshalToSizedBuffer(data []byte) (int, error) {
+	i := len(data)
 	_ = i
 	var l int
 	_ = l
 	if len(m.Results) > 0 {
 		for iNdEx := len(m.Results) - 1; iNdEx >= 0; iNdEx-- {
 			{
-				size, err := m.Results[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				size, err := m.Results[iNdEx].MarshalToSizedBuffer(data[:i])
 				if err != nil {
 					return 0, err
 				}
 				i -= size
-				i = encodeVarIntIndex(dAtA, i, uint64(size))
+				i = encodeVarIntIndex(data, i, uint64(size))
 			}
 			i--
-			dAtA[i] = 0xa
+			data[i] = 0xa
 		}
 	}
-	return len(dAtA) - i, nil
+	return len(data) - i, nil
 }
 
 func (m *SearchResult) Size() (n int) {
@@ -100,21 +98,21 @@ func (m *SearchResult) Size() (n int) {
 	return n
 }
 
-func (m *SearchResult) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
+func (m *SearchResult) Unmarshal(data []byte) error {
+	l := len(data)
+	index := 0
+	for index < l {
+		preIndex := index
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
 			if shift >= 64 {
 				return errors.New("integer overflow")
 			}
-			if iNdEx >= l {
+			if index >= l {
 				return io.ErrUnexpectedEOF
 			}
-			b := dAtA[iNdEx]
-			iNdEx++
+			b := data[index]
+			index++
 			wire |= uint64(b&0x7F) << shift
 			if b < 0x80 {
 				break
@@ -138,11 +136,11 @@ func (m *SearchResult) Unmarshal(dAtA []byte) error {
 				if shift >= 64 {
 					return errors.New("integer overflow")
 				}
-				if iNdEx >= l {
+				if index >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := dAtA[iNdEx]
-				iNdEx++
+				b := data[index]
+				index++
 				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
@@ -151,7 +149,7 @@ func (m *SearchResult) Unmarshal(dAtA []byte) error {
 			if msglen < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
-			postIndex := iNdEx + msglen
+			postIndex := index + msglen
 			if postIndex < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
@@ -159,27 +157,27 @@ func (m *SearchResult) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Results = append(m.Results, &Document{})
-			if err := m.Results[len(m.Results)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+			if err := m.Results[len(m.Results)-1].Unmarshal(data[index:postIndex]); err != nil {
 				return err
 			}
-			iNdEx = postIndex
+			index = postIndex
 		default:
-			iNdEx = preIndex
-			skippy, err := skipIndex(dAtA[iNdEx:])
+			index = preIndex
+			skippy, err := skipIndex(data[index:])
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if (skippy < 0) || (index+skippy) < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
-			if (iNdEx + skippy) > l {
+			if (index + skippy) > l {
 				return io.ErrUnexpectedEOF
 			}
-			iNdEx += skippy
+			index += skippy
 		}
 	}
 
-	if iNdEx > l {
+	if index > l {
 		return io.ErrUnexpectedEOF
 	}
 	return nil

@@ -6,11 +6,15 @@
   <component name="ChangeListManager">
     <list default="true" id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/go.mod" beforeDir="false" afterPath="$PROJECT_DIR$/go.mod" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/count_request.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/count_request.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/document.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/document.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/func.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/func.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/index/index.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/index.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/index_server.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/index_server.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/key_word.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/key_word.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/search_request.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/search_request.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/search_result.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/search_result.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/library/collect/hash_map.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/collect/hash_map.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/file/file_parser.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/file_parser.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/sentinel.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/sentinel.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -35,6 +39,7 @@
   </component>
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
+    "Go Build.go build github.com/rainmyy/seetaSearch.executor": "Run",
     "RunOnceActivity.OpenProjectViewOnStart": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.go.formatter.settings.were.checked": "true",
@@ -50,6 +55,22 @@
     "nodejs_package_manager_path": "npm"
   }
 }]]></component>
+  <component name="RunManager">
+    <configuration name="go build github.com/rainmyy/seetaSearch" type="GoApplicationRunConfiguration" factoryName="Go Application" temporary="true" nameIsGenerated="true">
+      <module name="seetaSearch" />
+      <working_directory value="$PROJECT_DIR$" />
+      <kind value="PACKAGE" />
+      <package value="github.com/rainmyy/seetaSearch" />
+      <directory value="$PROJECT_DIR$" />
+      <filePath value="$PROJECT_DIR$/main.go" />
+      <method v="2" />
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Go Build.go build github.com/rainmyy/seetaSearch" />
+      </list>
+    </recent_temporary>
+  </component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>

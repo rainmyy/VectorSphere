@@ -7,7 +7,7 @@ type Keyword struct {
 	Word  string `protobuf:"bytes,2,opt,name=Word,proto3" json:"Word,omitempty"`
 }
 
-func (k Keyword) ToString() string {
+func (k *Keyword) ToString() string {
 	if len(k.Word) > 0 {
 		return k.Field + "\001" + k.Word
 	}
@@ -20,7 +20,7 @@ func (*Keyword) ProtoMessage()    {}
 func (k *Keyword) Unmarshal(b []byte) error {
 	return k.Unmarshal(b)
 }
-func (k *Keyword) MarshalWithdeterministic(b []byte, deterministic bool) ([]byte, error) {
+func (k *Keyword) MarshalWithDeterministic(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
 		return messageInfoDocId.Marshal(b, k, deterministic)
 	}
@@ -53,41 +53,41 @@ func (k *Keyword) GetWord() string {
 	}
 	return ""
 }
-func (k *Keyword) Marshal() (dAtA []byte, err error) {
+func (k *Keyword) Marshal() (data []byte, err error) {
 	size := k.Size()
-	dAtA = make([]byte, size)
-	n, err := k.MarshalToSizedBuffer(dAtA[:size])
+	data = make([]byte, size)
+	n, err := k.MarshalToSizedBuffer(data[:size])
 	if err != nil {
 		return nil, err
 	}
-	return dAtA[:n], nil
+	return data[:n], nil
 }
 
-func (k *Keyword) MarshalTo(dAtA []byte) (int, error) {
+func (k *Keyword) MarshalTo(data []byte) (int, error) {
 	size := k.Size()
-	return k.MarshalToSizedBuffer(dAtA[:size])
+	return k.MarshalToSizedBuffer(data[:size])
 }
 
-func (k *Keyword) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
+func (k *Keyword) MarshalToSizedBuffer(data []byte) (int, error) {
+	i := len(data)
 	_ = i
 	var l int
 	_ = l
 	if len(k.Word) > 0 {
 		i -= len(k.Word)
-		copy(dAtA[i:], k.Word)
-		i = encodeVarIntDoc(dAtA, i, uint64(len(k.Word)))
+		copy(data[i:], k.Word)
+		i = encodeVarIntDoc(data, i, uint64(len(k.Word)))
 		i--
-		dAtA[i] = 0x12
+		data[i] = 0x12
 	}
 	if len(k.Field) > 0 {
 		i -= len(k.Field)
-		copy(dAtA[i:], k.Field)
-		i = encodeVarIntDoc(dAtA, i, uint64(len(k.Field)))
+		copy(data[i:], k.Field)
+		i = encodeVarIntDoc(data, i, uint64(len(k.Field)))
 		i--
-		dAtA[i] = 0xa
+		data[i] = 0xa
 	}
-	return len(dAtA) - i, nil
+	return len(data) - i, nil
 }
 
 func (k *Keyword) Size() (n int) {

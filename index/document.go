@@ -223,9 +223,7 @@ func (m *Document) MarshalWithDeterministic(b []byte, deterministic bool) ([]byt
 func (m *Document) Merge(src proto.Message) {
 	messageInfoDocId.Merge(m, src)
 }
-func (m *Document) XXX_Size() int {
-	return m.Size()
-}
+
 func (m *Document) DiscardUnknown() {
 	messageInfoDocId.DiscardUnknown(m)
 }
@@ -259,63 +257,63 @@ func (m *Document) Size() (n int) {
 	return n
 }
 
-func (m *Document) Marshal() (dAtA []byte, err error) {
+func (m *Document) Marshal() (data []byte, err error) {
 	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	data = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(data[:size])
 	if err != nil {
 		return nil, err
 	}
-	return dAtA[:n], nil
+	return data[:n], nil
 }
 
-func (m *Document) MarshalTo(dAtA []byte) (int, error) {
+func (m *Document) MarshalTo(data []byte) (int, error) {
 	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
+	return m.MarshalToSizedBuffer(data[:size])
 }
 
-func (m *Document) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
+func (m *Document) MarshalToSizedBuffer(data []byte) (int, error) {
+	i := len(data)
 	_ = i
 	var l int
 	_ = l
 	if len(m.Bytes) > 0 {
 		i -= len(m.Bytes)
-		copy(dAtA[i:], m.Bytes)
-		i = encodeVarIntDoc(dAtA, i, uint64(len(m.Bytes)))
+		copy(data[i:], m.Bytes)
+		i = encodeVarIntDoc(data, i, uint64(len(m.Bytes)))
 		i--
-		dAtA[i] = 0x2a
+		data[i] = 0x2a
 	}
 	if len(m.KeyWords) > 0 {
 		for iNdEx := len(m.KeyWords) - 1; iNdEx >= 0; iNdEx-- {
 			{
-				size, err := m.KeyWords[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				size, err := m.KeyWords[iNdEx].MarshalToSizedBuffer(data[:i])
 				if err != nil {
 					return 0, err
 				}
 				i -= size
-				i = encodeVarIntDoc(dAtA, i, uint64(size))
+				i = encodeVarIntDoc(data, i, uint64(size))
 			}
 			i--
-			dAtA[i] = 0x22
+			data[i] = 0x22
 		}
 	}
 	if m.BitsFeature != 0 {
-		i = encodeVarIntDoc(dAtA, i, uint64(m.BitsFeature))
+		i = encodeVarIntDoc(data, i, uint64(m.BitsFeature))
 		i--
-		dAtA[i] = 0x18
+		data[i] = 0x18
 	}
 	if m.FloatId != 0 {
-		i = encodeVarIntDoc(dAtA, i, uint64(m.FloatId))
+		i = encodeVarIntDoc(data, i, uint64(m.FloatId))
 		i--
-		dAtA[i] = 0x10
+		data[i] = 0x10
 	}
 	if len(m.Id) > 0 {
 		i -= len(m.Id)
-		copy(dAtA[i:], m.Id)
-		i = encodeVarIntDoc(dAtA, i, uint64(len(m.Id)))
+		copy(data[i:], m.Id)
+		i = encodeVarIntDoc(data, i, uint64(len(m.Id)))
 		i--
-		dAtA[i] = 0xa
+		data[i] = 0xa
 	}
-	return len(dAtA) - i, nil
+	return len(data) - i, nil
 }

@@ -22,7 +22,7 @@ type IndexInterface interface {
 	Close() error
 }
 
-func (is Index) NewIndexServer(docNumEstimate int, dbType int, bucket, dbDir string) error {
+func (is *Index) NewIndexServer(docNumEstimate int, dbType int, bucket, dbDir string) error {
 	kvDb, err := db.GetDb(dbType, dbDir, bucket)
 	if err != nil {
 		return err
@@ -33,11 +33,11 @@ func (is Index) NewIndexServer(docNumEstimate int, dbType int, bucket, dbDir str
 	return nil
 }
 
-func (is Index) Close() error {
+func (is *Index) Close() error {
 	return is.db.Close()
 }
 
-func (is Index) AddDoc(doc Document) (int, error) {
+func (is *Index) AddDoc(doc Document) (int, error) {
 	docId := strings.TrimSpace(doc.Id)
 	if len(docId) == 0 {
 		return -1, errors.New("empty doc id")

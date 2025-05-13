@@ -85,27 +85,27 @@ func (m *CountRequest) DiscardUnknown() {
 	messageInfoDocId.DiscardUnknown(m)
 }
 
-func (m *CountRequest) Marshal() (dAtA []byte, err error) {
+func (m *CountRequest) Marshal() (data []byte, err error) {
 	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	data = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(data[:size])
 	if err != nil {
 		return nil, err
 	}
-	return dAtA[:n], nil
+	return data[:n], nil
 }
 
-func (m *CountRequest) MarshalTo(dAtA []byte) (int, error) {
+func (m *CountRequest) MarshalTo(data []byte) (int, error) {
 	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
+	return m.MarshalToSizedBuffer(data[:size])
 }
 
-func (m *CountRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
+func (m *CountRequest) MarshalToSizedBuffer(data []byte) (int, error) {
+	i := len(data)
 	_ = i
 	var l int
 	_ = l
-	return len(dAtA) - i, nil
+	return len(data) - i, nil
 }
 func (m *CountRequest) Size() (n int) {
 	if m == nil {

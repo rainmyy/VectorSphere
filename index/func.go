@@ -106,15 +106,15 @@ func skipIndex(data []byte) (n int, err error) {
 	return 0, io.ErrUnexpectedEOF
 }
 
-func encodeVarIntDoc(dAtA []byte, offset int, v uint64) int {
+func encodeVarIntDoc(data []byte, offset int, v uint64) int {
 	offset -= sovDoc(v)
 	base := offset
 	for v >= 1<<7 {
-		dAtA[offset] = uint8(v&0x7f | 0x80)
+		data[offset] = uint8(v&0x7f | 0x80)
 		v >>= 7
 		offset++
 	}
-	dAtA[offset] = uint8(v)
+	data[offset] = uint8(v)
 	return base
 }
 
@@ -122,15 +122,15 @@ func sovDoc(x uint64) (n int) {
 	return (mathbits.Len64(x|1) + 6) / 7
 }
 
-func encodeVarIntIndex(dAtA []byte, offset int, v uint64) int {
+func encodeVarIntIndex(data []byte, offset int, v uint64) int {
 	offset -= sovIndex(v)
 	base := offset
 	for v >= 1<<7 {
-		dAtA[offset] = uint8(v&0x7f | 0x80)
+		data[offset] = uint8(v&0x7f | 0x80)
 		v >>= 7
 		offset++
 	}
-	dAtA[offset] = uint8(v)
+	data[offset] = uint8(v)
 	return base
 }
 
@@ -138,8 +138,8 @@ func sozDoc(x uint64) (n int) {
 	return sovDoc((x << 1) ^ uint64(int64(x)>>63))
 }
 
-func skipDoc(dAtA []byte) (n int, err error) {
-	l := len(dAtA)
+func skipDoc(data []byte) (n int, err error) {
+	l := len(data)
 	iNdEx := 0
 	depth := 0
 	for iNdEx < l {
@@ -151,7 +151,7 @@ func skipDoc(dAtA []byte) (n int, err error) {
 			if iNdEx >= l {
 				return 0, io.ErrUnexpectedEOF
 			}
-			b := dAtA[iNdEx]
+			b := data[iNdEx]
 			iNdEx++
 			wire |= (uint64(b) & 0x7F) << shift
 			if b < 0x80 {
@@ -169,7 +169,7 @@ func skipDoc(dAtA []byte) (n int, err error) {
 					return 0, io.ErrUnexpectedEOF
 				}
 				iNdEx++
-				if dAtA[iNdEx-1] < 0x80 {
+				if data[iNdEx-1] < 0x80 {
 					break
 				}
 			}
@@ -184,7 +184,7 @@ func skipDoc(dAtA []byte) (n int, err error) {
 				if iNdEx >= l {
 					return 0, io.ErrUnexpectedEOF
 				}
-				b := dAtA[iNdEx]
+				b := data[iNdEx]
 				iNdEx++
 				length |= (int(b) & 0x7F) << shift
 				if b < 0x80 {
@@ -217,8 +217,8 @@ func skipDoc(dAtA []byte) (n int, err error) {
 	return 0, io.ErrUnexpectedEOF
 }
 
-func skipTermQuery(dAtA []byte) (n int, err error) {
-	l := len(dAtA)
+func skipTermQuery(data []byte) (n int, err error) {
+	l := len(data)
 	iNdEx := 0
 	depth := 0
 	for iNdEx < l {
@@ -230,7 +230,7 @@ func skipTermQuery(dAtA []byte) (n int, err error) {
 			if iNdEx >= l {
 				return 0, io.ErrUnexpectedEOF
 			}
-			b := dAtA[iNdEx]
+			b := data[iNdEx]
 			iNdEx++
 			wire |= (uint64(b) & 0x7F) << shift
 			if b < 0x80 {
@@ -248,7 +248,7 @@ func skipTermQuery(dAtA []byte) (n int, err error) {
 					return 0, io.ErrUnexpectedEOF
 				}
 				iNdEx++
-				if dAtA[iNdEx-1] < 0x80 {
+				if data[iNdEx-1] < 0x80 {
 					break
 				}
 			}
@@ -263,7 +263,7 @@ func skipTermQuery(dAtA []byte) (n int, err error) {
 				if iNdEx >= l {
 					return 0, io.ErrUnexpectedEOF
 				}
-				b := dAtA[iNdEx]
+				b := data[iNdEx]
 				iNdEx++
 				length |= (int(b) & 0x7F) << shift
 				if b < 0x80 {

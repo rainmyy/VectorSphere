@@ -118,8 +118,8 @@ func sovTermQuery(x uint64) (n int) {
 func sozTermQuery(x uint64) (n int) {
 	return sovTermQuery((x << 1) ^ uint64(int64(x)>>63))
 }
-func (m *TermQuery) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
+func (m *TermQuery) Unmarshal(data []byte) error {
+	l := len(data)
 	iNdEx := 0
 	for iNdEx < l {
 		preIndex := iNdEx
@@ -131,7 +131,7 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 			if iNdEx >= l {
 				return io.ErrUnexpectedEOF
 			}
-			b := dAtA[iNdEx]
+			b := data[iNdEx]
 			iNdEx++
 			wire |= uint64(b&0x7F) << shift
 			if b < 0x80 {
@@ -159,7 +159,7 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := dAtA[iNdEx]
+				b := data[iNdEx]
 				iNdEx++
 				msgLen |= int(b&0x7F) << shift
 				if b < 0x80 {
@@ -179,7 +179,7 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 			if m.Keyword == nil {
 				m.Keyword = &Keyword{}
 			}
-			if err := m.Keyword.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+			if err := m.Keyword.Unmarshal(data[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -195,7 +195,7 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := dAtA[iNdEx]
+				b := data[iNdEx]
 				iNdEx++
 				msgLen |= int(b&0x7F) << shift
 				if b < 0x80 {
@@ -213,7 +213,7 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Must = append(m.Must, &TermQuery{})
-			if err := m.Must[len(m.Must)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+			if err := m.Must[len(m.Must)-1].Unmarshal(data[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -229,7 +229,7 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := dAtA[iNdEx]
+				b := data[iNdEx]
 				iNdEx++
 				msgLen |= int(b&0x7F) << shift
 				if b < 0x80 {
@@ -247,13 +247,13 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Should = append(m.Should, &TermQuery{})
-			if err := m.Should[len(m.Should)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+			if err := m.Should[len(m.Should)-1].Unmarshal(data[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
-			skippy, err := skipTermQuery(dAtA[iNdEx:])
+			skippy, err := skipTermQuery(data[iNdEx:])
 			if err != nil {
 				return err
 			}
