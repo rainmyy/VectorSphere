@@ -16,9 +16,9 @@ type HashMap struct {
 func NewHashMap(seg int, cap int) *HashMap {
 	mps := make([]map[string]any, seg)
 	mus := make([]sync.RWMutex, seg)
-	mcap := cap / seg
+	mcp := cap / seg
 	for i := 0; i < seg; i++ {
-		mps[i] = make(map[string]any, mcap)
+		mps[i] = make(map[string]any, mcp)
 	}
 
 	return &HashMap{

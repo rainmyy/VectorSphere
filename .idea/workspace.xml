@@ -5,16 +5,12 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/seetaSearch.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/seetaSearch.iml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/document.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/document.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/func.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/func.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/index_client.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/index_client.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/index.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/index.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/index/index_server.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/index_server.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/key_word.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/key_word.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/search_request.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/search_request.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/search_result.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/search_result.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/term_query.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/term_query.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/collect/hash_map.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/collect/hash_map.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/file/file_parser.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/file_parser.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/server/sentinel.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/sentinel.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

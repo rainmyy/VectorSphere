@@ -15,9 +15,7 @@ import (
 	. "github.com/rainmyy/seetaSearch/library/strategy"
 )
 
-/**
-* 解析数据，将数据解析成树形结构进行存储
- */
+// Parser 解析数据，将数据解析成树形结构进行存储
 func (f *File) Parser(objType int) error {
 	err := f.readFile()
 	if err != nil {

@@ -116,8 +116,8 @@ func (s *Sentinel) Search(query *index.TermQuery, onFlag, offFlag uint64, orFlag
 				return
 			}
 			client := index.NewIndexClient(conn)
-
-			searchResult, err := client.Search(context.Background(), &SearchRequest{query, onFlag, offFlag, orFlags})
+			searchRequest := index.SearchRequest{Query: query, OnFlag: onFlag, OffFlag: offFlag, OrFlags: orFlags}
+			searchResult, err := client.Search(context.Background(), &searchRequest)
 			if err != nil {
 				return
 			}
