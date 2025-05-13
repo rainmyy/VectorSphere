@@ -11,8 +11,8 @@ import (
 import etcdv3 "go.etcd.io/etcd/client/v3"
 
 type ServiceHub interface {
-	RegisterService(serviceName string, endpoint EndPoint, leaseId etcdv3.LeaseID) (etcdv3.LeaseID, error)
-	UnRegisterService(serviceName string, endpoint EndPoint) error
+	RegisterService(serviceName string, endpoint *EndPoint, leaseId etcdv3.LeaseID) (etcdv3.LeaseID, error)
+	UnRegisterService(serviceName string, endpoint *EndPoint) error
 	GetServiceEndpoints(serviceName string) []EndPoint
 	GetServiceEndpoint(serviceName string) EndPoint
 	Close()
@@ -53,7 +53,7 @@ func GetHub(etcdServices []string, heartbeat int64) *EtcdServiceHub {
 	return etcdServiceHub
 }
 
-func (etcd *EtcdServiceHub) RegisterService(service string, endpoint EndPoint, leaseId etcdv3.LeaseID) (etcdv3.LeaseID, error) {
+func (etcd *EtcdServiceHub) RegisterService(service string, endpoint *EndPoint, leaseId etcdv3.LeaseID) (etcdv3.LeaseID, error) {
 	if leaseId <= 0 {
 		leaseResp, err := etcd.client.Grant(context.Background(), etcd.heartbeat)
 		if err != nil {
@@ -77,7 +77,7 @@ func (etcd *EtcdServiceHub) RegisterService(service string, endpoint EndPoint, l
 	return leaseId, nil
 }
 
-func (etcd *EtcdServiceHub) UnRegisterService(serviceName string, endpoint EndPoint) error {
+func (etcd *EtcdServiceHub) UnRegisterService(serviceName string, endpoint *EndPoint) error {
 	key := ServiceRootPath + "/" + serviceName + "/" + endpoint.address
 	_, err := etcd.client.Delete(context.Background(), key)
 	if err != nil {

@@ -13,80 +13,81 @@ type TermQuery struct {
 	Should  []*TermQuery `protobuf:"bytes,3,rep,name=Should,proto3" json:"Should,omitempty"`
 }
 
-func (m *TermQuery) Marshal() (dAtA []byte, err error) {
+func (m *TermQuery) Marshal() (data []byte, err error) {
 	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	data = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(data[:size])
 	if err != nil {
 		return nil, err
 	}
-	return dAtA[:n], nil
+	return data[:n], nil
 }
 
-func (m *TermQuery) MarshalTo(dAtA []byte) (int, error) {
+func (m *TermQuery) MarshalTo(data []byte) (int, error) {
 	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
+	return m.MarshalToSizedBuffer(data[:size])
 }
 
-func (m *TermQuery) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
+func (m *TermQuery) MarshalToSizedBuffer(data []byte) (int, error) {
+	i := len(data)
 	_ = i
 	var l int
 	_ = l
 	if len(m.Should) > 0 {
 		for index := len(m.Should) - 1; index >= 0; index-- {
 			{
-				size, err := m.Should[index].MarshalToSizedBuffer(dAtA[:i])
+				size, err := m.Should[index].MarshalToSizedBuffer(data[:i])
 				if err != nil {
 					return 0, err
 				}
 				i -= size
-				i = encodeVarIntTermQuery(dAtA, i, uint64(size))
+				i = encodeVarIntTermQuery(data, i, uint64(size))
 			}
 			i--
-			dAtA[i] = 0x1a
+			data[i] = 0x1a
 		}
 	}
 	if len(m.Must) > 0 {
 		for index := len(m.Must) - 1; index >= 0; index-- {
 			{
-				size, err := m.Must[index].MarshalToSizedBuffer(dAtA[:i])
+				size, err := m.Must[index].MarshalToSizedBuffer(data[:i])
 				if err != nil {
 					return 0, err
 				}
 				i -= size
-				i = encodeVarIntTermQuery(dAtA, i, uint64(size))
+				i = encodeVarIntTermQuery(data, i, uint64(size))
 			}
 			i--
-			dAtA[i] = 0x12
+			data[i] = 0x12
 		}
 	}
 	if m.Keyword != nil {
 		{
-			size, err := m.Keyword.MarshalToSizedBuffer(dAtA[:i])
+			size, err := m.Keyword.MarshalToSizedBuffer(data[:i])
 			if err != nil {
 				return 0, err
 			}
 			i -= size
-			i = encodeVarIntTermQuery(dAtA, i, uint64(size))
+			i = encodeVarIntTermQuery(data, i, uint64(size))
 		}
 		i--
-		dAtA[i] = 0xa
+		data[i] = 0xa
 	}
-	return len(dAtA) - i, nil
+	return len(data) - i, nil
 }
 
-func encodeVarIntTermQuery(dAtA []byte, offset int, v uint64) int {
+func encodeVarIntTermQuery(data []byte, offset int, v uint64) int {
 	offset -= sovTermQuery(v)
 	base := offset
 	for v >= 1<<7 {
-		dAtA[offset] = uint8(v&0x7f | 0x80)
+		data[offset] = uint8(v&0x7f | 0x80)
 		v >>= 7
 		offset++
 	}
-	dAtA[offset] = uint8(v)
+	data[offset] = uint8(v)
 	return base
 }
+
 func (m *TermQuery) Size() (n int) {
 	if m == nil {
 		return 0
@@ -118,8 +119,8 @@ func sovTermQuery(x uint64) (n int) {
 func sozTermQuery(x uint64) (n int) {
 	return sovTermQuery((x << 1) ^ uint64(int64(x)>>63))
 }
-func (m *TermQuery) Unmarshal(dAtA []byte) error {
-	l := len(dAtA)
+func (m *TermQuery) Unmarshal(data []byte) error {
+	l := len(data)
 	index := 0
 	for index < l {
 		preIndex := index
@@ -131,7 +132,7 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 			if index >= l {
 				return io.ErrUnexpectedEOF
 			}
-			b := dAtA[index]
+			b := data[index]
 			index++
 			wire |= uint64(b&0x7F) << shift
 			if b < 0x80 {
@@ -146,12 +147,13 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 		if fieldNum <= 0 {
 			return fmt.Errorf("illegal tag %d (wire type %d)", fieldNum, wire)
 		}
+		var msglen int
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
 				return fmt.Errorf("wrong wireType = %d for field Keyword", wireType)
 			}
-			var msglen int
+
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return errors.New("integer overflow")
@@ -159,7 +161,7 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 				if index >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := dAtA[index]
+				b := data[index]
 				index++
 				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
@@ -179,7 +181,7 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 			if m.Keyword == nil {
 				m.Keyword = &Keyword{}
 			}
-			if err := m.Keyword.Unmarshal(dAtA[index:postIndex]); err != nil {
+			if err := m.Keyword.Unmarshal(data[index:postIndex]); err != nil {
 				return err
 			}
 			index = postIndex
@@ -187,7 +189,6 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Must", wireType)
 			}
-			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return errors.New("integer overflow")
@@ -195,7 +196,7 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 				if index >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := dAtA[index]
+				b := data[index]
 				index++
 				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
@@ -213,15 +214,14 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Must = append(m.Must, &TermQuery{})
-			if err := m.Must[len(m.Must)-1].Unmarshal(dAtA[index:postIndex]); err != nil {
+			if err := m.Must[len(m.Must)-1].Unmarshal(data[index:postIndex]); err != nil {
 				return err
 			}
 			index = postIndex
 		case 3:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Should", wireType)
+				return fmt.Errorf("wrong wireType = %d for field Should", wireType)
 			}
-			var msglen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return errors.New("integer overflow")
@@ -229,7 +229,7 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 				if index >= l {
 					return io.ErrUnexpectedEOF
 				}
-				b := dAtA[index]
+				b := data[index]
 				index++
 				msglen |= int(b&0x7F) << shift
 				if b < 0x80 {
@@ -247,13 +247,13 @@ func (m *TermQuery) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Should = append(m.Should, &TermQuery{})
-			if err := m.Should[len(m.Should)-1].Unmarshal(dAtA[index:postIndex]); err != nil {
+			if err := m.Should[len(m.Should)-1].Unmarshal(data[index:postIndex]); err != nil {
 				return err
 			}
 			index = postIndex
 		default:
 			index = preIndex
-			skippy, err := skipTermQuery(dAtA[index:])
+			skippy, err := skipTermQuery(data[index:])
 			if err != nil {
 				return err
 			}

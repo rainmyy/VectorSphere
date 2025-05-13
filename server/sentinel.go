@@ -19,7 +19,7 @@ type Sentinel struct {
 
 const IndexService = "index_service"
 
-var _ index.IndexInterface = (*Sentinel)(nil)
+var _ ServerInterface = (*Sentinel)(nil)
 
 func NewSentinel(serviceNames []string) *Sentinel {
 	return &Sentinel{
@@ -50,7 +50,7 @@ func (s *Sentinel) GetGrpcConn(point EndPoint) *grpc.ClientConn {
 	return grpcConn
 }
 
-func (s *Sentinel) AddDoc(doc index.Document) (int, error) {
+func (s *Sentinel) AddDoc(doc *index.Document) (int, error) {
 	endPoint := s.hub.GetServiceEndpoint(IndexService)
 	if len(endPoint.address) == 0 {
 		return -1, errors.New("服务节点不存在")
@@ -60,14 +60,14 @@ func (s *Sentinel) AddDoc(doc index.Document) (int, error) {
 		return -1, errors.New("无法连接到" + endPoint.address)
 	}
 	client := index.NewIndexClient(conn)
-	affected, err := client.AddDoc(context.Background(), &doc)
+	affected, err := client.AddDoc(context.Background(), doc)
 	if err != nil {
 		return -1, err
 	}
 	return int(affected.Count), nil
 }
 
-func (s *Sentinel) DelDoc(docId string) int {
+func (s *Sentinel) DelDoc(docId *index.DocId) int {
 	endpoints := s.hub.GetServiceEndpoints(IndexService)
 	if len(endpoints) == 0 {
 		return 0
@@ -83,7 +83,7 @@ func (s *Sentinel) DelDoc(docId string) int {
 				return
 			}
 			client := index.NewIndexClient(conn)
-			affected, err := client.DeleteDoc(context.Background(), &index.DocId{Id: docId})
+			affected, err := client.DeleteDoc(context.Background(), &index.DocId{Id: docId.Id})
 			if err != nil {
 				return
 			}

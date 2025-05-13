@@ -50,7 +50,7 @@ func (m *SearchRequest) Unmarshal(data []byte) error {
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Query", wireType)
 			}
-			var msglen int
+			var msgLen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
 					return errors.New("integer overflow")
@@ -60,15 +60,15 @@ func (m *SearchRequest) Unmarshal(data []byte) error {
 				}
 				b := data[index]
 				index++
-				msglen |= int(b&0x7F) << shift
+				msgLen |= int(b&0x7F) << shift
 				if b < 0x80 {
 					break
 				}
 			}
-			if msglen < 0 {
+			if msgLen < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
-			postIndex := index + msglen
+			postIndex := index + msgLen
 			if postIndex < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}

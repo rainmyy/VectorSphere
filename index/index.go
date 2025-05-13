@@ -40,17 +40,17 @@ func (is *Index) Close() error {
 func (is *Index) AddDoc(doc Document) (int, error) {
 	docId := strings.TrimSpace(doc.Id)
 	if len(docId) == 0 {
-		return -1, errors.New("empty doc id")
+		return 0, errors.New("empty doc id")
 	}
 	is.DelDoc(docId)
 	doc.FloatId = float64(atomic.AddUint64(&is.maxIntId, 1))
 	var val bytes.Buffer
 	encode := gob.NewEncoder(&val)
 	if err := encode.Encode(doc); err != nil {
-		return -1, errors.New("error encoding doc: " + err.Error())
+		return 0, errors.New("error encoding doc: " + err.Error())
 	}
 	if err := is.db.Set([]byte(docId), val.Bytes()); err != nil {
-		return -1, errors.New("error setting doc: " + err.Error())
+		return 0, errors.New("error setting doc: " + err.Error())
 	}
 	is.reverseIndex.Add(doc)
 	return val.Len(), nil

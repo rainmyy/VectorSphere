@@ -68,7 +68,7 @@ cloud.google.com/go/datafusion v1.7.1 h1:eX9CZoyhKQW6g1Xj7+RONeDj1mV8KQDKEB9KLEL
 cloud.google.com/go/datafusion v1.7.1/go.mod h1:KpoTBbFmoToDExJUso/fcCiguGDk7MEzOWXUsJo0wsI=
 cloud.google.com/go/datalabeling v0.8.1 h1:zxsCD/BLKXhNuRssen8lVXChUj8VxF3ofN06JfdWOXw=
 cloud.google.com/go/datalabeling v0.8.1/go.mod h1:XS62LBSVPbYR54GfYQsPXZjTW8UxCK2fkDciSrpRFdY=
-cloud.google.com/go/dataplex v1.9.0 h1:yoBWuuUZklYp7nx26evIhzq8+i/nvKYuZr1jka9EqLs=
+cloud.google.com/go/dataplex v1.9.0 h1:yoBWuuUZklYp7nx26evIhzq8+w/nvKYuZr1jka9EqLs=
 cloud.google.com/go/dataplex v1.9.0/go.mod h1:7TyrDT6BCdI8/38Uvp0/ZxBslOslP2X2MPDucliyvSE=
 cloud.google.com/go/dataproc/v2 v2.0.1 h1:4OpSiPMMGV3XmtPqskBU/RwYpj3yMFjtMLj/exi425Q=
 cloud.google.com/go/dataproc/v2 v2.0.1/go.mod h1:7Ez3KRHdFGcfY7GcevBbvozX+zyWGcwLJvvAMwCaoZ4=
