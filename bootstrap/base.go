@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"sync"
 
-	"github.com/rainmyy/seetaSearch/library/conf"
-	PoolLib "github.com/rainmyy/seetaSearch/library/pool"
+	"seetaSearch/library/conf"
+	PoolLib "seetaSearch/library/pool"
 )
 
 /**
@@ -32,7 +32,7 @@ var pool = PoolLib.GetInstance()
 // Setup /**
 func (app *AppServer) Setup() {
 	_ = conf.Intance().Init()
-	
+
 	//注册执行函数
 	pool := pool.Init(ServiceLen, ServiceLen)
 	for i := 0; i < ServiceLen; i++ {

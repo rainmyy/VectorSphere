@@ -101,7 +101,7 @@ func (m *Document) Unmarshal(data []byte) error {
 			m.FloatId = float64(intId)
 		case 3:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field BitsFeature", wireType)
+				return fmt.Errorf("wrong wireType = %d for field BitsFeature", wireType)
 			}
 			m.BitsFeature = 0
 			for shift := uint(0); ; shift += 7 {
@@ -120,7 +120,7 @@ func (m *Document) Unmarshal(data []byte) error {
 			}
 		case 4:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Keywords", wireType)
+				return fmt.Errorf("wrong wireType = %d for field Keywords", wireType)
 			}
 			var msglen int
 			for shift := uint(0); ; shift += 7 {
@@ -154,7 +154,7 @@ func (m *Document) Unmarshal(data []byte) error {
 			index = postIndex
 		case 5:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Bytes", wireType)
+				return fmt.Errorf("wrong wireType = %d for field Bytes", wireType)
 			}
 			var byteLen int
 			for shift := uint(0); ; shift += 7 {

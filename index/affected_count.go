@@ -46,15 +46,15 @@ func (a *Count) Unmarshal(data []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: AffectedCount: wiretype end group for non-group")
+			return fmt.Errorf("wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: AffectedCount: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
 			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Count", wireType)
+				return fmt.Errorf("wrong wireType = %d for field Count", wireType)
 			}
 			a.Count = 0
 			for shift := uint(0); ; shift += 7 {

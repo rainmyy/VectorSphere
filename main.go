@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/rainmyy/seetaSearch/bootstrap"
+	"seetaSearch/bootstrap"
 )
 
 /***

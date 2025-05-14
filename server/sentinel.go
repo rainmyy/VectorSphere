@@ -3,10 +3,10 @@ package server
 import (
 	"context"
 	"errors"
-	"github.com/rainmyy/seetaSearch/index"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
+	"seetaSearch/index"
 	"sync"
 	"sync/atomic"
 	"time"

@@ -3,7 +3,7 @@ package bind
 import (
 	"fmt"
 
-	. "github.com/rainmyy/seetaSearch/library/strategy"
+	. "seetaSearch/library/strategy"
 )
 
 type Array struct {

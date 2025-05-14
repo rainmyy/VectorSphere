@@ -4,7 +4,7 @@ import (
 	"log"
 	"reflect"
 
-	. "github.com/rainmyy/seetaSearch/library/strategy"
+	. "seetaSearch/library/strategy"
 )
 
 type Struct struct {

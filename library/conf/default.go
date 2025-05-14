@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"sync"
 
-	. "github.com/rainmyy/seetaSearch/library/bind"
-	. "github.com/rainmyy/seetaSearch/library/common"
-	. "github.com/rainmyy/seetaSearch/library/file"
+	. "seetaSearch/library/bind"
+	. "seetaSearch/library/common"
+	. "seetaSearch/library/file"
 )
 
 // DefaultConf /**
@@ -31,7 +31,7 @@ func (conf *DefaultConf) Init() *DefaultConf {
 		return nil
 	}
 
-	str := StrigInstance()
+	str := StringInstance()
 	//array := ArrayInterface()
 	bindData := DefaultBind(fileObj.GetContent(), str)
 	fmt.Print(bindData)

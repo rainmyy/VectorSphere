@@ -3,9 +3,9 @@ package file
 import (
 	"log"
 
-	. "github.com/rainmyy/seetaSearch/library/bind"
-	. "github.com/rainmyy/seetaSearch/library/strategy"
 	"gopkg.in/yaml.v2"
+	. "seetaSearch/library/bind"
+	. "seetaSearch/library/strategy"
 )
 
 func ParserYamlContent(data []byte) ([]*TreeStruct, error) {

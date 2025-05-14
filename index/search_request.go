@@ -344,7 +344,7 @@ func (m *SearchRequest) Size() (n int) {
 	if len(m.OrFlags) > 0 {
 		l = 0
 		for _, e := range m.OrFlags {
-			l += sovIndex(uint64(e))
+			l += sovIndex(e)
 		}
 		n += 1 + sovIndex(uint64(l)) + l
 	}

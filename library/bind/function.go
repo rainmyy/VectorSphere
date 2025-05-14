@@ -1,6 +1,6 @@
 package bind
 
-import . "github.com/rainmyy/seetaSearch/library/common"
+import . "seetaSearch/library/common"
 
 func formatBytes(bytes []byte) string {
 	str := Bytes2str(bytes)

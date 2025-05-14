@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"errors"
-	"github.com/rainmyy/seetaSearch/db"
+	"seetaSearch/db"
 	"strings"
 	"sync/atomic"
 )

@@ -3,8 +3,7 @@ package pool
 import (
 	"fmt"
 	"reflect"
-
-	. "github.com/rainmyy/seetaSearch/library/res"
+	. "seetaSearch/library/res"
 )
 
 func FuncCall(function interface{}, args ...interface{}) []interface{} {

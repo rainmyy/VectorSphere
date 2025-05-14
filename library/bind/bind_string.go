@@ -2,9 +2,8 @@ package bind
 
 import (
 	. "bytes"
-
-	. "github.com/rainmyy/seetaSearch/library/common"
-	. "github.com/rainmyy/seetaSearch/library/strategy"
+	. "seetaSearch/library/common"
+	. "seetaSearch/library/strategy"
 )
 
 type String struct {
@@ -26,13 +25,11 @@ func (s *String) Bind(treeList []*TreeStruct) {
 func (s *String) GetValue() interface{} {
 	return s.value
 }
-func StrigInstance() *String {
+func StringInstance() *String {
 	return new(String)
 }
 
-/**
-* 序列化tree:[{"test":[{"params":[{"name":"name1"},{"key":"value"},{"count":{"value":"www"}}]},{"params":[{"name":"name2"},{"key":"value"}]}]}]
- */
+// BindString 序列化tree:[{"test":[{"params":[{"name":"name1"},{"key":"value"},{"count":{"value":"www"}}]},{"params":[{"name":"name2"},{"key":"value"}]}]}]
 func BindString(treeList []*TreeStruct, buffer *Buffer) int {
 	if len(treeList) == 0 {
 		return 0

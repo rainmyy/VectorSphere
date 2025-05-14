@@ -1,9 +1,8 @@
 package pool
 
 import (
+	"seetaSearch/library/res"
 	"sync"
-
-	. "github.com/rainmyy/seetaSearch/library/res"
 )
 
 const (
@@ -16,8 +15,8 @@ type Pool struct {
 	RuntineNumber int
 	Total         int
 	taskQuery     chan *Queue
-	taskResult    chan map[string]*Response
-	taskResponse  map[string]*Response
+	taskResult    chan map[string]*res.Response
+	taskResponse  map[string]*res.Response
 }
 
 /*
@@ -26,7 +25,7 @@ type Pool struct {
 */
 type Queue struct {
 	Name     string
-	result   chan *Response
+	result   chan *res.Response
 	Excel    *ExcelFunc
 	CallBack *CallBackFunc
 }
@@ -48,7 +47,7 @@ func QueryInit(name string, function interface{}, params ...interface{}) *Queue 
 	excelFunc := &ExcelFunc{Function: function, Params: params}
 	query := &Queue{Name: name,
 		Excel:  excelFunc,
-		result: make(chan *Response, 1),
+		result: make(chan *res.Response, 1),
 	}
 	return query
 }
@@ -62,8 +61,8 @@ func (p *Pool) Init(runtimeNumber, total int) *Pool {
 	p.RuntineNumber = runtimeNumber
 	p.Total = total
 	p.taskQuery = make(chan *Queue, runtimeNumber)
-	p.taskResult = make(chan map[string]*Response, runtimeNumber)
-	p.taskResponse = make(map[string]*Response)
+	p.taskResult = make(chan map[string]*res.Response, runtimeNumber)
+	p.taskResponse = make(map[string]*res.Response)
 	return p
 }
 func (p *Pool) Start() {
@@ -78,12 +77,12 @@ func (p *Pool) Start() {
 			defer mutex.Done()
 			task, ok := <-p.taskQuery
 			taskName := task.Name
-			result := map[string]*Response{
+			result := map[string]*res.Response{
 				taskName: nil,
 			}
-			response := ReposeInstance()
+			response := res.ReposeInstance()
 			if !ok {
-				res := ResultInstance().ErrorParamsResult()
+				res := res.ResultInstance().ErrorParamsResult()
 				response.Result = res
 				result[taskName] = response
 				p.taskResult <- result
@@ -92,13 +91,13 @@ func (p *Pool) Start() {
 			task.excelQuery()
 			taskResult, ok := <-task.result
 			if !ok {
-				res := ResultInstance().EmptyResult()
+				res := res.ResultInstance().EmptyResult()
 				response.Result = res
 				result[taskName] = response
 				p.taskResult <- result
 				return
 			}
-			result = map[string]*Response{
+			result = map[string]*res.Response{
 				taskName: taskResult,
 			}
 			p.taskResult <- result
@@ -114,7 +113,7 @@ func (p *Pool) Start() {
 	}
 }
 
-func (p *Pool) TaskResult() map[string]*Response {
+func (p *Pool) TaskResult() map[string]*res.Response {
 	return p.taskResponse
 }
 

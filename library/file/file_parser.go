@@ -3,16 +3,15 @@ package file
 import (
 	"bufio"
 	"fmt"
-	"github.com/rainmyy/seetaSearch/library/json"
 	"io"
 	"math"
 	"os"
+	. "seetaSearch/library/common"
+	"seetaSearch/library/json"
+	. "seetaSearch/library/strategy"
 	"strings"
 	"sync"
 	"time"
-
-	. "github.com/rainmyy/seetaSearch/library/common"
-	. "github.com/rainmyy/seetaSearch/library/strategy"
 )
 
 // Parser 解析数据，将数据解析成树形结构进行存储

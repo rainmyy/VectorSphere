@@ -5,10 +5,9 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	. "seetaSearch/library/common"
+	. "seetaSearch/library/strategy"
 	"time"
-
-	. "github.com/rainmyy/seetaSearch/library/common"
-	. "github.com/rainmyy/seetaSearch/library/strategy"
 )
 
 // File /**

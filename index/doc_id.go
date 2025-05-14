@@ -60,7 +60,7 @@ func (d *DocId) Unmarshal(data []byte) error {
 		}
 		if fieldNum == 1 {
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field DocId", wireType)
+				return fmt.Errorf("wrong wireType = %d for field DocId", wireType)
 			}
 			var stringLen uint64
 			for shift := uint(0); ; shift += 7 {

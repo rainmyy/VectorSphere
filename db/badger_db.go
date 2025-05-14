@@ -3,8 +3,8 @@ package db
 import (
 	"errors"
 	"github.com/dgraph-io/badger/v4"
-	"github.com/rainmyy/seetaSearch/library/log"
 	"os"
+	"seetaSearch/library/log"
 	"sync/atomic"
 )
 

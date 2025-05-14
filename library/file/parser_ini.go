@@ -2,9 +2,8 @@ package file
 
 import (
 	"fmt"
-
-	. "github.com/rainmyy/seetaSearch/library/common"
-	. "github.com/rainmyy/seetaSearch/library/strategy"
+	. "seetaSearch/library/common"
+	. "seetaSearch/library/strategy"
 )
 
 // ParserIniContent /**

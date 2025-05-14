@@ -2,9 +2,9 @@ package index
 
 import (
 	farmhash "github.com/leemcloughlin/gofarmhash"
-	"github.com/rainmyy/seetaSearch/library/collect"
-	"github.com/rainmyy/seetaSearch/library/strategy"
 	"runtime"
+	"seetaSearch/library/collect"
+	"seetaSearch/library/strategy"
 	"sync"
 )
 

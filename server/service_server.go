@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/rainmyy/seetaSearch/index"
-	"github.com/rainmyy/seetaSearch/library/common"
-	"github.com/rainmyy/seetaSearch/library/log"
+	"seetaSearch/index"
+	"seetaSearch/library/common"
+	"seetaSearch/library/log"
 	"strconv"
 	"time"
 )

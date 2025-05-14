@@ -31,4 +31,5 @@ func GetLocalHost() (ipv4 string, err error) {
 		}
 	}
 	err = errors.New("ERR_NO_LOCAL_IP_FOUND")
+	return
 }
