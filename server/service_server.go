@@ -21,6 +21,7 @@ type ServerInterface interface {
 type IndexServer struct {
 	Index     *index.Index
 	hub       *EtcdServiceHub
+	stop      bool
 	localhost string
 }
 
@@ -45,7 +46,7 @@ func (w *IndexServer) RegisterService(servers []string, port int) error {
 	}
 	w.hub = hub
 	go func() {
-		for {
+		for !w.stop {
 			_, err := hub.RegisterService(IndexService, endPoint, leasID)
 			if err != nil {
 				log.Logger.Printf("续约服务失败,租约ID:%d, 错误:%v", leasID, err)
@@ -55,6 +56,10 @@ func (w *IndexServer) RegisterService(servers []string, port int) error {
 	}()
 
 	return nil
+}
+
+func (w *IndexServer) StopService() {
+	w.stop = true
 }
 
 func (w *IndexServer) LoadFromIndexFile() int {

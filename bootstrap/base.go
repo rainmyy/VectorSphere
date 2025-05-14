@@ -29,9 +29,9 @@ const (
 var ServiceLen = 4
 var pool = PoolLib.GetInstance()
 
-// Setup /**
+// Setup /
 func (app *AppServer) Setup() {
-	_ = conf.Intance().Init()
+	_ = conf.NewConf().Init()
 
 	//注册执行函数
 	pool := pool.Init(ServiceLen, ServiceLen)

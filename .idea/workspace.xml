@@ -7,32 +7,7 @@
     <list default="true" id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/bootstrap/base.go" beforeDir="false" afterPath="$PROJECT_DIR$/bootstrap/base.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/db/badger_db.go" beforeDir="false" afterPath="$PROJECT_DIR$/db/badger_db.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/go.mod" beforeDir="false" afterPath="$PROJECT_DIR$/go.mod" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/affected_count.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/affected_count.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/doc_id.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/doc_id.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/document.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/document.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/index.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/index.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/search_request.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/search_request.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/skip_list_index.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/skip_list_index.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/bind/bind_array.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/bind/bind_array.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/bind/bind_string.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/bind/bind_string.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/bind/bind_struct.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/bind/bind_struct.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/bind/default_bind.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/bind/default_bind.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/bind/function.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/bind/function.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/common/net.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/common/net.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/common/struct.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/common/struct.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/library/conf/default.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/conf/default.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/file/file_parser.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/file_parser.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/file/file_struct.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/file_struct.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/file/parser_default.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/parser_default.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/file/parser_ini.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/parser_ini.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/file/parser_yaml.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/parser_yaml.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/json/parser_json.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/json/parser_json.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/pool/call.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/pool/call.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/pool/pool.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/pool/pool.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/main.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/sentinel.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/sentinel.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/server/service_server.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/service_server.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />

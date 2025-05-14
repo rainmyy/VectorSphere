@@ -40,6 +40,6 @@ func (conf *DefaultConf) Init() *DefaultConf {
 	return conf
 }
 
-func Intance() *DefaultConf {
+func NewConf() *DefaultConf {
 	return new(DefaultConf)
 }
