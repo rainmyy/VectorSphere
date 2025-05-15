@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	. "seetaSearch/library/bind"
-	. "seetaSearch/library/common"
 	. "seetaSearch/library/file"
 )
 
@@ -25,7 +24,7 @@ func (conf *DefaultConf) Init() *DefaultConf {
 		return nil
 	}
 
-	err = fileObj.Parser(IniType)
+	err = fileObj.Parser()
 	if err != nil {
 		print(err.Error())
 		return nil

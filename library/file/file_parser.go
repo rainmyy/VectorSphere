@@ -15,7 +15,7 @@ import (
 )
 
 // Parser 解析数据，将数据解析成树形结构进行存储
-func (f *File) Parser(objType int) error {
+func (f *File) Parser() error {
 	err := f.readFile()
 	if err != nil {
 		return err
@@ -61,6 +61,7 @@ func (f *File) readFileByGeneral(fileObj *os.File) error {
 			break
 		}
 	}
+
 	tree, err := parserDataFunc(f, b)
 	if err != nil {
 		return err

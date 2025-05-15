@@ -8,29 +8,29 @@ import (
 
 type Array struct {
 	length int
-	value  []map[string]interface{}
+	value  []map[interface{}]interface{}
 }
 
 func ArrayInterface() *Array {
-	return &Array{value: make([]map[string]interface{}, 0)}
+	return &Array{value: make([]map[interface{}]interface{}, 0)}
 }
 
 // Bind /**
 func (a *Array) Bind(treeList []*TreeStruct) {
-	var treeMapList = make([]map[string]interface{}, 0)
-	var getBindMap func(tree []*TreeStruct) []map[string]interface{}
+	var treeMapList = make([]map[interface{}]interface{}, 0)
+	var getBindMap func(tree []*TreeStruct) []map[interface{}]interface{}
 	/***
 	* 递归方式获取
 	 */
-	getBindMap = func(tree []*TreeStruct) []map[string]interface{} {
+	getBindMap = func(tree []*TreeStruct) []map[interface{}]interface{} {
 		if len(tree) == 0 {
 			return nil
 		}
-		var treeMapList = make([]map[string]interface{}, 0)
+		var treeMapList = make([]map[interface{}]interface{}, 0)
 		for _, val := range tree {
 			nodeList := val.GetNode()
 			node := nodeList[0]
-			var treeMap = make(map[string]interface{})
+			var treeMap = make(map[interface{}]interface{})
 			if val.IsLeaf() {
 				treeMap[string(node.GetName())] = string(node.GetData())
 			} else {
@@ -68,7 +68,7 @@ func (a *Array) GetValue() interface{} {
 	return a.value
 }
 
-func (a *Array) SetMap(m map[string]interface{}) {
+func (a *Array) SetMap(m map[interface{}]interface{}) {
 	a.value = append(a.value, m)
 	a.length = len(a.value)
 }
@@ -78,6 +78,11 @@ func (a *Array) UnBind() ([]*TreeStruct, error) {
 	if arr == nil {
 		return nil, fmt.Errorf("array value is nil")
 	}
-
+	//for _, v := range arr {
+	//	for kk, _ := range v {
+	//		println(kk)
+	//	}
+	//
+	//}
 	return nil, nil
 }

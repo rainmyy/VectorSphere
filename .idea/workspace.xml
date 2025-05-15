@@ -6,7 +6,12 @@
   <component name="ChangeListManager">
     <list default="true" id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/db/bbolt_db.go" beforeDir="false" afterPath="$PROJECT_DIR$/db/bbolt_db.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/bind/bind_array.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/bind/bind_array.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/conf/default.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/conf/default.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/file/file_parser.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/file_parser.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/file/parser_yaml.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/parser_yaml.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/server/balancer.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/balancer.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/server/etcd_hub.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/etcd_hub.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

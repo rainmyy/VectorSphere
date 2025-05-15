@@ -105,8 +105,10 @@ func (etcd *EtcdServiceHub) GetServiceEndpoints(serviceName string) []EndPoint {
 
 func (etcd *EtcdServiceHub) GetServiceEndpoint(serviceName string) EndPoint {
 	endpoints := etcd.GetServiceEndpoints(serviceName)
-	return etcd.loadBalancer.Take(endpoints)
+	etcd.loadBalancer.Set(endpoints)
+	return etcd.loadBalancer.Take()
 }
+
 func (etcd *EtcdServiceHub) Close() {
 	etcd.client.Close()
 }
