@@ -120,7 +120,7 @@ func (m *TermQuery) Unmarshal(data []byte) error {
 	index := 0
 	for index < l {
 		preIndex := index
-		wire, err := CalculateIntId(index, l, data)
+		wire, err := CalculateIntId(&index, l, data)
 		if err != nil {
 			return err
 		}
@@ -137,7 +137,7 @@ func (m *TermQuery) Unmarshal(data []byte) error {
 			if wireType != 2 {
 				return fmt.Errorf("wrong wireType = %d for field Keyword", wireType)
 			}
-			msgLen, err := CalculateIntId(index, l, data)
+			msgLen, err := CalculateIntId(&index, l, data)
 			if err != nil {
 				return err
 			}
@@ -162,7 +162,7 @@ func (m *TermQuery) Unmarshal(data []byte) error {
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Must", wireType)
 			}
-			msgLen, err := CalculateIntId(index, l, data)
+			msgLen, err := CalculateIntId(&index, l, data)
 			if err != nil {
 				return err
 			}
@@ -185,7 +185,7 @@ func (m *TermQuery) Unmarshal(data []byte) error {
 			if wireType != 2 {
 				return fmt.Errorf("wrong wireType = %d for field Should", wireType)
 			}
-			msgLen, err := CalculateIntId(index, l, data)
+			msgLen, err := CalculateIntId(&index, l, data)
 			if err != nil {
 				return err
 			}

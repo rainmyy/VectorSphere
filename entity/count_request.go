@@ -19,7 +19,7 @@ func (m *CountRequest) Unmarshal(data []byte) error {
 	index := 0
 	for index < l {
 		preIndex := index
-		wire, err := CalculateIntId(index, l, data)
+		wire, err := CalculateIntId(&index, l, data)
 		if err != nil {
 			return err
 		}

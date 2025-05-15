@@ -22,7 +22,7 @@ func (m *SearchRequest) Unmarshal(data []byte) error {
 	index := 0
 	for index < l {
 		preIndex := index
-		wire, err := CalculateIntId(index, l, data)
+		wire, err := CalculateIntId(&index, l, data)
 		if err != nil {
 			return err
 		}
@@ -39,7 +39,7 @@ func (m *SearchRequest) Unmarshal(data []byte) error {
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Query", wireType)
 			}
-			msgLen, err := CalculateIntId(index, l, data)
+			msgLen, err := CalculateIntId(&index, l, data)
 			if err != nil {
 				return err
 			}
@@ -65,20 +65,20 @@ func (m *SearchRequest) Unmarshal(data []byte) error {
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field OnFlag", wireType)
 			}
-			flag, err := CalculateIntId(index, l, data)
+			flag, err := CalculateIntId(&index, l, data)
 			if err != nil {
 				return err
 			}
 			m.OnFlag = flag
 		case 4:
 			if wireType == 0 {
-				v, err := CalculateIntId(index, l, data)
+				v, err := CalculateIntId(&index, l, data)
 				if err != nil {
 					return err
 				}
 				m.OrFlags = append(m.OrFlags, v)
 			} else if wireType == 2 {
-				packedLen, err := CalculateIntId(index, l, data)
+				packedLen, err := CalculateIntId(&index, l, data)
 				if err != nil {
 					return err
 				}
@@ -104,7 +104,7 @@ func (m *SearchRequest) Unmarshal(data []byte) error {
 					m.OrFlags = make([]uint64, 0, elementCount)
 				}
 				for index < postIndex {
-					v, err := CalculateIntId(index, l, data)
+					v, err := CalculateIntId(&index, l, data)
 					if err != nil {
 						return err
 					}

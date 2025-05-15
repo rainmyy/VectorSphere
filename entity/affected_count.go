@@ -28,7 +28,7 @@ func (a *Count) Unmarshal(data []byte) error {
 	seed := 0
 	for seed < l {
 		preIndex := seed
-		wire, err := CalculateIntId(seed, l, data)
+		wire, err := CalculateIntId(&seed, l, data)
 		if err != nil {
 			return err
 		}
@@ -46,7 +46,7 @@ func (a *Count) Unmarshal(data []byte) error {
 				return fmt.Errorf("wrong wireType = %d for field Count", wireType)
 			}
 			a.Count = 0
-			count, err := CalculateIntId(seed, l, data)
+			count, err := CalculateIntId(&seed, l, data)
 			if err != nil {
 				return err
 			}

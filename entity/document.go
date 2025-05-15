@@ -22,7 +22,7 @@ func (m *Document) calculateFiledNum5(wireType, index, length int, data []byte) 
 	if wireType != 2 {
 		return -1, fmt.Errorf("wrong wireType = %d for field Bytes", wireType)
 	}
-	byteLen, err := CalculateIntId(index, length, data)
+	byteLen, err := CalculateIntId(&index, length, data)
 	if err != nil {
 		return -1, err
 	}
@@ -46,7 +46,7 @@ func (m *Document) calculateFiledNum4(wireType, index, length int, data []byte) 
 	if wireType != 2 {
 		return -1, fmt.Errorf("wrong wireType = %d for field Keywords", wireType)
 	}
-	msglen, err := CalculateIntId(index, length, data)
+	msglen, err := CalculateIntId(&index, length, data)
 	if err != nil {
 		return -1, err
 	}
@@ -86,7 +86,7 @@ func (m *Document) calculateFiledNum1(wireType, index, length int, data []byte) 
 			break
 		}
 	}
-	stringLen, err := CalculateIntId(index, length, data)
+	stringLen, err := CalculateIntId(&index, length, data)
 	if err != nil {
 		return -1, err
 	}
@@ -109,7 +109,7 @@ func (m *Document) Unmarshal(data []byte) error {
 	index := 0
 	for index < l {
 		preIndex := index
-		wire, err := CalculateIntId(index, l, data)
+		wire, err := CalculateIntId(&index, l, data)
 		if err != nil {
 			return err
 		}
@@ -133,7 +133,7 @@ func (m *Document) Unmarshal(data []byte) error {
 			if wireType != 0 {
 				return fmt.Errorf("wrong wireType = %d for field IntId", wireType)
 			}
-			intId, err := CalculateIntId(index, l, data)
+			intId, err := CalculateIntId(&index, l, data)
 			if err != nil {
 				return err
 			}
@@ -142,7 +142,7 @@ func (m *Document) Unmarshal(data []byte) error {
 			if wireType != 0 {
 				return fmt.Errorf("wrong wireType = %d for field BitsFeature", wireType)
 			}
-			bitsFeature, err := CalculateIntId(index, l, data)
+			bitsFeature, err := CalculateIntId(&index, l, data)
 			if err != nil {
 				return err
 			}

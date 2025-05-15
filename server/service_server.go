@@ -63,12 +63,12 @@ func (w *IndexServer) StopService() {
 	w.stop = true
 }
 
-func (w *IndexServer) LoadFromIndexFile() int {
+func (w *IndexServer) LoadFromIndexFile() (int, error) {
 	data, err := w.Index.LoadIndex()
 	if err != nil {
-
+		return -1, err
 	}
-	return data
+	return data, nil
 }
 func (w *IndexServer) DeleteDoc(ctx context.Context, docId *entity.DocId) (*entity.Count, error) {
 	// 调用Indexer的DeleteDoc方法删除文档，并返回影响的文档数量

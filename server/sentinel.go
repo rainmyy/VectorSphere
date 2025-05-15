@@ -14,8 +14,9 @@ import (
 )
 
 type Sentinel struct {
-	hub      ServiceHub
-	connPool sync.Map
+	hub         ServiceHub
+	connPool    sync.Map
+	IndexServer string
 }
 
 const IndexService = "index_service"
@@ -24,8 +25,9 @@ var _ ServerInterface = (*Sentinel)(nil)
 
 func NewSentinel(serviceNames []string) *Sentinel {
 	return &Sentinel{
-		hub:      GetHubProxy(serviceNames, 3, 100),
-		connPool: sync.Map{},
+		hub:         GetHubProxy(serviceNames, 3, 100),
+		connPool:    sync.Map{},
+		IndexServer: IndexService,
 	}
 }
 
@@ -52,7 +54,7 @@ func (s *Sentinel) GetGrpcConn(point EndPoint) *grpc.ClientConn {
 }
 
 func (s *Sentinel) AddDoc(doc *entity.Document) (int, error) {
-	endPoint := s.hub.GetServiceEndpoint(IndexService)
+	endPoint := s.hub.GetServiceEndpoint(s.IndexServer)
 	if len(endPoint.address) == 0 {
 		return -1, errors.New("服务节点不存在")
 	}
@@ -69,7 +71,7 @@ func (s *Sentinel) AddDoc(doc *entity.Document) (int, error) {
 }
 
 func (s *Sentinel) DelDoc(docId *entity.DocId) int {
-	endpoints := s.hub.GetServiceEndpoints(IndexService)
+	endpoints := s.hub.GetServiceEndpoints(s.IndexServer)
 	if len(endpoints) == 0 {
 		return 0
 	}
@@ -98,7 +100,7 @@ func (s *Sentinel) DelDoc(docId *entity.DocId) int {
 }
 
 func (s *Sentinel) Search(query *entity.TermQuery, onFlag, offFlag uint64, orFlags []uint64) []*entity.Document {
-	endpoints := s.hub.GetServiceEndpoints(IndexService)
+	endpoints := s.hub.GetServiceEndpoints(s.IndexServer)
 	if len(endpoints) == 0 {
 		return nil
 	}
@@ -146,7 +148,7 @@ func (s *Sentinel) Search(query *entity.TermQuery, onFlag, offFlag uint64, orFla
 }
 
 func (s *Sentinel) Count() int {
-	endpoints := s.hub.GetServiceEndpoints(IndexService)
+	endpoints := s.hub.GetServiceEndpoints(s.IndexServer)
 	if len(endpoints) == 0 {
 		return 0
 	}

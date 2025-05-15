@@ -93,7 +93,7 @@ func (is *Index) LoadIndex() (int, error) {
 		var doc entity.Document
 		decoder := gob.NewDecoder(reader)
 		if err := decoder.Decode(&doc); err != nil {
-			return errors.New("")
+			return errors.New("decode data failed:" + err.Error())
 		}
 		_, err := is.AddDoc(doc)
 		if err != nil {

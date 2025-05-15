@@ -35,7 +35,7 @@ func (d *DocId) Unmarshal(data []byte) error {
 	seed := 0
 	for l > 0 {
 		preIndex := seed
-		wire, err := CalculateIntId(seed, l, data)
+		wire, err := CalculateIntId(&seed, l, data)
 		if err != nil {
 			return err
 		}
@@ -51,7 +51,7 @@ func (d *DocId) Unmarshal(data []byte) error {
 			if wireType != 2 {
 				return fmt.Errorf("wrong wireType = %d for field DocId", wireType)
 			}
-			stringLen, err := CalculateIntId(seed, l, data)
+			stringLen, err := CalculateIntId(&seed, l, data)
 			if err != nil {
 				return err
 			}

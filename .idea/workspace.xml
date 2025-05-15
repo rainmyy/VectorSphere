@@ -6,12 +6,17 @@
   <component name="ChangeListManager">
     <list default="true" id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/bind/bind_array.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/bind/bind_array.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/conf/default.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/conf/default.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/file/file_parser.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/file_parser.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/file/parser_yaml.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/parser_yaml.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/balancer.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/balancer.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/etcd_hub.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/etcd_hub.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/entity/affected_count.go" beforeDir="false" afterPath="$PROJECT_DIR$/entity/affected_count.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/entity/count_request.go" beforeDir="false" afterPath="$PROJECT_DIR$/entity/count_request.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/entity/doc_id.go" beforeDir="false" afterPath="$PROJECT_DIR$/entity/doc_id.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/entity/document.go" beforeDir="false" afterPath="$PROJECT_DIR$/entity/document.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/entity/func.go" beforeDir="false" afterPath="$PROJECT_DIR$/entity/func.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/entity/search_request.go" beforeDir="false" afterPath="$PROJECT_DIR$/entity/search_request.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/entity/search_result.go" beforeDir="false" afterPath="$PROJECT_DIR$/entity/search_result.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/entity/term_query.go" beforeDir="false" afterPath="$PROJECT_DIR$/entity/term_query.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/index.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/index.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/server/sentinel.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/sentinel.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/server/service_server.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/service_server.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
