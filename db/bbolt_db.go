@@ -2,6 +2,7 @@ package db
 
 import (
 	"errors"
+	"fmt"
 	"go.etcd.io/bbolt"
 	"sync/atomic"
 	"time"
@@ -45,6 +46,69 @@ func (b *BBoltDB) Open() error {
 	return nil
 }
 
+func (b *BBoltDB) CreateTable(tableName string) (*bbolt.Bucket, error) {
+	ctx, err := b.db.Begin(true)
+	if err != nil {
+		return nil, err
+	}
+	defer func(ctx *bbolt.Tx) {
+		err := ctx.Rollback()
+		if err != nil {
+
+		}
+	}(ctx)
+	table, err := ctx.CreateBucketIfNotExists([]byte(tableName))
+	if err != nil {
+		return nil, err
+	}
+	if err := ctx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return table, nil
+}
+
+func (b *BBoltDB) DeleteTable(tableName string) error {
+	ctx, err := b.db.Begin(true)
+	if err != nil {
+		return err
+	}
+	defer func(ctx *bbolt.Tx) {
+		err := ctx.Rollback()
+		if err != nil {
+
+		}
+	}(ctx)
+	err = ctx.DeleteBucket([]byte(tableName))
+	if err != nil {
+
+	}
+	if err := ctx.Commit(); err != nil {
+		return err
+	}
+	return nil
+}
+func (b *BBoltDB) GetBucket(tableName string) (*bbolt.Bucket, error) {
+	ctx, err := b.db.Begin(true)
+	if err != nil {
+		return nil, err
+	}
+	defer func(ctx *bbolt.Tx) {
+		err := ctx.Rollback()
+		if err != nil {
+
+		}
+	}(ctx)
+	bb := ctx.Bucket([]byte(tableName))
+	if bb == nil {
+		return nil, fmt.Errorf("TableName[%v] not found", tableName)
+	}
+	if err := ctx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return bb, nil
+}
 func (b *BBoltDB) Get(k []byte) ([]byte, error) {
 	var data []byte
 	err := b.db.View(func(tx *bbolt.Tx) error {
