@@ -1,4 +1,4 @@
-package index
+package entity
 
 import (
 	"errors"
@@ -45,7 +45,7 @@ func (m *CountRequest) Unmarshal(data []byte) error {
 		switch fieldNum {
 		default:
 			iNdEx = preIndex
-			skippy, err := skipIndex(data[iNdEx:])
+			skippy, err := SkipIndex(data[iNdEx:])
 			if err != nil {
 				return err
 			}
@@ -66,7 +66,7 @@ func (m *CountRequest) Unmarshal(data []byte) error {
 }
 func (m *CountRequest) MarshalWithDeterministic(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return messageInfoDocId.Marshal(b, m, deterministic)
+		return MessageInfoDocId.Marshal(b, m, deterministic)
 	}
 
 	b = b[:cap(b)]
@@ -78,11 +78,11 @@ func (m *CountRequest) MarshalWithDeterministic(b []byte, deterministic bool) ([
 	return b[:n], nil
 }
 func (m *CountRequest) Merge(src proto.Message) {
-	messageInfoDocId.Merge(m, src)
+	MessageInfoDocId.Merge(m, src)
 }
 
 func (m *CountRequest) DiscardUnknown() {
-	messageInfoDocId.DiscardUnknown(m)
+	MessageInfoDocId.DiscardUnknown(m)
 }
 
 func (m *CountRequest) Marshal() (data []byte, err error) {

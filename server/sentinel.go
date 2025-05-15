@@ -6,6 +6,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
+	"seetaSearch/entity"
 	"seetaSearch/index"
 	"sync"
 	"sync/atomic"
@@ -50,7 +51,7 @@ func (s *Sentinel) GetGrpcConn(point EndPoint) *grpc.ClientConn {
 	return grpcConn
 }
 
-func (s *Sentinel) AddDoc(doc *index.Document) (int, error) {
+func (s *Sentinel) AddDoc(doc *entity.Document) (int, error) {
 	endPoint := s.hub.GetServiceEndpoint(IndexService)
 	if len(endPoint.address) == 0 {
 		return -1, errors.New("服务节点不存在")
@@ -67,7 +68,7 @@ func (s *Sentinel) AddDoc(doc *index.Document) (int, error) {
 	return int(affected.Count), nil
 }
 
-func (s *Sentinel) DelDoc(docId *index.DocId) int {
+func (s *Sentinel) DelDoc(docId *entity.DocId) int {
 	endpoints := s.hub.GetServiceEndpoints(IndexService)
 	if len(endpoints) == 0 {
 		return 0
@@ -83,7 +84,7 @@ func (s *Sentinel) DelDoc(docId *index.DocId) int {
 				return
 			}
 			client := index.NewIndexClient(conn)
-			affected, err := client.DeleteDoc(context.Background(), &index.DocId{Id: docId.Id})
+			affected, err := client.DeleteDoc(context.Background(), &entity.DocId{Id: docId.Id})
 			if err != nil {
 				return
 			}
@@ -96,14 +97,14 @@ func (s *Sentinel) DelDoc(docId *index.DocId) int {
 	return int(atomic.LoadInt32(&n))
 }
 
-func (s *Sentinel) Search(query *index.TermQuery, onFlag, offFlag uint64, orFlags []uint64) []*index.Document {
+func (s *Sentinel) Search(query *entity.TermQuery, onFlag, offFlag uint64, orFlags []uint64) []*entity.Document {
 	endpoints := s.hub.GetServiceEndpoints(IndexService)
 	if len(endpoints) == 0 {
 		return nil
 	}
 
-	docs := make([]*index.Document, 0, 1000)
-	resultChan := make(chan *index.Document, 1000)
+	docs := make([]*entity.Document, 0, 1000)
+	resultChan := make(chan *entity.Document, 1000)
 
 	var wg sync.WaitGroup
 	wg.Add(len(endpoints))
@@ -116,7 +117,7 @@ func (s *Sentinel) Search(query *index.TermQuery, onFlag, offFlag uint64, orFlag
 				return
 			}
 			client := index.NewIndexClient(conn)
-			searchRequest := index.SearchRequest{Query: query, OnFlag: onFlag, OffFlag: offFlag, OrFlags: orFlags}
+			searchRequest := entity.SearchRequest{Query: query, OnFlag: onFlag, OffFlag: offFlag, OrFlags: orFlags}
 			searchResult, err := client.Search(context.Background(), &searchRequest)
 			if err != nil {
 				return
@@ -163,7 +164,7 @@ func (s *Sentinel) Count() int {
 				return
 			}
 			client := index.NewIndexClient(conn)
-			countResult, err := client.Count(context.Background(), &index.CountRequest{})
+			countResult, err := client.Count(context.Background(), &entity.CountRequest{})
 			if err != nil {
 				return
 			}

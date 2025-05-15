@@ -6,8 +6,20 @@
   <component name="ChangeListManager">
     <list default="true" id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/bootstrap/base.go" beforeDir="false" afterPath="$PROJECT_DIR$/bootstrap/base.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/conf/default.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/conf/default.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/Index_Server.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/Index_Server.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/affected_count.go" beforeDir="false" afterPath="$PROJECT_DIR$/entity/affected_count.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/count_request.go" beforeDir="false" afterPath="$PROJECT_DIR$/entity/count_request.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/doc_id.go" beforeDir="false" afterPath="$PROJECT_DIR$/entity/doc_id.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/document.go" beforeDir="false" afterPath="$PROJECT_DIR$/entity/document.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/func.go" beforeDir="false" afterPath="$PROJECT_DIR$/entity/func.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/index.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/index.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/index_client.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/index_client.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/key_word.go" beforeDir="false" afterPath="$PROJECT_DIR$/entity/key_word.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/search_request.go" beforeDir="false" afterPath="$PROJECT_DIR$/entity/search_request.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/search_result.go" beforeDir="false" afterPath="$PROJECT_DIR$/entity/search_result.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/skip_list_index.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/skip_list_index.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/term_query.go" beforeDir="false" afterPath="$PROJECT_DIR$/entity/term_query.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/server/sentinel.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/sentinel.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/server/service_server.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/service_server.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -64,6 +76,11 @@
     "nodejs_package_manager_path": "npm"
   }
 }]]></component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="D:\code\seetaSearch\entity" />
+    </key>
+  </component>
   <component name="RunManager">
     <configuration default="true" type="GoApplicationRunConfiguration" factoryName="Go Application">
       <module name="seetaSearch" />

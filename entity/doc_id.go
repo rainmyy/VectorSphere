@@ -1,4 +1,4 @@
-package index
+package entity
 
 import (
 	"errors"
@@ -92,7 +92,7 @@ func (d *DocId) Unmarshal(data []byte) error {
 			seed = postIndex
 		} else {
 			seed = preIndex
-			skippy, err := skipIndex(data[seed:])
+			skippy, err := SkipIndex(data[seed:])
 			if err != nil {
 				return err
 			}
@@ -114,7 +114,7 @@ func (d *DocId) Unmarshal(data []byte) error {
 
 func (d *DocId) MarshalWithDeterministic(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return messageInfoDocId.Marshal(b, d, deterministic)
+		return MessageInfoDocId.Marshal(b, d, deterministic)
 	}
 	b = b[:cap(b)]
 	n, err := d.MarshalToSizedBuffer(b)
@@ -147,7 +147,7 @@ func (d *DocId) MarshalToSizedBuffer(data []byte) (int, error) {
 	if len(d.Id) > 0 {
 		i -= len(d.Id)
 		copy(data[i:], d.Id)
-		i = encodeIndex(data, i, uint64(len(d.Id)))
+		i = EncodeIndex(data, i, uint64(len(d.Id)))
 		i--
 		data[i] = 0xa
 	}
@@ -155,7 +155,7 @@ func (d *DocId) MarshalToSizedBuffer(data []byte) (int, error) {
 }
 
 func (d *DocId) Merge(src proto.Message) {
-	messageInfoDocId.Merge(d, src)
+	MessageInfoDocId.Merge(d, src)
 }
 
 func (d *DocId) Size() int {
@@ -163,7 +163,7 @@ func (d *DocId) Size() int {
 }
 
 func (d *DocId) DiscardUnknown() {
-	messageInfoDocId.DiscardUnknown(d)
+	MessageInfoDocId.DiscardUnknown(d)
 }
 
 func (d *DocId) GetDocId() string {

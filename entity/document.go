@@ -1,4 +1,4 @@
-package index
+package entity
 
 import (
 	"errors"
@@ -209,7 +209,7 @@ func (m *Document) Unmarshal(data []byte) error {
 }
 func (m *Document) MarshalWithDeterministic(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return messageInfoDocId.Marshal(b, m, deterministic)
+		return MessageInfoDocId.Marshal(b, m, deterministic)
 	}
 
 	b = b[:cap(b)]
@@ -221,11 +221,11 @@ func (m *Document) MarshalWithDeterministic(b []byte, deterministic bool) ([]byt
 	return b[:n], nil
 }
 func (m *Document) Merge(src proto.Message) {
-	messageInfoDocId.Merge(m, src)
+	MessageInfoDocId.Merge(m, src)
 }
 
 func (m *Document) DiscardUnknown() {
-	messageInfoDocId.DiscardUnknown(m)
+	MessageInfoDocId.DiscardUnknown(m)
 }
 
 func (m *Document) Size() (n int) {

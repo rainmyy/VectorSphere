@@ -1,4 +1,4 @@
-package index
+package entity
 
 import (
 	"errors"
@@ -198,7 +198,7 @@ func (m *SearchRequest) Unmarshal(data []byte) error {
 			}
 		default:
 			index = preIndex
-			skippy, err := skipIndex(data[index:])
+			skippy, err := SkipIndex(data[index:])
 			if err != nil {
 				return err
 			}
@@ -219,7 +219,7 @@ func (m *SearchRequest) Unmarshal(data []byte) error {
 }
 func (m *SearchRequest) Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return messageInfoDocId.Marshal(b, m, deterministic)
+		return MessageInfoDocId.Marshal(b, m, deterministic)
 	}
 
 	b = b[:cap(b)]
@@ -231,17 +231,17 @@ func (m *SearchRequest) Marshal(b []byte, deterministic bool) ([]byte, error) {
 	return b[:n], nil
 }
 func (m *SearchRequest) Merge(src proto.Message) {
-	messageInfoDocId.Merge(m, src)
+	MessageInfoDocId.Merge(m, src)
 }
 func (m *SearchRequest) XXX_Size() int {
 	return m.Size()
 }
 func (m *SearchRequest) DiscardUnknown() {
-	messageInfoDocId.DiscardUnknown(m)
+	MessageInfoDocId.DiscardUnknown(m)
 }
 
 func (m *SearchRequest) XXX_DiscardUnknown() {
-	messageInfoDocId.DiscardUnknown(m)
+	MessageInfoDocId.DiscardUnknown(m)
 }
 
 func (m *SearchRequest) GetQuery() *TermQuery {
@@ -333,20 +333,20 @@ func (m *SearchRequest) Size() (n int) {
 	_ = l
 	if m.Query != nil {
 		l = m.Query.Size()
-		n += 1 + l + sovIndex(uint64(l))
+		n += 1 + l + SovIndex(uint64(l))
 	}
 	if m.OnFlag != 0 {
-		n += 1 + sovIndex(m.OnFlag)
+		n += 1 + SovIndex(m.OnFlag)
 	}
 	if m.OffFlag != 0 {
-		n += 1 + sovIndex(m.OffFlag)
+		n += 1 + SovIndex(m.OffFlag)
 	}
 	if len(m.OrFlags) > 0 {
 		l = 0
 		for _, e := range m.OrFlags {
-			l += sovIndex(e)
+			l += SovIndex(e)
 		}
-		n += 1 + sovIndex(uint64(l)) + l
+		n += 1 + SovIndex(uint64(l)) + l
 	}
 	return n
 }

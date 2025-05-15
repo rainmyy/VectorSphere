@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"seetaSearch/db"
+	"seetaSearch/entity"
 	"strings"
 	"sync/atomic"
 )
@@ -15,9 +16,9 @@ type Index struct {
 	maxIntId     uint64
 }
 type IndexInterface interface {
-	AddDoc(doc Document) (int, error)
+	AddDoc(doc entity.Document) (int, error)
 	DelDoc(docId string) int
-	Search(query *TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) []*Document
+	Search(query *entity.TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) []*entity.Document
 	Count() int
 	Close() error
 }
@@ -37,7 +38,7 @@ func (is *Index) Close() error {
 	return is.db.Close()
 }
 
-func (is *Index) AddDoc(doc Document) (int, error) {
+func (is *Index) AddDoc(doc entity.Document) (int, error) {
 	docId := strings.TrimSpace(doc.Id)
 	if len(docId) == 0 {
 		return 0, errors.New("empty doc id")
@@ -70,7 +71,7 @@ func (is *Index) DelDoc(docId string) int {
 	}
 
 	reader := bytes.NewBuffer(docBytes)
-	var doc Document
+	var doc entity.Document
 	if err := gob.NewEncoder(reader); err != nil {
 		return -1
 	}
@@ -89,7 +90,7 @@ func (is *Index) LoadIndex() (int, error) {
 	reader := bytes.NewReader([]byte{})
 	n, err := is.db.TotalDb(func(k, v []byte) error {
 		reader.Reset(v)
-		var doc Document
+		var doc entity.Document
 		decoder := gob.NewDecoder(reader)
 		if err := decoder.Decode(&doc); err != nil {
 			return errors.New("")
@@ -108,7 +109,7 @@ func (is *Index) LoadIndex() (int, error) {
 	return int(n), nil
 }
 
-func (is *Index) Search(query *TermQuery, onFlag, offFlag uint64, orFlags []uint64) ([]*Document, error) {
+func (is *Index) Search(query *entity.TermQuery, onFlag, offFlag uint64, orFlags []uint64) ([]*entity.Document, error) {
 	docIds := is.reverseIndex.Search(query, onFlag, offFlag, orFlags)
 	if len(docIds) == 0 {
 		return nil, nil
@@ -121,12 +122,12 @@ func (is *Index) Search(query *TermQuery, onFlag, offFlag uint64, orFlags []uint
 	if err != nil {
 		return nil, err
 	}
-	result := make([]*Document, 0, len(docIds))
+	result := make([]*entity.Document, 0, len(docIds))
 	reader := bytes.NewReader([]byte{})
 	for _, docByte := range docBytes {
 		reader.Reset(docByte)
 		decoder := gob.NewDecoder(reader)
-		var doc Document
+		var doc entity.Document
 		err = decoder.Decode(&doc)
 		if err == nil {
 			result = append(result, &doc)

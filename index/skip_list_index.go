@@ -3,6 +3,7 @@ package index
 import (
 	farmhash "github.com/leemcloughlin/gofarmhash"
 	"runtime"
+	"seetaSearch/entity"
 	"seetaSearch/library/collect"
 	"seetaSearch/library/strategy"
 	"sync"
@@ -13,9 +14,9 @@ type SkipListValue struct {
 	BitsFeature uint64
 }
 type IReverseIndex interface {
-	Add(doc Document)
-	Delete(floatId float64, keyword *Keyword)
-	Search(query *TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) []string
+	Add(doc entity.Document)
+	Delete(floatId float64, keyword *entity.Keyword)
+	Search(query *entity.TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) []string
 }
 
 var _ IReverseIndex = (*SkipListInvertedIndex)(nil)
@@ -32,7 +33,7 @@ func NewSkipListInvertedIndex(docNumEstimate int) *SkipListInvertedIndex {
 	}
 }
 
-func (index *SkipListInvertedIndex) Add(doc Document) {
+func (index *SkipListInvertedIndex) Add(doc entity.Document) {
 	for _, keyword := range doc.KeyWords {
 		key := keyword.ToString()
 		lock := index.getLock(key)
@@ -58,7 +59,7 @@ func (index *SkipListInvertedIndex) getLock(key string) *sync.RWMutex {
 	return &index.locks[n%len(index.locks)]
 }
 
-func (index *SkipListInvertedIndex) Delete(floatId float64, keyword *Keyword) {
+func (index *SkipListInvertedIndex) Delete(floatId float64, keyword *entity.Keyword) {
 	key := keyword.ToString()
 	lock := index.getLock(key)
 	lock.Lock()
@@ -70,7 +71,7 @@ func (index *SkipListInvertedIndex) Delete(floatId float64, keyword *Keyword) {
 	}
 }
 
-func (index *SkipListInvertedIndex) Search(query *TermQuery, onFlag uint64, offFlag uint64, orFlag []uint64) []string {
+func (index *SkipListInvertedIndex) Search(query *entity.TermQuery, onFlag uint64, offFlag uint64, orFlag []uint64) []string {
 	result := index.searchQuery(query, onFlag, offFlag, orFlag)
 	if result == nil {
 		return nil
@@ -86,7 +87,7 @@ func (index *SkipListInvertedIndex) Search(query *TermQuery, onFlag uint64, offF
 	return arr
 }
 
-func (index *SkipListInvertedIndex) searchQuery(query *TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) *strategy.SkipList {
+func (index *SkipListInvertedIndex) searchQuery(query *entity.TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) *strategy.SkipList {
 	switch {
 	case query.Keyword != nil:
 		keyWord := query.Keyword.ToString()

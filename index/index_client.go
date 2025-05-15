@@ -3,6 +3,7 @@ package index
 import (
 	"context"
 	"google.golang.org/grpc"
+	"seetaSearch/entity"
 )
 
 var _ context.Context
@@ -11,10 +12,10 @@ var _ grpc.ClientConn
 const _ = grpc.SupportPackageIsVersion4
 
 type ClientInterface interface {
-	DelDoc(ctx context.Context, in *DocId, opts ...grpc.CallOption) (*Count, error)
-	AddDoc(ctx context.Context, in *Document, opts ...grpc.CallOption) (*Count, error)
-	Search(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchResult, error)
-	Count(ctx context.Context, in *CountRequest, opts ...grpc.CallOption) (*Count, error)
+	DelDoc(ctx context.Context, in *entity.DocId, opts ...grpc.CallOption) (*entity.Count, error)
+	AddDoc(ctx context.Context, in *entity.Document, opts ...grpc.CallOption) (*entity.Count, error)
+	Search(ctx context.Context, in *entity.SearchRequest, opts ...grpc.CallOption) (*entity.SearchResult, error)
+	Count(ctx context.Context, in *entity.CountRequest, opts ...grpc.CallOption) (*entity.Count, error)
 }
 
 type IndexClient struct {
@@ -25,8 +26,8 @@ func NewIndexClient(cc *grpc.ClientConn) *IndexClient {
 	return &IndexClient{cc}
 }
 
-func (c *IndexClient) DeleteDoc(ctx context.Context, in *DocId, opts ...grpc.CallOption) (*Count, error) {
-	out := new(Count)
+func (c *IndexClient) DeleteDoc(ctx context.Context, in *entity.DocId, opts ...grpc.CallOption) (*entity.Count, error) {
+	out := new(entity.Count)
 	err := c.cc.Invoke(ctx, "/IndexService/DeleteDoc", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -34,8 +35,8 @@ func (c *IndexClient) DeleteDoc(ctx context.Context, in *DocId, opts ...grpc.Cal
 	return out, nil
 }
 
-func (c *IndexClient) AddDoc(ctx context.Context, in *Document, opts ...grpc.CallOption) (*Count, error) {
-	out := new(Count)
+func (c *IndexClient) AddDoc(ctx context.Context, in *entity.Document, opts ...grpc.CallOption) (*entity.Count, error) {
+	out := new(entity.Count)
 	err := c.cc.Invoke(ctx, "/IndexService/AddDoc", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -43,8 +44,8 @@ func (c *IndexClient) AddDoc(ctx context.Context, in *Document, opts ...grpc.Cal
 	return out, nil
 }
 
-func (c *IndexClient) Search(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchResult, error) {
-	out := new(SearchResult)
+func (c *IndexClient) Search(ctx context.Context, in *entity.SearchRequest, opts ...grpc.CallOption) (*entity.SearchResult, error) {
+	out := new(entity.SearchResult)
 	err := c.cc.Invoke(ctx, "/IndexService/Search", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -52,8 +53,8 @@ func (c *IndexClient) Search(ctx context.Context, in *SearchRequest, opts ...grp
 	return out, nil
 }
 
-func (c *IndexClient) Count(ctx context.Context, in *CountRequest, opts ...grpc.CallOption) (*Count, error) {
-	out := new(Count)
+func (c *IndexClient) Count(ctx context.Context, in *entity.CountRequest, opts ...grpc.CallOption) (*entity.Count, error) {
+	out := new(entity.Count)
 	err := c.cc.Invoke(ctx, "/IndexService/Count", in, out, opts...)
 	if err != nil {
 		return nil, err

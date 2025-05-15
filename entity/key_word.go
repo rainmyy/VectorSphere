@@ -1,6 +1,8 @@
-package index
+package entity
 
-import "github.com/gogo/protobuf/proto"
+import (
+	"github.com/gogo/protobuf/proto"
+)
 
 type Keyword struct {
 	Field string `protobuf:"bytes,1,opt,name=Field,proto3" json:"Field,omitempty"`
@@ -22,7 +24,7 @@ func (k *Keyword) Unmarshal(b []byte) error {
 }
 func (k *Keyword) MarshalWithDeterministic(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return messageInfoDocId.Marshal(b, k, deterministic)
+		return MessageInfoDocId.Marshal(b, k, deterministic)
 	}
 
 	b = b[:cap(b)]
@@ -34,11 +36,11 @@ func (k *Keyword) MarshalWithDeterministic(b []byte, deterministic bool) ([]byte
 	return b[:n], nil
 }
 func (k *Keyword) Merge(src proto.Message) {
-	messageInfoDocId.Merge(k, src)
+	MessageInfoDocId.Merge(k, src)
 }
 
 func (k *Keyword) DiscardUnknown() {
-	messageInfoDocId.DiscardUnknown(k)
+	MessageInfoDocId.DiscardUnknown(k)
 }
 func (k *Keyword) GetField() string {
 	if k != nil {

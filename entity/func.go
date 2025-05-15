@@ -1,4 +1,4 @@
-package index
+package entity
 
 import (
 	"errors"
@@ -9,10 +9,10 @@ import (
 	"strconv"
 )
 
-var messageInfoDocId proto.InternalMessageInfo
+var MessageInfoDocId proto.InternalMessageInfo
 
-func encodeIndex(data []byte, offset int, v uint64) int {
-	offset -= sovIndex(v)
+func EncodeIndex(data []byte, offset int, v uint64) int {
+	offset -= SovIndex(v)
 	base := offset
 	for v >= 1<<7 {
 		data[offset] = uint8(v&0x7f | 0x80)
@@ -23,11 +23,11 @@ func encodeIndex(data []byte, offset int, v uint64) int {
 	return base
 }
 
-func sovIndex(x uint64) (n int) {
+func SovIndex(x uint64) (n int) {
 	return (mathbits.Len64(x|1) + 6) / 7
 }
 
-func skipIndex(data []byte) (n int, err error) {
+func SkipIndex(data []byte) (n int, err error) {
 	l := len(data)
 	seed := 0
 	depth := 0
@@ -123,7 +123,7 @@ func sovDoc(x uint64) (n int) {
 }
 
 func encodeVarIntIndex(data []byte, offset int, v uint64) int {
-	offset -= sovIndex(v)
+	offset -= SovIndex(v)
 	base := offset
 	for v >= 1<<7 {
 		data[offset] = uint8(v&0x7f | 0x80)

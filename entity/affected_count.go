@@ -1,4 +1,4 @@
-package index
+package entity
 
 import (
 	"errors"
@@ -73,7 +73,7 @@ func (a *Count) Unmarshal(data []byte) error {
 			}
 		default:
 			seed = preIndex
-			skippy, err := skipIndex(data[seed:])
+			skippy, err := SkipIndex(data[seed:])
 			if err != nil {
 				return err
 			}
@@ -95,7 +95,7 @@ func (a *Count) Unmarshal(data []byte) error {
 
 func (a *Count) MarshalWithDeterministic(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return messageInfoDocId.Marshal(b, a, deterministic)
+		return MessageInfoDocId.Marshal(b, a, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := a.MarshalToSizedBuffer(b)
@@ -127,7 +127,7 @@ func (a *Count) MarshalToSizedBuffer(data []byte) (int, error) {
 	var l int
 	_ = l
 	if a.Count != 0 {
-		i = encodeIndex(data, i, uint64(a.Count))
+		i = EncodeIndex(data, i, uint64(a.Count))
 		i--
 		data[i] = 0x8
 	}
@@ -141,7 +141,7 @@ func (a *Count) Size() (n int) {
 	var l int
 	_ = l
 	if a.Count != 0 {
-		n += 1 + sovIndex(uint64(a.Count))
+		n += 1 + SovIndex(uint64(a.Count))
 	}
 	return n
 }

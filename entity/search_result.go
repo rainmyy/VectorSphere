@@ -1,4 +1,4 @@
-package index
+package entity
 
 import (
 	"errors"
@@ -19,7 +19,7 @@ func (m *SearchResult) XXX_Unmarshal(b []byte) error {
 }
 func (m *SearchResult) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return messageInfoDocId.Marshal(b, m, deterministic)
+		return MessageInfoDocId.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -30,13 +30,13 @@ func (m *SearchResult) XXX_Marshal(b []byte, deterministic bool) ([]byte, error)
 	}
 }
 func (m *SearchResult) XXX_Merge(src proto.Message) {
-	messageInfoDocId.Merge(m, src)
+	MessageInfoDocId.Merge(m, src)
 }
 func (m *SearchResult) XXX_Size() int {
 	return m.Size()
 }
 func (m *SearchResult) XXX_DiscardUnknown() {
-	messageInfoDocId.DiscardUnknown(m)
+	MessageInfoDocId.DiscardUnknown(m)
 }
 
 func (m *SearchResult) GetResults() []*Document {
@@ -92,7 +92,7 @@ func (m *SearchResult) Size() (n int) {
 	if len(m.Results) > 0 {
 		for _, e := range m.Results {
 			l = e.Size()
-			n += 1 + l + sovIndex(uint64(l))
+			n += 1 + l + SovIndex(uint64(l))
 		}
 	}
 	return n
@@ -163,7 +163,7 @@ func (m *SearchResult) Unmarshal(data []byte) error {
 			index = postIndex
 		default:
 			index = preIndex
-			skippy, err := skipIndex(data[index:])
+			skippy, err := SkipIndex(data[index:])
 			if err != nil {
 				return err
 			}
