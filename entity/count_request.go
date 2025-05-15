@@ -16,23 +16,12 @@ func (*CountRequest) ProtoMessage()    {}
 
 func (m *CountRequest) Unmarshal(data []byte) error {
 	l := len(data)
-	iNdEx := 0
-	for iNdEx < l {
-		preIndex := iNdEx
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return errors.New("integer overflow")
-			}
-			if iNdEx >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := data[iNdEx]
-			iNdEx++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
+	index := 0
+	for index < l {
+		preIndex := index
+		wire, err := CalculateIntId(index, l, data)
+		if err != nil {
+			return err
 		}
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
@@ -42,24 +31,24 @@ func (m *CountRequest) Unmarshal(data []byte) error {
 		if fieldNum <= 0 {
 			return fmt.Errorf("illegal tag %d (wire type %d)", fieldNum, wire)
 		}
-		switch fieldNum {
-		default:
-			iNdEx = preIndex
-			skippy, err := SkipIndex(data[iNdEx:])
-			if err != nil {
-				return err
-			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
-				return errors.New("negative length found during unmarshalling")
-			}
-			if (iNdEx + skippy) > l {
-				return io.ErrUnexpectedEOF
-			}
-			iNdEx += skippy
+
+		index = preIndex
+		skippy, err := SkipIndex(data[index:])
+		if err != nil {
+			return err
 		}
+		if (skippy < 0) || (index+skippy) < 0 {
+			return errors.New("negative length found during unmarshalling")
+		}
+
+		if (index + skippy) > l {
+			return io.ErrUnexpectedEOF
+		}
+		index += skippy
+
 	}
 
-	if iNdEx > l {
+	if index > l {
 		return io.ErrUnexpectedEOF
 	}
 	return nil
@@ -102,16 +91,11 @@ func (m *CountRequest) MarshalTo(data []byte) (int, error) {
 
 func (m *CountRequest) MarshalToSizedBuffer(data []byte) (int, error) {
 	i := len(data)
-	_ = i
-	var l int
-	_ = l
 	return len(data) - i, nil
 }
 func (m *CountRequest) Size() (n int) {
 	if m == nil {
 		return 0
 	}
-	var l int
-	_ = l
 	return n
 }

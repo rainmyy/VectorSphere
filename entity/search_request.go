@@ -22,20 +22,9 @@ func (m *SearchRequest) Unmarshal(data []byte) error {
 	index := 0
 	for index < l {
 		preIndex := index
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return errors.New("integer overflow")
-			}
-			if index >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := data[index]
-			index++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
+		wire, err := CalculateIntId(index, l, data)
+		if err != nil {
+			return err
 		}
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
@@ -50,25 +39,14 @@ func (m *SearchRequest) Unmarshal(data []byte) error {
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Query", wireType)
 			}
-			var msgLen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return errors.New("integer overflow")
-				}
-				if index >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := data[index]
-				index++
-				msgLen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
+			msgLen, err := CalculateIntId(index, l, data)
+			if err != nil {
+				return err
 			}
 			if msgLen < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
-			postIndex := index + msgLen
+			postIndex := index + int(msgLen)
 			if postIndex < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
@@ -83,81 +61,31 @@ func (m *SearchRequest) Unmarshal(data []byte) error {
 			}
 			index = postIndex
 		case 2:
+		case 3:
 			if wireType != 0 {
 				return fmt.Errorf("proto: wrong wireType = %d for field OnFlag", wireType)
 			}
-			m.OnFlag = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return errors.New("integer overflow")
-				}
-				if index >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := data[index]
-				index++
-				m.OnFlag |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
+			flag, err := CalculateIntId(index, l, data)
+			if err != nil {
+				return err
 			}
-		case 3:
-			if wireType != 0 {
-				return fmt.Errorf("proto: wrong wireType = %d for field OffFlag", wireType)
-			}
-			m.OffFlag = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return errors.New("integer overflow")
-				}
-				if index >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := data[index]
-				index++
-				m.OffFlag |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
+			m.OnFlag = flag
 		case 4:
 			if wireType == 0 {
-				var v uint64
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return errors.New("integer overflow")
-					}
-					if index >= l {
-						return io.ErrUnexpectedEOF
-					}
-					b := data[index]
-					index++
-					v |= uint64(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
+				v, err := CalculateIntId(index, l, data)
+				if err != nil {
+					return err
 				}
 				m.OrFlags = append(m.OrFlags, v)
 			} else if wireType == 2 {
-				var packedLen int
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return errors.New("integer overflow")
-					}
-					if index >= l {
-						return io.ErrUnexpectedEOF
-					}
-					b := data[index]
-					index++
-					packedLen |= int(b&0x7F) << shift
-					if b < 0x80 {
-						break
-					}
+				packedLen, err := CalculateIntId(index, l, data)
+				if err != nil {
+					return err
 				}
 				if packedLen < 0 {
 					return errors.New("negative length found during unmarshalling")
 				}
-				postIndex := index + packedLen
+				postIndex := index + int(packedLen)
 				if postIndex < 0 {
 					return errors.New("negative length found during unmarshalling")
 				}
@@ -176,20 +104,9 @@ func (m *SearchRequest) Unmarshal(data []byte) error {
 					m.OrFlags = make([]uint64, 0, elementCount)
 				}
 				for index < postIndex {
-					var v uint64
-					for shift := uint(0); ; shift += 7 {
-						if shift >= 64 {
-							return errors.New("integer overflow")
-						}
-						if index >= l {
-							return io.ErrUnexpectedEOF
-						}
-						b := data[index]
-						index++
-						v |= uint64(b&0x7F) << shift
-						if b < 0x80 {
-							break
-						}
+					v, err := CalculateIntId(index, l, data)
+					if err != nil {
+						return err
 					}
 					m.OrFlags = append(m.OrFlags, v)
 				}
@@ -233,14 +150,8 @@ func (m *SearchRequest) Marshal(b []byte, deterministic bool) ([]byte, error) {
 func (m *SearchRequest) Merge(src proto.Message) {
 	MessageInfoDocId.Merge(m, src)
 }
-func (m *SearchRequest) XXX_Size() int {
-	return m.Size()
-}
-func (m *SearchRequest) DiscardUnknown() {
-	MessageInfoDocId.DiscardUnknown(m)
-}
 
-func (m *SearchRequest) XXX_DiscardUnknown() {
+func (m *SearchRequest) DiscardUnknown() {
 	MessageInfoDocId.DiscardUnknown(m)
 }
 

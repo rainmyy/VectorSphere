@@ -18,25 +18,100 @@ type Document struct {
 func (m *Document) Reset()         { *m = Document{} }
 func (m *Document) String() string { return proto.CompactTextString(m) }
 func (*Document) ProtoMessage()    {}
+func (m *Document) calculateFiledNum5(wireType, index, length int, data []byte) (int, error) {
+	if wireType != 2 {
+		return -1, fmt.Errorf("wrong wireType = %d for field Bytes", wireType)
+	}
+	byteLen, err := CalculateIntId(index, length, data)
+	if err != nil {
+		return -1, err
+	}
+	if byteLen < 0 {
+		return -1, errors.New("negative length found during unmarshalling")
+	}
+	postIndex := index + int(byteLen)
+	if postIndex < 0 {
+		return -1, errors.New("negative length found during unmarshalling")
+	}
+	if postIndex > length {
+		return -1, io.ErrUnexpectedEOF
+	}
+	m.Bytes = append(m.Bytes[:0], data[index:postIndex]...)
+	if m.Bytes == nil {
+		m.Bytes = []byte{}
+	}
+	return postIndex, nil
+}
+func (m *Document) calculateFiledNum4(wireType, index, length int, data []byte) (int, error) {
+	if wireType != 2 {
+		return -1, fmt.Errorf("wrong wireType = %d for field Keywords", wireType)
+	}
+	msglen, err := CalculateIntId(index, length, data)
+	if err != nil {
+		return -1, err
+	}
+	if msglen < 0 {
+		return -1, errors.New("negative length found during unmarshalling")
+	}
+	postIndex := index + int(msglen)
+	if postIndex < 0 {
+		return -1, errors.New("negative length found during unmarshalling")
+	}
+	if postIndex > length {
+		return -1, io.ErrUnexpectedEOF
+	}
+	m.KeyWords = append(m.KeyWords, &Keyword{})
+	if err := m.KeyWords[len(m.KeyWords)-1].Unmarshal(data[index:postIndex]); err != nil {
+		return -1, err
+	}
+
+	return postIndex, nil
+}
+func (m *Document) calculateFiledNum1(wireType, index, length int, data []byte) (int, error) {
+	if wireType != 2 {
+		return -1, fmt.Errorf("wrong wireType = %d for field Id", wireType)
+	}
+	var stringLen uint64
+	for shift := uint(0); ; shift += 7 {
+		if shift >= 64 {
+			return -1, errors.New("integer overflow")
+		}
+		if index >= length {
+			return -1, io.ErrUnexpectedEOF
+		}
+		b := data[index]
+		index++
+		stringLen |= uint64(b&0x7F) << shift
+		if b < 0x80 {
+			break
+		}
+	}
+	stringLen, err := CalculateIntId(index, length, data)
+	if err != nil {
+		return -1, err
+	}
+	intStringLen := int(stringLen)
+	if intStringLen < 0 {
+		return -1, errors.New("negative length found during unmarshalling")
+	}
+	postIndex := index + intStringLen
+	if postIndex < 0 {
+		return -1, errors.New("negative length found during unmarshalling")
+	}
+	if postIndex > length {
+		return -1, io.ErrUnexpectedEOF
+	}
+	return postIndex, nil
+}
+
 func (m *Document) Unmarshal(data []byte) error {
 	l := len(data)
 	index := 0
 	for index < l {
 		preIndex := index
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return errors.New("integer overflow")
-			}
-			if index >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := data[index]
-			index++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
+		wire, err := CalculateIntId(index, l, data)
+		if err != nil {
+			return err
 		}
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
@@ -48,34 +123,9 @@ func (m *Document) Unmarshal(data []byte) error {
 		}
 		switch fieldNum {
 		case 1:
-			if wireType != 2 {
-				return fmt.Errorf("wrong wireType = %d for field Id", wireType)
-			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return errors.New("integer overflow")
-				}
-				if index >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := data[index]
-				index++
-				stringLen |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return errors.New("negative length found during unmarshalling")
-			}
-			postIndex := index + intStringLen
-			if postIndex < 0 {
-				return errors.New("negative length found during unmarshalling")
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
+			postIndex, err := m.calculateFiledNum1(wireType, index, l, data)
+			if err != nil {
+				return err
 			}
 			m.Id = string(data[index:postIndex])
 			index = postIndex
@@ -83,107 +133,30 @@ func (m *Document) Unmarshal(data []byte) error {
 			if wireType != 0 {
 				return fmt.Errorf("wrong wireType = %d for field IntId", wireType)
 			}
-			var intId uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return errors.New("integer overflow")
-				}
-				if index >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := data[index]
-				index++
-				intId |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
+			intId, err := CalculateIntId(index, l, data)
+			if err != nil {
+				return err
 			}
 			m.FloatId = float64(intId)
 		case 3:
 			if wireType != 0 {
 				return fmt.Errorf("wrong wireType = %d for field BitsFeature", wireType)
 			}
-			m.BitsFeature = 0
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return errors.New("integer overflow")
-				}
-				if index >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := data[index]
-				index++
-				m.BitsFeature |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
+			bitsFeature, err := CalculateIntId(index, l, data)
+			if err != nil {
+				return err
 			}
+			m.BitsFeature = bitsFeature
 		case 4:
-			if wireType != 2 {
-				return fmt.Errorf("wrong wireType = %d for field Keywords", wireType)
-			}
-			var msglen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return errors.New("integer overflow")
-				}
-				if index >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := data[index]
-				index++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if msglen < 0 {
-				return errors.New("negative length found during unmarshalling")
-			}
-			postIndex := index + msglen
-			if postIndex < 0 {
-				return errors.New("negative length found during unmarshalling")
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.KeyWords = append(m.KeyWords, &Keyword{})
-			if err := m.KeyWords[len(m.KeyWords)-1].Unmarshal(data[index:postIndex]); err != nil {
+			postIndex, err := m.calculateFiledNum4(wireType, index, l, data)
+			if err != nil {
 				return err
 			}
 			index = postIndex
 		case 5:
-			if wireType != 2 {
-				return fmt.Errorf("wrong wireType = %d for field Bytes", wireType)
-			}
-			var byteLen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return errors.New("integer overflow")
-				}
-				if index >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := data[index]
-				index++
-				byteLen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			if byteLen < 0 {
-				return errors.New("negative length found during unmarshalling")
-			}
-			postIndex := index + byteLen
-			if postIndex < 0 {
-				return errors.New("negative length found during unmarshalling")
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Bytes = append(m.Bytes[:0], data[index:postIndex]...)
-			if m.Bytes == nil {
-				m.Bytes = []byte{}
+			postIndex, err := m.calculateFiledNum5(wireType, index, l, data)
+			if err != nil {
+				return err
 			}
 			index = postIndex
 		default:
@@ -232,9 +205,7 @@ func (m *Document) Size() (n int) {
 	if m == nil {
 		return 0
 	}
-	var l int
-	_ = l
-	l = len(m.Id)
+	l := len(m.Id)
 	if l > 0 {
 		n += 1 + l + sovDoc(uint64(l))
 	}
@@ -274,9 +245,6 @@ func (m *Document) MarshalTo(data []byte) (int, error) {
 
 func (m *Document) MarshalToSizedBuffer(data []byte) (int, error) {
 	i := len(data)
-	_ = i
-	var l int
-	_ = l
 	if len(m.Bytes) > 0 {
 		i -= len(m.Bytes)
 		copy(data[i:], m.Bytes)

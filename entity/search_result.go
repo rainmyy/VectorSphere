@@ -20,22 +20,21 @@ func (m *SearchResult) XXX_Unmarshal(b []byte) error {
 func (m *SearchResult) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
 		return MessageInfoDocId.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
 	}
+
+	b = b[:cap(b)]
+	n, err := m.MarshalToSizedBuffer(b)
+	if err != nil {
+		return nil, err
+	}
+
+	return b[:n], nil
 }
-func (m *SearchResult) XXX_Merge(src proto.Message) {
+func (m *SearchResult) Merge(src proto.Message) {
 	MessageInfoDocId.Merge(m, src)
 }
-func (m *SearchResult) XXX_Size() int {
-	return m.Size()
-}
-func (m *SearchResult) XXX_DiscardUnknown() {
+
+func (m *SearchResult) DiscardUnknown() {
 	MessageInfoDocId.DiscardUnknown(m)
 }
 
@@ -46,14 +45,14 @@ func (m *SearchResult) GetResults() []*Document {
 	return nil
 }
 
-func (m *SearchResult) Marshal() (dAtA []byte, err error) {
+func (m *SearchResult) Marshal() (data []byte, err error) {
 	size := m.Size()
-	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	data = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(data[:size])
 	if err != nil {
 		return nil, err
 	}
-	return dAtA[:n], nil
+	return data[:n], nil
 }
 
 func (m *SearchResult) MarshalTo(dAtA []byte) (int, error) {
@@ -63,13 +62,10 @@ func (m *SearchResult) MarshalTo(dAtA []byte) (int, error) {
 
 func (m *SearchResult) MarshalToSizedBuffer(data []byte) (int, error) {
 	i := len(data)
-	_ = i
-	var l int
-	_ = l
 	if len(m.Results) > 0 {
-		for iNdEx := len(m.Results) - 1; iNdEx >= 0; iNdEx-- {
+		for index := len(m.Results) - 1; index >= 0; index-- {
 			{
-				size, err := m.Results[iNdEx].MarshalToSizedBuffer(data[:i])
+				size, err := m.Results[index].MarshalToSizedBuffer(data[:i])
 				if err != nil {
 					return 0, err
 				}
@@ -88,7 +84,6 @@ func (m *SearchResult) Size() (n int) {
 		return 0
 	}
 	var l int
-	_ = l
 	if len(m.Results) > 0 {
 		for _, e := range m.Results {
 			l = e.Size()
@@ -103,20 +98,9 @@ func (m *SearchResult) Unmarshal(data []byte) error {
 	index := 0
 	for index < l {
 		preIndex := index
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return errors.New("integer overflow")
-			}
-			if index >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := data[index]
-			index++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
+		wire, err := CalculateIntId(index, l, data)
+		if err != nil {
+			return err
 		}
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
@@ -131,25 +115,14 @@ func (m *SearchResult) Unmarshal(data []byte) error {
 			if wireType != 2 {
 				return fmt.Errorf("wrong wireType = %d for field Results", wireType)
 			}
-			var msglen int
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return errors.New("integer overflow")
-				}
-				if index >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := data[index]
-				index++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
+			msgLen, err := CalculateIntId(index, l, data)
+			if err != nil {
+				return err
 			}
-			if msglen < 0 {
+			if msgLen < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
-			postIndex := index + msglen
+			postIndex := index + int(msgLen)
 			if postIndex < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}

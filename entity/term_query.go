@@ -30,9 +30,6 @@ func (m *TermQuery) MarshalTo(data []byte) (int, error) {
 
 func (m *TermQuery) MarshalToSizedBuffer(data []byte) (int, error) {
 	i := len(data)
-	_ = i
-	var l int
-	_ = l
 	if len(m.Should) > 0 {
 		for index := len(m.Should) - 1; index >= 0; index-- {
 			{
@@ -93,7 +90,6 @@ func (m *TermQuery) Size() (n int) {
 		return 0
 	}
 	var l int
-	_ = l
 	if m.Keyword != nil {
 		l = m.Keyword.Size()
 		n += 1 + l + sovTermQuery(uint64(l))
@@ -124,20 +120,9 @@ func (m *TermQuery) Unmarshal(data []byte) error {
 	index := 0
 	for index < l {
 		preIndex := index
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return errors.New("integer overflow")
-			}
-			if index >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := data[index]
-			index++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
+		wire, err := CalculateIntId(index, l, data)
+		if err != nil {
+			return err
 		}
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
@@ -147,31 +132,19 @@ func (m *TermQuery) Unmarshal(data []byte) error {
 		if fieldNum <= 0 {
 			return fmt.Errorf("illegal tag %d (wire type %d)", fieldNum, wire)
 		}
-		var msglen int
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
 				return fmt.Errorf("wrong wireType = %d for field Keyword", wireType)
 			}
-
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return errors.New("integer overflow")
-				}
-				if index >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := data[index]
-				index++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
+			msgLen, err := CalculateIntId(index, l, data)
+			if err != nil {
+				return err
 			}
-			if msglen < 0 {
+			if msgLen < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
-			postIndex := index + msglen
+			postIndex := index + int(msgLen)
 			if postIndex < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
@@ -189,24 +162,14 @@ func (m *TermQuery) Unmarshal(data []byte) error {
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Must", wireType)
 			}
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return errors.New("integer overflow")
-				}
-				if index >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := data[index]
-				index++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
+			msgLen, err := CalculateIntId(index, l, data)
+			if err != nil {
+				return err
 			}
-			if msglen < 0 {
+			if msgLen < 0 {
 				return errors.New("ErrInvalidLengthTermQuery")
 			}
-			postIndex := index + msglen
+			postIndex := index + int(msgLen)
 			if postIndex < 0 {
 				return errors.New("ErrInvalidLengthTermQuery")
 			}
@@ -222,24 +185,14 @@ func (m *TermQuery) Unmarshal(data []byte) error {
 			if wireType != 2 {
 				return fmt.Errorf("wrong wireType = %d for field Should", wireType)
 			}
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return errors.New("integer overflow")
-				}
-				if index >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := data[index]
-				index++
-				msglen |= int(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
+			msgLen, err := CalculateIntId(index, l, data)
+			if err != nil {
+				return err
 			}
-			if msglen < 0 {
+			if msgLen < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
-			postIndex := index + msglen
+			postIndex := index + int(msgLen)
 			if postIndex < 0 {
 				return errors.New("negative length found during unmarshalling")
 			}

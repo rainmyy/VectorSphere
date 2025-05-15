@@ -72,9 +72,6 @@ func (k *Keyword) MarshalTo(data []byte) (int, error) {
 
 func (k *Keyword) MarshalToSizedBuffer(data []byte) (int, error) {
 	i := len(data)
-	_ = i
-	var l int
-	_ = l
 	if len(k.Word) > 0 {
 		i -= len(k.Word)
 		copy(data[i:], k.Word)
@@ -96,9 +93,7 @@ func (k *Keyword) Size() (n int) {
 	if k == nil {
 		return 0
 	}
-	var l int
-	_ = l
-	l = len(k.Field)
+	l := len(k.Field)
 	if l > 0 {
 		n += 1 + l + sovDoc(uint64(l))
 	}

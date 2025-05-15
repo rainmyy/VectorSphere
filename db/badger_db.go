@@ -70,8 +70,6 @@ func (b *BadgerDB) Open() error {
 		logLevel = badger.WARNING
 	case ERROR:
 		logLevel = badger.ERROR
-	default:
-		logLevel = badger.ERROR
 	}
 
 	option := badger.DefaultOptions(DataDir).WithNumVersionsToKeep(b.version).WithLoggingLevel(logLevel)

@@ -11,6 +11,25 @@ import (
 
 var MessageInfoDocId proto.InternalMessageInfo
 
+func CalculateIntId(index, length int, data []byte) (uint64, error) {
+	var intId uint64
+	for shift := uint(0); ; shift += 7 {
+		if shift >= 64 {
+			return -1, errors.New("integer overflow")
+		}
+		if index >= length {
+			return -1, io.ErrUnexpectedEOF
+		}
+		b := data[index]
+		index++
+		intId |= uint64(b&0x7F) << shift
+		if b < 0x80 {
+			break
+		}
+	}
+	return intId, nil
+}
+
 func EncodeIndex(data []byte, offset int, v uint64) int {
 	offset -= SovIndex(v)
 	base := offset

@@ -35,20 +35,9 @@ func (d *DocId) Unmarshal(data []byte) error {
 	seed := 0
 	for l > 0 {
 		preIndex := seed
-		var wire uint64
-		for shift := uint(0); ; shift += 7 {
-			if shift >= 64 {
-				return errors.New("integer overflow")
-			}
-			if seed >= l {
-				return io.ErrUnexpectedEOF
-			}
-			b := data[seed]
-			seed++
-			wire |= uint64(b&0x7F) << shift
-			if b < 0x80 {
-				break
-			}
+		wire, err := CalculateIntId(seed, l, data)
+		if err != nil {
+			return err
 		}
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
@@ -62,20 +51,9 @@ func (d *DocId) Unmarshal(data []byte) error {
 			if wireType != 2 {
 				return fmt.Errorf("wrong wireType = %d for field DocId", wireType)
 			}
-			var stringLen uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return errors.New("interface overflow")
-				}
-				if seed >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := data[seed]
-				seed++
-				stringLen |= uint64(b&0x7F) << shift
-				if b < 0x80 {
-					break
-				}
+			stringLen, err := CalculateIntId(seed, l, data)
+			if err != nil {
+				return err
 			}
 			intStringLen := int(stringLen)
 			if intStringLen < 0 {
@@ -141,9 +119,6 @@ func (d *DocId) MarshalTo(dAtA []byte) (int, error) {
 
 func (d *DocId) MarshalToSizedBuffer(data []byte) (int, error) {
 	i := len(data)
-	_ = i
-	var l int
-	_ = l
 	if len(d.Id) > 0 {
 		i -= len(d.Id)
 		copy(data[i:], d.Id)
