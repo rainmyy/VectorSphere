@@ -141,7 +141,7 @@ func (m *TermQuery) Unmarshal(data []byte) error {
 			if err != nil {
 				return err
 			}
-			if msgLen < 0 {
+			if msgLen <= 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
 			postIndex := index + int(msgLen)
@@ -166,7 +166,7 @@ func (m *TermQuery) Unmarshal(data []byte) error {
 			if err != nil {
 				return err
 			}
-			if msgLen < 0 {
+			if msgLen <= 0 {
 				return errors.New("ErrInvalidLengthTermQuery")
 			}
 			postIndex := index + int(msgLen)
@@ -189,7 +189,7 @@ func (m *TermQuery) Unmarshal(data []byte) error {
 			if err != nil {
 				return err
 			}
-			if msgLen < 0 {
+			if msgLen <= 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
 			postIndex := index + int(msgLen)

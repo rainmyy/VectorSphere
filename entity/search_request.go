@@ -3,8 +3,9 @@ package entity
 import (
 	"errors"
 	"fmt"
-	"github.com/gogo/protobuf/proto"
 	"io"
+
+	"github.com/gogo/protobuf/proto"
 )
 
 type SearchRequest struct {
@@ -43,7 +44,7 @@ func (m *SearchRequest) Unmarshal(data []byte) error {
 			if err != nil {
 				return err
 			}
-			if msgLen < 0 {
+			if msgLen <= 0 {
 				return errors.New("negative length found during unmarshalling")
 			}
 			postIndex := index + int(msgLen)
@@ -82,7 +83,7 @@ func (m *SearchRequest) Unmarshal(data []byte) error {
 				if err != nil {
 					return err
 				}
-				if packedLen < 0 {
+				if packedLen <= 0 {
 					return errors.New("negative length found during unmarshalling")
 				}
 				postIndex := index + int(packedLen)

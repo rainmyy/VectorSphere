@@ -51,7 +51,7 @@ func NewMmap(fileName string, mode int) (*Mmap, error) {
 		syscall.Ftruncate(int(f.Fd()), fi.Size()+APPEND_DATA)
 		mmap.FileLen = APPEND_DATA
 	}
-	mmap.MmapBytes, err = syscall.Mmap(int(f.Fd()), 0, int(mmap.FileLen), syscall.PROT_READ|syscall.PROT_WRITE|syscall.MAP_SHARD)
+	mmap.MmapBytes, err = syscall.Mmap(int(f.Fd()), 0, int(mmap.FileLen), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
 		return nil, err
 	}
@@ -73,8 +73,8 @@ func (m *Mmap) checkFilePointer(checkValue int64) error {
 		return err
 	}
 	m.FileLen += APPEND_DATA
-	syscall.Mumap(m.MmapBytes)
-	m.MmapBytes, err = syscall.Mmap(int(m.Filed.Fd()), 0, int(m.FileLen), syscall.PROT_READ|syscall.PROT_WRITE|syscall.MAP_SHARD)
+	syscall.Munmap(m.MmapBytes)
+	m.MmapBytes, err = syscall.Mmap(int(m.Filed.Fd()), 0, int(m.FileLen), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
 		return err
 	}

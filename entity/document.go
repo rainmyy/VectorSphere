@@ -3,8 +3,9 @@ package entity
 import (
 	"errors"
 	"fmt"
-	"github.com/gogo/protobuf/proto"
 	"io"
+
+	"github.com/gogo/protobuf/proto"
 )
 
 type Document struct {
@@ -26,7 +27,7 @@ func (m *Document) calculateFiledNum5(wireType, index, length int, data []byte) 
 	if err != nil {
 		return -1, err
 	}
-	if byteLen < 0 {
+	if byteLen <= 0 {
 		return -1, errors.New("negative length found during unmarshalling")
 	}
 	postIndex := index + int(byteLen)
@@ -50,7 +51,7 @@ func (m *Document) calculateFiledNum4(wireType, index, length int, data []byte) 
 	if err != nil {
 		return -1, err
 	}
-	if msglen < 0 {
+	if msglen <= 0 {
 		return -1, errors.New("negative length found during unmarshalling")
 	}
 	postIndex := index + int(msglen)
@@ -70,21 +71,6 @@ func (m *Document) calculateFiledNum4(wireType, index, length int, data []byte) 
 func (m *Document) calculateFiledNum1(wireType, index, length int, data []byte) (int, error) {
 	if wireType != 2 {
 		return -1, fmt.Errorf("wrong wireType = %d for field Id", wireType)
-	}
-	var stringLen uint64
-	for shift := uint(0); ; shift += 7 {
-		if shift >= 64 {
-			return -1, errors.New("integer overflow")
-		}
-		if index >= length {
-			return -1, io.ErrUnexpectedEOF
-		}
-		b := data[index]
-		index++
-		stringLen |= uint64(b&0x7F) << shift
-		if b < 0x80 {
-			break
-		}
 	}
 	stringLen, err := CalculateIntId(&index, length, data)
 	if err != nil {

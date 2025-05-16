@@ -3,9 +3,10 @@ package entity
 import (
 	"errors"
 	"fmt"
-	"github.com/gogo/protobuf/proto"
 	"io"
 	mathbits "math/bits"
+
+	"github.com/gogo/protobuf/proto"
 )
 
 var MessageInfoDocId proto.InternalMessageInfo
@@ -14,10 +15,10 @@ func CalculateIntId(index *int, length int, data []byte) (uint64, error) {
 	var intId uint64
 	for shift := uint(0); ; shift += 7 {
 		if shift >= 64 {
-			return -1, errors.New("integer overflow")
+			return 0, errors.New("integer overflow")
 		}
 		if *index >= length {
-			return -1, io.ErrUnexpectedEOF
+			return 0, io.ErrUnexpectedEOF
 		}
 		b := data[*index]
 		*index++
@@ -88,7 +89,7 @@ func CalculateSkip(data []byte) (n int, err error) {
 			if err != nil {
 				return -1, err
 			}
-			if length < 0 {
+			if length <= 0 {
 				return -1, errors.New("negative length found during unmarshalling")
 			}
 			index += int(length)

@@ -3,9 +3,10 @@ package entity
 import (
 	"errors"
 	"fmt"
-	"github.com/gogo/protobuf/proto"
 	"io"
 	"math"
+
+	"github.com/gogo/protobuf/proto"
 )
 
 var _ = proto.Marshal
@@ -134,7 +135,10 @@ func (d *DocId) Merge(src proto.Message) {
 }
 
 func (d *DocId) Size() int {
-	return d.Size()
+	if d == nil {
+		return 0
+	}
+	return len(d.Id)
 }
 
 func (d *DocId) DiscardUnknown() {

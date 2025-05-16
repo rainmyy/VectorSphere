@@ -1,6 +1,10 @@
 package entity
 
 import (
+	"errors"
+	"fmt"
+	"io"
+
 	"github.com/gogo/protobuf/proto"
 )
 
@@ -19,9 +23,90 @@ func (k *Keyword) ToString() string {
 func (k *Keyword) Reset()         { *k = Keyword{} }
 func (k *Keyword) String() string { return proto.CompactTextString(k) }
 func (*Keyword) ProtoMessage()    {}
-func (k *Keyword) Unmarshal(b []byte) error {
-	return k.Unmarshal(b)
+
+func (m *Keyword) Unmarshal(data []byte) error {
+	l := len(data)
+	index := 0
+	for index < l {
+		preIndex := index
+		wire, err := CalculateIntId(&index, l, data)
+		if err != nil {
+			return err
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: Keyword: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Field", wireType)
+			}
+
+			stringLen, err := CalculateIntId(&index, l, data)
+			if err != nil {
+				return err
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return errors.New("negative length found during unmarshalling")
+			}
+			postIndex := index + intStringLen
+			if postIndex < 0 {
+				return errors.New("negative length found during unmarshalling")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Field = string(data[index:postIndex])
+			index = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("wrong wireType = %d for field Word", wireType)
+			}
+			stringLen, err := CalculateIntId(&index, l, data)
+			if err != nil {
+				return err
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return errors.New("negative length found during unmarshalling")
+			}
+			postIndex := index + intStringLen
+			if postIndex < 0 {
+				return errors.New("negative length found during unmarshalling")
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Word = string(data[index:postIndex])
+			index = postIndex
+		default:
+			index = preIndex
+			skippy, err := skipDoc(data[index:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (index+skippy) < 0 {
+				return errors.New("negative length found during unmarshalling")
+			}
+			if (index + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			index += skippy
+		}
+	}
+
+	if index > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
 }
+
 func (k *Keyword) MarshalWithDeterministic(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
 		return MessageInfoDocId.Marshal(b, k, deterministic)
