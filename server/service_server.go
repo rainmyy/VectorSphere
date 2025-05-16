@@ -26,6 +26,11 @@ type IndexServer struct {
 	localhost string
 }
 
+func (w *IndexServer) Init(docNumEstimate int, dbType int, DataDir string) error {
+	w.Index = &index.Index{}
+	return w.Index.NewIndexServer(docNumEstimate, dbType, "", DataDir)
+}
+
 func (w *IndexServer) RegisterService(servers []string, port int) error {
 	if len(servers) == 0 {
 		return errors.New("servers is empty")

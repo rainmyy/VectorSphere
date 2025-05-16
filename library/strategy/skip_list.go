@@ -1,7 +1,7 @@
 package strategy
 
 const (
-	maxLevel int     = 16
+	maxLevel int     = 32
 	p        float32 = 0.25
 )
 
