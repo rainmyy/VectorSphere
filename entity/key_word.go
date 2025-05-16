@@ -39,12 +39,13 @@ func (m *Keyword) Unmarshal(data []byte) error {
 			return fmt.Errorf("wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: Keyword: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
+		case 2:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field Field", wireType)
+				return fmt.Errorf("wrong wireType = %d for field Field", wireType)
 			}
 
 			stringLen, err := CalculateIntId(&index, l, data)
@@ -63,27 +64,6 @@ func (m *Keyword) Unmarshal(data []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.Field = string(data[index:postIndex])
-			index = postIndex
-		case 2:
-			if wireType != 2 {
-				return fmt.Errorf("wrong wireType = %d for field Word", wireType)
-			}
-			stringLen, err := CalculateIntId(&index, l, data)
-			if err != nil {
-				return err
-			}
-			intStringLen := int(stringLen)
-			if intStringLen < 0 {
-				return errors.New("negative length found during unmarshalling")
-			}
-			postIndex := index + intStringLen
-			if postIndex < 0 {
-				return errors.New("negative length found during unmarshalling")
-			}
-			if postIndex > l {
-				return io.ErrUnexpectedEOF
-			}
-			m.Word = string(data[index:postIndex])
 			index = postIndex
 		default:
 			index = preIndex

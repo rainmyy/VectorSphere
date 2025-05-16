@@ -83,9 +83,9 @@ func (sl *SkipList) Insert(score float64, value interface{}) *Element {
 	}
 	e := newElement(score, value, level)
 
-	for i := 0; i < level; i++ {
-		e.forward[i] = update[i].forward[i]
-		update[i].forward[i] = e
+	for j := 0; j < level; j++ {
+		e.forward[j] = update[j].forward[j]
+		update[j].forward[j] = e
 	}
 	sl.len++
 	return e
@@ -102,11 +102,11 @@ func (sl *SkipList) Delete(score float64) *Element {
 	}
 	x = x.forward[0]
 	if x != nil && x.Score == score {
-		for i := 0; i < sl.level; i++ {
-			if update[i].forward[i] != x {
+		for j := 0; j < sl.level; j++ {
+			if update[j].forward[j] != x {
 				return nil
 			}
-			update[i].forward[i] = x.forward[i]
+			update[j].forward[j] = x.forward[j]
 		}
 		sl.len--
 	}
