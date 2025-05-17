@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"seetaSearch/db"
+	"seetaSearch/messages"
 	"strings"
 	"sync/atomic"
 )
@@ -15,9 +16,9 @@ type Index struct {
 	maxIntId     uint64
 }
 type IndexInterface interface {
-	AddDoc(doc entity_ba.Document) (int, error)
+	AddDoc(doc messages.Document) (int, error)
 	DelDoc(docId string) int
-	Search(query *entity_ba.TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) []*entity_ba.Document
+	Search(query *messages.TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) []*messages.Document
 	Count() int
 	Close() error
 }
@@ -37,13 +38,13 @@ func (is *Index) Close() error {
 	return is.db.Close()
 }
 
-func (is *Index) AddDoc(doc entity_ba.Document) (int, error) {
+func (is *Index) AddDoc(doc messages.Document) (int, error) {
 	docId := strings.TrimSpace(doc.Id)
 	if len(docId) == 0 {
 		return 0, errors.New("empty doc id")
 	}
 	is.DelDoc(docId)
-	doc.FloatId = float64(atomic.AddUint64(&is.maxIntId, 1))
+	doc.ScoreId = int64(atomic.AddUint64(&is.maxIntId, 1))
 	var val bytes.Buffer
 	encode := gob.NewEncoder(&val)
 	if err := encode.Encode(doc); err != nil {
@@ -70,13 +71,13 @@ func (is *Index) DelDoc(docId string) int {
 	}
 
 	reader := bytes.NewBuffer(docBytes)
-	var doc entity_ba.Document
+	var doc messages.Document
 	if err := gob.NewEncoder(reader); err != nil {
 		return -1
 	}
 
-	for _, keyword := range doc.KeyWords {
-		is.reverseIndex.Delete(doc.FloatId, keyword)
+	for _, keyword := range doc.KeWords {
+		is.reverseIndex.Delete(doc.ScoreId, keyword)
 	}
 	if err := is.db.Del(dbKey); err != nil {
 		return -1
@@ -89,7 +90,7 @@ func (is *Index) LoadIndex() (int, error) {
 	reader := bytes.NewReader([]byte{})
 	n, err := is.db.TotalDb(func(k, v []byte) error {
 		reader.Reset(v)
-		var doc entity_ba.Document
+		var doc messages.Document
 		decoder := gob.NewDecoder(reader)
 		if err := decoder.Decode(&doc); err != nil {
 			return errors.New("decode data failed:" + err.Error())
@@ -108,7 +109,7 @@ func (is *Index) LoadIndex() (int, error) {
 	return int(n), nil
 }
 
-func (is *Index) Search(query *entity_ba.TermQuery, onFlag, offFlag uint64, orFlags []uint64) ([]*entity_ba.Document, error) {
+func (is *Index) Search(query *messages.TermQuery, onFlag, offFlag uint64, orFlags []uint64) ([]*messages.Document, error) {
 	docIds := is.reverseIndex.Search(query, onFlag, offFlag, orFlags)
 	if len(docIds) == 0 {
 		return nil, nil
@@ -121,12 +122,12 @@ func (is *Index) Search(query *entity_ba.TermQuery, onFlag, offFlag uint64, orFl
 	if err != nil {
 		return nil, err
 	}
-	result := make([]*entity_ba.Document, 0, len(docIds))
+	result := make([]*messages.Document, 0, len(docIds))
 	reader := bytes.NewReader([]byte{})
 	for _, docByte := range docBytes {
 		reader.Reset(docByte)
 		decoder := gob.NewDecoder(reader)
-		var doc entity_ba.Document
+		var doc messages.Document
 		err = decoder.Decode(&doc)
 		if err == nil {
 			result = append(result, &doc)

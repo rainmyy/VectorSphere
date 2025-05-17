@@ -7,7 +7,7 @@ import "doc.proto";
 import "term_query.proto";
 
 message DocId {
-  string DocId = 1;
+  string Id = 1;
 }
 
 message ReqCount {
@@ -34,3 +34,5 @@ service IndexService {
   rpc Search(Request) returns (Result);
   rpc Count(CountRequest) returns (ReqCount);
 }
+
+// protoc -I=D:/code/seetaSearch/messages/proto --gogofaster_out=plugins=grpc:./messages --proto_path=./messages/proto request.proto

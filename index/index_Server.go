@@ -5,28 +5,29 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"seetaSearch/messages"
 )
 
 type IndexServiceServer interface {
-	DelDoc(context.Context, *entity_ba.DocId) (*entity_ba.Count, error)
-	AddDoc(context.Context, *entity_ba.Document) (*entity_ba.Count, error)
-	Search(context.Context, *entity_ba.SearchRequest) (*entity_ba.SearchResult, error)
-	Count(context.Context, *entity_ba.CountRequest) (*entity_ba.Count, error)
+	DelDoc(context.Context, *messages.DocId) (*messages.ReqCount, error)
+	AddDoc(context.Context, *messages.Document) (*messages.ReqCount, error)
+	Search(context.Context, *messages.Request) (*messages.Result, error)
+	Count(context.Context, *messages.CountRequest) (*messages.ReqCount, error)
 }
 
 type DefaultIndexServiceServer struct {
 }
 
-func (*DefaultIndexServiceServer) DelDoc(ctx context.Context, req *entity_ba.DocId) (*entity_ba.Count, error) {
+func (*DefaultIndexServiceServer) DelDoc(ctx context.Context, req *messages.DocId) (*messages.ReqCount, error) {
 	return nil, status.Errorf(codes.Unimplemented, "default method")
 }
-func (*DefaultIndexServiceServer) AddDoc(ctx context.Context, req *entity_ba.Document) (*entity_ba.Count, error) {
+func (*DefaultIndexServiceServer) AddDoc(ctx context.Context, req *messages.Document) (*messages.ReqCount, error) {
 	return nil, status.Errorf(codes.Unimplemented, "default method")
 }
-func (*DefaultIndexServiceServer) Search(ctx context.Context, req *entity_ba.SearchRequest) (*entity_ba.Count, error) {
+func (*DefaultIndexServiceServer) Search(ctx context.Context, req *messages.Request) (*messages.ReqCount, error) {
 	return nil, status.Errorf(codes.Unimplemented, "default method")
 }
-func (*DefaultIndexServiceServer) Count(ctx context.Context, req *entity_ba.CountRequest) (*entity_ba.Count, error) {
+func (*DefaultIndexServiceServer) Count(ctx context.Context, req *messages.CountRequest) (*messages.ReqCount, error) {
 	return nil, status.Errorf(codes.Unimplemented, "default method")
 }
 
@@ -53,13 +54,13 @@ func RegisterIndexServiceServer(s *grpc.Server, srv IndexServiceServer) {
 			},
 		},
 		Streams:  []grpc.StreamDesc{},
-		Metadata: "index.proto",
+		Metadata: "request.proto",
 	}
 	s.RegisterService(&indexServiceDesc, srv)
 }
 
 func DelDocHandler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(entity_ba.DocId)
+	in := new(messages.DocId)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -71,13 +72,13 @@ func DelDocHandler(srv interface{}, ctx context.Context, dec func(interface{}) e
 		FullMethod: "/IndexService/DelDoc",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(IndexServiceServer).DelDoc(ctx, req.(*entity_ba.DocId))
+		return srv.(IndexServiceServer).DelDoc(ctx, req.(*messages.DocId))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func AddDocHandler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(entity_ba.Document)
+	in := new(messages.Document)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -89,13 +90,13 @@ func AddDocHandler(srv interface{}, ctx context.Context, dec func(interface{}) e
 		FullMethod: "/IndexService/AddDoc",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(IndexServiceServer).AddDoc(ctx, req.(*entity_ba.Document))
+		return srv.(IndexServiceServer).AddDoc(ctx, req.(*messages.Document))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func SearchHandler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(entity_ba.SearchRequest)
+	in := new(messages.Request)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -107,13 +108,13 @@ func SearchHandler(srv interface{}, ctx context.Context, dec func(interface{}) e
 		FullMethod: "/IndexService/Search",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(IndexServiceServer).Search(ctx, req.(*entity_ba.SearchRequest))
+		return srv.(IndexServiceServer).Search(ctx, req.(*messages.Request))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func CountHandler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(entity_ba.CountRequest)
+	in := new(messages.CountRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -125,7 +126,7 @@ func CountHandler(srv interface{}, ctx context.Context, dec func(interface{}) er
 		FullMethod: "/IndexService/Count",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(IndexServiceServer).Count(ctx, req.(*entity_ba.CountRequest))
+		return srv.(IndexServiceServer).Count(ctx, req.(*messages.CountRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
