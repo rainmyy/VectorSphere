@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package messages;
+
+// 从-I指定的目录下寻找该proto文件
+import "doc.proto";
+import "term_query.proto";
+
+message DocId {
+  string DocId = 1;
+}
+
+message ReqCount {
+  int32 Count = 1;
+}
+
+message Request {
+  TermQuery Query = 1;  //TermQuery类型引用自term_query.proto
+  uint64 OnFlag = 2;
+  uint64 OffFlag = 3;
+  repeated uint64 OrFlags = 4;
+}
+
+message Result {
+  repeated Document Results = 1;
+}
+
+message CountRequest {
+}
+
+service IndexService {
+  rpc DelDoc(DocId) returns (ReqCount);
+  rpc AddDoc(Document) returns (ReqCount);
+  rpc Search(Request) returns (Result);
+  rpc Count(CountRequest) returns (ReqCount);
+}

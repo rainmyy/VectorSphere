@@ -31,6 +31,10 @@ var (
 
 const ServiceRootPath = "/opt/seeta_search/services"
 
+func init() {
+
+}
+
 func GetHub(etcdServices []string, heartbeat int64) *EtcdServiceHub {
 	if etcdServiceHub != nil {
 		return etcdServiceHub

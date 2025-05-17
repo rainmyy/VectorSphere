@@ -3,9 +3,9 @@ package index
 import (
 	farmhash "github.com/leemcloughlin/gofarmhash"
 	"runtime"
-	"seetaSearch/entity"
 	"seetaSearch/library/collect"
 	"seetaSearch/library/strategy"
+	"seetaSearch/messages"
 	"sync"
 )
 
@@ -14,9 +14,9 @@ type SkipListValue struct {
 	BitsFeature uint64
 }
 type IReverseIndex interface {
-	Add(doc entity.Document)
-	Delete(floatId float64, keyword *entity.Keyword)
-	Search(query *entity.TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) []string
+	Add(doc messages.Document)
+	Delete(scoreId int64, keyword *messages.KeyWord)
+	Search(query *messages.TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) []string
 }
 
 var _ IReverseIndex = (*SkipListInvertedIndex)(nil)
@@ -33,8 +33,8 @@ func NewSkipListInvertedIndex(docNumEstimate int) *SkipListInvertedIndex {
 	}
 }
 
-func (index *SkipListInvertedIndex) Add(doc entity.Document) {
-	for _, keyword := range doc.KeyWords {
+func (index *SkipListInvertedIndex) Add(doc messages.Document) {
+	for _, keyword := range doc.KeWords {
 		key := keyword.ToString()
 		lock := index.getLock(key)
 		skipListValue := SkipListValue{
@@ -44,10 +44,10 @@ func (index *SkipListInvertedIndex) Add(doc entity.Document) {
 		lock.Lock()
 		if value, exist := index.table.Get(key); exist {
 			list := value.(*strategy.SkipList)
-			list.Insert(doc.FloatId, skipListValue)
+			list.Insert(doc.ScoreId, skipListValue)
 		} else {
 			list := strategy.NewSkipList()
-			list.Insert(doc.FloatId, skipListValue)
+			list.Insert(doc.ScoreId, skipListValue)
 			index.table.Set(key, list)
 		}
 		lock.Unlock()
@@ -59,7 +59,7 @@ func (index *SkipListInvertedIndex) getLock(key string) *sync.RWMutex {
 	return &index.locks[n%len(index.locks)]
 }
 
-func (index *SkipListInvertedIndex) Delete(floatId float64, keyword *entity.Keyword) {
+func (index *SkipListInvertedIndex) Delete(floatId int64, keyword *messages.KeyWord) {
 	key := keyword.ToString()
 	lock := index.getLock(key)
 	lock.Lock()
@@ -71,7 +71,7 @@ func (index *SkipListInvertedIndex) Delete(floatId float64, keyword *entity.Keyw
 	}
 }
 
-func (index *SkipListInvertedIndex) Search(query *entity.TermQuery, onFlag uint64, offFlag uint64, orFlag []uint64) []string {
+func (index *SkipListInvertedIndex) Search(query *messages.TermQuery, onFlag uint64, offFlag uint64, orFlag []uint64) []string {
 	result := index.searchQuery(query, onFlag, offFlag, orFlag)
 	if result == nil {
 		return nil
@@ -87,7 +87,7 @@ func (index *SkipListInvertedIndex) Search(query *entity.TermQuery, onFlag uint6
 	return arr
 }
 
-func (index *SkipListInvertedIndex) searchQuery(query *entity.TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) *strategy.SkipList {
+func (index *SkipListInvertedIndex) searchQuery(query *messages.TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) *strategy.SkipList {
 	switch {
 	case query.Keyword != nil:
 		keyWord := query.Keyword.ToString()
@@ -96,7 +96,7 @@ func (index *SkipListInvertedIndex) searchQuery(query *entity.TermQuery, onFlag 
 			result := strategy.NewSkipList()
 			node := list.Front()
 			for node != nil {
-				intId := node.Key().(float64)
+				intId := node.Key().(int64)
 				skipListValue := node.Value.(SkipListValue)
 				flag := skipListValue.BitsFeature
 				if intId > 0 && index.FilterBits(flag, onFlag, offFlag, orFlags) {
@@ -170,7 +170,7 @@ func (index *SkipListInvertedIndex) IntersectionList(lists ...*strategy.SkipList
 			}
 		}
 		if len(maxList) == len(currNodes) {
-			result.Insert(currNodes[0].Key().(float64), currNodes[0].Value)
+			result.Insert(currNodes[0].Key().(int64), currNodes[0].Value)
 		}
 
 		for i, node := range currNodes {

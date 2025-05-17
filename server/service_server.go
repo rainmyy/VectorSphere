@@ -4,18 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"seetaSearch/entity"
 	"seetaSearch/index"
 	"seetaSearch/library/common"
 	"seetaSearch/library/log"
+	"seetaSearch/messages"
 	"strconv"
 	"time"
 )
 
 type ServerInterface interface {
-	DelDoc(id *entity.DocId) int
-	AddDoc(document *entity.Document) (int, error)
-	Search(query *entity.TermQuery, onFlag, offFlag uint64, orFlags []uint64) []*entity.Document
+	DelDoc(id *messages.DocId) int
+	AddDoc(document *messages.Document) (int, error)
+	Search(query *messages.TermQuery, onFlag, offFlag uint64, orFlags []uint64) []*messages.Document
 	Count() int
 }
 
@@ -75,22 +75,22 @@ func (w *IndexServer) LoadFromIndexFile() (int, error) {
 	}
 	return data, nil
 }
-func (w *IndexServer) DeleteDoc(ctx context.Context, docId *entity.DocId) (*entity.Count, error) {
+func (w *IndexServer) DeleteDoc(ctx context.Context, docId *messages.DocId) (*messages.ReqCount, error) {
 	// 调用Indexer的DeleteDoc方法删除文档，并返回影响的文档数量
-	return &entity.Count{
-		Count: int32(w.Index.DelDoc(docId.Id)),
+	return &messages.ReqCount{
+		Count: int32(w.Index.DelDoc(docId.DocId)),
 	}, nil
 }
 
-func (w *IndexServer) AddDoc(ctx context.Context, doc *entity.Document) (*entity.Count, error) {
+func (w *IndexServer) AddDoc(ctx context.Context, doc *messages.Document) (*messages.ReqCount, error) {
 	// 调用Indexer的AddDoc方法添加文档，并返回影响的文档数量
 	n, err := w.Index.AddDoc(*doc)
-	return &entity.Count{
+	return &messages.ReqCount{
 		Count: int32(n),
 	}, err
 }
 
-func (w *IndexServer) Search(ctx context.Context, request *entity.SearchRequest) (*entity.SearchResult, error) {
+func (w *IndexServer) Search(ctx context.Context, request *messages.Request) (*messages.Result, error) {
 	// 调用Indexer的Search方法进行检索，并返回检索结果
 	result, err := w.Index.Search(request.Query, request.OnFlag, request.OffFlag, request.OrFlags)
 
@@ -98,14 +98,14 @@ func (w *IndexServer) Search(ctx context.Context, request *entity.SearchRequest)
 		return nil, err
 	}
 
-	return &entity.SearchResult{
+	return &messages.Result{
 		Results: result,
 	}, nil
 }
 
-func (w *IndexServer) Count(ctx context.Context, request *entity.CountRequest) (*entity.Count, error) {
+func (w *IndexServer) Count(ctx context.Context, request *messages.CountRequest) (*messages.ReqCount, error) {
 	// 调用Indexer的Count方法获取文档数量，并返回结果
-	return &entity.Count{
+	return &messages.ReqCount{
 		Count: int32(w.Index.Total()),
 	}, nil
 }

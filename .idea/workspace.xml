@@ -5,8 +5,29 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/library/strategy/mmap.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/messages/key_word.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/messages/proto/doc.proto" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/messages/proto/key_word.proto" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/messages/proto/request.proto" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/messages/proto/term_query.proto" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/entity/affected_count.go" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/entity/count_request.go" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/entity/doc_id.go" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/entity/document.go" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/entity/func.go" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/entity/key_word.go" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/entity/search_request.go" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/entity/search_result.go" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/entity/term_query.go" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/Index_Server.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/index_Server.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/index.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/index.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/index_client.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/index_client.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/skip_list_index.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/skip_list_index.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/strategy/skip_list.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/strategy/skip_list.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/server/etcd_hub.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/etcd_hub.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/server/sentinel.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/sentinel.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/server/service_server.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/service_server.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -39,31 +60,33 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "DefaultGoTemplateProperty": "Go File",
-    "Go Build.go build github.com/rainmyy/seetaSearch.executor": "Run",
-    "Go Build.go build github.com/seetaSearch.executor": "Run",
-    "Go Build.go build seetaSearch.executor": "Run",
-    "Go 构建.go build github.com/rainmyy/seetaSearch.executor": "Run",
-    "RunOnceActivity.OpenProjectViewOnStart": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.go.formatter.settings.were.checked": "true",
-    "RunOnceActivity.go.migrated.go.modules.settings": "true",
-    "RunOnceActivity.go.modules.automatic.dependencies.download": "true",
-    "RunOnceActivity.go.modules.go.list.on.any.changes.was.set": "true",
-    "git-widget-placeholder": "master",
-    "go.import.settings.migrated": "true",
-    "go.sdk.automatically.set": "true",
-    "ignore.virus.scanning.warn.message": "true",
-    "last_opened_file_path": "D:/code/FalconEngine",
-    "node.js.detected.package.eslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;DefaultGoTemplateProperty&quot;: &quot;Go File&quot;,
+    &quot;Go Build.go build github.com/rainmyy/seetaSearch.executor&quot;: &quot;Run&quot;,
+    &quot;Go Build.go build github.com/seetaSearch.executor&quot;: &quot;Run&quot;,
+    &quot;Go Build.go build seetaSearch.executor&quot;: &quot;Run&quot;,
+    &quot;Go 构建.go build github.com/rainmyy/seetaSearch.executor&quot;: &quot;Run&quot;,
+    &quot;Go 构建.go build seetaSearch.executor&quot;: &quot;Debug&quot;,
+    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.go.formatter.settings.were.checked&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.go.migrated.go.modules.settings&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.go.modules.automatic.dependencies.download&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.go.modules.go.list.on.any.changes.was.set&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;go.import.settings.migrated&quot;: &quot;true&quot;,
+    &quot;go.sdk.automatically.set&quot;: &quot;true&quot;,
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;D:/code/seetaSearch&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="D:\code\seetaSearch\messages\proto" />
       <recent name="D:\code\seetaSearch\entity" />
     </key>
   </component>
@@ -101,7 +124,7 @@
     </configuration>
     <recent_temporary>
       <list>
-        <item itemvalue="Go Build.go build seetaSearch" />
+        <item itemvalue="Go 构建.go build seetaSearch" />
       </list>
     </recent_temporary>
   </component>

@@ -12,13 +12,13 @@ type SkipList struct {
 }
 
 type Element struct {
-	Score   float64
+	Score   int64
 	Value   interface{}
 	key     interface{}
 	forward []*Element
 }
 
-func newElement(score float64, value interface{}, level int) *Element {
+func newElement(score int64, value interface{}, level int) *Element {
 	return &Element{
 		Score:   score,
 		Value:   value,
@@ -45,7 +45,7 @@ func (sl *SkipList) Front() *Element {
 	return sl.header.forward[0]
 }
 
-func (sl *SkipList) Search(score float64) (element *Element, ok bool) {
+func (sl *SkipList) Search(score int64) (element *Element, ok bool) {
 	x := sl.header
 	for i := sl.level - 1; i >= 0; i-- {
 		for x.forward[i] != nil && x.forward[i].Score < score {
@@ -60,7 +60,7 @@ func (sl *SkipList) Search(score float64) (element *Element, ok bool) {
 	return nil, false
 }
 
-func (sl *SkipList) Insert(score float64, value interface{}) *Element {
+func (sl *SkipList) Insert(score int64, value interface{}) *Element {
 	update := make([]*Element, maxLevel)
 	x := sl.header
 	for i := sl.level - 1; i >= 0; i-- {
@@ -91,7 +91,7 @@ func (sl *SkipList) Insert(score float64, value interface{}) *Element {
 	return e
 }
 
-func (sl *SkipList) Delete(score float64) *Element {
+func (sl *SkipList) Delete(score int64) *Element {
 	update := make([]*Element, maxLevel)
 	x := sl.header
 	for i := sl.level - 1; i >= 0; i-- {
