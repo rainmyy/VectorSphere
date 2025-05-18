@@ -5,13 +5,13 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/messages/term_query.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/search/Segmenter.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/index_Server.go" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/index_client.go" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/messages/proto/request.proto" beforeDir="false" afterPath="$PROJECT_DIR$/server/proto/request.proto" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/messages/request.pb.go" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/sentinel.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/sentinel.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/service_server.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/service_server.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/go.mod" beforeDir="false" afterPath="$PROJECT_DIR$/go.mod" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/go.sum" beforeDir="false" afterPath="$PROJECT_DIR$/go.sum" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/search/word/tokenizer.go" beforeDir="false" afterPath="$PROJECT_DIR$/search/tokenizer.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/server/balancer.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/balancer.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -71,11 +71,11 @@
 }</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="D:\code\seetaSearch\search" />
       <recent name="D:\code\seetaSearch\server" />
       <recent name="D:\code\seetaSearch\index" />
       <recent name="D:\code\seetaSearch\index\proto" />
       <recent name="D:\code\seetaSearch\messages\proto" />
-      <recent name="D:\code\seetaSearch\entity" />
     </key>
   </component>
   <component name="RunManager">

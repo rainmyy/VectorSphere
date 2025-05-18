@@ -7,6 +7,7 @@ toolchain go1.23.6
 require (
 	github.com/dgraph-io/badger/v4 v4.7.0
 	github.com/gogo/protobuf v1.3.2
+	github.com/huichen/sego v0.0.0-20210824061530-c87651ea5c76
 	github.com/leemcloughlin/gofarmhash v0.0.0-20160919192320-0a055c5b87a8
 	github.com/wangbin/jiebago v0.3.2
 	go.etcd.io/bbolt v1.4.0
@@ -19,6 +20,7 @@ require (
 )
 
 require (
+	github.com/adamzy/cedar-go v0.0.0-20170805034717-80a9c64b256d // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect

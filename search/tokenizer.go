@@ -1,4 +1,4 @@
-package word
+package search
 
 import (
 	"embed"
