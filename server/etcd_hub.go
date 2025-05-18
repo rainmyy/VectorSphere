@@ -51,7 +51,7 @@ func GetHub(etcdServices []string, heartbeat int64) *EtcdServiceHub {
 			client:       client,
 			heartbeat:    heartbeat,
 			watched:      sync.Map{},
-			loadBalancer: &RoundRobinBalancer{},
+			loadBalancer: LoadBalanceFactory(WeightedRoundRobin),
 		}
 	})
 	return etcdServiceHub
@@ -109,7 +109,7 @@ func (etcd *EtcdServiceHub) GetServiceEndpoints(serviceName string) []EndPoint {
 
 func (etcd *EtcdServiceHub) GetServiceEndpoint(serviceName string) EndPoint {
 	endpoints := etcd.GetServiceEndpoints(serviceName)
-	etcd.loadBalancer.Set(endpoints)
+	etcd.loadBalancer.Set(endpoints...)
 	return etcd.loadBalancer.Take()
 }
 
