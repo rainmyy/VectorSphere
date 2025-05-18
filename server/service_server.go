@@ -13,11 +13,13 @@ import (
 )
 
 type ServerInterface interface {
-	DelDoc(id *messages.DocId) int
+	DelDoc(id *DocId) int
 	AddDoc(document *messages.Document) (int, error)
 	Search(query *messages.TermQuery, onFlag, offFlag uint64, orFlags []uint64) []*messages.Document
 	Count() int
 }
+
+var _ IndexServiceServer = (*IndexServer)(nil)
 
 type IndexServer struct {
 	Index     *index.Index
@@ -75,22 +77,22 @@ func (w *IndexServer) LoadFromIndexFile() (int, error) {
 	}
 	return data, nil
 }
-func (w *IndexServer) DeleteDoc(ctx context.Context, docId *messages.DocId) (*messages.ReqCount, error) {
+func (w *IndexServer) DelDoc(ctx context.Context, docId *DocId) (*ReqCount, error) {
 	// 调用Indexer的DeleteDoc方法删除文档，并返回影响的文档数量
-	return &messages.ReqCount{
+	return &ReqCount{
 		Count: int32(w.Index.DelDoc(docId.Id)),
 	}, nil
 }
 
-func (w *IndexServer) AddDoc(ctx context.Context, doc *messages.Document) (*messages.ReqCount, error) {
+func (w *IndexServer) AddDoc(ctx context.Context, doc *messages.Document) (*ReqCount, error) {
 	// 调用Indexer的AddDoc方法添加文档，并返回影响的文档数量
 	n, err := w.Index.AddDoc(*doc)
-	return &messages.ReqCount{
+	return &ReqCount{
 		Count: int32(n),
 	}, err
 }
 
-func (w *IndexServer) Search(ctx context.Context, request *messages.Request) (*messages.Result, error) {
+func (w *IndexServer) Search(ctx context.Context, request *Request) (*Result, error) {
 	// 调用Indexer的Search方法进行检索，并返回检索结果
 	result, err := w.Index.Search(request.Query, request.OnFlag, request.OffFlag, request.OrFlags)
 
@@ -98,14 +100,14 @@ func (w *IndexServer) Search(ctx context.Context, request *messages.Request) (*m
 		return nil, err
 	}
 
-	return &messages.Result{
+	return &Result{
 		Results: result,
 	}, nil
 }
 
-func (w *IndexServer) Count(ctx context.Context, request *messages.CountRequest) (*messages.ReqCount, error) {
+func (w *IndexServer) Count(ctx context.Context, request *CountRequest) (*ReqCount, error) {
 	// 调用Indexer的Count方法获取文档数量，并返回结果
-	return &messages.ReqCount{
+	return &ReqCount{
 		Count: int32(w.Index.Total()),
 	}, nil
 }

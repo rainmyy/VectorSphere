@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package messages;
+package server;
 
 // 从-I指定的目录下寻找该proto文件
 import "doc.proto";
@@ -15,14 +15,14 @@ message ReqCount {
 }
 
 message Request {
-  TermQuery Query = 1;  //TermQuery类型引用自term_query.proto
+  messages.TermQuery Query = 1;  //TermQuery类型引用自term_query.proto
   uint64 OnFlag = 2;
   uint64 OffFlag = 3;
   repeated uint64 OrFlags = 4;
 }
 
 message Result {
-  repeated Document Results = 1;
+  repeated messages.Document Results = 1;
 }
 
 message CountRequest {
@@ -30,9 +30,9 @@ message CountRequest {
 
 service IndexService {
   rpc DelDoc(DocId) returns (ReqCount);
-  rpc AddDoc(Document) returns (ReqCount);
+  rpc AddDoc(messages.Document) returns (ReqCount);
   rpc Search(Request) returns (Result);
   rpc Count(CountRequest) returns (ReqCount);
 }
 
-// protoc -I=D:/code/seetaSearch/messages/proto --gogofaster_out=plugins=grpc:./messages --proto_path=./messages/proto request.proto
+// protoc -I=D:/code/seetaSearch/messages/proto --gogofaster_opt=Mdoc.proto=seetaSearch/messages --gogofaster_opt=Mterm_query.proto=seetaSearch/messages --gogofaster_out=plugins=grpc:./server --proto_path=./server/proto request.proto

@@ -6,7 +6,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
-	"seetaSearch/index"
 	"seetaSearch/messages"
 	"sync"
 	"sync/atomic"
@@ -62,7 +61,7 @@ func (s *Sentinel) AddDoc(doc *messages.Document) (int, error) {
 	if conn == nil {
 		return -1, errors.New("无法连接到" + endPoint.address)
 	}
-	client := index.NewIndexClient(conn)
+	client := NewIndexServiceClient(conn)
 	affected, err := client.AddDoc(context.Background(), doc)
 	if err != nil {
 		return -1, err
@@ -70,7 +69,7 @@ func (s *Sentinel) AddDoc(doc *messages.Document) (int, error) {
 	return int(affected.Count), nil
 }
 
-func (s *Sentinel) DelDoc(docId *messages.DocId) int {
+func (s *Sentinel) DelDoc(docId *DocId) int {
 	endpoints := s.hub.GetServiceEndpoints(s.IndexServer)
 	if len(endpoints) == 0 {
 		return 0
@@ -85,8 +84,8 @@ func (s *Sentinel) DelDoc(docId *messages.DocId) int {
 			if conn == nil {
 				return
 			}
-			client := index.NewIndexClient(conn)
-			affected, err := client.DeleteDoc(context.Background(), &messages.DocId{Id: docId.Id})
+			client := NewIndexServiceClient(conn)
+			affected, err := client.DelDoc(context.Background(), &DocId{Id: docId.Id})
 			if err != nil {
 				return
 			}
@@ -118,8 +117,8 @@ func (s *Sentinel) Search(query *messages.TermQuery, onFlag, offFlag uint64, orF
 			if conn == nil {
 				return
 			}
-			client := index.NewIndexClient(conn)
-			searchRequest := messages.Request{Query: query, OnFlag: onFlag, OffFlag: offFlag, OrFlags: orFlags}
+			client := NewIndexServiceClient(conn)
+			searchRequest := Request{Query: query, OnFlag: onFlag, OffFlag: offFlag, OrFlags: orFlags}
 			searchResult, err := client.Search(context.Background(), &searchRequest)
 			if err != nil {
 				return
@@ -165,8 +164,8 @@ func (s *Sentinel) Count() int {
 
 				return
 			}
-			client := index.NewIndexClient(conn)
-			countResult, err := client.Count(context.Background(), &messages.CountRequest{})
+			client := NewIndexServiceClient(conn)
+			countResult, err := client.Count(context.Background(), &CountRequest{})
 			if err != nil {
 				return
 			}
