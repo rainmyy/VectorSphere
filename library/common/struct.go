@@ -2,7 +2,6 @@ package common
 
 import (
 	"fmt"
-	"reflect"
 	"unsafe"
 
 	"seetaSearch/library/strategy"
@@ -11,23 +10,23 @@ import (
 func TreeStruct2Bytes(treeList []*strategy.TreeStruct) [][]byte {
 	var byteList = make([][]byte, 0)
 	for _, tree := range treeList {
-		var sli reflect.SliceHeader
-		sli.Len = int(unsafe.Sizeof(tree))
-		sli.Cap = int(unsafe.Sizeof(tree))
-		sli.Data = uintptr(unsafe.Pointer(&tree))
-		bytes := *(*[]byte)(unsafe.Pointer(&sli))
-		byteList = append(byteList, bytes)
+		//var sli reflect.SliceHeader
+		//sli.Len = int(unsafe.Sizeof(tree))
+		//sli.Cap = int(unsafe.Sizeof(tree))
+		//sli.Data = uintptr(unsafe.Pointer(&tree))
+		//bytes := *(*[]byte)(unsafe.Pointer(&sli))
+
+		byt := unsafe.Slice(&tree, unsafe.Sizeof(tree))
+		byteList = append(byteList, *(*[]byte)(unsafe.Pointer(&byt)))
 	}
 
 	return byteList
 }
 
-func Bytes2TreeStruct(b [][]byte) []*strategy.TreeStruct {
-	var resList []*strategy.TreeStruct
+func Bytes2TreeStruct(b [][]byte) []strategy.TreeStruct {
+	var resList []strategy.TreeStruct
 	for _, val := range b {
-		treeStruct := (*strategy.TreeStruct)(unsafe.Pointer(
-			(*reflect.SliceHeader)(unsafe.Pointer(&val)).Data,
-		))
+		treeStruct := *(*strategy.TreeStruct)(unsafe.Pointer(&val[0]))
 		for _, val := range treeStruct.GetNode() {
 			fmt.Print(val)
 		}

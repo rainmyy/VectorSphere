@@ -4,7 +4,6 @@
 package strategy
 
 import (
-	"encoding/binary"
 	"os"
 	"runtime"
 	"syscall"
@@ -49,10 +48,6 @@ func NewMmap(fileName string, mode int) (*Mmap, error) {
 	return mmap, nil
 }
 
-func (m *Mmap) SetFileEnd(fileLen int64) {
-	m.FilePointer = fileLen
-}
-
 func (m *Mmap) checkFilePointer(checkValue int64) error {
 	if m.FilePointer+checkValue < m.FileLen {
 		return nil
@@ -83,20 +78,4 @@ func (m *Mmap) checkFileCap(start, len int64) error {
 	m.FilePointer = start + len
 
 	return nil
-}
-
-func (m *Mmap) isEndOfFile(start int64) bool {
-	if m.FilePointer == start {
-		return true
-	}
-
-	return false
-}
-
-func (m *Mmap) ReadInt64(start int64) int64 {
-	return int64(binary.LittleEndian.Uint64(m.MmapBytes[start : start+8]))
-}
-
-func (m *Mmap) ReadUint64(start uint64) uint64 {
-	return binary.LittleEndian.Uint64(m.MmapBytes[start : start+8])
 }

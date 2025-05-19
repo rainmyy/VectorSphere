@@ -8,6 +8,7 @@ import "term_query.proto";
 
 message DocId {
   string Id = 1;
+  int64 Weight = 2;
 }
 
 message ReqCount {

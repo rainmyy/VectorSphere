@@ -5,10 +5,12 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/library/strategy/mmap_linux.go" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/library/strategy/mmap_windows.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/common/struct.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/common/struct.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/library/strategy/mmap.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/strategy/mmap.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/strategy/mmap_linux.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/strategy/mmap_linux.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/strategy/mmap_windows.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/strategy/mmap_windows.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/server/proto/request.proto" beforeDir="false" afterPath="$PROJECT_DIR$/server/proto/request.proto" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
