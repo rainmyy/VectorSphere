@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"seetaSearch/library/res"
 	"strconv"
 	"sync"
 
@@ -46,9 +47,9 @@ func (app *AppServer) Setup() {
 	app.mutex.Wait()
 }
 
-func (app *AppServer) Start() {
+func (app *AppServer) Start() map[string]*res.Response {
 	pool.Start()
-	pool.TaskResult()
+	return pool.TaskResult()
 }
 
 func download(url int, str string) {

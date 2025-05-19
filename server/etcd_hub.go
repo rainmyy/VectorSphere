@@ -17,6 +17,7 @@ type ServiceHub interface {
 	GetServiceEndpoint(serviceName string) EndPoint
 	Close()
 }
+
 type EtcdServiceHub struct {
 	client       *etcdv3.Client // etcd客户端，用于与etcd进行操作
 	heartbeat    int64          // 服务续约的心跳频率，单位：秒
@@ -90,7 +91,6 @@ func (etcd *EtcdServiceHub) UnRegisterService(serviceName string, endpoint *EndP
 	}
 
 	_, err = etcd.client.Revoke(context.Background(), etcd.leaseId)
-
 	return err
 }
 

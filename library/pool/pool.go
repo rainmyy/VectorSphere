@@ -45,7 +45,8 @@ func GetInstance() *Pool {
 }
 func QueryInit(name string, function interface{}, params ...interface{}) *Queue {
 	excelFunc := &ExcelFunc{Function: function, Params: params}
-	query := &Queue{Name: name,
+	query := &Queue{
+		Name:   name,
 		Excel:  excelFunc,
 		result: make(chan *res.Response, 1),
 	}
