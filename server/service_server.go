@@ -77,6 +77,7 @@ func (w *IndexServer) LoadFromIndexFile() (int, error) {
 	}
 	return data, nil
 }
+
 func (w *IndexServer) DelDoc(ctx context.Context, docId *DocId) (*ReqCount, error) {
 	// 调用Indexer的DeleteDoc方法删除文档，并返回影响的文档数量
 	return &ReqCount{

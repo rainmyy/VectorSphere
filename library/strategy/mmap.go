@@ -94,8 +94,7 @@ func (m *Mmap) checkFilePointer(checkValue int64) error {
 		if err != nil {
 			return err
 		}
-		data := (*[APPEND_DATA]byte)(unsafe.Pointer(addr))
-		m.MmapBytes = data[:m.FileLen]
+		m.MmapBytes = *(*[]byte)(unsafe.Pointer(addr))
 	}
 	return nil
 }

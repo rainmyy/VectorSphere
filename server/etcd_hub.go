@@ -20,8 +20,9 @@ type ServiceHub interface {
 type EtcdServiceHub struct {
 	client       *etcdv3.Client // etcd客户端，用于与etcd进行操作
 	heartbeat    int64          // 服务续约的心跳频率，单位：秒
-	watched      sync.Map       // 存储已经监视的服务，以避免重复监视
-	loadBalancer Balancer       // 负载均衡策略的接口，支持多种负载均衡实现
+	leaseId      etcdv3.LeaseID
+	watched      sync.Map // 存储已经监视的服务，以避免重复监视
+	loadBalancer Balancer // 负载均衡策略的接口，支持多种负载均衡实现
 }
 
 var (
@@ -77,7 +78,7 @@ func (etcd *EtcdServiceHub) RegisterService(service string, endpoint *EndPoint, 
 	if err != nil {
 
 	}
-
+	etcd.leaseId = leaseId
 	return leaseId, nil
 }
 
@@ -88,7 +89,9 @@ func (etcd *EtcdServiceHub) UnRegisterService(serviceName string, endpoint *EndP
 		return err
 	}
 
-	return nil
+	_, err = etcd.client.Revoke(context.Background(), etcd.leaseId)
+
+	return err
 }
 
 func (etcd *EtcdServiceHub) GetServiceEndpoints(serviceName string) []EndPoint {

@@ -18,7 +18,7 @@ type Sentinel struct {
 	IndexServer string
 }
 
-const IndexService = "index_service"
+const IndexService = "seata_search"
 
 var _ ServerInterface = (*Sentinel)(nil)
 
