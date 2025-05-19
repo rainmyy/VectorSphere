@@ -1,7 +1,5 @@
 package strategy
 
-import "fmt"
-
 type TriedNode struct {
 	char     string
 	isEnding bool
@@ -29,7 +27,6 @@ func (t *Trie) Insert(word string) {
 	node := t.root
 	for _, code := range word {
 		value, ok := node.children[code]
-		fmt.Println(code, value)
 		if !ok {
 			value = NewTrieNode(string(code))
 			node.children[code] = value

@@ -3,7 +3,6 @@ package strategy
 import (
 	"encoding/binary"
 	"os"
-	"seetaSearch/server"
 )
 
 type Mmap struct {
@@ -39,8 +38,4 @@ func (m *Mmap) ReadInt64(start int64) int64 {
 
 func (m *Mmap) ReadUint64(start uint64) uint64 {
 	return binary.LittleEndian.Uint64(m.MmapBytes[start : start+8])
-}
-
-func (m *Mmap) ReadUInt64Arr(start, len uint64) []server.DocId {
-
 }
