@@ -3,7 +3,9 @@ package strategy
 import (
 	"encoding/binary"
 	"os"
+	"runtime"
 	"syscall"
+	"unsafe"
 )
 
 type Mmap struct {
@@ -68,17 +70,33 @@ func (m *Mmap) checkFilePointer(checkValue int64) error {
 	if m.FilePointer+checkValue < m.FileLen {
 		return nil
 	}
-	err := syscall.Ftruncate(int(m.Filed.Fd()), m.FileLen+APPEND_DATA)
-	if err != nil {
-		return err
+	sysType := runtime.GOOS
+	if sysType == "linux" {
+		err := syscall.Ftruncate(int(m.Filed.Fd()), m.FileLen+APPEND_DATA)
+		if err != nil {
+			return err
+		}
+		m.FileLen += APPEND_DATA
+		syscall.Munmap(m.MmapBytes)
+		m.MmapBytes, err = syscall.Mmap(int(m.Filed.Fd()), 0, int(m.FileLen), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+		if err != nil {
+			return err
+		}
+	} else {
+		err := syscall.Ftruncate(syscall.Handle(m.Filed.Fd()), m.FileLen+APPEND_DATA)
+		if err != nil {
+			return err
+		}
+		m.FileLen += APPEND_DATA
+		h, err := syscall.CreateFileMapping(syscall.Handle(m.Filed.Fd()), nil, syscall.PAGE_READWRITE, 0, uint32(m.FileLen), nil)
+		addr, err := syscall.MapViewOfFile(h, syscall.FILE_MAP_WRITE, 0, 0, uintptr(m.FileLen))
+		err = syscall.CloseHandle(syscall.Handle(h))
+		if err != nil {
+			return err
+		}
+		data := (*[APPEND_DATA]byte)(unsafe.Pointer(addr))
+		m.MmapBytes = data[:m.FileLen]
 	}
-	m.FileLen += APPEND_DATA
-	syscall.Munmap(m.MmapBytes)
-	m.MmapBytes, err = syscall.Mmap(int(m.Filed.Fd()), 0, int(m.FileLen), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 
