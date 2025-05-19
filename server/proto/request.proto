@@ -11,7 +11,7 @@ message DocId {
   int64 Weight = 2;
 }
 
-message ReqCount {
+message ResCount {
   int32 Count = 1;
 }
 
@@ -30,10 +30,10 @@ message CountRequest {
 }
 
 service IndexService {
-  rpc DelDoc(DocId) returns (ReqCount);
-  rpc AddDoc(messages.Document) returns (ReqCount);
+  rpc DelDoc(DocId) returns (ResCount);
+  rpc AddDoc(messages.Document) returns (ResCount);
   rpc Search(Request) returns (Result);
-  rpc Count(CountRequest) returns (ReqCount);
+  rpc Count(CountRequest) returns (ResCount);
 }
 
 // protoc -I=D:/code/seetaSearch/messages/proto --gogofaster_opt=Mdoc.proto=seetaSearch/messages --gogofaster_opt=Mterm_query.proto=seetaSearch/messages --gogofaster_out=plugins=grpc:./server --proto_path=./server/proto request.proto
