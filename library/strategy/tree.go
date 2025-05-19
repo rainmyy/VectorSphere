@@ -1,6 +1,10 @@
 package strategy
 
-import "time"
+import (
+	"fmt"
+	"time"
+	"unsafe"
+)
 
 type TreeStruct struct {
 	node         []*NodeStruct
@@ -30,6 +34,35 @@ type NodeStruct struct {
 	* 每次修改数据备份已有数据
 	 */
 	backup []byte
+}
+
+func TreeStruct2Bytes(treeList []*TreeStruct) [][]byte {
+	var byteList = make([][]byte, 0)
+	for _, tree := range treeList {
+		//var sli reflect.SliceHeader
+		//sli.Len = int(unsafe.Sizeof(tree))
+		//sli.Cap = int(unsafe.Sizeof(tree))
+		//sli.Data = uintptr(unsafe.Pointer(&tree))
+		//bytes := *(*[]byte)(unsafe.Pointer(&sli))
+
+		byt := unsafe.Slice(&tree, unsafe.Sizeof(tree))
+		byteList = append(byteList, *(*[]byte)(unsafe.Pointer(&byt)))
+	}
+
+	return byteList
+}
+
+func Bytes2TreeStruct(b [][]byte) []TreeStruct {
+	var resList []TreeStruct
+	for _, val := range b {
+		treeStruct := *(*TreeStruct)(unsafe.Pointer(&val[0]))
+		for _, val := range treeStruct.GetNode() {
+			fmt.Print(val)
+		}
+		print(len(treeStruct.GetNode()))
+		resList = append(resList, treeStruct)
+	}
+	return resList
 }
 
 func (s *TreeStruct) GetNode() []*NodeStruct {
