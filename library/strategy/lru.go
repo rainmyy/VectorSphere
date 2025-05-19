@@ -37,7 +37,7 @@ func (l *LRUCache) Get(key interface{}) interface{} {
 		return -1
 	}
 
-	l.moveTohead(node)
+	l.moveToHead(node)
 	return node.value
 }
 
@@ -45,7 +45,7 @@ func (l *LRUCache) Put(key interface{}, value interface{}) {
 	node, ok := l.cache[key]
 	if ok {
 		node.value = value
-		l.moveTohead(node)
+		l.moveToHead(node)
 		return
 	}
 	linkNode := newLinkNode()
@@ -81,7 +81,7 @@ func (l *LRUCache) removeNode(node *linkedNode) {
 	post.pre = pre
 }
 
-func (l *LRUCache) moveTohead(node *linkedNode) {
+func (l *LRUCache) moveToHead(node *linkedNode) {
 	l.removeNode(node)
 	l.addNode(node)
 }
