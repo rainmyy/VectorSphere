@@ -22,10 +22,11 @@ type ServerInterface interface {
 var _ IndexServiceServer = (*IndexServer)(nil)
 
 type IndexServer struct {
-	Index     *index.Index
-	hub       *EtcdServiceHub
-	stop      bool
-	localhost string
+	Index       *index.Index
+	hub         *EtcdServiceHub
+	stop        bool
+	localhost   string
+	serviceName string
 }
 
 func (w *IndexServer) Init(docNumEstimate int, dbType int, DataDir string) error {
@@ -51,14 +52,15 @@ func (w *IndexServer) RegisterService(servers []string, port int, serviceName st
 		return err
 	}
 	endPoint := &EndPoint{address: w.localhost}
-	leasID, err := hub.RegisterService(IndexService, endPoint, 0)
+	leasID, err := hub.RegisterService(serviceName, endPoint, 0)
 	if err != nil {
 		return fmt.Errorf("reigister fialed:%v", err)
 	}
 	w.hub = hub
+	w.serviceName = serviceName
 	go func() {
 		for !w.stop {
-			_, err := hub.RegisterService(IndexService, endPoint, leasID)
+			_, err := hub.RegisterService(serviceName, endPoint, leasID)
 			if err != nil {
 				log.Logger.Printf("续约服务失败,租约ID:%d, 错误:%v", leasID, err)
 			}
@@ -120,7 +122,7 @@ func (w *IndexServer) Close() error {
 		return w.Index.Close()
 	}
 	endPoint := &EndPoint{address: w.localhost}
-	err := w.hub.UnRegisterService(IndexService, endPoint)
+	err := w.hub.UnRegisterService(w.serviceName, endPoint)
 	if err != nil {
 		log.Logger.Printf("注销服务失败，服务地址: %v, 错误: %v", w.localhost, err)
 		return err

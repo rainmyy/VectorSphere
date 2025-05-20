@@ -3,6 +3,11 @@ timeOut: 300
 defaultPort: 8080
 heartbeat : 5
 endpoints:
-  127.0.0.1
-  168.0.0.1
-  139.0.0.1
+    service_1:
+        ip: 127.0.0.1
+        setMaster: true
+        port: 80
+    service_2:
+        ip: 168.0.0.1
+    service_3:
+        ip: 139.0.0.1

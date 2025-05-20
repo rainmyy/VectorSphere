@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"seetaSearch/library/res"
+	"seetaSearch/server"
 	"strconv"
 	"sync"
 
@@ -31,8 +32,19 @@ var ServiceLen = 4
 var pool = PoolLib.GetInstance()
 
 func (app *AppServer) Register() {
+	if true {
+		s := new(server.IndexServer)
+		err := s.RegisterService([]string{}, 8080, "")
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		defer s.Close()
+	} else {
 
+	}
 }
+
 func (app *AppServer) Discover() {
 
 }

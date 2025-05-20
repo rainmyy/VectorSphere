@@ -12,6 +12,7 @@ import (
 )
 
 type ServiceHub interface {
+	GetClient() *etcdv3.Client
 	RegisterService(serviceName string, endpoint *EndPoint, leaseId etcdv3.LeaseID) (etcdv3.LeaseID, error)
 	UnRegisterService(serviceName string, endpoint *EndPoint) error
 	GetServiceEndpoints(serviceName string) []EndPoint
@@ -91,7 +92,7 @@ func (etcd *EtcdServiceHub) RegisterService(service string, endpoint *EndPoint, 
 	if errors.Is(err, rpctypes.ErrLeaseNotFound) {
 		return etcd.RegisterService(service, endpoint, 0)
 	}
-	
+
 	etcd.leaseId = leaseId
 	return leaseId, nil
 }

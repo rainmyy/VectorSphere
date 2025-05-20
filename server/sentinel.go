@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
@@ -13,23 +14,42 @@ import (
 )
 
 type Sentinel struct {
-	hub         ServiceHub
-	connPool    sync.Map
-	IndexServer string
+	hub        ServiceHub
+	connPool   sync.Map
+	leaseId    clientv3.LeaseID
+	ServiceKey string
 }
 
 var _ ServerInterface = (*Sentinel)(nil)
 
 func NewSentinel(endPoints []string, heartBeat int64, qps int, serviceName string) *Sentinel {
 	return &Sentinel{
-		hub:         GetHubProxy(endPoints, heartBeat, qps, serviceName),
-		connPool:    sync.Map{},
-		IndexServer: serviceName,
+		hub:        GetHubProxy(endPoints, heartBeat, qps, serviceName),
+		connPool:   sync.Map{},
+		ServiceKey: serviceName,
 	}
 }
 
 func (s *Sentinel) RegisterSentinel(ttl int64) error {
+	resp, err := s.hub.GetClient().Grant(context.Background(), ttl)
+	if err != nil {
+		return err
+	}
+	s.leaseId = resp.ID
+	_, err = s.hub.GetClient().Put(context.Background(), s.ServiceKey, "alive", clientv3.WithLease(resp.ID))
+	if err != nil {
+		return err
+	}
+	ch, err := s.hub.GetClient().KeepAlive(context.Background(), resp.ID)
+	if err != nil {
+		return err
+	}
+	go func() {
+		for range ch {
 
+		}
+	}()
+	return nil
 }
 func (s *Sentinel) GetGrpcConn(point EndPoint) *grpc.ClientConn {
 	v, ok := s.connPool.Load(point.address)
@@ -54,7 +74,7 @@ func (s *Sentinel) GetGrpcConn(point EndPoint) *grpc.ClientConn {
 }
 
 func (s *Sentinel) AddDoc(doc *messages.Document) (int, error) {
-	endPoint := s.hub.GetServiceEndpoint(s.IndexServer)
+	endPoint := s.hub.GetServiceEndpoint(s.ServiceKey)
 	if len(endPoint.address) == 0 {
 		return -1, errors.New("服务节点不存在")
 	}
@@ -71,7 +91,7 @@ func (s *Sentinel) AddDoc(doc *messages.Document) (int, error) {
 }
 
 func (s *Sentinel) DelDoc(docId *DocId) int {
-	endpoints := s.hub.GetServiceEndpoints(s.IndexServer)
+	endpoints := s.hub.GetServiceEndpoints(s.ServiceKey)
 	if len(endpoints) == 0 {
 		return 0
 	}
@@ -100,7 +120,7 @@ func (s *Sentinel) DelDoc(docId *DocId) int {
 }
 
 func (s *Sentinel) Search(query *messages.TermQuery, onFlag, offFlag uint64, orFlags []uint64) []*messages.Document {
-	endpoints := s.hub.GetServiceEndpoints(s.IndexServer)
+	endpoints := s.hub.GetServiceEndpoints(s.ServiceKey)
 	if len(endpoints) == 0 {
 		return nil
 	}
@@ -148,7 +168,7 @@ func (s *Sentinel) Search(query *messages.TermQuery, onFlag, offFlag uint64, orF
 }
 
 func (s *Sentinel) Count() int {
-	endpoints := s.hub.GetServiceEndpoints(s.IndexServer)
+	endpoints := s.hub.GetServiceEndpoints(s.ServiceKey)
 	if len(endpoints) == 0 {
 		return 0
 	}

@@ -38,6 +38,10 @@ func GetHubProxy(endPoints []string, heartBeat int64, qps int, serviceName strin
 	return hubProxy
 }
 
+func (h *HubProxy) GetClient() *etcdv3.Client {
+	return h.client
+}
+
 func (h *HubProxy) GetEndpoints(serviceName string) []EndPoint {
 	if !h.limiter.Allow() {
 		return nil
