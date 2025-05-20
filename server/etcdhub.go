@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
+	etcdv3 "go.etcd.io/etcd/client/v3"
+	"go.etcd.io/etcd/client/v3/concurrency"
 	"strings"
 	"sync"
 	"time"
 )
-import etcdv3 "go.etcd.io/etcd/client/v3"
 
 type ServiceHub interface {
 	RegisterService(serviceName string, endpoint *EndPoint, leaseId etcdv3.LeaseID) (etcdv3.LeaseID, error)
@@ -19,9 +20,12 @@ type ServiceHub interface {
 }
 
 type EtcdServiceHub struct {
-	client       *etcdv3.Client // etcd客户端，用于与etcd进行操作
-	heartbeat    int64          // 服务续约的心跳频率，单位：秒
-	leaseId      etcdv3.LeaseID
+	client    *etcdv3.Client // etcd客户端，用于与etcd进行操作
+	heartbeat int64          // 服务续约的心跳频率，单位：秒
+	leaseId   etcdv3.LeaseID
+	session   *concurrency.Session
+	election  *concurrency.Election
+
 	watched      sync.Map // 存储已经监视的服务，以避免重复监视
 	loadBalancer Balancer // 负载均衡策略的接口，支持多种负载均衡实现
 }
@@ -37,26 +41,37 @@ func init() {
 
 }
 
-func GetHub(etcdServices []string, heartbeat int64) *EtcdServiceHub {
+func GetHub(endPoints []string, heartbeat int64, serviceName string) (error, *EtcdServiceHub) {
 	if etcdServiceHub != nil {
-		return etcdServiceHub
+		return errors.New("etcd hub is nil"), etcdServiceHub
 	}
+	var er error
 	hubOnce.Do(func() {
 		client, err := etcdv3.New(etcdv3.Config{
-			Endpoints:   etcdServices,
+			Endpoints:   endPoints,
 			DialTimeout: time.Duration(heartbeat) * time.Second,
 		})
 		if err != nil {
-
+			er = err
+			return
 		}
+		session, err := concurrency.NewSession(client, concurrency.WithTTL(10))
+		if err != nil {
+			er = err
+			return
+		}
+		election := concurrency.NewElection(session, serviceName)
 		etcdServiceHub = &EtcdServiceHub{
 			client:       client,
 			heartbeat:    heartbeat,
 			watched:      sync.Map{},
+			session:      session,
+			election:     election,
 			loadBalancer: LoadBalanceFactory(WeightedRoundRobin),
 		}
 	})
-	return etcdServiceHub
+
+	return er, etcdServiceHub
 }
 
 func (etcd *EtcdServiceHub) RegisterService(service string, endpoint *EndPoint, leaseId etcdv3.LeaseID) (etcdv3.LeaseID, error) {
@@ -76,9 +91,7 @@ func (etcd *EtcdServiceHub) RegisterService(service string, endpoint *EndPoint, 
 	if errors.Is(err, rpctypes.ErrLeaseNotFound) {
 		return etcd.RegisterService(service, endpoint, 0)
 	}
-	if err != nil {
-
-	}
+	
 	etcd.leaseId = leaseId
 	return leaseId, nil
 }

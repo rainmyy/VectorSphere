@@ -5,12 +5,20 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/db/btree_db.go" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/index/invert.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/conf/idc/simple/service.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/strategy/mmap_linux.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/strategy/mmap_linux.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/strategy/mmap_windows.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/strategy/mmap_windows.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/proto/request.proto" beforeDir="false" afterPath="$PROJECT_DIR$/server/proto/request.proto" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/bootstrap/base.go" beforeDir="false" afterPath="$PROJECT_DIR$/bootstrap/base.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/go.mod" beforeDir="false" afterPath="$PROJECT_DIR$/go.mod" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/go.sum" beforeDir="false" afterPath="$PROJECT_DIR$/go.sum" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/file/file_parser.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/file_parser.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/strategy/huffman_tree.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/strategy/huffman_tree.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/strategy/tree.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/strategy/tree.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/main" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/server/etcdhub.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/etcdhub.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/server/hubproxy.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/hubproxy.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/server/sentinel.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/sentinel.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/server/service_server.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/service_server.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -24,9 +32,12 @@
       </list>
     </option>
   </component>
-  <component name="GOROOT" url="file://$USER_HOME$/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.23.6.windows-amd64" />
+  <component name="GOROOT" url="file://C:/Program Files/Go" />
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GoLibraries">
+    <option name="indexEntireGoPath" value="true" />
   </component>
   <component name="MarkdownSettingsMigration">
     <option name="stateVersion" value="1" />
@@ -45,12 +56,14 @@
   </component>
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
+    "ASKED_ADD_EXTERNAL_FILES": "true",
+    "ASKED_MARK_IGNORED_FILES_AS_EXCLUDED": "true",
     "DefaultGoTemplateProperty": "Go File",
     "Go Build.go build github.com/rainmyy/seetaSearch.executor": "Run",
     "Go Build.go build github.com/seetaSearch.executor": "Run",
     "Go Build.go build seetaSearch.executor": "Run",
     "Go 构建.go build github.com/rainmyy/seetaSearch.executor": "Run",
-    "Go 构建.go build seetaSearch.executor": "Debug",
+    "Go 构建.go build seetaSearch.executor": "Run",
     "RunOnceActivity.OpenProjectViewOnStart": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.go.formatter.settings.were.checked": "true",
@@ -64,7 +77,8 @@
     "last_opened_file_path": "D:/code/seetaSearch",
     "node.js.detected.package.eslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm"
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "com.goide.configuration.GoLibrariesConfigurableProvider"
   }
 }]]></component>
   <component name="RecentsManager">
@@ -86,7 +100,7 @@
       <module name="seetaSearch" />
       <target name="@@@LOCAL@@@" />
       <working_directory value="$PROJECT_DIR$" />
-      <go_parameters value="-buildvcs=false" />
+      <sudo value="true" />
       <kind value="PACKAGE" />
       <package value="seetaSearch" />
       <directory value="$PROJECT_DIR$" />
@@ -106,18 +120,29 @@
     </configuration>
     <recent_temporary>
       <list>
-        <item itemvalue="Go 构建.go build seetaSearch" />
+        <item itemvalue="Go Build.go build seetaSearch" />
       </list>
     </recent_temporary>
   </component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-gosdk-2946fb9b3188-155fe4b6e3a0-org.jetbrains.plugins.go.sharedIndexes.bundled-GO-233.14808.20" />
+        <option value="bundled-gosdk-3b128438d3f6-4b567d62c776-org.jetbrains.plugins.go.sharedIndexes.bundled-GO-251.25410.140" />
+        <option value="bundled-js-predefined-d6986cc7102b-6a121458b545-JavaScript-GO-251.25410.140" />
       </set>
     </attachedChunks>
   </component>
   <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="" />
+      <created>1747719188675</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1747719188675</updated>
+    </task>
+    <servers />
+  </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>

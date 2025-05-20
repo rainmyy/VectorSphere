@@ -93,7 +93,6 @@ func (f *File) readFileByConcurrent(fileObj *os.File) error {
 		n, err := r.Read(buf)
 		if n == 0 {
 			if err != nil {
-				fmt.Println(err)
 				break
 			}
 			if err == io.EOF {

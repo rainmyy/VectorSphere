@@ -30,6 +30,13 @@ const (
 var ServiceLen = 4
 var pool = PoolLib.GetInstance()
 
+func (app *AppServer) Register() {
+
+}
+func (app *AppServer) Discover() {
+
+}
+
 // Setup /
 func (app *AppServer) Setup() {
 	_ = conf.NewConf().Init()

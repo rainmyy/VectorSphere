@@ -1,7 +1,6 @@
 package strategy
 
 import (
-	"fmt"
 	"time"
 	"unsafe"
 )
@@ -56,10 +55,10 @@ func Bytes2TreeStruct(b [][]byte) []TreeStruct {
 	var resList []TreeStruct
 	for _, val := range b {
 		treeStruct := *(*TreeStruct)(unsafe.Pointer(&val[0]))
-		for _, val := range treeStruct.GetNode() {
-			fmt.Print(val)
-		}
-		print(len(treeStruct.GetNode()))
+		//for _, val := range treeStruct.GetNode() {
+		//	fmt.Print(val)
+		//}
+		//print(len(treeStruct.GetNode()))
 		resList = append(resList, treeStruct)
 	}
 	return resList

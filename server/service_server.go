@@ -33,7 +33,7 @@ func (w *IndexServer) Init(docNumEstimate int, dbType int, DataDir string) error
 	return w.Index.NewIndexServer(docNumEstimate, dbType, "", DataDir)
 }
 
-func (w *IndexServer) RegisterService(servers []string, port int) error {
+func (w *IndexServer) RegisterService(servers []string, port int, serviceName string) error {
 	if len(servers) == 0 {
 		return errors.New("servers is empty")
 	}
@@ -46,7 +46,10 @@ func (w *IndexServer) RegisterService(servers []string, port int) error {
 	}
 	w.localhost = localIp + ":" + strconv.Itoa(port)
 	var heartBeat int64 = 3
-	hub := GetHub(servers, heartBeat)
+	err, hub := GetHub(servers, heartBeat, serviceName)
+	if err != nil {
+		return err
+	}
 	endPoint := &EndPoint{address: w.localhost}
 	leasID, err := hub.RegisterService(IndexService, endPoint, 0)
 	if err != nil {

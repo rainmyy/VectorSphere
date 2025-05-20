@@ -1,7 +1,5 @@
 package strategy
 
-import "fmt"
-
 type MiniHeap struct {
 	Size int
 	Heap []*HuffmanTree
@@ -82,7 +80,6 @@ func (hum *HuffmanTree) Traversal() {
 	if hum == nil {
 		return
 	}
-	fmt.Printf("%v\t", hum.Weight)
 	hum.Left.Traversal()
 	hum.Right.Traversal()
 }

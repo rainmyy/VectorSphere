@@ -18,18 +18,19 @@ type Sentinel struct {
 	IndexServer string
 }
 
-const IndexService = "seata_search"
-
 var _ ServerInterface = (*Sentinel)(nil)
 
-func NewSentinel(serviceNames []string) *Sentinel {
+func NewSentinel(endPoints []string, heartBeat int64, qps int, serviceName string) *Sentinel {
 	return &Sentinel{
-		hub:         GetHubProxy(serviceNames, 3, 100),
+		hub:         GetHubProxy(endPoints, heartBeat, qps, serviceName),
 		connPool:    sync.Map{},
-		IndexServer: IndexService,
+		IndexServer: serviceName,
 	}
 }
 
+func (s *Sentinel) RegisterSentinel(ttl int64) error {
+
+}
 func (s *Sentinel) GetGrpcConn(point EndPoint) *grpc.ClientConn {
 	v, ok := s.connPool.Load(point.address)
 	if ok {

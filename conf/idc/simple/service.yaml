@@ -1,0 +1,8 @@
+serviceName: seeta_search
+timeOut: 300
+defaultPort: 8080
+heartbeat : 5
+endpoints:
+  127.0.0.1
+  168.0.0.1
+  139.0.0.1

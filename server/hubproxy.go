@@ -20,13 +20,17 @@ var (
 	proxyOnce sync.Once
 )
 
-func GetHubProxy(etcds []string, heartBeat int64, qps int) *HubProxy {
+func GetHubProxy(endPoints []string, heartBeat int64, qps int, serviceName string) *HubProxy {
 	if hubProxy != nil {
 		return hubProxy
 	}
+	err, hub := GetHub(endPoints, heartBeat, serviceName)
+	if err != nil {
+		return nil
+	}
 	proxyOnce.Do(func() {
 		hubProxy = &HubProxy{
-			EtcdServiceHub: GetHub(etcds, heartBeat),
+			EtcdServiceHub: hub,
 			endpointCache:  sync.Map{},
 			limiter:        rate.NewLimiter(rate.Every(time.Duration(1e9/qps)*time.Nanosecond), qps),
 		}
