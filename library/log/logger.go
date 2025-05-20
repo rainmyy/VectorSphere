@@ -5,7 +5,9 @@ import (
 	"io"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
+	"seetaSearch/library/file"
 	"sync"
 	"time"
 )
@@ -36,7 +38,12 @@ var defaultLogger *Logger
 
 // 默认初始化
 func init() {
-	_ = InitLogger(INFO, "", 10, true) // 默认INFO级别，输出到终端，最大10MB
+	basePath, err := file.GetProjectRoot()
+	if err != nil {
+		return
+	}
+
+	_ = InitLogger(INFO, path.Join(basePath, "log", "seeta_search"), 10, true) // 默认INFO级别，输出到终端，最大10MB
 }
 
 // InitLogger 初始化日志，filePath为空则输出到终端，否则输出到文件

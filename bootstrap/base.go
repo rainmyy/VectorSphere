@@ -3,6 +3,8 @@ package bootstrap
 import (
 	"context"
 	"fmt"
+	"path"
+	"seetaSearch/library/file"
 	"seetaSearch/library/res"
 	"seetaSearch/server"
 	"sync"
@@ -47,7 +49,11 @@ type ServiceConfig struct {
 
 func (app *AppServer) ReadServiceConf() (error, *ServiceConfig) {
 	var cfg ServiceConfig
-	err := conf.ReadYAML("", &cfg)
+	rootPath, err := file.GetProjectRoot()
+	if err != nil {
+		return err, nil
+	}
+	err = conf.ReadYAML(path.Join(rootPath, "conf", "service.yaml"), &cfg)
 	if err != nil {
 		return err, nil
 	}
