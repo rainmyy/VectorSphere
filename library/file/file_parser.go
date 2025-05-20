@@ -1,3 +1,5 @@
+//go:build !linux
+
 package file
 
 import (
@@ -11,7 +13,7 @@ import (
 	. "seetaSearch/library/strategy"
 	"strings"
 	"sync"
-	"time"
+	"syscall"
 )
 
 // Parser 解析数据，将数据解析成树形结构进行存储
@@ -41,12 +43,79 @@ func (f *File) readFile() error {
 		}
 		fileSize = fiStat.Size()
 	}
-	//if the file larger than 1GB,concurrently read and parse files
-	if fileSize > defaultSize && f.dataType == DataType {
-		return f.readFileByConcurrent(fi)
-	} else {
-		return f.readFileByGeneral(fi)
+	// mmap缓存文件内容
+	data, err := mmapFile(fileName, int(fileSize))
+	if err != nil {
+		return err
 	}
+	defer func() {
+		if data != nil {
+			syscall.Munmap(data)
+		}
+	}()
+	// 大文件并发读取
+	if fileSize > defaultSize && f.dataType == DataType {
+		return f.readFileByConcurrentMmap(data)
+	} else {
+		return f.readFileByGeneralMmap(data)
+	}
+}
+
+// mmapFile 文件读取
+func mmapFile(fileName string, size int) ([]byte, error) {
+	fd, err := os.Open(fileName)
+	if err != nil {
+		return nil, err
+	}
+	defer fd.Close()
+	return syscall.Mmap(int(fd.Fd()), 0, size, syscall.PROT_READ, syscall.MAP_SHARED)
+}
+
+// 普通读取（mmap缓存）
+func (f *File) readFileByGeneralMmap(data []byte) error {
+	if data == nil {
+		return fmt.Errorf("mmap data is nil")
+	}
+	tree, err := parserDataFunc(f, data)
+	if err != nil {
+		return err
+	}
+	f.content = tree
+	return nil
+}
+
+// 并发读取（mmap缓存）
+func (f *File) readFileByConcurrentMmap(data []byte) error {
+	if data == nil {
+		return fmt.Errorf("mmap data is nil")
+	}
+	lines := strings.Split(string(data), "\n")
+	chunkSize := 10000 // 可根据实际情况调整
+	var wg sync.WaitGroup
+	treeChan := make(chan []*TreeStruct, len(lines)/chunkSize+1)
+	for i := 0; i < len(lines); i += chunkSize {
+		end := i + chunkSize
+		if end > len(lines) {
+			end = len(lines)
+		}
+		wg.Add(1)
+		go func(chunk []string) {
+			defer wg.Done()
+			chunkData := []byte(strings.Join(chunk, "\n"))
+			tree, _ := parserDataFunc(f, chunkData)
+			if tree != nil {
+				treeChan <- tree
+			}
+		}(lines[i:end])
+	}
+	wg.Wait()
+	close(treeChan)
+	var allTrees []*TreeStruct
+	for t := range treeChan {
+		allTrees = append(allTrees, t...)
+	}
+	f.content = allTrees
+	return nil
 }
 
 func (f *File) readFileByGeneral(fileObj *os.File) error {
@@ -137,24 +206,11 @@ func ProcessChunk(chunk []byte, linesPool *sync.Pool, stringPool *sync.Pool, sli
 				if len(text) == 0 {
 					continue
 				}
-				processLine(text)
+				//tree, _ := parserDataFunc(f, []byte(text))
 			}
 			wg2.Done()
 		}(i*chunkSize, int(math.Min(float64((i+1)*chunkSize), float64(len(logsSlice)))))
 	}
-}
-
-func processLine(text string) {
-	logParts := strings.SplitN(text, ",", 2)
-	logCreationTimeString := logParts[0]
-	_, err := time.Parse("2006-01-  02T15:04:05.0000Z", logCreationTimeString)
-	if err != nil {
-		fmt.Println("\n Could not able to parse the time:%s for log: %v", logCreationTimeString, text)
-		return
-	}
-	//if logCreateTime.After(start) && logCreateTime.Before(end) {
-	//	fmt.Println(text)
-	//}
 }
 
 /**

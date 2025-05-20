@@ -4,10 +4,38 @@ import (
 	"fmt"
 	. "seetaSearch/library/common"
 	. "seetaSearch/library/strategy"
+	"strings"
 )
 
-// ParserIniContent /**
 func ParserIniContent(data []byte) ([]*TreeStruct, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	lines := strings.Split(string(data), "\n")
+	var trees []*TreeStruct
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, ";") || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 {
+			tree := TreeInstance()
+			node := NodeInstance([]byte(strings.TrimSpace(parts[0])), []byte(strings.TrimSpace(parts[1])))
+			tree.SetNode(node)
+			trees = append(trees, tree)
+		} else {
+			tree := TreeInstance()
+			node := NodeInstance([]byte(line), []byte{})
+			tree.SetNode(node)
+			trees = append(trees, tree)
+		}
+	}
+	return trees, nil
+}
+
+// ParserIniContent /**
+func ParserIni(data []byte) ([]*TreeStruct, error) {
 	if data == nil {
 		return nil, fmt.Errorf("content is nil")
 	}

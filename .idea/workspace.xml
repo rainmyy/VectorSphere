@@ -5,13 +5,18 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/library/conf/parser_yaml.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/bootstrap/base.go" beforeDir="false" afterPath="$PROJECT_DIR$/bootstrap/base.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/go.mod" beforeDir="false" afterPath="$PROJECT_DIR$/go.mod" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/go.sum" beforeDir="false" afterPath="$PROJECT_DIR$/go.sum" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/conf/parser_json.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/conf/parser_json.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/conf/sys.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/conf/sys.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/library/file/file_parser.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/file_parser.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/json/parser_json.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/conf/parser_json.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/pool/pool.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/pool/pool.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/sentinel.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/sentinel.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/file/func.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/func.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/file/parser_default.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/parser_default.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/file/parser_ini.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/parser_ini.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/file/parser_yaml.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/parser_yaml.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/log/logger.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/log/logger.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/strategy/trie.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/strategy/trie.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
