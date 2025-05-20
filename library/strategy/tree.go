@@ -65,27 +65,20 @@ func Bytes2TreeStruct(b [][]byte) []TreeStruct {
 }
 
 func (s *TreeStruct) GetNode() []*NodeStruct {
-	if s.node == nil {
-		return nil
-	}
 	return s.node
 }
 
-func (s *TreeStruct) SetNode(node *NodeStruct) *TreeStruct {
+func (s *TreeStruct) SetNode(node *NodeStruct) {
 	if node == nil {
-		return s
+		return
 	}
 	s.node = append(s.node, node)
 	if len(node.data) > 0 {
 		s.leaf = true
 	}
-	return s
 }
 
 func (s *TreeStruct) GetChildren() []*TreeStruct {
-	if s.children == nil {
-		return nil
-	}
 	return s.children
 }
 
@@ -96,47 +89,38 @@ func (s *TreeStruct) SetChildren(children *TreeStruct) *TreeStruct {
 	children.SetParent(s)
 	children.SetHeight(s.high + 1)
 	s.children = append(s.children, children)
-	for _, val := range s.children {
-		if val.IsLeaf() == true {
-			s.childLeafNum++
-		}
+	if children.IsLeaf() {
+		s.childLeafNum++
 	}
 	return s
 }
 
 // GetParent /**
 func (s *TreeStruct) GetParent() *TreeStruct {
-	if s.parent == nil {
-		return s
-	}
 	return s.parent
 }
 
-func (s *TreeStruct) SetParent(tree *TreeStruct) *TreeStruct {
-	if tree == nil {
-		return s
-	}
+func (s *TreeStruct) SetParent(tree *TreeStruct) {
 	s.parent = tree
-	return s
 }
 
 func (s *TreeStruct) GetRoot() *TreeStruct {
 	if s.IsRoot() == true {
 		return s
 	}
-	for s.parent != nil {
-		s = s.parent
+	cur := s
+	for cur.parent != nil {
+		cur = cur.parent
 	}
-	return s
+	return cur
 }
 
 func (s *TreeStruct) GetHeight() int {
 	return s.high
 }
 
-func (s *TreeStruct) SetHeight(height int) *TreeStruct {
+func (s *TreeStruct) SetHeight(height int) {
 	s.high = height
-	return s
 }
 
 func (s *TreeStruct) IsLeaf() bool {
@@ -153,33 +137,33 @@ func TreeInstance() *TreeStruct {
 	return &TreeStruct{
 		node:     make([]*NodeStruct, 0),
 		children: make([]*TreeStruct, 0),
-		parent:   new(TreeStruct),
+		parent:   nil,
 	}
 }
 
-func (s *NodeStruct) UpdateData(value []byte) *NodeStruct {
-	nodeData := s.data
-	hasDiff := false
+func (s *NodeStruct) UpdateData(value []byte) {
 	if len(s.data) == len(value) {
-		for i := 0; i < len(nodeData); i++ {
+		same := true
+		for i := 0; i < len(s.data); i++ {
 			if s.data[i] != value[i] {
-				hasDiff = true
+				same = false
+				break
 			}
 		}
+		if same {
+			return
+		}
 	}
-	if !hasDiff {
-		return s
-	}
-	s.backup = nodeData
+	s.backup = s.data
 	s.data = value
 	s.updatetime = time.Now()
-	return s
 }
 
 func NodeInstance(key []byte, value []byte) *NodeStruct {
 	return &NodeStruct{
 		name:       key,
 		data:       value,
+		length:     len(value),
 		createtime: time.Now(),
 		updatetime: time.Now(),
 	}
