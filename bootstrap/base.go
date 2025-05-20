@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"seetaSearch/library/res"
 	"seetaSearch/server"
-	"strconv"
 	"sync"
 
 	"seetaSearch/library/conf"
@@ -16,9 +15,10 @@ import (
 *app执行入口
  */
 type AppServer struct {
-	mutex  sync.WaitGroup
-	Ctx    context.Context
-	Cancel context.CancelFunc
+	mutex        sync.WaitGroup
+	Ctx          context.Context
+	Cancel       context.CancelFunc
+	funcRegister map[string]func()
 }
 
 const (
@@ -28,25 +28,85 @@ const (
 	WRITESERVICE
 )
 
-var ServiceLen = 4
 var pool = PoolLib.GetInstance()
 
-func (app *AppServer) Register() {
-	if true {
-		s := new(server.IndexServer)
-		err := s.RegisterService([]string{}, 8080, "")
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		defer s.Close()
-	} else {
+type Endpoint struct {
+	Ip        string `yaml:"ip"`
+	SetMaster bool   `yaml:"setMaster,omitempty"`
+	Port      int    `yaml:"port,omitempty"`
+}
 
+// ServiceConfig 结构体映射整个 YAML 文件
+type ServiceConfig struct {
+	ServiceName string              `yaml:"serviceName"`
+	TimeOut     int                 `yaml:"timeOut"`
+	DefaultPort int                 `yaml:"defaultPort"`
+	Heartbeat   int                 `yaml:"heartbeat"`
+	Endpoints   map[string]Endpoint `yaml:"endpoints"`
+}
+
+func (app *AppServer) ReadServiceConf() (error, *ServiceConfig) {
+	var cfg ServiceConfig
+	err := conf.ReadYAML("", &cfg)
+	if err != nil {
+		return err, nil
 	}
+
+	return nil, &cfg
+}
+
+func (app *AppServer) Register() {
+	err, config := app.ReadServiceConf()
+	if err != nil {
+		panic(err)
+	}
+	for name, ep := range config.Endpoints {
+		endpoints := []string{ep.Ip}
+		port := ep.Port
+		if port == 0 {
+			port = config.DefaultPort
+		}
+		if ep.SetMaster {
+			// master节点注册
+			s := new(server.IndexServer)
+			masterServiceName := config.ServiceName
+			err := s.RegisterService(endpoints, port, masterServiceName)
+			if err != nil {
+				fmt.Println("Master注册失败:", err)
+				continue
+			}
+			fmt.Printf("Master节点 %s 注册成功: %s:%d\n", name, ep.Ip, port)
+			defer s.Close()
+		} else {
+			// sentinel节点注册
+			sentinel := server.NewSentinel(endpoints, int64(config.Heartbeat), 100, config.ServiceName)
+			err := sentinel.RegisterSentinel(int64(config.Heartbeat))
+			if err != nil {
+				fmt.Println("Sentinel注册失败:", err)
+				continue
+			}
+			fmt.Printf("Sentinel节点 %s 注册成功: %s:%d\n", name, ep.Ip, port)
+		}
+	}
+	//注册注册方法
+	app.funcRegister["register_etcd"] = app.Register
 }
 
 func (app *AppServer) Discover() {
+	err, config := app.ReadServiceConf()
+	if err != nil {
+		panic(err)
+	}
+	for name, ep := range config.Endpoints {
+		if !ep.SetMaster {
+			sentinel := server.NewSentinel([]string{ep.Ip}, int64(config.Heartbeat), 100, config.ServiceName)
+			endpoints := sentinel.Hub.GetServiceEndpoints(config.ServiceName)
+			fmt.Printf("Sentinel节点 %s 发现的master节点: %+v\n", name, endpoints)
+		}
+	}
 
+	//注册发现方法
+	app.funcRegister["discover_etcd"] = app.Discover
 }
 
 // Setup /
@@ -54,27 +114,23 @@ func (app *AppServer) Setup() {
 	_ = conf.NewConf().Init()
 
 	//注册执行函数
-	pool := pool.Init(ServiceLen, ServiceLen)
-	for i := 0; i < ServiceLen; i++ {
+	serviceLen := len(app.funcRegister)
+	pool := pool.Init(serviceLen, serviceLen)
+	for k, v := range app.funcRegister {
 		app.mutex.Add(1)
-		go func(num int) {
+		go func(key string, value interface{}) {
 			defer app.mutex.Done()
-			query := PoolLib.QueryInit(strconv.Itoa(num), download, 123, "wwww")
+			query := PoolLib.QueryInit(key, v)
 			pool.AddTask(query)
-		}(i)
+		}(k, v)
 	}
+
 	app.mutex.Wait()
 }
 
 func (app *AppServer) Start() map[string]*res.Response {
 	pool.Start()
 	return pool.TaskResult()
-}
-
-func download(url int, str string) {
-	fmt.Print(str, "\n")
-	//result := res.ResultInstance().SetResult(200, fmt.Errorf(""), "result")
-	//return result
 }
 
 func GenInstance() *AppServer {

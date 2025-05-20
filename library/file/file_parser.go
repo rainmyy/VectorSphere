@@ -7,7 +7,7 @@ import (
 	"math"
 	"os"
 	. "seetaSearch/library/common"
-	"seetaSearch/library/json"
+	"seetaSearch/library/conf"
 	. "seetaSearch/library/strategy"
 	"strings"
 	"sync"
@@ -168,7 +168,7 @@ func parserDataFunc(file *File, data []byte) ([]*TreeStruct, error) {
 	case YamlType:
 		return ParserYamlContent(data)
 	case JsonType:
-		return json.ParserJsonContent(data)
+		return conf.ParserJsonContent(data)
 	default:
 		return ParserContent(data)
 	}

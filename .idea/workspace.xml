@@ -5,13 +5,13 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/library/conf/parser_yaml.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/bootstrap/base.go" beforeDir="false" afterPath="$PROJECT_DIR$/bootstrap/base.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/conf/idc/simple/service.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/conf/idc/simple/service.yaml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/etcdhub.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/etcdhub.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/hubproxy.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/hubproxy.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/file/file_parser.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/file_parser.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/json/parser_json.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/conf/parser_json.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/pool/pool.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/pool/pool.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/server/sentinel.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/sentinel.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/service_server.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/service_server.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -25,7 +25,7 @@
       </list>
     </option>
   </component>
-  <component name="GOROOT" url="file://C:/Program Files/Go" />
+  <component name="GOROOT" url="file://$USER_HOME$/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.0.windows-amd64" />
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
@@ -47,35 +47,36 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ASKED_ADD_EXTERNAL_FILES": "true",
-    "ASKED_MARK_IGNORED_FILES_AS_EXCLUDED": "true",
-    "DefaultGoTemplateProperty": "Go File",
-    "Go Build.go build github.com/rainmyy/seetaSearch.executor": "Run",
-    "Go Build.go build github.com/seetaSearch.executor": "Run",
-    "Go Build.go build seetaSearch.executor": "Run",
-    "Go 构建.go build github.com/rainmyy/seetaSearch.executor": "Run",
-    "Go 构建.go build seetaSearch.executor": "Run",
-    "RunOnceActivity.OpenProjectViewOnStart": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.go.formatter.settings.were.checked": "true",
-    "RunOnceActivity.go.migrated.go.modules.settings": "true",
-    "RunOnceActivity.go.modules.automatic.dependencies.download": "true",
-    "RunOnceActivity.go.modules.go.list.on.any.changes.was.set": "true",
-    "git-widget-placeholder": "master",
-    "go.import.settings.migrated": "true",
-    "go.sdk.automatically.set": "true",
-    "ignore.virus.scanning.warn.message": "true",
-    "last_opened_file_path": "D:/code/seetaSearch",
-    "node.js.detected.package.eslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "com.goide.configuration.GoLibrariesConfigurableProvider"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ASKED_ADD_EXTERNAL_FILES&quot;: &quot;true&quot;,
+    &quot;ASKED_MARK_IGNORED_FILES_AS_EXCLUDED&quot;: &quot;true&quot;,
+    &quot;DefaultGoTemplateProperty&quot;: &quot;Go File&quot;,
+    &quot;Go Build.go build github.com/rainmyy/seetaSearch.executor&quot;: &quot;Run&quot;,
+    &quot;Go Build.go build github.com/seetaSearch.executor&quot;: &quot;Run&quot;,
+    &quot;Go Build.go build seetaSearch.executor&quot;: &quot;Run&quot;,
+    &quot;Go 构建.go build github.com/rainmyy/seetaSearch.executor&quot;: &quot;Run&quot;,
+    &quot;Go 构建.go build seetaSearch.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.go.formatter.settings.were.checked&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.go.migrated.go.modules.settings&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.go.modules.automatic.dependencies.download&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.go.modules.go.list.on.any.changes.was.set&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;go.import.settings.migrated&quot;: &quot;true&quot;,
+    &quot;go.sdk.automatically.set&quot;: &quot;true&quot;,
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;D:/code/seetaSearch&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.goide.configuration.GoLibrariesConfigurableProvider&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="D:\code\seetaSearch\library\conf" />
       <recent name="D:\code\seetaSearch\entity" />
     </key>
   </component>
@@ -111,11 +112,6 @@
       <framework value="gotest" />
       <method v="2" />
     </configuration>
-    <recent_temporary>
-      <list>
-        <item itemvalue="Go Build.go build seetaSearch" />
-      </list>
-    </recent_temporary>
   </component>
   <component name="SharedIndexes">
     <attachedChunks>

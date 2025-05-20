@@ -12,7 +12,7 @@ const (
 
 type Pool struct {
 	//mutex         sync.WaitGroup
-	RuntineNumber int
+	runtimeNumber int
 	Total         int
 	taskQuery     chan *Queue
 	taskResult    chan map[string]*res.Response
@@ -59,7 +59,7 @@ func (q *Queue) CallBackInit(name string, function interface{}, params ...interf
 	return q
 }
 func (p *Pool) Init(runtimeNumber, total int) *Pool {
-	p.RuntineNumber = runtimeNumber
+	p.runtimeNumber = runtimeNumber
 	p.Total = total
 	p.taskQuery = make(chan *Queue, runtimeNumber)
 	p.taskResult = make(chan map[string]*res.Response, runtimeNumber)
@@ -67,7 +67,7 @@ func (p *Pool) Init(runtimeNumber, total int) *Pool {
 	return p
 }
 func (p *Pool) Start() {
-	runtimeNumber := p.RuntineNumber
+	runtimeNumber := p.runtimeNumber
 	if len(p.taskQuery) != runtimeNumber {
 		runtimeNumber = len(p.taskQuery)
 	}
