@@ -1,7 +1,6 @@
 package conf
 
 import (
-	"fmt"
 	"sync"
 
 	. "seetaSearch/library/bind"
@@ -20,7 +19,6 @@ func (conf *DefaultConf) Init() *DefaultConf {
 	confName := "./conf/idc/bj/service.yaml"
 	fileObj, err := Instance(confName)
 	if err != nil {
-		fmt.Print(err.Error())
 		return nil
 	}
 
@@ -32,8 +30,7 @@ func (conf *DefaultConf) Init() *DefaultConf {
 
 	str := StringInstance()
 	//array := ArrayInterface()
-	bindData := DefaultBind(fileObj.GetContent(), str)
-	fmt.Print(bindData)
+	DefaultBind(fileObj.GetContent(), str)
 	//bytes, err := json.Marshal(bindData)
 	//fmt.Print(string(bytes))
 	return conf

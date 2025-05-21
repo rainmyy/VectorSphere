@@ -38,7 +38,7 @@ func (w *IndexServer) RegisterService(servers []string, port int, serviceName st
 	if len(servers) == 0 {
 		return errors.New("servers is empty")
 	}
-	if port <= 1024 || port > 65535 {
+	if port != 80 && (port <= 1024 || port > 65535) {
 		return errors.New("port is out of range")
 	}
 	localIp, err := common.GetLocalHost()

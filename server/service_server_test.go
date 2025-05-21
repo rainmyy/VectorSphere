@@ -3,6 +3,7 @@ package server
 import (
 	"github.com/golang/mock/gomock"
 	"seetaSearch/messages"
+	"seetaSearch/mocks"
 	"testing"
 	"time"
 )
@@ -25,7 +26,7 @@ func TestIndexServer_Init(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mockIndex := mocks.NewMockIndex(ctrl)
+	mockIndex := mocks.NewMockIndexInterface(ctrl)
 	mockIndex.EXPECT().NewIndexServer(100, 1, "", "testDir").Return(nil)
 
 	server := &IndexServer{
