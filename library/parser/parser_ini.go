@@ -1,8 +1,10 @@
-package file
+package parser
 
 import (
 	"fmt"
 	. "seetaSearch/library/common"
+	"seetaSearch/library/util"
+
 	. "seetaSearch/library/strategy"
 	"strings"
 )
@@ -82,7 +84,7 @@ func initTreeFunc(bytesList [][]byte) []*TreeStruct {
 	currentTree := TreeInstance()
 	//分隔符，91:'[' 46:'.' 58:'.'
 	var segment = []int{int(LeftBracket), int(Period)}
-	infunc := InIntSliceSortedFunc(segment)
+	infunc := util.InIntSliceSortedFunc(segment)
 	var rootTree = currentTree
 	//根节点设置为1
 	currentTree.SetHeight(1)

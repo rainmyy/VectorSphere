@@ -1,4 +1,4 @@
-package file
+package parser
 
 import (
 	. "seetaSearch/library/strategy"

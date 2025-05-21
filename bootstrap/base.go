@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"path"
-	"seetaSearch/library/file"
 	"seetaSearch/library/res"
+	"seetaSearch/library/util"
 	"seetaSearch/server"
 	"sync"
 
@@ -49,7 +49,7 @@ type ServiceConfig struct {
 
 func (app *AppServer) ReadServiceConf() (error, *ServiceConfig) {
 	var cfg ServiceConfig
-	rootPath, err := file.GetProjectRoot()
+	rootPath, err := util.GetProjectRoot()
 	if err != nil {
 		return err, nil
 	}

@@ -7,7 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"seetaSearch/library/file"
+	"seetaSearch/library/util"
 	"sync"
 	"time"
 )
@@ -38,7 +38,7 @@ var defaultLogger *Logger
 
 // 默认初始化
 func init() {
-	basePath, err := file.GetProjectRoot()
+	basePath, err := util.GetProjectRoot()
 	if err != nil {
 		return
 	}

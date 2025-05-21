@@ -1,5 +1,3 @@
-//go:build !linux
-
 package file
 
 import (
@@ -9,11 +7,10 @@ import (
 	"math"
 	"os"
 	. "seetaSearch/library/common"
-	"seetaSearch/library/conf"
+	"seetaSearch/library/parser"
 	. "seetaSearch/library/strategy"
 	"strings"
 	"sync"
-	"syscall"
 )
 
 // Parser 解析数据，将数据解析成树形结构进行存储
@@ -44,13 +41,13 @@ func (f *File) readFile() error {
 		fileSize = fiStat.Size()
 	}
 	// mmap缓存文件内容
-	data, err := mmapFile(fileName, int(fileSize))
+	data, err := MmapFile(fileName, int(fileSize))
 	if err != nil {
 		return err
 	}
 	defer func() {
 		if data != nil {
-			syscall.Munmap(data)
+			MunmapFile(data)
 		}
 	}()
 	// 大文件并发读取
@@ -59,16 +56,6 @@ func (f *File) readFile() error {
 	} else {
 		return f.readFileByGeneralMmap(data)
 	}
-}
-
-// mmapFile 文件读取
-func mmapFile(fileName string, size int) ([]byte, error) {
-	fd, err := os.Open(fileName)
-	if err != nil {
-		return nil, err
-	}
-	defer fd.Close()
-	return syscall.Mmap(int(fd.Fd()), 0, size, syscall.PROT_READ, syscall.MAP_SHARED)
 }
 
 // 普通读取（mmap缓存）
@@ -220,12 +207,12 @@ func parserDataFunc(file *File, data []byte) ([]*TreeStruct, error) {
 	var objType = file.GetDataType()
 	switch objType {
 	case IniType:
-		return ParserIniContent(data)
+		return parser.ParserIniContent(data)
 	case YamlType:
-		return ParserYamlContent(data)
+		return parser.ParserYamlContent(data)
 	case JsonType:
-		return conf.ParserJsonContent(data)
+		return parser.ParserJsonContent(data)
 	default:
-		return ParserContent(data)
+		return parser.ParserContent(data)
 	}
 }
