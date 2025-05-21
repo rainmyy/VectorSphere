@@ -62,7 +62,7 @@ func (w *IndexServer) RegisterService(servers []string, port int, serviceName st
 		for !w.stop {
 			_, err := hub.RegisterService(serviceName, endPoint, leasID)
 			if err != nil {
-				log.Logger.Printf("续约服务失败,租约ID:%d, 错误:%v", leasID, err)
+				log.Error("续约服务失败,租约ID:%d, 错误:%v", leasID, err)
 			}
 			time.Sleep(time.Duration(heartBeat)*time.Second - 100*time.Millisecond)
 		}
@@ -124,9 +124,9 @@ func (w *IndexServer) Close() error {
 	endPoint := &EndPoint{address: w.localhost}
 	err := w.hub.UnRegisterService(w.serviceName, endPoint)
 	if err != nil {
-		log.Logger.Printf("注销服务失败，服务地址: %v, 错误: %v", w.localhost, err)
+		log.Error("注销服务失败，服务地址: %v, 错误: %v", w.localhost, err)
 		return err
 	}
-	log.Logger.Printf("注销服务成功，服务地址: %v", w.localhost)
+	log.Info("注销服务成功，服务地址: %v", w.localhost)
 	return w.Index.Close()
 }
