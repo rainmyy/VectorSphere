@@ -43,7 +43,7 @@ func init() {
 		return
 	}
 
-	_ = InitLogger(INFO, path.Join(basePath, "log", "seeta_search"), 10, true) // 默认INFO级别，输出到终端，最大10MB
+	_ = InitLogger(INFO, path.Join(basePath, "log", "seeta_search.log"), 10, true) // 默认INFO级别，输出到终端，最大10MB
 }
 
 // InitLogger 初始化日志，filePath为空则输出到终端，否则输出到文件

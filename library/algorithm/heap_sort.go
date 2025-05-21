@@ -1,8 +1,5 @@
-package common
+package algorithm
 
-/**
-* 基本算法
- */
 func maxHeapify(arr []int, n, i int) {
 	largest := i
 	left := 2*i + 1
