@@ -45,9 +45,9 @@ func (b *BadgerDB) CheckAndGc() {
 	}
 	lsmSizeAfter, vlogSizeAfter := b.db.Size()
 	if vlogSizeAfter < vlogSizeBefore {
-		log.Logger.Print("badger before GC, LSM %d, vlog %d, after GC, LSM %d, vlog %d", lsmSizeBefore, vlogSizeBefore, lsmSizeAfter, vlogSizeAfter)
+		log.Info("badger before GC, LSM %d, vlog %d, after GC, LSM %d, vlog %d", lsmSizeBefore, vlogSizeBefore, lsmSizeAfter, vlogSizeAfter)
 	} else {
-		log.Logger.Print("collect zero grabage")
+		log.Info("collect zero grabage")
 	}
 }
 func (b *BadgerDB) GetDbPath() string {

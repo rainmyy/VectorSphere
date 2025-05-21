@@ -4,7 +4,6 @@ package strategy
 
 import (
 	"os"
-	"runtime"
 	"syscall"
 )
 
@@ -51,7 +50,7 @@ func (m *Mmap) checkFilePointer(checkValue int64) error {
 	if m.FilePointer+checkValue < m.FileLen {
 		return nil
 	}
-	sysType := runtime.GOOS
+	//sysType := runtime.GOOS
 	err := syscall.Ftruncate(int(m.Filed.Fd()), m.FileLen+APPEND_DATA)
 	if err != nil {
 		return err
