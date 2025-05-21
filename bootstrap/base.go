@@ -2,10 +2,13 @@ package bootstrap
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"path"
 	"seetaSearch/library/res"
 	"seetaSearch/library/util"
+	"seetaSearch/messages"
 	"seetaSearch/server"
 	"sync"
 
@@ -133,7 +136,63 @@ func (app *AppServer) Setup() {
 
 	app.mutex.Wait()
 }
+func (app *AppServer) ListenAPI() {
+	err, config := app.ReadServiceConf()
+	if err != nil {
+		panic(err)
+	}
 
+	for name, ep := range config.Endpoints {
+		if ep.SetMaster {
+			// 主节点监听 API 请求
+			port := ep.Port
+			if port == 0 {
+				port = config.DefaultPort
+			}
+			address := fmt.Sprintf("%s:%d", ep.Ip, port)
+			fmt.Printf("Master节点 %s 开始监听 API 请求: %s\n", name, address)
+
+			http.HandleFunc("/addDoc", func(w http.ResponseWriter, r *http.Request) {
+				// 处理添加文档请求
+				// 这里需要根据实际情况解析请求参数并调用相应的服务方法
+				// 示例代码
+				doc := &messages.Document{}
+				s := new(server.IndexServer)
+				affected, err := s.AddDoc(context.Background(), doc)
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				fmt.Fprintf(w, "添加文档成功，影响文档数量: %d", affected.Count)
+			})
+
+			http.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
+				// 处理搜索请求
+				// 这里需要根据实际情况解析请求参数并调用相应的服务方法
+				// 示例代码
+				query := &messages.TermQuery{}
+				onFlag := uint64(0)
+				offFlag := uint64(0)
+				orFlags := []uint64{}
+				s := new(server.IndexServer)
+				result, err := s.Search(context.Background(), &server.Request{Query: query, OnFlag: onFlag, OffFlag: offFlag, OrFlags: orFlags})
+				if err != nil {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				// 这里需要将结果序列化为 JSON 并返回给客户端
+				// 示例代码
+				json.NewEncoder(w).Encode(result)
+			})
+
+			if err := http.ListenAndServe(address, nil); err != nil {
+				fmt.Printf("Master节点 %s 监听 API 请求失败: %v\n", name, err)
+			}
+		}
+	}
+
+	app.funcRegister["listen_api"] = app.ListenAPI
+}
 func (app *AppServer) Start() map[string]*res.Response {
 	pool.Start()
 	return pool.TaskResult()

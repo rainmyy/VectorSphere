@@ -7,6 +7,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
+	"seetaSearch/library/log"
 	"seetaSearch/messages"
 	"sync"
 	"sync/atomic"
@@ -23,11 +24,13 @@ type Sentinel struct {
 var _ ServerInterface = (*Sentinel)(nil)
 
 func NewSentinel(endPoints []string, heartBeat int64, qps int, serviceName string) *Sentinel {
-	return &Sentinel{
+	sentinel := &Sentinel{
 		Hub:        GetHubProxy(endPoints, heartBeat, qps, serviceName),
 		connPool:   sync.Map{},
 		ServiceKey: serviceName,
 	}
+	go sentinel.WatchServiceChanges()
+	return sentinel
 }
 
 func (s *Sentinel) RegisterSentinel(ttl int64) error {
@@ -46,10 +49,31 @@ func (s *Sentinel) RegisterSentinel(ttl int64) error {
 	}
 	go func() {
 		for range ch {
-
+			log.Info("sentinel heartbeat success")
 		}
+		log.Warning("Etcd 连接中断，Sentinel 租约 ID: %d\n", s.leaseId)
 	}()
 	return nil
+}
+
+func (s *Sentinel) WatchServiceChanges() {
+	watcher := clientv3.NewWatcher(s.Hub.GetClient())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	watchChan := watcher.Watch(ctx, s.ServiceKey, clientv3.WithPrefix())
+	for resp := range watchChan {
+		for _, ev := range resp.Events {
+			switch ev.Type {
+			case clientv3.EventTypePut:
+				// 有新的服务节点注册
+				log.Info("新的服务节点注册: %s\n", string(ev.Kv.Key))
+			case clientv3.EventTypeDelete:
+				// 有服务节点注销
+				log.Info("服务节点注销: %s\n", string(ev.Kv.Key))
+			}
+		}
+	}
 }
 func (s *Sentinel) GetGrpcConn(point EndPoint) *grpc.ClientConn {
 	v, ok := s.connPool.Load(point.address)
