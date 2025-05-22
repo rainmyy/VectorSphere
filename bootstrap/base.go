@@ -58,7 +58,7 @@ func (app *AppServer) ReadServiceConf() (error, *ServiceConfig) {
 		return err, nil
 	}
 
-	err = conf.ReadYAML(path.Join(rootPath, "conf\\simple\\service.yaml"), &cfg)
+	err = conf.ReadYAML(path.Join(rootPath, "conf", "simple", "service.yaml"), &cfg)
 	//err = conf.ReadYAML("D:\\code\\seetaSearch\\conf\\idc\\simple\\service.yaml", &cfg)
 
 	if err != nil {
