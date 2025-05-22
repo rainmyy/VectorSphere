@@ -45,9 +45,9 @@ func NewMmap(fileName string, mode int) (*Mmap, error) {
 		0,
 		uint32(mmap.FileLen),
 		nil)
-	
+
 	addr, err := syscall.MapViewOfFile(h, syscall.FILE_MAP_WRITE, 0, 0, uintptr(mmap.FileLen))
-	err = syscall.CloseHandle(syscall.Handle(h))
+	err = syscall.CloseHandle(h)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func (m *Mmap) checkFilePointer(checkValue int64) error {
 	m.FileLen += APPEND_DATA
 	h, err := syscall.CreateFileMapping(syscall.Handle(m.Filed.Fd()), nil, syscall.PAGE_READWRITE, 0, uint32(m.FileLen), nil)
 	addr, err := syscall.MapViewOfFile(h, syscall.FILE_MAP_WRITE, 0, 0, uintptr(m.FileLen))
-	err = syscall.CloseHandle(syscall.Handle(h))
+	err = syscall.CloseHandle(h)
 	if err != nil {
 		return err
 	}

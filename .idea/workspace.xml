@@ -5,18 +5,11 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/bootstrap/base.go" beforeDir="false" afterPath="$PROJECT_DIR$/bootstrap/base.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/go.mod" beforeDir="false" afterPath="$PROJECT_DIR$/go.mod" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/go.sum" beforeDir="false" afterPath="$PROJECT_DIR$/go.sum" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/conf/default.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/conf/default.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/file/file_reader.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/file_reader.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/file/file_reader_w.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/file_reader_w.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/util/func.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/util/func.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.go" beforeDir="false" afterPath="$PROJECT_DIR$/main.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/service_server.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/service_server.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/service_server_test.go" beforeDir="false" afterPath="$PROJECT_DIR$/server/service_server_test.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/strategy/mmap_w.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/strategy/mmap_w.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -59,7 +52,7 @@
     "DefaultGoTemplateProperty": "Go File",
     "Go Build.go build github.com/rainmyy/seetaSearch.executor": "Run",
     "Go Build.go build github.com/seetaSearch.executor": "Run",
-    "Go Build.go build seetaSearch.executor": "Run",
+    "Go Build.go build seetaSearch.executor": "Debug",
     "Go 构建.go build github.com/rainmyy/seetaSearch.executor": "Run",
     "Go 构建.go build seetaSearch.executor": "Run",
     "RunOnceActivity.OpenProjectViewOnStart": "true",
@@ -119,11 +112,6 @@
       <framework value="gotest" />
       <method v="2" />
     </configuration>
-    <recent_temporary>
-      <list>
-        <item itemvalue="Go 构建.go build seetaSearch" />
-      </list>
-    </recent_temporary>
   </component>
   <component name="SharedIndexes">
     <attachedChunks>

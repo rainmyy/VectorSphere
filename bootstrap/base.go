@@ -184,9 +184,6 @@ func (app *AppServer) ListenAPI() {
 			})
 
 			http.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
-				// 处理搜索请求
-				// 这里需要根据实际情况解析请求参数并调用相应的服务方法
-				// 示例代码
 				query := &messages.TermQuery{}
 				onFlag := uint64(0)
 				offFlag := uint64(0)
