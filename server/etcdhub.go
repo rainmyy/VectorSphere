@@ -44,23 +44,27 @@ func init() {
 
 func GetHub(endPoints []string, heartbeat int64, serviceName string) (error, *EtcdServiceHub) {
 	if etcdServiceHub != nil {
-		return errors.New("etcd hub is nil"), etcdServiceHub
+		return nil, etcdServiceHub
 	}
 	var er error
 	hubOnce.Do(func() {
 		client, err := etcdv3.New(etcdv3.Config{
-			Endpoints:   endPoints,
-			DialTimeout: time.Duration(heartbeat) * time.Second,
+			Endpoints:            endPoints,
+			DialTimeout:          time.Duration(heartbeat) * time.Second,
+			DialKeepAliveTime:    3 * time.Second,
+			DialKeepAliveTimeout: 3 * time.Second,
 		})
 		if err != nil {
 			er = err
 			return
 		}
-		session, err := concurrency.NewSession(client, concurrency.WithTTL(10))
+
+		session, err := concurrency.NewSession(client, concurrency.WithTTL(3))
 		if err != nil {
 			er = err
 			return
 		}
+		defer session.Close()
 		election := concurrency.NewElection(session, serviceName)
 		etcdServiceHub = &EtcdServiceHub{
 			client:       client,
@@ -76,11 +80,17 @@ func GetHub(endPoints []string, heartbeat int64, serviceName string) (error, *Et
 }
 
 func (etcd *EtcdServiceHub) RegisterService(service string, endpoint *EndPoint, leaseId etcdv3.LeaseID) (etcdv3.LeaseID, error) {
+	if etcd.client == nil {
+		return 0, errors.New("etcd client is nil")
+	}
+
 	if leaseId <= 0 {
-		leaseResp, err := etcd.client.Grant(context.Background(), etcd.heartbeat)
+		lease := etcdv3.NewLease(etcd.client)
+		leaseResp, err := lease.Grant(context.Background(), 3)
 		if err != nil {
 			return 0, err
 		}
+		println(leaseResp.ID)
 		key := ServiceRootPath + "/" + service + "/" + endpoint.address
 		_, err = etcd.client.Put(context.Background(), key, endpoint.address, etcdv3.WithLease(leaseResp.ID))
 		if err != nil {

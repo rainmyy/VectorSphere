@@ -1,13 +1,16 @@
 serviceName: seeta_search
 timeOut: 300
 defaultPort: 8080
+singleService: true
 heartbeat : 5
 endpoints:
     service_1:
         ip: 127.0.0.1
         setMaster: true
-        port: 80
+        port: 2379
     service_2:
-        ip: 168.0.0.1
+        ip: 127.0.0.1
+        port: 22379
     service_3:
-        ip: 139.0.0.1
+        ip: 127.0.0.1
+        port: 32379

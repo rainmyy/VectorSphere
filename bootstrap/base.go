@@ -5,12 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"path"
 	"seetaSearch/library/log"
 	"seetaSearch/library/res"
-	"seetaSearch/library/util"
 	"seetaSearch/messages"
 	"seetaSearch/server"
+	"strconv"
 	"sync"
 
 	"seetaSearch/library/conf"
@@ -53,13 +52,13 @@ type ServiceConfig struct {
 
 func (app *AppServer) ReadServiceConf() (error, *ServiceConfig) {
 	var cfg ServiceConfig
-	rootPath, err := util.GetProjectRoot()
-	if err != nil {
-		return err, nil
-	}
+	//rootPath, err := util.GetProjectRoot()
+	//if err != nil {
+	//	return err, nil
+	//}
 
-	err = conf.ReadYAML(path.Join(rootPath, "conf", "idc", "simple", "service.yaml"), &cfg)
-	//err = conf.ReadYAML("D:\\code\\seetaSearch\\conf\\idc\\simple\\service.yaml", &cfg)
+	//err = conf.ReadYAML(path.Join(rootPath, "conf", "idc", "simple", "service.yaml"), &cfg)
+	err := conf.ReadYAML("D:\\code\\seetaSearch\\conf\\idc\\simple\\service.yaml", &cfg)
 
 	if err != nil {
 		return err, nil
@@ -75,11 +74,13 @@ func (app *AppServer) RegisterService() {
 		return
 	}
 	for name, ep := range config.Endpoints {
-		endpoints := []string{ep.Ip}
 		port := ep.Port
 		if port == 0 {
 			port = config.DefaultPort
 		}
+		ep.Ip = ep.Ip + ":" + strconv.Itoa(port)
+		println(ep.Ip)
+		endpoints := []string{ep.Ip}
 		if ep.SetMaster {
 			// master节点注册
 			s := new(server.IndexServer)
@@ -145,10 +146,10 @@ func (app *AppServer) Setup() {
 }
 
 func (app *AppServer) Register() {
-	//注册发现方法
-	app.funcRegister["discover_etcd"] = app.DiscoverService
 	//注册注册方法
 	app.funcRegister["register_etcd"] = app.RegisterService
+	//注册发现方法
+	app.funcRegister["discover_etcd"] = app.DiscoverService
 	app.funcRegister["listen_api"] = app.ListenAPI
 }
 
