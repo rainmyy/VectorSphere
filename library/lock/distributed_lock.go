@@ -1,4 +1,4 @@
-package etcd
+package lock
 
 import (
 	"context"
