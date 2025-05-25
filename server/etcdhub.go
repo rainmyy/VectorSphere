@@ -6,6 +6,7 @@ import (
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	etcdv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/concurrency"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -42,14 +43,19 @@ func init() {
 
 }
 
-func GetHub(endPoints []string, heartbeat int64, serviceName string) (error, *EtcdServiceHub) {
+func GetHub(endPoints []EndPoint, heartbeat int64, serviceName string) (error, *EtcdServiceHub) {
 	if etcdServiceHub != nil {
 		return nil, etcdServiceHub
+	}
+
+	var endPointIp []string
+	for _, endPoint := range endPoints {
+		endPointIp = append(endPointIp, endPoint.Ip+":"+strconv.Itoa(endPoint.Port))
 	}
 	var er error
 	hubOnce.Do(func() {
 		client, err := etcdv3.New(etcdv3.Config{
-			Endpoints:            endPoints,
+			Endpoints:            endPointIp,
 			DialTimeout:          time.Duration(heartbeat) * time.Second,
 			DialKeepAliveTime:    3 * time.Second,
 			DialKeepAliveTimeout: 3 * time.Second,
@@ -91,8 +97,8 @@ func (etcd *EtcdServiceHub) RegisterService(service string, endpoint *EndPoint, 
 			return 0, err
 		}
 		println(leaseResp.ID)
-		key := ServiceRootPath + "/" + service + "/" + endpoint.address
-		_, err = etcd.client.Put(context.Background(), key, endpoint.address, etcdv3.WithLease(leaseResp.ID))
+		key := ServiceRootPath + "/" + service + "/" + endpoint.Ip
+		_, err = etcd.client.Put(context.Background(), key, endpoint.Ip, etcdv3.WithLease(leaseResp.ID))
 		if err != nil {
 			return 0, err
 		}
@@ -108,7 +114,7 @@ func (etcd *EtcdServiceHub) RegisterService(service string, endpoint *EndPoint, 
 }
 
 func (etcd *EtcdServiceHub) UnRegisterService(serviceName string, endpoint *EndPoint) error {
-	key := ServiceRootPath + "/" + serviceName + "/" + endpoint.address
+	key := ServiceRootPath + "/" + serviceName + "/" + endpoint.Ip
 	_, err := etcd.client.Delete(context.Background(), key)
 	if err != nil {
 		return err
@@ -127,7 +133,7 @@ func (etcd *EtcdServiceHub) GetServiceEndpoints(serviceName string) []EndPoint {
 	endpoints := make([]EndPoint, len(resp.Kvs))
 	for _, kv := range resp.Kvs {
 		path := strings.Split(string(kv.Key), "/")
-		endpoint := EndPoint{address: path[len(path)-1]}
+		endpoint := EndPoint{Ip: path[len(path)-1]}
 		endpoints = append(endpoints, endpoint)
 	}
 

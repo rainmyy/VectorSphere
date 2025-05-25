@@ -9,7 +9,6 @@ import (
 	"seetaSearch/library/res"
 	"seetaSearch/messages"
 	"seetaSearch/server"
-	"strconv"
 	"sync"
 
 	"seetaSearch/library/conf"
@@ -35,19 +34,13 @@ const (
 
 var pool = PoolLib.GetInstance()
 
-type Endpoint struct {
-	Ip        string `yaml:"ip"`
-	SetMaster bool   `yaml:"setMaster,omitempty"`
-	Port      int    `yaml:"port,omitempty"`
-}
-
 // ServiceConfig 结构体映射整个 YAML 文件
 type ServiceConfig struct {
-	ServiceName string              `yaml:"serviceName"`
-	TimeOut     int                 `yaml:"timeOut"`
-	DefaultPort int                 `yaml:"defaultPort"`
-	Heartbeat   int                 `yaml:"heartbeat"`
-	Endpoints   map[string]Endpoint `yaml:"endpoints"`
+	ServiceName string                     `yaml:"serviceName"`
+	TimeOut     int                        `yaml:"timeOut"`
+	DefaultPort int                        `yaml:"defaultPort"`
+	Heartbeat   int                        `yaml:"heartbeat"`
+	Endpoints   map[string]server.EndPoint `yaml:"endpoints"`
 }
 
 func (app *AppServer) ReadServiceConf() (error, *ServiceConfig) {
@@ -73,35 +66,72 @@ func (app *AppServer) RegisterService() {
 		log.Error("read service conf failed, err:%v", err)
 		return
 	}
-	for name, ep := range config.Endpoints {
-		port := ep.Port
+	var masterEndpoint []server.EndPoint
+	var sentinelEndpoint []server.EndPoint
+
+	for name, endpoint := range config.Endpoints {
+		port := endpoint.Port
+		endpoint.Name = name
 		if port == 0 {
-			port = config.DefaultPort
+			endpoint.Port = config.DefaultPort
 		}
-		ep.Ip = ep.Ip + ":" + strconv.Itoa(port)
-		println(ep.Ip)
-		endpoints := []string{ep.Ip}
-		if ep.SetMaster {
-			// master节点注册
-			s := new(server.IndexServer)
-			masterServiceName := config.ServiceName
-			err := s.RegisterService(endpoints, port, masterServiceName)
-			if err != nil {
-				log.Error("Master注册失败:", err)
-				continue
-			}
-			log.Info("Master节点 %s 注册成功: %s:%d\n", name, ep.Ip, port)
+		if endpoint.IsMaster {
+			masterEndpoint = append(masterEndpoint, endpoint)
 		} else {
-			// sentinel节点注册
-			sentinel := server.NewSentinel(endpoints, int64(config.Heartbeat), 100, config.ServiceName)
-			err := sentinel.RegisterSentinel(int64(config.Heartbeat))
-			if err != nil {
-				log.Error("Sentinel注册失败:", err)
-				continue
-			}
-			log.Info("Sentinel节点 %s 注册成功: %s:%d\n", name, ep.Ip, port)
+			sentinelEndpoint = append(sentinelEndpoint, endpoint)
+		}
+
+	}
+	if len(masterEndpoint) > 0 {
+		// master节点注册
+		s := new(server.IndexServer)
+		masterServiceName := config.ServiceName
+		err := s.RegisterService(masterEndpoint, config.DefaultPort, masterServiceName)
+		if err != nil {
+			log.Error("Master注册失败:", err)
+			return
+		}
+		log.Info("Master节点 %s 注册成功\n", masterServiceName)
+	}
+
+	if len(sentinelEndpoint) > 0 {
+		sentinel := server.NewSentinel(sentinelEndpoint, int64(config.Heartbeat), 100, config.ServiceName)
+		err := sentinel.RegisterSentinel(int64(config.Heartbeat))
+		if err != nil {
+			log.Error("Sentinel注册失败:", err)
+			return
 		}
 	}
+
+	//for name, ep := range config.Endpoints {
+	//	port := ep.Port
+	//	if port == 0 {
+	//		port = config.DefaultPort
+	//	}
+	//	ep.Ip = ep.Ip + ":" + strconv.Itoa(port)
+	//	println(ep.Ip)
+	//	endpoints := []string{ep.Ip}
+	//	if ep.IsMaster {
+	//		// master节点注册
+	//		s := new(server.IndexServer)
+	//		masterServiceName := config.ServiceName
+	//		err := s.RegisterService(endpoints, port, masterServiceName)
+	//		if err != nil {
+	//			log.Error("Master注册失败:", err)
+	//			continue
+	//		}
+	//		log.Info("Master节点 %s 注册成功: %s:%d\n", name, ep.Ip, port)
+	//	} else {
+	//		// sentinel节点注册
+	//		sentinel := server.NewSentinel(endpoints, int64(config.Heartbeat), 100, config.ServiceName)
+	//		err := sentinel.RegisterSentinel(int64(config.Heartbeat))
+	//		if err != nil {
+	//			log.Error("Sentinel注册失败:", err)
+	//			continue
+	//		}
+	//		log.Info("Sentinel节点 %s 注册成功: %s:%d\n", name, ep.Ip, port)
+	//	}
+	//}
 }
 
 func (app *AppServer) DiscoverService() {
@@ -115,14 +145,31 @@ func (app *AppServer) DiscoverService() {
 		log.Error("endpoints is nil")
 		return
 	}
+	var sentinelEndpoint []server.EndPoint
 
-	for name, ep := range config.Endpoints {
-		if !ep.SetMaster {
-			sentinel := server.NewSentinel([]string{ep.Ip}, int64(config.Heartbeat), 100, config.ServiceName)
-			endpoints := sentinel.Hub.GetServiceEndpoints(config.ServiceName)
-			log.Info("Sentinel节点 %s 发现的master节点: %+v\n", name, endpoints)
+	for name, endpoint := range config.Endpoints {
+		port := endpoint.Port
+		endpoint.Name = name
+		if port == 0 {
+			port = config.DefaultPort
 		}
+		if !endpoint.IsMaster {
+			sentinelEndpoint = append(sentinelEndpoint, endpoint)
+		}
+
 	}
+	if len(sentinelEndpoint) > 0 {
+		sentinel := server.NewSentinel(sentinelEndpoint, int64(config.Heartbeat), 100, config.ServiceName)
+		endpoints := sentinel.Hub.GetServiceEndpoints(config.ServiceName)
+		log.Info("Sentinel节点 %s 发现的master节点: %+v\n", config.ServiceName, endpoints)
+	}
+	//for name, ep := range config.Endpoints {
+	//	if !ep.IsMaster {
+	//		sentinel := server.NewSentinel([]string{ep.Ip}, int64(config.Heartbeat), 100, config.ServiceName)
+	//		endpoints := sentinel.Hub.GetServiceEndpoints(config.ServiceName)
+	//		log.Info("Sentinel节点 %s 发现的master节点: %+v\n", name, endpoints)
+	//	}
+	//}
 }
 
 // Setup /
@@ -161,7 +208,7 @@ func (app *AppServer) ListenAPI() {
 	}
 
 	for name, ep := range config.Endpoints {
-		if ep.SetMaster {
+		if ep.IsMaster {
 			// 主节点监听 API 请求
 			port := ep.Port
 			if port == 0 {

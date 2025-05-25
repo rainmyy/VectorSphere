@@ -34,7 +34,7 @@ func (w *IndexServer) Init(docNumEstimate int, dbType int, DataDir string) error
 	return w.Index.NewIndexServer(docNumEstimate, dbType, "", DataDir)
 }
 
-func (w *IndexServer) RegisterService(servers []string, port int, serviceName string) error {
+func (w *IndexServer) RegisterService(servers []EndPoint, port int, serviceName string) error {
 	if len(servers) == 0 {
 		return errors.New("servers is empty")
 	}
@@ -51,7 +51,7 @@ func (w *IndexServer) RegisterService(servers []string, port int, serviceName st
 	if err != nil {
 		return err
 	}
-	endPoint := &EndPoint{address: w.localhost}
+	endPoint := &EndPoint{Ip: w.localhost}
 	leasID, err := hub.RegisterService(serviceName, endPoint, 0)
 	if err != nil {
 		return fmt.Errorf("reigister fialed:%v", err)
@@ -121,7 +121,7 @@ func (w *IndexServer) Close() error {
 	if w.hub == nil {
 		return w.Index.Close()
 	}
-	endPoint := &EndPoint{address: w.localhost}
+	endPoint := &EndPoint{Ip: w.localhost}
 	err := w.hub.UnRegisterService(w.serviceName, endPoint)
 	if err != nil {
 		log.Error("注销服务失败，服务地址: %v, 错误: %v", w.localhost, err)

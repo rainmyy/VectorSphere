@@ -23,7 +23,7 @@ type Sentinel struct {
 
 var _ ServerInterface = (*Sentinel)(nil)
 
-func NewSentinel(endPoints []string, heartBeat int64, qps int, serviceName string) *Sentinel {
+func NewSentinel(endPoints []EndPoint, heartBeat int64, qps int, serviceName string) *Sentinel {
 	sentinel := &Sentinel{
 		Hub:        GetHubProxy(endPoints, heartBeat, qps, serviceName),
 		connPool:   sync.Map{},
@@ -76,7 +76,7 @@ func (s *Sentinel) WatchServiceChanges() {
 	}
 }
 func (s *Sentinel) GetGrpcConn(point EndPoint) *grpc.ClientConn {
-	v, ok := s.connPool.Load(point.address)
+	v, ok := s.connPool.Load(point.Ip)
 	if ok {
 		conn := v.(*grpc.ClientConn)
 		state := conn.GetState()
@@ -84,27 +84,27 @@ func (s *Sentinel) GetGrpcConn(point EndPoint) *grpc.ClientConn {
 			return conn
 		}
 		conn.Close()
-		s.connPool.Delete(point.address)
+		s.connPool.Delete(point.Ip)
 	}
 	cts, cancel := context.WithTimeout(context.Background(), 200*time.Microsecond)
 	defer cancel()
-	grpcConn, err := grpc.DialContext(cts, point.address, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	grpcConn, err := grpc.DialContext(cts, point.Ip, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
 		return nil
 	}
-	s.connPool.Store(point.address, grpcConn)
+	s.connPool.Store(point.Ip, grpcConn)
 
 	return grpcConn
 }
 
 func (s *Sentinel) AddDoc(doc *messages.Document) (int, error) {
 	endPoint := s.Hub.GetServiceEndpoint(s.ServiceKey)
-	if len(endPoint.address) == 0 {
+	if len(endPoint.Ip) == 0 {
 		return -1, errors.New("服务节点不存在")
 	}
 	conn := s.GetGrpcConn(endPoint)
 	if conn == nil {
-		return -1, errors.New("无法连接到" + endPoint.address)
+		return -1, errors.New("无法连接到" + endPoint.Ip)
 	}
 	client := NewIndexServiceClient(conn)
 	affected, err := client.AddDoc(context.Background(), doc)

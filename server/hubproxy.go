@@ -20,7 +20,7 @@ var (
 	proxyOnce sync.Once
 )
 
-func GetHubProxy(endPoints []string, heartBeat int64, qps int, serviceName string) *HubProxy {
+func GetHubProxy(endPoints []EndPoint, heartBeat int64, qps int, serviceName string) *HubProxy {
 	if hubProxy != nil {
 		return hubProxy
 	}

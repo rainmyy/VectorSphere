@@ -150,7 +150,7 @@ func (c *ConsistentHashBalancer) Set(points ...EndPoint) bool {
 	c.mux.Lock()
 	defer c.mux.Unlock()
 	for i := 0; i < c.replicas; i++ {
-		hash := c.hash([]byte(strconv.Itoa(i) + endpoint.address))
+		hash := c.hash([]byte(strconv.Itoa(i) + endpoint.Ip))
 		c.keys = append(c.keys, hash)
 		c.hashMap[hash] = endpoint
 	}
