@@ -1,6 +1,9 @@
 package bplus
 
-import "sync"
+import (
+	"errors"
+	"sync"
+)
 
 type LockType int
 
@@ -41,7 +44,7 @@ func (lm *LockManager) Acquire(txID uint64, key Key, lockTy LockType) (bool, err
 
 	// 检查死锁
 	if lm.detectDeadlock(txID) {
-		return false, ErrDeadlock
+		return false, errors.New("error dead lock")
 	}
 
 	lr, exists := lm.locks[key]
@@ -87,9 +90,56 @@ func (lm *LockManager) Acquire(txID uint64, key Key, lockTy LockType) (bool, err
 
 	// 被唤醒后检查是否获得锁
 	if !newLR.granted {
-		return false, ErrLockTimeout
+		return false, errors.New("error lock timeout")
 	}
 	return true, nil
+}
+
+func (lm *LockManager) addToWaitGraph(requestingTxID, holdingTxID uint64) {
+	if _, exists := lm.waitGraph[requestingTxID]; !exists {
+		lm.waitGraph[requestingTxID] = make(map[uint64]struct{})
+	}
+	lm.waitGraph[requestingTxID][holdingTxID] = struct{}{}
+}
+
+func (lm *LockManager) isCompatible(existingTxID, requestingTxID uint64, existingLockType, requestingLockType LockType) bool {
+	// 如果是同一个事务，请求总是兼容的
+	if existingTxID == requestingTxID {
+		return true
+	}
+
+	// 共享锁之间是兼容的
+	if existingLockType == LockShared && requestingLockType == LockShared {
+		return true
+	}
+
+	// 其他情况不兼容
+	return false
+}
+
+func (lm *LockManager) detectDeadlock(txID uint64) bool {
+	visited := make(map[uint64]bool)
+	var visit func(uint64) bool
+
+	visit = func(id uint64) bool {
+		if visited[id] {
+			return true // 发现环，存在死锁
+		}
+		visited[id] = true
+
+		if waitFor, exists := lm.waitGraph[id]; exists {
+			for otherTxID := range waitFor {
+				if visit(otherTxID) {
+					return true
+				}
+			}
+		}
+
+		visited[id] = false
+		return false
+	}
+
+	return visit(txID)
 }
 
 // Release 释放锁

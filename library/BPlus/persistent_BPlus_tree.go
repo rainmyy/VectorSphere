@@ -1,6 +1,8 @@
 package bplus
 
 import (
+	"bytes"
+	"encoding/gob"
 	"os"
 	"sync"
 )
@@ -84,13 +86,24 @@ func (dm *DiskManager) WriteNode(node *Node) (int64, error) {
 
 // 序列化和反序列化方法
 func serializeNode(node *Node) ([]byte, error) {
-	// 实现节点序列化逻辑
-	// 将节点结构转换为字节数组
+	buffer := new(bytes.Buffer)
+	encoder := gob.NewEncoder(buffer)
+	err := encoder.Encode(node)
+	if err != nil {
+		return nil, err
+	}
+	return buffer.Bytes(), nil
 }
 
 func deserializeNode(data []byte) (*Node, error) {
-	// 实现节点反序列化逻辑
-	// 从字节数组重建节点结构
+	buffer := bytes.NewBuffer(data)
+	decoder := gob.NewDecoder(buffer)
+	var node Node
+	err := decoder.Decode(&node)
+	if err != nil {
+		return nil, err
+	}
+	return &node, nil
 }
 
 type PersistentBPlusTree struct {
@@ -182,7 +195,7 @@ func (t *PersistentBPlusTree) findLeaf(key Key) (*Node, error) {
 	return current, nil
 }
 
-// 修改后的插入方法
+// Insert 修改后的插入方法
 func (t *PersistentBPlusTree) Insert(key Key, value Value) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()

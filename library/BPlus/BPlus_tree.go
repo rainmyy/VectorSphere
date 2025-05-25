@@ -14,12 +14,13 @@ type Value interface{}
 
 // Node 表示 B+ 树的节点
 type Node struct {
-	isLeaf   bool
-	keys     []Key
-	children []interface{} // 非叶子节点存储子节点指针，叶子节点存储值
-	next     *Node         // 叶子节点的下一个节点(用于范围查询)
-	parent   *Node
-	mu       sync.RWMutex
+	isLeaf     bool
+	keys       []Key
+	children   []interface{} // 非叶子节点存储子节点指针，叶子节点存储值
+	next       *Node         // 叶子节点的下一个节点(用于范围查询)
+	parent     *Node
+	mu         sync.RWMutex
+	nextOffset int64
 }
 
 // BPlusTree B+ 树结构

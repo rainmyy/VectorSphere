@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"os"
+	"seetaSearch/library/log"
 	"sync"
 	"time"
 )
@@ -81,9 +82,25 @@ func (w *WALManager) flushBatch() {
 	for batch := range w.batchChan {
 		w.mu.Lock()
 		for _, entry := range batch {
-			// 同上写入逻辑
+			data, err := json.Marshal(entry)
+			if err != nil {
+				log.Error("Error marshaling WALEntry:", err)
+				continue
+			}
+
+			lenBuf := make([]byte, 4)
+			binary.BigEndian.PutUint32(lenBuf, uint32(len(data)))
+
+			if _, err := w.file.Write(lenBuf); err != nil {
+				log.Error("Error writing length to WAL file:", err)
+				continue
+			}
+			if _, err := w.file.Write(data); err != nil {
+				log.Error("Error writing data to WAL file:", err)
+				continue
+			}
 		}
-		w.file.Sync() // 批量同步
+		w.file.Sync()
 		w.mu.Unlock()
 	}
 }
