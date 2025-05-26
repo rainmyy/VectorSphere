@@ -96,7 +96,6 @@ func (etcd *EtcdServiceHub) RegisterService(service string, endpoint *EndPoint, 
 		if err != nil {
 			return 0, err
 		}
-		println(leaseResp.ID)
 		key := ServiceRootPath + "/" + service + "/" + endpoint.Ip
 		_, err = etcd.client.Put(context.Background(), key, endpoint.Ip, etcdv3.WithLease(leaseResp.ID))
 		if err != nil {

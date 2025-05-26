@@ -23,6 +23,8 @@ type AppServer struct {
 	Ctx          context.Context
 	Cancel       context.CancelFunc
 	funcRegister map[string]func()
+	server       *server.IndexServer
+	sentinel     *server.Sentinel
 }
 
 const (
@@ -92,6 +94,7 @@ func (app *AppServer) RegisterService() {
 			return
 		}
 		log.Info("Master节点 %s 注册成功\n", masterServiceName)
+		app.server = s
 	}
 
 	if len(sentinelEndpoint) > 0 {
@@ -101,6 +104,8 @@ func (app *AppServer) RegisterService() {
 			log.Error("Sentinel注册失败:", err)
 			return
 		}
+
+		app.sentinel = sentinel
 	}
 
 	//for name, ep := range config.Endpoints {
@@ -158,9 +163,14 @@ func (app *AppServer) DiscoverService() {
 		}
 
 	}
+
 	if len(sentinelEndpoint) > 0 {
-		sentinel := server.NewSentinel(sentinelEndpoint, int64(config.Heartbeat), 100, config.ServiceName)
-		endpoints := sentinel.Hub.GetServiceEndpoints(config.ServiceName)
+		if app.sentinel == nil {
+			sentinel := server.NewSentinel(sentinelEndpoint, int64(config.Heartbeat), 100, config.ServiceName)
+			app.sentinel = sentinel
+		}
+
+		endpoints := app.sentinel.Hub.GetServiceEndpoints(config.ServiceName)
 		log.Info("Sentinel节点 %s 发现的master节点: %+v\n", config.ServiceName, endpoints)
 	}
 	//for name, ep := range config.Endpoints {
@@ -207,53 +217,135 @@ func (app *AppServer) ListenAPI() {
 		return
 	}
 
+	var serviceName string
+	var serviceAddr string
 	for name, ep := range config.Endpoints {
 		if ep.IsMaster {
-			// 主节点监听 API 请求
 			port := ep.Port
 			if port == 0 {
 				port = config.DefaultPort
 			}
-			address := fmt.Sprintf("%s:%d", ep.Ip, port)
-			log.Info("Master节点 %s 开始监听 API 请求: %s\n", name, address)
-
-			http.HandleFunc("/addDoc", func(w http.ResponseWriter, r *http.Request) {
-				// 处理添加文档请求
-				// 这里需要根据实际情况解析请求参数并调用相应的服务方法
-				// 示例代码
-				doc := &messages.Document{}
-				s := new(server.Sentinel)
-				affected, err := s.AddDoc(doc)
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-				log.Info("添加文档成功，影响文档数量: %d", affected)
-			})
-
-			http.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
-				query := &messages.TermQuery{}
-				onFlag := uint64(0)
-				offFlag := uint64(0)
-				orFlags := []uint64{}
-				s := new(server.Sentinel)
-				err, result := s.Search(query, onFlag, offFlag, orFlags)
-				if err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-				// 这里需要将结果序列化为 JSON 并返回给客户端
-				err = json.NewEncoder(w).Encode(result)
-				if err != nil {
-					log.Error("encode json failed, err:%v\n", err)
-				}
-			})
-
-			if err := http.ListenAndServe(address, nil); err != nil {
-				log.Info("Master节点 %s 监听 API 请求失败: %v\n", name, err)
-			}
+			address := fmt.Sprintf(":%d", 8080)
+			serviceName = name
+			serviceAddr = address
 		}
 	}
+
+	log.Info("Master节点 %s 开始监听 API 请求: %s\n", serviceName, serviceAddr)
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/", func(rw http.ResponseWriter, req *http.Request) {
+		rw.Write([]byte("hello world"))
+	})
+
+	mux.HandleFunc("/addDoc", func(w http.ResponseWriter, r *http.Request) {
+		doc := &messages.Document{}
+		if err := json.NewDecoder(r.Body).Decode(doc); err != nil {
+			http.Error(w, "Invalid request payload", http.StatusBadRequest)
+			return
+		}
+		s := app.sentinel
+		affected, err := s.AddDoc(doc)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		log.Info("添加文档成功，影响文档数量: %d", affected)
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type", "text/html")
+		w.Write([]byte("ok"))
+	})
+
+	mux.HandleFunc("/count", func(w http.ResponseWriter, r *http.Request) {
+		s := app.sentinel
+		total := s.Count()
+		log.Info("更新文档成功,total:%d", total)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	mux.HandleFunc("/deleteDoc", func(w http.ResponseWriter, r *http.Request) {
+		docID := r.URL.Query().Get("id")
+		if docID == "" {
+			http.Error(w, "Missing document ID", http.StatusBadRequest)
+			return
+		}
+		s := app.sentinel
+		doc := &server.DocId{Id: docID}
+		count := s.DelDoc(doc)
+		if count == 0 {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		log.Info("删除文档成功，文档ID: %s", docID)
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
+		query := &messages.TermQuery{}
+		if err := json.NewDecoder(r.Body).Decode(query); err != nil {
+			http.Error(w, "Invalid request payload", http.StatusBadRequest)
+			return
+		}
+		onFlag := uint64(0)
+		offFlag := uint64(0)
+		orFlags := []uint64{}
+		s := app.sentinel
+		err, result := s.Search(query, onFlag, offFlag, orFlags)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if err := json.NewEncoder(w).Encode(result); err != nil {
+			log.Error("encode json failed, err:%v\n", err)
+		}
+	})
+
+	if err := http.ListenAndServe(serviceAddr, mux); err != nil {
+		log.Info("Master节点 %s 监听 API 请求失败: %v\n", serviceName, err)
+	}
+
+	//for name, ep := range config.Endpoints {
+	//	if !ep.IsMaster {
+	//		address := fmt.Sprintf("%s:%d", ep.Ip, config.DefaultPort)
+	//		log.Info("Master节点 %s 开始监听 API 请求: %s\n", name, address)
+	//		mux := http.NewServeMux()
+	//		mux.HandleFunc("/addDoc", func(w http.ResponseWriter, r *http.Request) {
+	//			// 处理添加文档请求
+	//			// 这里需要根据实际情况解析请求参数并调用相应的服务方法
+	//			// 示例代码
+	//			doc := &messages.Document{}
+	//			s := app.sentinel
+	//			affected, err := s.AddDoc(doc)
+	//			if err != nil {
+	//				http.Error(w, err.Error(), http.StatusInternalServerError)
+	//				return
+	//			}
+	//			log.Info("添加文档成功，影响文档数量: %d", affected)
+	//		})
+	//
+	//		mux.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
+	//			query := &messages.TermQuery{}
+	//			onFlag := uint64(0)
+	//			offFlag := uint64(0)
+	//			orFlags := []uint64{}
+	//			s := new(server.Sentinel)
+	//			err, result := s.Search(query, onFlag, offFlag, orFlags)
+	//			if err != nil {
+	//				http.Error(w, err.Error(), http.StatusInternalServerError)
+	//				return
+	//			}
+	//			// 这里需要将结果序列化为 JSON 并返回给客户端
+	//			err = json.NewEncoder(w).Encode(result)
+	//			if err != nil {
+	//				log.Error("encode json failed, err:%v\n", err)
+	//			}
+	//		})
+	//
+	//		if err := http.ListenAndServe(address, mux); err != nil {
+	//			log.Info("Master节点 %s 监听 API 请求失败: %v\n", name, err)
+	//		}
+	//	}
+	//}
 }
 
 func (app *AppServer) Start() map[string]*res.Response {

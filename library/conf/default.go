@@ -24,7 +24,6 @@ func (conf *DefaultConf) Init() *DefaultConf {
 
 	err = fileObj.Parser()
 	if err != nil {
-		print(err.Error())
 		return nil
 	}
 
