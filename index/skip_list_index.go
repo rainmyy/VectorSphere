@@ -102,25 +102,30 @@ func (index *SkipListInvertedIndex) searchQuery(query *messages.TermQuery, onFla
 				if intId > 0 && index.FilterBits(flag, onFlag, offFlag, orFlags) {
 					result.Insert(intId, skipListValue)
 				}
-
 				node = node.Next()
 			}
+			return result
 		}
+		return nil
 	case len(query.Must) > 0:
 		results := make([]*strategy.SkipList, 0, len(query.Must))
 		for _, q := range query.Must {
-			results = append(results, index.searchQuery(q, offFlag, offFlag, orFlags))
+			subResult := index.searchQuery(q, onFlag, offFlag, orFlags)
+			if subResult != nil {
+				results = append(results, subResult)
+			}
 		}
 		return index.IntersectionList(results...)
 	case len(query.Should) > 0:
 		results := make([]*strategy.SkipList, 0, len(query.Should))
 		for _, q := range query.Should {
-			results = append(results, index.searchQuery(q, offFlag, offFlag, orFlags))
+			subResult := index.searchQuery(q, onFlag, offFlag, orFlags)
+			if subResult != nil {
+				results = append(results, subResult)
+			}
 		}
-
 		return index.UnionList(results...)
 	}
-
 	return nil
 }
 
