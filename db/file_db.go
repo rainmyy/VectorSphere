@@ -12,6 +12,11 @@ type FileDB struct {
 	mu   sync.RWMutex
 }
 
+type KeyValueInfo struct {
+	Key   []byte
+	Value []byte
+}
+
 func (f *FileDB) NewInstance(path string) *FileDB {
 	f.path = path
 	return f
@@ -93,14 +98,55 @@ func (f *FileDB) BatchGet(keys [][]byte) ([][]byte, error) {
 
 // Del 删除键值对
 func (f *FileDB) Del(key []byte) error {
-	// 简单文件操作难以实现删除，这里返回错误
-	return errors.New("delete operation not supported for file db")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	data, err := os.ReadFile(f.path)
+	if err != nil {
+		return err
+	}
+
+	var newData []byte
+	start := 0
+	for {
+		index := findBytes(data[start:], key)
+		if index == -1 {
+			newData = append(newData, data[start:]...)
+			break
+		}
+		// 复制键之前的数据
+		newData = append(newData, data[start:start+index]...)
+		start += index + len(key)
+
+		// 查找下一个键的位置
+		nextIndex := findNextKey(data[start:], key)
+		if nextIndex == -1 {
+			break
+		}
+		start += nextIndex
+	}
+
+	return os.WriteFile(f.path, newData, 0644)
+}
+
+// findNextKey 查找下一个键的位置
+func findNextKey(haystack, prevKey []byte) int {
+	for i := 0; i <= len(haystack)-len(prevKey); i++ {
+		if equalBytes(haystack[i:i+len(prevKey)], prevKey) {
+			return i
+		}
+	}
+	return -1
 }
 
 // BatchDel 批量删除键值对
 func (f *FileDB) BatchDel(keys [][]byte) error {
-	// 简单文件操作难以实现批量删除，这里返回错误
-	return errors.New("batch delete operation not supported for file db")
+	for _, key := range keys {
+		if err := f.Del(key); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Has 检查键是否存在
@@ -111,14 +157,84 @@ func (f *FileDB) Has(key []byte) bool {
 
 // TotalDb 遍历数据库中的所有键值对
 func (f *FileDB) TotalDb(fc func(k, v []byte) error) (int64, error) {
-	// 简单文件操作难以实现遍历，这里返回错误
-	return 0, errors.New("total db operation not supported for file db")
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	data, err := os.ReadFile(f.path)
+	if err != nil {
+		return 0, err
+	}
+
+	var count int64
+	start := 0
+	for {
+		// 假设每个键值对的键是唯一的，且键值对之间没有其他数据
+		// 查找下一个键的位置
+		nextKeyIndex := findNextKey(data[start:], data[start:])
+		if nextKeyIndex == -1 {
+			// 处理最后一个键值对
+			if start < len(data) {
+				// 简单假设剩下的数据都是值
+				value := data[start:]
+				if err := fc(nil, value); err != nil {
+					return count, err
+				}
+				count++
+			}
+			break
+		}
+
+		key := data[start : start+nextKeyIndex]
+		start += nextKeyIndex
+		// 查找值的结束位置（下一个键的开始位置）
+		valueEndIndex := findNextKey(data[start:], data[start:])
+		if valueEndIndex == -1 {
+			value := data[start:]
+			if err := fc(key, value); err != nil {
+				return count, err
+			}
+			count++
+			break
+		}
+
+		value := data[start : start+valueEndIndex]
+		if err := fc(key, value); err != nil {
+			return count, err
+		}
+		count++
+		start += valueEndIndex
+	}
+
+	return count, nil
 }
 
 // TotalKey 遍历数据库中的所有键
 func (f *FileDB) TotalKey(fc func(k []byte) error) (int64, error) {
-	// 简单文件操作难以实现遍历，这里返回错误
-	return 0, errors.New("total key operation not supported for file db")
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	data, err := os.ReadFile(f.path)
+	if err != nil {
+		return 0, err
+	}
+
+	var count int64
+	start := 0
+	for {
+		nextKeyIndex := findNextKey(data[start:], data[start:])
+		if nextKeyIndex == -1 {
+			break
+		}
+
+		key := data[start : start+nextKeyIndex]
+		if err := fc(key); err != nil {
+			return count, err
+		}
+		count++
+		start += nextKeyIndex
+	}
+
+	return count, nil
 }
 
 // findBytes 在 haystack 中查找 needle 第一次出现的位置
