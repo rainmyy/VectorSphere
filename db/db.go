@@ -49,6 +49,8 @@ func GetDb(dbType int, path string, bucket string) (KvDb, error) {
 		db = new(BBoltDB).NewInstance(path, bucket)
 	case BADGER:
 		db = new(BadgerDB).NewInstance(path, 1, ERROR, 0.5)
+	case FILE:
+		db = new(FileDB).NewInstance(path)
 	default:
 		db = new(BBoltDB).NewInstance(path, bucket)
 	}

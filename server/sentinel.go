@@ -143,10 +143,10 @@ func (s *Sentinel) DelDoc(docId *DocId) int {
 	return int(atomic.LoadInt32(&n))
 }
 
-func (s *Sentinel) Search(query *messages.TermQuery, onFlag, offFlag uint64, orFlags []uint64) []*messages.Document {
+func (s *Sentinel) Search(query *messages.TermQuery, onFlag, offFlag uint64, orFlags []uint64) (error, []*messages.Document) {
 	endpoints := s.Hub.GetServiceEndpoints(s.ServiceKey)
 	if len(endpoints) == 0 {
-		return nil
+		return errors.New(""), nil
 	}
 
 	docs := make([]*messages.Document, 0, 1000)
@@ -188,7 +188,7 @@ func (s *Sentinel) Search(query *messages.TermQuery, onFlag, offFlag uint64, orF
 	wg.Wait()         // 等待所有goroutine完成
 	close(resultChan) // 关闭结果通道 当resultChan关闭时，上面协程range循环结束
 	<-signalChan      // 等待结果处理完成
-	return docs
+	return nil, docs
 }
 
 func (s *Sentinel) Count() int {

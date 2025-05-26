@@ -222,13 +222,13 @@ func (app *AppServer) ListenAPI() {
 				// 这里需要根据实际情况解析请求参数并调用相应的服务方法
 				// 示例代码
 				doc := &messages.Document{}
-				s := new(server.IndexServer)
-				affected, err := s.AddDoc(context.Background(), doc)
+				s := new(server.Sentinel)
+				affected, err := s.AddDoc(doc)
 				if err != nil {
 					http.Error(w, err.Error(), http.StatusInternalServerError)
 					return
 				}
-				log.Info("添加文档成功，影响文档数量: %d", affected.Count)
+				log.Info("添加文档成功，影响文档数量: %d", affected)
 			})
 
 			http.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
@@ -236,8 +236,8 @@ func (app *AppServer) ListenAPI() {
 				onFlag := uint64(0)
 				offFlag := uint64(0)
 				orFlags := []uint64{}
-				s := new(server.IndexServer)
-				result, err := s.Search(context.Background(), &server.Request{Query: query, OnFlag: onFlag, OffFlag: offFlag, OrFlags: orFlags})
+				s := new(server.Sentinel)
+				err, result := s.Search(query, onFlag, offFlag, orFlags)
 				if err != nil {
 					http.Error(w, err.Error(), http.StatusInternalServerError)
 					return

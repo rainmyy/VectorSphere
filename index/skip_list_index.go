@@ -140,7 +140,26 @@ func (index *SkipListInvertedIndex) FilterBits(bits, onFlag, offFlag uint64, orF
 	return true
 }
 func (index *SkipListInvertedIndex) UnionList(lists ...*strategy.SkipList) *strategy.SkipList {
-	return nil
+	if len(lists) == 0 {
+		return nil
+	}
+	result := strategy.NewSkipList()
+
+	for _, list := range lists {
+		if list == nil {
+			continue
+		}
+		node := list.Front()
+		for node != nil {
+			intId := node.Key().(int64)
+			skipListValue := node.Value.(SkipListValue)
+			// 插入元素到结果列表中
+			result.Insert(intId, skipListValue)
+			node = node.Next()
+		}
+	}
+
+	return result
 }
 func (index *SkipListInvertedIndex) IntersectionList(lists ...*strategy.SkipList) *strategy.SkipList {
 	if len(lists) == 0 {
