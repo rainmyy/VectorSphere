@@ -11,6 +11,9 @@ const (
 	nodeSize = 4096 // 假设每个节点占4KB
 )
 
+type key interface{}
+type value interface{}
+
 // DiskManager 管理磁盘存储
 type DiskManager struct {
 	file     *os.File
@@ -256,6 +259,118 @@ func (t *PersistentBPlusTree) splitLeaf(leaf *Node) error {
 
 	// 更新父节点
 	return t.insertIntoParent(leafOffset, newLeaf.keys[0], newLeafOffset)
+}
+
+func (t *PersistentBPlusTree) insertIntoParent(leftOffset int64, key Key, rightOffset int64) error {
+	leftNode, err := t.getNode(leftOffset)
+	if err != nil {
+		return err
+	}
+	parentOffset := leftNode.parentOffset
+
+	// 没有父节点，创建新根
+	if parentOffset == 0 || parentOffset == -1 {
+		newRoot := newInternalNode(t.order)
+		newRoot.keys = append(newRoot.keys, key)
+		newRoot.children = append(newRoot.children, leftOffset, rightOffset)
+		newRootOffset, err := t.disk.WriteNode(newRoot)
+		if err != nil {
+			return err
+		}
+		leftNode.parentOffset = newRootOffset
+		rightNode, err := t.getNode(rightOffset)
+		if err != nil {
+			return err
+		}
+		rightNode.parentOffset = newRootOffset
+		_, err = t.disk.WriteNode(leftNode)
+		if err != nil {
+			return err
+		}
+		_, err = t.disk.WriteNode(rightNode)
+		if err != nil {
+			return err
+		}
+		t.rootOffset = newRootOffset
+		return nil
+	}
+
+	// 有父节点，插入key和rightOffset
+	parent, err := t.getNode(parentOffset)
+	if err != nil {
+		return err
+	}
+	i := 0
+	for i < len(parent.keys) && key > parent.keys[i] {
+		i++
+	}
+	parent.keys = append(parent.keys[:i], append([]Key{key}, parent.keys[i:]...)...)
+	parent.children = append(parent.children[:i+1], append([]interface{}{rightOffset}, parent.children[i+1:]...)...)
+
+	// 更新rightNode的父指针
+	rightNode, err := t.getNode(rightOffset)
+	if err != nil {
+		return err
+	}
+	rightNode.parentOffset = parentOffset
+	_, err = t.disk.WriteNode(rightNode)
+	if err != nil {
+		return err
+	}
+
+	// 父节点溢出递归分裂
+	if len(parent.keys) > t.order-1 {
+		return t.splitInternal(parent)
+	}
+	_, err = t.disk.WriteNode(parent)
+	return err
+}
+
+// 分裂内部节点
+func (t *PersistentBPlusTree) splitInternal(node *Node) error {
+	newNode := newInternalNode(t.order)
+	split := (t.order + 1) / 2
+
+	// 分裂key和children
+	upKey := node.keys[split]
+	newNode.keys = append(newNode.keys, node.keys[split+1:]...)
+	newNode.children = append(newNode.children, node.children[split+1:]...)
+
+	// 更新原节点
+	node.keys = node.keys[:split]
+	node.children = node.children[:split+1]
+
+	// 写入新节点
+	newNodeOffset, err := t.disk.WriteNode(newNode)
+	if err != nil {
+		return err
+	}
+
+	// 更新新节点所有子节点的父指针
+	for _, child := range newNode.children {
+		childOffset, ok := child.(int64)
+		if !ok {
+			continue
+		}
+		childNode, err := t.getNode(childOffset)
+		if err != nil {
+			return err
+		}
+		childNode.parentOffset = newNodeOffset
+		_, err = t.disk.WriteNode(childNode)
+		if err != nil {
+			return err
+		}
+	}
+
+	// 写回原节点
+	nodeOffset, err := t.disk.WriteNode(node)
+	if err != nil {
+		return err
+	}
+
+	// 插入到父节点
+	return t.insertIntoParent(nodeOffset, upKey, newNodeOffset)
 }
 
 // insertIntoLeaf 将键值对插入到叶子节点
