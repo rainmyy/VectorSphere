@@ -5,14 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/db/Vectorizer.go" beforeDir="false" afterPath="$PROJECT_DIR$/db/vectorized.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/db/verctor_db.go" beforeDir="false" afterPath="$PROJECT_DIR$/db/verctor_db.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/go.mod" beforeDir="false" afterPath="$PROJECT_DIR$/go.mod" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/go.sum" beforeDir="false" afterPath="$PROJECT_DIR$/go.sum" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/BPlus/mvcc_BPlus_tree.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/BPlus/mvcc_BPlus_tree.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/BPlus/persistent_BPlus_tree.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/BPlus/persistent_BPlus_tree.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/BPlus/transaction_manager.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/BPlus/transaction_manager.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/strategy/lru.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/strategy/lru.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -123,6 +116,11 @@
       <framework value="gotest" />
       <method v="2" />
     </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Go 构建.go build seetaSearch" />
+      </list>
+    </recent_temporary>
   </component>
   <component name="SharedIndexes">
     <attachedChunks>

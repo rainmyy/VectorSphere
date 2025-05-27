@@ -18,9 +18,9 @@ func NewLRUCache(capacity int) *LRUCache {
 	l := &LRUCache{}
 	l.capacity = capacity
 	l.cache = make(map[interface{}]*LinkedNode)
-	l.head = newLinkNode()
+	l.head = newLinkNode(nil, nil)
 	l.head.pre = nil
-	l.tail = newLinkNode()
+	l.tail = newLinkNode(nil, nil)
 	l.tail.post = nil
 	l.head.post = l.tail
 	l.tail.pre = l.head
