@@ -28,12 +28,11 @@ func (n *MVCCNode) GetValue(tx *Transaction) (Value, bool) {
 	defer n.mu.RUnlock()
 
 	for v := n.versions; v != nil; v = v.prev {
-		// 检查版本可见性
 		if tx.isVisible(v) {
 			return v.value, true
 		}
 	}
-	return "", false
+	return nil, false
 }
 
 // AddVersion 添加新版本
@@ -46,9 +45,9 @@ func (n *MVCCNode) AddVersion(value Value, tx *Transaction) {
 		txID:    tx.txID,
 		beginTS: tx.startTS,
 		prev:    n.versions,
+		endTS:   0,
 	}
 
-	// 更新前一个版本的endTS
 	if n.versions != nil {
 		n.versions.endTS = tx.startTS
 	}
@@ -85,24 +84,25 @@ type MVCCBPlusTree struct {
 
 // Get 带事务的读取
 func (t *MVCCBPlusTree) Get(tx *Transaction, key Key) (Value, bool) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
-	leaf := t.findLeaf(key)
-	if leaf == nil {
+	switch tx.isolation {
+	case ReadUncommitted:
+		return t.getLatest(key)
+	case ReadCommitted:
+		t.lockMgr.Acquire(tx.txID, key, LockShared)
+		defer t.lockMgr.Release(tx.txID, key)
+		return t.getVersion(key, tx.startTS)
+	case RepeatableRead:
+		if tx.snapshot != nil {
+			return tx.snapshot.Get(tx, key)
+		}
+		return t.getVersion(key, tx.startTS)
+	case Serializable:
+		t.lockMgr.Acquire(tx.txID, key, LockShared)
+		defer t.lockMgr.Release(tx.txID, key)
+		return t.getVersion(key, tx.startTS)
+	default:
 		return "", false
 	}
-
-	// 查找键对应的MVCC节点
-	for i, k := range leaf.keys {
-		if k == key {
-			if mvccNode, ok := leaf.children[i].(*MVCCNode); ok {
-				return mvccNode.GetValue(tx)
-			}
-			break
-		}
-	}
-	return "", false
 }
 
 // Put 带事务的写入
@@ -187,35 +187,6 @@ func (t *MVCCBPlusTree) validateConsistency() error {
 
 	// 可选: 检查业务约束
 	return nil
-}
-
-// Get 通过锁和MVCC实现不同隔离级别
-func (t *MVCCBPlusTree) Get(tx *Transaction, key Key) (Value, bool) {
-	// ReadUncommitted: 直接读取最新数据
-	if tx.isolation == ReadUncommitted {
-		return t.getLatest(key)
-	}
-
-	// ReadCommitted: 使用读锁和当前读视图
-	if tx.isolation == ReadCommitted {
-		t.lockMgr.Acquire(tx.txID, key, LockShared)
-		defer t.lockMgr.Release(tx.txID, key)
-		return t.getVersion(key, tx.startTS)
-	}
-
-	// RepeatableRead: 使用快照读
-	if tx.isolation == RepeatableRead {
-		return tx.snapshot.Get(key)
-	}
-
-	// Serializable: 使用谓词锁
-	if tx.isolation == Serializable {
-		t.lockMgr.Acquire(tx.txID, key, LockShared)
-		defer t.lockMgr.Release(tx.txID, key)
-		return t.getVersion(key, tx.startTS)
-	}
-
-	return "", false
 }
 
 // 通过WAL和fsync实现

@@ -5,8 +5,12 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/db/verctor_db.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/BPlus/mvcc_BPlus_tree.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/BPlus/mvcc_BPlus_tree.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/BPlus/transaction_manager.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/BPlus/transaction_manager.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/strategy/mmap.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/strategy/mmap.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/strategy/mmap_l.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/strategy/mmap_l.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/strategy/mmap_w.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/strategy/mmap_w.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -20,7 +24,7 @@
       </list>
     </option>
   </component>
-  <component name="GOROOT" url="file://$USER_HOME$/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.24.0.windows-amd64" />
+  <component name="GOROOT" url="file://C:/Program Files/Go" />
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
@@ -30,6 +34,10 @@
   <component name="HighlightingSettingsPerFile">
     <setting file="file://$USER_HOME$/go/pkg/mod/go.etcd.io/etcd/client/v3@v3.6.0/lease.go" root0="SKIP_INSPECTION" />
   </component>
+  <component name="KubernetesApiPersistence">{}</component>
+  <component name="KubernetesApiProvider">{
+  &quot;isMigrated&quot;: true
+}</component>
   <component name="MarkdownSettingsMigration">
     <option name="stateVersion" value="1" />
   </component>
@@ -113,11 +121,6 @@
       <framework value="gotest" />
       <method v="2" />
     </configuration>
-    <recent_temporary>
-      <list>
-        <item itemvalue="Go 构建.go build seetaSearch" />
-      </list>
-    </recent_temporary>
   </component>
   <component name="SharedIndexes">
     <attachedChunks>

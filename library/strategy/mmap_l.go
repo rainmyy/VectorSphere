@@ -46,34 +46,51 @@ func NewMmap(fileName string, mode int) (*Mmap, error) {
 	return mmap, nil
 }
 
-func (m *Mmap) checkFilePointer(checkValue int64) error {
-	if m.FilePointer+checkValue < m.FileLen {
+func (this *Mmap) checkFilePointer(checkValue int64) error {
+	if this.FilePointer+checkValue < this.FileLen {
 		return nil
 	}
 	//sysType := runtime.GOOS
-	err := syscall.Ftruncate(int(m.Filed.Fd()), m.FileLen+APPEND_DATA)
+	err := syscall.Ftruncate(int(this.Filed.Fd()), this.FileLen+APPEND_DATA)
 	if err != nil {
 		return err
 	}
-	m.FileLen += APPEND_DATA
-	syscall.Munmap(m.MmapBytes)
-	m.MmapBytes, err = syscall.Mmap(int(m.Filed.Fd()), 0, int(m.FileLen), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
+	this.FileLen += APPEND_DATA
+	syscall.Munmap(this.MmapBytes)
+	this.MmapBytes, err = syscall.Mmap(int(this.Filed.Fd()), 0, int(this.FileLen), syscall.PROT_READ|syscall.PROT_WRITE, syscall.MAP_SHARED)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (m *Mmap) checkFileCap(start, len int64) error {
-	if start+len < m.FileLen {
+func (this *Mmap) checkFileCap(start, len int64) error {
+	if start+len < this.FileLen {
 		return nil
 	}
-	err := syscall.Ftruncate(int(m.Filed.Fd()), m.FileLen+APPEND_DATA)
+	err := syscall.Ftruncate(int(this.Filed.Fd()), this.FileLen+APPEND_DATA)
 	if err != nil {
 		return err
 	}
-	m.FileLen += APPEND_DATA
-	m.FilePointer = start + len
+	this.FileLen += APPEND_DATA
+	this.FilePointer = start + len
 
+	return nil
+}
+
+func (this *Mmap) Unmap() error {
+
+	syscall.Munmap(this.MmapBytes)
+	this.Filed.Close()
+	return nil
+}
+
+func (this *Mmap) Sync() error {
+	dh := this.header()
+	_, _, err := syscall.Syscall(syscall.SYS_MSYNC, dh.Data, uintptr(dh.Len), syscall.MS_SYNC)
+	if err != 0 {
+		fmt.Printf("Sync Error ")
+		return errors.New("Sync Error")
+	}
 	return nil
 }

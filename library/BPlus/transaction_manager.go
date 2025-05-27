@@ -11,7 +11,8 @@ import (
 
 // Transaction 表示一个事务
 type Transaction struct {
-	txID      uint64              // 事务ID
+	txID      uint64 // 事务ID
+	startTS   uint64
 	startTime time.Time           // 开始时间
 	readView  map[uint64]struct{} // 读视图(活跃事务ID集合)
 	snapshot  *BPlusTree          // 快照(用于可重复读)
