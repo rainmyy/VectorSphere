@@ -7,6 +7,7 @@ import (
 	"os"
 	"seetaSearch/library/algorithm"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -15,19 +16,22 @@ type Cluster struct {
 	Centroid  algorithm.Point // 簇的中心点
 	VectorIDs []string        // 属于该簇的向量ID列表
 }
+
 type VectorDB struct {
-	vectors     map[string][]float64
-	mu          sync.RWMutex
-	filePath    string    // 数据库文件的存储路径
-	clusters    []Cluster // 存储簇信息，用于IVF索引
-	numClusters int       // K-Means中的K值，即簇的数量
-	indexed     bool      // 标记数据库是否已建立索引
+	vectors       map[string][]float64
+	mu            sync.RWMutex
+	filePath      string              // 数据库文件的存储路径
+	clusters      []Cluster           // 存储簇信息，用于IVF索引
+	numClusters   int                 // K-Means中的K值，即簇的数量
+	indexed       bool                // 标记数据库是否已建立索引
+	invertedIndex map[string][]string // 倒排索引，关键词 -> 文件ID列表
 }
 
 const (
-	DEFAULT_VECTORIZED = iota
-	SIMPLE_VECTORIZED
-	TFIDF_VECTORIZED
+	DefaultVectorized = iota
+	SimpleVectorized
+	TfidfVectorized
+	WordEmbeddingVectorized
 )
 
 // NewVectorDB 创建一个新的 VectorDB 实例。
@@ -56,13 +60,19 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 func (db *VectorDB) AddDocument(id string, doc string, vectorizedType int) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
-	vocab := []string{"apple", "banana", "cherry"}
 	var vectorized DocumentVectorized
 	switch vectorizedType {
-	case TFIDF_VECTORIZED:
-		vectorized = TFIDFVectorized(vocab, 10, nil)
-	case SIMPLE_VECTORIZED:
-		vectorized = SimpleBagOfWordsVectorized(vocab)
+	case TfidfVectorized:
+		vectorized = TFIDFVectorized()
+	case SimpleVectorized:
+		vectorized = SimpleBagOfWordsVectorized()
+	case WordEmbeddingVectorized:
+		embeddings, err := LoadWordEmbeddings("path/to/pretrained_embeddings.txt")
+		if err != nil {
+			return fmt.Errorf("加载词向量文件失败: %w", err)
+		}
+		vectorized = NewWordEmbeddingVectorized(embeddings)
+	case DefaultVectorized:
 	default:
 		panic("unhandled default case")
 	}
@@ -74,6 +84,11 @@ func (db *VectorDB) AddDocument(id string, doc string, vectorizedType int) error
 
 	// 将向量添加到数据库
 	db.vectors[id] = vector
+	// 更新倒排索引
+	words := strings.Fields(doc)
+	for _, word := range words {
+		db.invertedIndex[word] = append(db.invertedIndex[word], id)
+	}
 	if db.indexed {
 		db.indexed = false // 索引失效，需要重建
 		fmt.Println("提示: 添加新文档向量后，索引已失效，请重新调用 BuildIndex()。")
@@ -395,6 +410,57 @@ func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]string, e
 	}
 }
 
+// FileSystemSearch 结合向量搜索和倒排索引进行文件系统检索
+func (db *VectorDB) FileSystemSearch(query string, vectorizedType int, k int, nprobe int) ([]string, error) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	// 将查询转换为向量
+	var vectorized DocumentVectorized
+	switch vectorizedType {
+	case TfidfVectorized:
+		vectorized = TFIDFVectorized()
+	case SimpleVectorized:
+		vectorized = SimpleBagOfWordsVectorized()
+	default:
+		return nil, fmt.Errorf("不支持的向量化类型")
+	}
+	queryVector, err := vectorized(query)
+	if err != nil {
+		return nil, fmt.Errorf("将查询转换为向量时出错: %w", err)
+	}
+
+	// 使用向量搜索获取候选文件ID
+	candidateIDs, err := db.FindNearest(queryVector, k, nprobe)
+	if err != nil {
+		return nil, err
+	}
+
+	// 使用倒排索引过滤候选文件ID
+	words := strings.Fields(query)
+	filteredIDs := make([]string, 0)
+	for _, id := range candidateIDs {
+		include := true
+		for _, word := range words {
+			found := false
+			for _, docID := range db.invertedIndex[word] {
+				if docID == id {
+					found = true
+					break
+				}
+			}
+			if !found {
+				include = false
+				break
+			}
+		}
+		if include {
+			filteredIDs = append(filteredIDs, id)
+		}
+	}
+
+	return filteredIDs, nil
+}
 func normalizeVector(vec []float64) []float64 {
 	sum := 0.0
 	for _, v := range vec {

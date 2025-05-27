@@ -44,6 +44,11 @@ type DiskManager struct {
 	mu       sync.Mutex
 }
 
+// Sync 添加DiskManager的Sync方法
+func (dm *DiskManager) Sync() error {
+	return dm.file.Sync()
+}
+
 func newPersistentLeafNode(order int) *PersistentNode {
 	return &PersistentNode{
 		isLeaf:       true,
@@ -131,7 +136,7 @@ func (dm *DiskManager) WriteNode(node *PersistentNode) (int64, error) {
 	copy(paddedData, data)
 
 	offset := node.selfOffset
-	// If node.selfOffset is invalid or we decide to always allocate for simplicity for now
+	// If node.selfOffset is invalid, or we decide to always allocate for simplicity for now
 	// A more advanced WriteNode might try to overwrite if offset is valid and space is sufficient.
 	// For now, we always allocate if selfOffset is invalid, or re-use selfOffset if valid.
 	// This simplified version still allocates new space if selfOffset was not set,
@@ -222,12 +227,31 @@ func deserializeNode(data []byte) (*PersistentNode, error) {
 	return &node, nil
 }
 
+// PersistentBPlusTree 首先需要扩展PersistentBPlusTree结构，添加事务相关字段
 type PersistentBPlusTree struct {
 	order      int
 	rootOffset int64 // 根节点磁盘偏移量
 	disk       *DiskManager
 	cache      *NodeCache // 节点缓存
 	mu         sync.RWMutex
+	// 添加事务支持
+	txMgr   *TransactionManager
+	lockMgr *LockManager
+	wal     *WALManager
+}
+
+// NewPersistentBPlusTreeWithTx 更新构造函数以支持事务
+func NewPersistentBPlusTreeWithTx(order int, filename string, txMgr *TransactionManager, lockMgr *LockManager, wal *WALManager) (*PersistentBPlusTree, error) {
+	tree, err := NewPersistentBPlusTree(order, filename)
+	if err != nil {
+		return nil, err
+	}
+
+	tree.txMgr = txMgr
+	tree.lockMgr = lockMgr
+	tree.wal = wal
+
+	return tree, nil
 }
 
 // NewPersistentBPlusTree 创建持久化B+树

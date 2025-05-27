@@ -381,13 +381,18 @@ func (t *MVCCBPlusTree) splitLeaf(leaf *MVCCNode) {
 	if leaf == t.root {
 		newRoot := &MVCCNode{
 			isLeaf:   false,
-			keys:     []MccKey{rightLeaf.keys[0]},
+			keys:     []MccKey{newKey},
 			children: []interface{}{leaf, rightLeaf},
 		}
 		t.root = newRoot
 	} else {
 		// 找到父节点并插入新键和子节点指针
 		parent := t.findParent(t.root, leaf)
+		if parent == nil {
+			// 如果找不到父节点，说明树结构有问题
+			panic("Cannot find parent node in B+ tree")
+		}
+		// 在父节点中插入新键和右侧子节点
 		t.insertIntoParent(parent, leaf, newKey, rightLeaf)
 	}
 }
@@ -491,8 +496,8 @@ func cloneNode(node *MVCCNode) *MVCCNode {
 	return newNode
 }
 
-// commitTransaction 实现事务提交 (完整2PC流程)
-func (t *MVCCBPlusTree) commitTransaction(tx *Transaction) error {
+// commitTransaction 实现事务提交逻辑
+func (t *PersistentBPlusTree) commitTransaction(tx *Transaction) error {
 	// 阶段1: 准备阶段 (Prepare Phase)
 	// 1.1 验证事务状态
 	if tx.status != TxActive {
@@ -506,47 +511,50 @@ func (t *MVCCBPlusTree) commitTransaction(tx *Transaction) error {
 		}
 	}
 
-	// 1.3 写入Prepare记录到WAL
-	if err := t.wal.Prepare(tx); err != nil {
-		// 如果Prepare失败，回滚事务
-		if rollbackErr := t.rollbackTransaction(tx); rollbackErr != nil {
-			return fmt.Errorf("prepare failed and rollback failed: prepare=%w, rollback=%w", err, rollbackErr)
-		}
-		return fmt.Errorf("WAL Prepare failed: %w", err)
-	}
+	// 1.3 获取树锁，确保事务提交期间树结构不变
+	t.mu.Lock()
+	defer t.mu.Unlock()
 
-	// 1.4 强制刷盘确保Prepare记录持久化
-	if err := t.wal.Sync(); err != nil {
-		if rollbackErr := t.rollbackTransaction(tx); rollbackErr != nil {
-			return fmt.Errorf("prepare sync failed and rollback failed: sync=%w, rollback=%w", err, rollbackErr)
+	// 1.4 写入Prepare记录到WAL
+	if t.wal != nil {
+		if err := t.wal.Prepare(tx); err != nil {
+			return fmt.Errorf("WAL Prepare failed: %w", err)
 		}
-		return fmt.Errorf("WAL Prepare sync failed: %w", err)
+
+		// 强制刷盘确保Prepare记录持久化
+		if err := t.wal.Sync(); err != nil {
+			return fmt.Errorf("WAL Prepare sync failed: %w", err)
+		}
 	}
 
 	// 阶段2: 提交阶段 (Commit Phase)
 	// 2.1 写入Commit记录到WAL
-	if err := t.wal.Commit(tx.txID); err != nil {
-		// Commit失败是严重问题，需要特殊处理
-		// 此时Prepare已成功，理论上Commit应该能成功
-		// 可以尝试重试或标记为需要恢复的状态
-		return fmt.Errorf("WAL Commit failed after successful prepare: %w", err)
+	if t.wal != nil {
+		if err := t.wal.Commit(tx.txID); err != nil {
+			return fmt.Errorf("WAL Commit failed: %w", err)
+		}
 	}
 
 	// 2.2 更新事务状态为已提交
 	tx.status = TxCommitted
 
-	// 2.3 使事务的修改对其他事务可见
-	// 在MVCC中，版本已在Put/Delete时创建，这里主要是状态更新
-	t.makeVersionsVisible(tx)
+	// 2.3 确保所有修改已写入磁盘
+	if err := t.disk.Sync(); err != nil {
+		return fmt.Errorf("disk sync failed: %w", err)
+	}
 
 	// 2.4 释放事务持有的所有锁
-	for _, writeOp := range tx.writes {
-		t.lockMgr.Release(tx.txID, writeOp.Key)
+	if t.lockMgr != nil {
+		for _, writeOp := range tx.writes {
+			t.lockMgr.Release(tx.txID, writeOp.Key)
+		}
 	}
 
 	// 2.5 从TransactionManager中标记事务为已提交
-	if err := t.txMgr.MarkCommitted(tx.txID); err != nil {
-		return fmt.Errorf("failed to mark transaction as committed: %w", err)
+	if t.txMgr != nil {
+		if err := t.txMgr.MarkCommitted(tx.txID); err != nil {
+			return fmt.Errorf("failed to mark transaction as committed: %w", err)
+		}
 	}
 
 	return nil
@@ -554,12 +562,30 @@ func (t *MVCCBPlusTree) commitTransaction(tx *Transaction) error {
 
 // makeVersionsVisible 使事务的修改对其他事务可见
 func (t *MVCCBPlusTree) makeVersionsVisible(tx *Transaction) {
-	// 在MVCC中，版本的可见性主要通过isVisible方法中的逻辑控制
-	// 这里可以进行一些优化，比如更新版本的状态标记等
-	// 由于我们的实现中版本可见性主要依赖事务状态，这里可以是空实现
-	// 或者进行一些性能优化操作
+	// 遍历事务的写操作集合
+	for _, writeOp := range tx.writes {
+		// 查找对应的 MVCCNode
+		_, mvccNode := t.findMVCCNodeInLeaf(writeOp.Key)
+		if mvccNode == nil {
+			continue
+		}
 
-	// 可选：触发版本链的垃圾回收
+		mvccNode.mu.Lock()
+		// 遍历版本链，找到该事务创建的版本
+		for v := mvccNode.versions; v != nil; v = v.prev {
+			if v.txID == tx.txID {
+				// 确保版本的开始时间戳正确设置
+				if v.beginTS == 0 {
+					v.beginTS = tx.startTS
+				}
+				// 版本的 endTS 保持为 0，表示当前有效版本
+				v.endTS = 0
+			}
+		}
+		mvccNode.mu.Unlock()
+	}
+
+	// 触发版本链的垃圾回收
 	go t.scheduleVersionGC(tx)
 }
 
@@ -568,62 +594,409 @@ func (t *MVCCBPlusTree) scheduleVersionGC(tx *Transaction) {
 	// 异步清理不再需要的旧版本
 	// 这是一个后台任务，可以延迟执行
 	time.Sleep(100 * time.Millisecond) // 简单延迟
-	// 实际实现中应该有更复杂的GC策略
+
+	// 获取所有叶子节点
+	leaves := t.getAllLeafNodes()
+
+	// 遍历所有叶子节点
+	for _, leaf := range leaves {
+		for _, child := range leaf.children {
+			if mvccNode, ok := child.(*MVCCNode); ok {
+				mvccNode.mu.Lock()
+				// 清理不可见的旧版本
+				mvccNode.versions = t.cleanInvisibleVersions(mvccNode.versions, tx)
+				mvccNode.mu.Unlock()
+			}
+		}
+	}
+}
+
+// getAllLeafNodes 获取所有叶子节点
+func (t *MVCCBPlusTree) getAllLeafNodes() []*MVCCNode {
+	var leaves []*MVCCNode
+	if t.root == nil {
+		return leaves
+	}
+
+	current := t.root
+	for !current.isLeaf {
+		current = current.children[0].(*MVCCNode)
+	}
+
+	for current != nil {
+		leaves = append(leaves, current)
+		current = current.next
+	}
+
+	return leaves
+}
+
+// cleanInvisibleVersions 清理不可见的旧版本
+func (t *MVCCBPlusTree) cleanInvisibleVersions(version *Version, tx *Transaction) *Version {
+	// 找到第一个可见的版本
+	for version != nil && !tx.isVisible(version) {
+		version = version.prev
+	}
+
+	// 从第一个可见的版本开始，清理后续不可见的版本
+	if version != nil {
+		prev := version
+		current := version.prev
+		for current != nil {
+			if tx.isVisible(current) {
+				prev = current
+			} else {
+				prev.prev = current.prev
+			}
+			current = current.prev
+		}
+	}
+
+	return version
 }
 
 // rollbackTransaction 实现事务回滚
 func (t *MVCCBPlusTree) rollbackTransaction(tx *Transaction) error {
 	// 对于MVCC，回滚主要是标记事务为已中止，并清理其影响。
 	// 已经创建的版本由于其txID是中止事务的ID，所以对其他事务不可见（除了ReadUncommitted）。
-	// 可能需要将这些“无效”版本从版本链中移除或标记为无效，以供后续清理（垃圾回收）。
+	// 可能需要将这些"无效"版本从版本链中移除或标记为无效，以供后续清理（垃圾回收）。
 
 	// 记录Abort到WAL
 	if t.wal != nil {
-		t.wal.Abort(tx.txID)
+		if err := t.wal.Abort(tx.txID); err != nil {
+			return fmt.Errorf("WAL Abort failed: %w", err)
+		}
 	}
 
 	// 释放锁
-	for _, writeOp := range tx.writes {
-		t.lockMgr.Release(tx.txID, writeOp.Key)
+	if t.lockMgr != nil {
+		for _, writeOp := range tx.writes {
+			t.lockMgr.Release(tx.txID, writeOp.Key)
+		}
 	}
 
 	// 从TransactionManager中移除或标记事务为已中止
-	t.txMgr.MarkAborted(tx.txID)
+	if t.txMgr != nil {
+		if err := t.txMgr.MarkAborted(tx.txID); err != nil {
+			return fmt.Errorf("failed to mark transaction as aborted: %w", err)
+		}
+	}
 
-	// 清理该事务产生的版本 (可选，可以由后台GC处理)
+	// 清理该事务产生的版本
+	t.mu.RLock() // 读锁保护树结构
+	defer t.mu.RUnlock()
+
 	// 遍历tx.writes，找到对应的MVCCNode，然后移除txID为此事务ID的版本
-	// 这比较复杂，因为需要修改版本链，且要考虑并发
+	for _, writeOp := range tx.writes {
+		_, mvccNode := t.findMVCCNodeInLeaf(writeOp.Key)
+		if mvccNode == nil {
+			continue
+		}
 
+		mvccNode.mu.Lock()
+		// 处理版本链
+		if mvccNode.versions != nil {
+			// 如果头部版本是当前事务创建的，直接移除
+			if mvccNode.versions.txID == tx.txID {
+				mvccNode.versions = mvccNode.versions.prev
+			} else {
+				// 否则遍历版本链查找
+				current := mvccNode.versions
+				for current != nil && current.prev != nil {
+					if current.prev.txID == tx.txID {
+						// 跳过当前事务创建的版本
+						current.prev = current.prev.prev
+						break
+					}
+					current = current.prev
+				}
+			}
+		}
+		mvccNode.mu.Unlock()
+	}
+
+	// 记录回滚日志
 	fmt.Printf("Transaction %d rolled back\n", tx.txID)
 	return nil
 }
 
-// validateConsistency 校验数据一致性 (骨架)
+// validateConsistency 校验数据一致性
 func (t *MVCCBPlusTree) validateConsistency() error {
+	// 获取树的读锁，确保验证过程中树结构不变
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	// 验证B+树结构
 	if err := t.validateTreeStructure(t.root); err != nil {
 		return fmt.Errorf("tree structure validation failed: %w", err)
 	}
+
+	// 验证版本链
 	if err := t.validateVersionChains(); err != nil {
 		return fmt.Errorf("version chains validation failed: %w", err)
 	}
-	return nil
-}
-func (t *MVCCBPlusTree) validateTreeStructure(node *MVCCNode) error {
-	// 实现B+树结构校验逻辑
-	// - 检查每个节点的key数量是否在[order/2, order-1]范围内 (根节点除外)
-	// - 检查key是否有序
-	// - 检查叶子节点是否都在同一层
-	// - 检查内部节点的子节点指针是否正确
-	return nil
-}
-func (t *MVCCBPlusTree) validateVersionChains() error {
-	// 遍历所有叶子节点的所有MVCCNode，检查其版本链的逻辑一致性
-	// - beginTS < endTS (如果endTS非0)
-	// - 版本链按beginTS降序排列
-	// - 等等
+
+	// 验证事务状态一致性
+	if t.txMgr != nil {
+		if err := t.validateTransactionConsistency(); err != nil {
+			return fmt.Errorf("transaction consistency validation failed: %w", err)
+		}
+	}
+
 	return nil
 }
 
+func (t *MVCCBPlusTree) validateTreeStructure(node *MVCCNode) error {
+	if node == nil {
+		return nil
+	}
+
+	// 检查节点键值对数量是否合法
+	// 根节点可以有较少的键，非根内部节点必须至少半满
+	isRoot := node == t.root
+	if !isRoot && !node.isLeaf && len(node.keys) < (t.order/2) {
+		return fmt.Errorf("internal node underfilled: has %d keys, minimum is %d",
+			len(node.keys), t.order/2)
+	}
+
+	// 检查键是否有序
+	for i := 1; i < len(node.keys); i++ {
+		if compareKeys(node.keys[i-1], node.keys[i]) >= 0 {
+			return fmt.Errorf("keys not in order at index %d: %v >= %v",
+				i, node.keys[i-1], node.keys[i])
+		}
+	}
+
+	// 检查子节点数量是否正确
+	if !node.isLeaf {
+		if len(node.children) != len(node.keys)+1 {
+			return fmt.Errorf("internal node has %d keys but %d children",
+				len(node.keys), len(node.children))
+		}
+
+		// 递归检查所有子节点
+		childDepths := make([]int, len(node.children))
+		for i, child := range node.children {
+			mvccChild, ok := child.(*MVCCNode)
+			if !ok || mvccChild == nil {
+				return fmt.Errorf("child at index %d is not a valid MVCCNode", i)
+			}
+
+			// 递归验证子节点
+			if err := t.validateTreeStructure(mvccChild); err != nil {
+				return fmt.Errorf("child at index %d invalid: %w", i, err)
+			}
+
+			// 计算子树深度（用于后续验证所有叶子节点是否在同一层）
+			if mvccChild.isLeaf {
+				childDepths[i] = 1
+			} else {
+				// 这里简化处理，实际实现可能需要额外的深度计算函数
+				childDepths[i] = 2 // 占位，实际应该计算真实深度
+			}
+		}
+
+		// 验证所有子树深度相同（所有叶子节点在同一层）
+		for i := 1; i < len(childDepths); i++ {
+			if childDepths[i] != childDepths[0] {
+				return fmt.Errorf("leaf nodes not at same level: depths %v", childDepths)
+			}
+		}
+	} else {
+		// 叶子节点的children数组应该与keys数组长度相同
+		if len(node.children) != len(node.keys) {
+			return fmt.Errorf("leaf node has %d keys but %d values",
+				len(node.keys), len(node.children))
+		}
+
+		// 检查叶子节点的每个值是否是有效的MVCCNode
+		for i, child := range node.children {
+			mvccNode, ok := child.(*MVCCNode)
+			if !ok || mvccNode == nil {
+				return fmt.Errorf("value at index %d is not a valid MVCCNode", i)
+			}
+		}
+	}
+
+	return nil
+}
+
+// 辅助函数：找到最左侧的叶子节点
+func (t *MVCCBPlusTree) findLeftmostLeaf(node *MVCCNode) *MVCCNode {
+	if node == nil {
+		return nil
+	}
+
+	current := node
+	for !current.isLeaf {
+		if len(current.children) == 0 {
+			return nil // 内部节点没有子节点，树结构有问题
+		}
+
+		child, ok := current.children[0].(*MVCCNode)
+		if !ok || child == nil {
+			return nil // 子节点类型错误
+		}
+
+		current = child
+	}
+
+	return current
+}
+
+// 验证事务状态一致性
+func (t *MVCCBPlusTree) validateTransactionConsistency() error {
+	if t.txMgr == nil {
+		return nil
+	}
+
+	// 获取事务管理器的读锁，确保在检查期间事务状态不变
+	t.txMgr.mu.RLock()
+	defer t.txMgr.mu.RUnlock()
+
+	// 检查活跃事务的写集合是否与树中的版本一致
+	for _, tx := range t.txMgr.GetActiveTxs() {
+		// 只检查活跃状态的事务
+		if tx.status != TxActive {
+			continue
+		}
+
+		for _, writeOp := range tx.writes {
+			_, mvccNode := t.findMVCCNodeInLeaf(writeOp.Key)
+			if mvccNode == nil {
+				return fmt.Errorf("transaction %d has write for key %v but key not found in tree",
+					tx.txID, writeOp.Key)
+			}
+
+			// 检查事务的写操作是否反映在版本链中
+			mvccNode.mu.RLock()
+			found := false
+			for v := mvccNode.versions; v != nil; v = v.prev {
+				if v.txID == tx.txID {
+					found = true
+					break
+				}
+			}
+			mvccNode.mu.RUnlock()
+
+			if !found {
+				return fmt.Errorf("active transaction %d has write for key %v but no corresponding version found",
+					tx.txID, writeOp.Key)
+			}
+		}
+	}
+
+	return nil
+}
+
+// validateVersionChains 验证所有 MVCCNode 的版本链是否有效
+func (t *MVCCBPlusTree) validateVersionChains() error {
+	// 获取所有叶子节点
+	leaves := t.getAllLeafNodes()
+
+	// 遍历所有叶子节点
+	for _, leaf := range leaves {
+		for i, child := range leaf.children {
+			if mvccNode, ok := child.(*MVCCNode); ok {
+				mvccNode.mu.RLock()
+				// 验证当前 MVCCNode 的版本链
+				if err := t.validateSingleVersionChain(mvccNode.versions); err != nil {
+					mvccNode.mu.RUnlock()
+					return fmt.Errorf("节点 %v (索引 %d) 的版本链验证失败: %w", mvccNode.key, i, err)
+				}
+
+				// 验证版本链中的事务ID是否有效
+				if t.txMgr != nil {
+					for v := mvccNode.versions; v != nil; v = v.prev {
+						// 检查事务ID是否在有效范围内
+						if v.txID > t.txMgr.nextTxID {
+							mvccNode.mu.RUnlock()
+							return fmt.Errorf("节点 %v 的版本 (txID=%d) 使用了未分配的事务ID", mvccNode.key, v.txID)
+						}
+					}
+				}
+
+				// 验证版本链的完整性
+				if err := t.validateVersionChainCompleteness(mvccNode.versions); err != nil {
+					mvccNode.mu.RUnlock()
+					return fmt.Errorf("节点 %v 的版本链完整性验证失败: %w", mvccNode.key, err)
+				}
+
+				mvccNode.mu.RUnlock()
+			} else {
+				return fmt.Errorf("叶子节点的子节点不是有效的MVCCNode类型: 索引 %d", i)
+			}
+		}
+	}
+
+	return nil
+}
+
+// validateSingleVersionChain 验证单个 MVCCNode 的版本链是否有效
+func (t *MVCCBPlusTree) validateSingleVersionChain(version *Version) error {
+	var prevBeginTS uint64 = 0
+	var firstIteration bool = true
+
+	for v := version; v != nil; v = v.prev {
+		// 验证开始时间戳是否小于结束时间戳
+		if v.beginTS >= v.endTS && v.endTS != 0 {
+			return fmt.Errorf("版本 %d 的开始时间戳 (%d) 大于或等于结束时间戳 (%d)", v.txID, v.beginTS, v.endTS)
+		}
+
+		// 验证版本链按beginTS降序排列
+		if !firstIteration {
+			if v.beginTS >= prevBeginTS {
+				return fmt.Errorf("版本链顺序错误: 版本 %d (beginTS=%d) 应该早于前一个版本 (beginTS=%d)",
+					v.txID, v.beginTS, prevBeginTS)
+			}
+		}
+
+		// 记录当前版本的beginTS用于下一次迭代比较
+		prevBeginTS = v.beginTS
+		firstIteration = false
+	}
+
+	return nil
+}
+
+// validateVersionChainCompleteness 验证版本链的完整性
+func (t *MVCCBPlusTree) validateVersionChainCompleteness(version *Version) error {
+	if version == nil {
+		return nil // 空版本链是有效的
+	}
+
+	// 检查版本链中是否存在时间戳重叠
+	versions := make([]*Version, 0)
+	for v := version; v != nil; v = v.prev {
+		versions = append(versions, v)
+	}
+
+	for i := 0; i < len(versions); i++ {
+		for j := i + 1; j < len(versions); j++ {
+			vi := versions[i]
+			vj := versions[j]
+
+			// 检查时间戳区间是否重叠
+			viEnd := vi.endTS
+			if viEnd == 0 { // 当前活跃版本
+				viEnd = ^uint64(0) // 最大值表示无限
+			}
+
+			vjEnd := vj.endTS
+			if vjEnd == 0 {
+				vjEnd = ^uint64(0)
+			}
+
+			// 检查重叠: [vi.beginTS, viEnd) 与 [vj.beginTS, vjEnd) 是否有交集
+			if vi.beginTS < vjEnd && vj.beginTS < viEnd {
+				return fmt.Errorf("版本时间戳重叠: 版本 %d [%d,%d) 与版本 %d [%d,%d)",
+					vi.txID, vi.beginTS, viEnd, vj.txID, vj.beginTS, vjEnd)
+			}
+		}
+	}
+
+	return nil
+}
 func (t *MVCCBPlusTree) Clone() *MVCCBPlusTree {
 	newTree := &MVCCBPlusTree{
 		order: t.order,

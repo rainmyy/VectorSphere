@@ -125,6 +125,17 @@ func (tm *TransactionManager) Commit(tx *Transaction) error {
 	return nil
 }
 
+func (tm *TransactionManager) GetActiveTxs() []*Transaction {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+
+	txs := make([]*Transaction, 0, len(tm.activeTx))
+	for _, tx := range tm.activeTx {
+		txs = append(txs, tx)
+	}
+	return txs
+}
+
 // Abort 中止事务
 func (tm *TransactionManager) Abort(tx *Transaction) {
 	tx.mu.Lock()
