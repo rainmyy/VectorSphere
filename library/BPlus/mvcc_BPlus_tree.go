@@ -184,7 +184,7 @@ func (t *MVCCBPlusTree) Put(tx *Transaction, key Key, value Value) error {
 	if leaf == nil { // 意味着树是空的或者key的路径不存在，理论上findLeaf应该能处理空树
 		// 如果树是空的，需要创建根，然后插入
 		// 这里简化，假设findMVCCNodeInLeaf能找到或指示在哪里创建
-		// return errors.New("failed to find or create leaf path for key")
+		return errors.New("failed to find or create leaf path for key")
 	}
 
 	if mvccNode == nil {
@@ -336,7 +336,9 @@ func (t *MVCCBPlusTree) insertIntoLeafAndCreateMVCCNode(key Key, newNodeData *MV
 	leaf.children = append(leaf.children[:idxToInsert], append([]interface{}{newNodeData}, leaf.children[idxToInsert:]...)...)
 
 	// 如果叶子节点满了，需要分裂 (未实现)
-	// if len(leaf.keys) > t.order -1 { t.splitLeaf(leaf) }
+	if len(leaf.keys) > t.order-1 {
+		t.splitLeaf(leaf)
+	}
 
 	return leaf, newNodeData // 返回修改后的叶子和新插入的MVCCNode
 }
@@ -347,7 +349,10 @@ func (t *MVCCBPlusTree) commitTransaction(tx *Transaction) error {
 	// 在实际的2PC中，Prepare阶段会确保所有参与者都准备好提交
 	if err := t.wal.Prepare(tx); err != nil {
 		// 如果Prepare失败，应该回滚事务
-		t.rollbackTransaction(tx) // 需要实现rollbackTransaction
+		err := t.rollbackTransaction(tx)
+		if err != nil {
+			return err
+		}
 		return fmt.Errorf("WAL Prepare failed: %w", err)
 	}
 
@@ -365,7 +370,10 @@ func (t *MVCCBPlusTree) commitTransaction(tx *Transaction) error {
 		// 理论上Prepare成功后，Commit应该总是能成功或可重试
 		// 此时数据可能已部分“提交”（版本已创建），但WAL没记录Commit
 		// 可能需要尝试再次Commit WAL，或者标记数据库为不一致状态等待恢复
-		t.rollbackTransaction(tx) // 尝试回滚，但可能不完全
+		err := t.rollbackTransaction(tx)
+		if err != nil {
+			return err
+		}
 		return fmt.Errorf("WAL Commit failed: %w", err)
 	}
 
