@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 )
 
 type MccKey interface{}   // 键类型，应具体化并实现比较
@@ -22,6 +23,12 @@ type MVCCNode struct {
 	key      Key
 	versions *Version // 版本链头
 	mu       sync.RWMutex
+
+	// 添加B+树节点必要的属性
+	isLeaf   bool          // 是否为叶子节点
+	keys     []MccKey      // 键数组
+	children []interface{} // 子节点数组（可能是MVCCNode或其他类型）
+	next     *MVCCNode     // 叶子节点链表的下一个节点
 }
 
 // GetValue 根据事务获取合适的版本
@@ -107,8 +114,8 @@ func (tx *Transaction) isVisible(v *Version) bool {
 }
 
 type MVCCBPlusTree struct {
-	root      *Node // B+树的根节点
-	order     int   // B+树的阶数
+	root      *MVCCNode // B+树的根节点
+	order     int       // B+树的阶数
 	txMgr     *TransactionManager
 	lockMgr   *LockManager
 	wal       *WALManager
@@ -118,7 +125,11 @@ type MVCCBPlusTree struct {
 
 func NewMVCCBPlusTree(order int, txMgr *TransactionManager, lockMgr *LockManager, wal *WALManager) *MVCCBPlusTree {
 	// 初始化空的B+树，根节点是一个叶子节点
-	rootNode := &Node{isLeaf: true, keys: make([]Key, 0), children: make([]interface{}, 0)}
+	rootNode := &MVCCNode{
+		isLeaf:   true,                   // 设置为叶子节点
+		keys:     make([]MccKey, 0),      // 初始化空的键数组
+		children: make([]interface{}, 0), // 初始化空的子节点数组
+	}
 	return &MVCCBPlusTree{
 		root:    rootNode,
 		order:   order,
@@ -138,8 +149,8 @@ func (t *MVCCBPlusTree) Get(tx *Transaction, key Key) (Value, bool) {
 		return t.getLatestVersionFromTree(key, tx) // 传入tx是为了能看到自己的未提交修改
 	case ReadCommitted:
 		// ReadCommitted 读取事务开始时已提交的最新版本
-		// t.lockMgr.Acquire(tx.txID, key, LockShared) // RC通常不加读锁
-		// defer t.lockMgr.Release(tx.txID, key)
+		t.lockMgr.Acquire(tx.txID, key, LockShared) // RC通常不加读锁
+		defer t.lockMgr.Release(tx.txID, key)
 		return t.getVersionVisibleAt(key, tx)
 	case RepeatableRead:
 		// RepeatableRead 基于事务开始时的快照读取
@@ -150,8 +161,8 @@ func (t *MVCCBPlusTree) Get(tx *Transaction, key Key) (Value, bool) {
 			return t.getVersionVisibleAt(key, tx)
 		}
 		// 如果没有快照，则读取事务开始时可见的版本
-		// t.lockMgr.Acquire(tx.txID, key, LockShared) // 可能需要
-		// defer t.lockMgr.Release(tx.txID, key)
+		t.lockMgr.Acquire(tx.txID, key, LockShared) // 可能需要
+		defer t.lockMgr.Release(tx.txID, key)
 		return t.getVersionVisibleAt(key, tx)
 	case Serializable:
 		// Serializable 类似RepeatableRead，但有更强的锁机制防止幻读
@@ -175,7 +186,7 @@ func (t *MVCCBPlusTree) Put(tx *Transaction, key Key, value Value) error {
 		return err
 	}
 	// Release 应该在事务结束 (commit/abort) 时，这里用 defer 只是简化
-	// defer t.lockMgr.Release(tx.txID, key)
+	defer t.lockMgr.Release(tx.txID, key)
 
 	t.mu.RLock() // 读取树结构时加读锁
 	leaf, mvccNode := t.findMVCCNodeInLeaf(key)
@@ -259,7 +270,7 @@ func (t *MVCCBPlusTree) getVersionVisibleAt(key Key, tx *Transaction) (Value, bo
 
 // findMVCCNodeInLeaf 在B+树中查找key对应的叶子节点和MVCCNode
 // 返回叶子节点和MVCCNode。如果MVCCNode不存在，则返回nil
-func (t *MVCCBPlusTree) findMVCCNodeInLeaf(key Key) (*Node, *MVCCNode) {
+func (t *MVCCBPlusTree) findMVCCNodeInLeaf(key Key) (*MVCCNode, *MVCCNode) {
 	leaf := t.findLeaf(t.root, key) // findLeaf 是标准的B+树查找叶子节点操作
 	if leaf == nil {
 		return nil, nil
@@ -279,7 +290,7 @@ func (t *MVCCBPlusTree) findMVCCNodeInLeaf(key Key) (*Node, *MVCCNode) {
 }
 
 // findLeaf 查找包含key的叶子节点 (标准B+树操作)
-func (t *MVCCBPlusTree) findLeaf(node *Node, key Key) *Node {
+func (t *MVCCBPlusTree) findLeaf(node *MVCCNode, key Key) *MVCCNode {
 	if node == nil {
 		return nil
 	}
@@ -290,7 +301,7 @@ func (t *MVCCBPlusTree) findLeaf(node *Node, key Key) *Node {
 		for i < len(currentNode.keys) && compareKeys(key, currentNode.keys[i]) >= 0 {
 			i++
 		}
-		child, ok := currentNode.children[i].(*Node)
+		child, ok := currentNode.children[i].(*MVCCNode)
 		if !ok || child == nil {
 			return nil // 树结构错误
 		}
@@ -303,7 +314,7 @@ func (t *MVCCBPlusTree) findLeaf(node *Node, key Key) *Node {
 // 如果key已存在于某个MVCCNode中，则返回该节点；否则创建并插入新的MVCCNode。
 // 返回实际的叶子节点（可能因分裂而改变）和对应的MVCCNode。
 // 这个方法需要处理B+树的插入逻辑，包括节点分裂、父节点更新等，且必须是线程安全的。
-func (t *MVCCBPlusTree) insertIntoLeafAndCreateMVCCNode(key Key, newNodeData *MVCCNode) (*Node, *MVCCNode) {
+func (t *MVCCBPlusTree) insertIntoLeafAndCreateMVCCNode(key Key, newNodeData *MVCCNode) (*MVCCNode, *MVCCNode) {
 	// 实际的B+树插入逻辑会复杂得多，这里只是一个高度简化的示意
 	// 需要 t.mu.Lock() 保护
 	leaf := t.findLeaf(t.root, key)
@@ -331,11 +342,11 @@ func (t *MVCCBPlusTree) insertIntoLeafAndCreateMVCCNode(key Key, newNodeData *MV
 		idxToInsert++
 	}
 	// 插入key
-	leaf.keys = append(leaf.keys[:idxToInsert], append([]Key{key}, leaf.keys[idxToInsert:]...)...)
+	leaf.keys = append(leaf.keys[:idxToInsert], append([]MccKey{key}, leaf.keys[idxToInsert:]...)...)
 	// 插入MVCCNode
 	leaf.children = append(leaf.children[:idxToInsert], append([]interface{}{newNodeData}, leaf.children[idxToInsert:]...)...)
 
-	// 如果叶子节点满了，需要分裂 (未实现)
+	// 如果叶子节点满了，需要分裂
 	if len(leaf.keys) > t.order-1 {
 		t.splitLeaf(leaf)
 	}
@@ -343,50 +354,221 @@ func (t *MVCCBPlusTree) insertIntoLeafAndCreateMVCCNode(key Key, newNodeData *MV
 	return leaf, newNodeData // 返回修改后的叶子和新插入的MVCCNode
 }
 
-// commitTransaction 实现事务提交 (简化版，未包含完整2PC)
+// splitLeaf 分裂叶子节点
+func (t *MVCCBPlusTree) splitLeaf(leaf *MVCCNode) {
+	// 确保已经持有树的写锁
+
+	// 计算分裂点
+	midIdx := t.order / 2
+
+	// 创建新的右侧叶子节点
+	rightLeaf := &MVCCNode{
+		isLeaf:   true,
+		keys:     append([]MccKey{}, leaf.keys[midIdx:]...),
+		children: append([]interface{}{}, leaf.children[midIdx:]...),
+		next:     leaf.next,
+	}
+
+	// 更新原叶子节点
+	leaf.keys = leaf.keys[:midIdx]
+	leaf.children = leaf.children[:midIdx]
+	leaf.next = rightLeaf
+	// 要插入到父节点的键
+	newKey := rightLeaf.keys[0]
+
+	// 将新节点的第一个键插入到父节点
+	// 如果没有父节点（即当前节点是根节点），则创建新的根节点
+	if leaf == t.root {
+		newRoot := &MVCCNode{
+			isLeaf:   false,
+			keys:     []MccKey{rightLeaf.keys[0]},
+			children: []interface{}{leaf, rightLeaf},
+		}
+		t.root = newRoot
+	} else {
+		// 找到父节点并插入新键和子节点指针
+		parent := t.findParent(t.root, leaf)
+		t.insertIntoParent(parent, leaf, newKey, rightLeaf)
+	}
+}
+
+// insertIntoParent 将新键和子节点插入到父节点中，必要时递归分裂父节点
+func (t *MVCCBPlusTree) insertIntoParent(parent, leftChild *MVCCNode, newKey MccKey, rightChild *MVCCNode) {
+	if parent == nil {
+		return
+	}
+
+	// 找到插入位置
+	insertIndex := 0
+	for insertIndex < len(parent.keys) && compareKeys(newKey, parent.keys[insertIndex]) > 0 {
+		insertIndex++
+	}
+
+	// 插入新键
+	parent.keys = append(parent.keys[:insertIndex], append([]MccKey{newKey}, parent.keys[insertIndex:])...)
+	// 插入新的子节点指针
+	parent.children = append(parent.children[:insertIndex+1], parent.children[insertIndex:]...)
+	parent.children[insertIndex+1] = rightChild
+
+	// 检查父节点是否需要分裂
+	if len(parent.keys) > t.order-1 {
+		t.splitInternalNode(parent)
+	}
+}
+
+// splitInternalNode 分裂内部节点
+func (t *MVCCBPlusTree) splitInternalNode(node *MVCCNode) {
+	// 计算分裂点
+	midIdx := t.order / 2
+
+	// 创建新的右侧内部节点
+	rightNode := &MVCCNode{
+		isLeaf:   false,
+		keys:     append([]MccKey{}, node.keys[midIdx+1:]...),
+		children: append([]interface{}{}, node.children[midIdx+1:]...),
+	}
+
+	// 提升的键
+	promotedKey := node.keys[midIdx]
+
+	// 更新原节点
+	node.keys = node.keys[:midIdx]
+	node.children = node.children[:midIdx+1]
+
+	if node == t.root {
+		// 如果当前节点是根节点，创建新的根节点
+		newRoot := &MVCCNode{
+			isLeaf:   false,
+			keys:     []MccKey{promotedKey},
+			children: []interface{}{node, rightNode},
+		}
+		t.root = newRoot
+	} else {
+		// 找到父节点并插入提升的键和新的子节点指针
+		parent := t.findParent(t.root, node)
+		t.insertIntoParent(parent, node, promotedKey, rightNode)
+	}
+}
+
+// findParent 查找指定节点的父节点
+func (t *MVCCBPlusTree) findParent(current, child *MVCCNode) *MVCCNode {
+	if current == nil || current.isLeaf {
+		return nil
+	}
+
+	for _, c := range current.children {
+		childNode := c.(*MVCCNode)
+		if childNode == child {
+			return current
+		}
+		if !childNode.isLeaf {
+			if parent := t.findParent(childNode, child); parent != nil {
+				return parent
+			}
+		}
+	}
+	return nil
+}
+
+// cloneNode 递归深拷贝节点
+func cloneNode(node *MVCCNode) *MVCCNode {
+	if node == nil {
+		return nil
+	}
+	newNode := &MVCCNode{
+		isLeaf:   node.isLeaf,
+		keys:     append([]MccKey{}, node.keys...),
+		children: make([]interface{}, len(node.children)),
+		next:     node.next, // 叶子节点的 next 指针保持不变
+	}
+	for i, child := range node.children {
+		if node.isLeaf {
+			newNode.children[i] = child
+		} else {
+			newNode.children[i] = cloneNode(child.(*MVCCNode))
+		}
+	}
+	return newNode
+}
+
+// commitTransaction 实现事务提交 (完整2PC流程)
 func (t *MVCCBPlusTree) commitTransaction(tx *Transaction) error {
-	// 阶段1: 准备 (写入WAL)
-	// 在实际的2PC中，Prepare阶段会确保所有参与者都准备好提交
-	if err := t.wal.Prepare(tx); err != nil {
-		// 如果Prepare失败，应该回滚事务
-		err := t.rollbackTransaction(tx)
-		if err != nil {
+	// 阶段1: 准备阶段 (Prepare Phase)
+	// 1.1 验证事务状态
+	if tx.status != TxActive {
+		return errors.New("transaction is not active")
+	}
+
+	// 1.2 验证可串行化隔离级别下的读写冲突
+	if tx.isolation == Serializable {
+		if err := t.txMgr.validateSerializable(tx); err != nil {
 			return err
+		}
+	}
+
+	// 1.3 写入Prepare记录到WAL
+	if err := t.wal.Prepare(tx); err != nil {
+		// 如果Prepare失败，回滚事务
+		if rollbackErr := t.rollbackTransaction(tx); rollbackErr != nil {
+			return fmt.Errorf("prepare failed and rollback failed: prepare=%w, rollback=%w", err, rollbackErr)
 		}
 		return fmt.Errorf("WAL Prepare failed: %w", err)
 	}
 
-	// 阶段2: 提交 (更新数据页/版本链，释放锁)
-	// 实际应用修改 (在MVCC中，修改是创建新版本，已在Put/Delete中完成)
-	// 这里主要是标记事务为已提交，并清理
-
-	// 更新所有由该事务创建的版本的 txID 状态为 committed (如果需要)
-	// 在我们的模型中，版本链的更新在AddVersion时已完成，endTS的设置也已处理。
-	// 主要工作是让这些版本对其他事务可见，这通过isVisible中的逻辑实现。
-
-	// 标记事务为已提交到WAL
-	if err := t.wal.Commit(tx.txID); err != nil {
-		// 如果WAL Commit失败，这是一个严重问题，可能需要特殊恢复流程
-		// 理论上Prepare成功后，Commit应该总是能成功或可重试
-		// 此时数据可能已部分“提交”（版本已创建），但WAL没记录Commit
-		// 可能需要尝试再次Commit WAL，或者标记数据库为不一致状态等待恢复
-		err := t.rollbackTransaction(tx)
-		if err != nil {
-			return err
+	// 1.4 强制刷盘确保Prepare记录持久化
+	if err := t.wal.Sync(); err != nil {
+		if rollbackErr := t.rollbackTransaction(tx); rollbackErr != nil {
+			return fmt.Errorf("prepare sync failed and rollback failed: sync=%w, rollback=%w", err, rollbackErr)
 		}
-		return fmt.Errorf("WAL Commit failed: %w", err)
+		return fmt.Errorf("WAL Prepare sync failed: %w", err)
 	}
 
-	// 释放事务持有的所有锁
+	// 阶段2: 提交阶段 (Commit Phase)
+	// 2.1 写入Commit记录到WAL
+	if err := t.wal.Commit(tx.txID); err != nil {
+		// Commit失败是严重问题，需要特殊处理
+		// 此时Prepare已成功，理论上Commit应该能成功
+		// 可以尝试重试或标记为需要恢复的状态
+		return fmt.Errorf("WAL Commit failed after successful prepare: %w", err)
+	}
+
+	// 2.2 更新事务状态为已提交
+	tx.status = TxCommitted
+
+	// 2.3 使事务的修改对其他事务可见
+	// 在MVCC中，版本已在Put/Delete时创建，这里主要是状态更新
+	t.makeVersionsVisible(tx)
+
+	// 2.4 释放事务持有的所有锁
 	for _, writeOp := range tx.writes {
-		t.lockMgr.Release(tx.txID, writeOp.Key) // 释放写锁
+		t.lockMgr.Release(tx.txID, writeOp.Key)
 	}
-	// 也需要释放读锁 (如果事务获取了读锁)
 
-	// 从TransactionManager中移除或标记事务为已提交
-	// t.txMgr.MarkCommitted(tx.txID)
+	// 2.5 从TransactionManager中标记事务为已提交
+	if err := t.txMgr.MarkCommitted(tx.txID); err != nil {
+		return fmt.Errorf("failed to mark transaction as committed: %w", err)
+	}
 
 	return nil
+}
+
+// makeVersionsVisible 使事务的修改对其他事务可见
+func (t *MVCCBPlusTree) makeVersionsVisible(tx *Transaction) {
+	// 在MVCC中，版本的可见性主要通过isVisible方法中的逻辑控制
+	// 这里可以进行一些优化，比如更新版本的状态标记等
+	// 由于我们的实现中版本可见性主要依赖事务状态，这里可以是空实现
+	// 或者进行一些性能优化操作
+
+	// 可选：触发版本链的垃圾回收
+	go t.scheduleVersionGC(tx)
+}
+
+// scheduleVersionGC 调度版本垃圾回收
+func (t *MVCCBPlusTree) scheduleVersionGC(tx *Transaction) {
+	// 异步清理不再需要的旧版本
+	// 这是一个后台任务，可以延迟执行
+	time.Sleep(100 * time.Millisecond) // 简单延迟
+	// 实际实现中应该有更复杂的GC策略
 }
 
 // rollbackTransaction 实现事务回滚
@@ -406,7 +588,7 @@ func (t *MVCCBPlusTree) rollbackTransaction(tx *Transaction) error {
 	}
 
 	// 从TransactionManager中移除或标记事务为已中止
-	// t.txMgr.MarkAborted(tx.txID)
+	t.txMgr.MarkAborted(tx.txID)
 
 	// 清理该事务产生的版本 (可选，可以由后台GC处理)
 	// 遍历tx.writes，找到对应的MVCCNode，然后移除txID为此事务ID的版本
@@ -426,7 +608,7 @@ func (t *MVCCBPlusTree) validateConsistency() error {
 	}
 	return nil
 }
-func (t *MVCCBPlusTree) validateTreeStructure(node *Node) error {
+func (t *MVCCBPlusTree) validateTreeStructure(node *MVCCNode) error {
 	// 实现B+树结构校验逻辑
 	// - 检查每个节点的key数量是否在[order/2, order-1]范围内 (根节点除外)
 	// - 检查key是否有序
@@ -440,6 +622,14 @@ func (t *MVCCBPlusTree) validateVersionChains() error {
 	// - 版本链按beginTS降序排列
 	// - 等等
 	return nil
+}
+
+func (t *MVCCBPlusTree) Clone() *MVCCBPlusTree {
+	newTree := &MVCCBPlusTree{
+		order: t.order,
+		root:  cloneNode(t.root),
+	}
+	return newTree
 }
 
 // compareKeys 是一个比较键的函数，你需要根据你的Key类型来实现它

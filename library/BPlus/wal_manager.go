@@ -113,11 +113,6 @@ func (w *WALManager) Commit(txID uint64) error {
 	return w.file.Sync()
 }
 
-func (w *WALManager) Abort(txID uint64) error {
-	// ... log abort record ...
-	return nil
-}
-
 // flushBatch 批量刷盘
 func (w *WALManager) flushBatch() {
 	for batch := range w.batchChan {
@@ -144,4 +139,25 @@ func (w *WALManager) flushBatch() {
 		w.file.Sync()
 		w.mu.Unlock()
 	}
+}
+
+// Sync 强制刷盘
+func (w *WALManager) Sync() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.file.Sync()
+}
+
+func (w *WALManager) Abort(txID uint64) error {
+	entry := &WALEntry{
+		txID:      txID,
+		opType:    OpAbort,
+		timestamp: time.Now(),
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err := w.Log(entry); err != nil {
+		return err
+	}
+	return w.file.Sync()
 }

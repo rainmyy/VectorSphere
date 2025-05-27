@@ -162,35 +162,6 @@ func createSnapshot(tm *TransactionManager) *MVCCBPlusTree {
 	return tree.Clone()
 }
 
-func (t *MVCCBPlusTree) Clone() *MVCCBPlusTree {
-	newTree := &MVCCBPlusTree{
-		order: t.order,
-		root:  cloneNode(t.root),
-	}
-	return newTree
-}
-
-// cloneNode 递归深拷贝节点
-func cloneNode(node *Node) *Node {
-	if node == nil {
-		return nil
-	}
-	newNode := &Node{
-		isLeaf:   node.isLeaf,
-		keys:     append([]Key{}, node.keys...),
-		children: make([]interface{}, len(node.children)),
-		next:     node.next, // 叶子节点的 next 指针保持不变
-	}
-	for i, child := range node.children {
-		if node.isLeaf {
-			newNode.children[i] = child
-		} else {
-			newNode.children[i] = cloneNode(child.(*Node))
-		}
-	}
-	return newNode
-}
-
 func (tm *TransactionManager) validateSerializable(tx *Transaction) error {
 	tm.mu.RLock()
 	defer tm.mu.RUnlock()
@@ -240,4 +211,65 @@ func (tm *TransactionManager) rollback(tx *Transaction) {
 	if _, err := logFile.WriteString(logEntry); err != nil {
 		fmt.Println("Error writing to rollback log file:", err)
 	}
+}
+
+func (tm *TransactionManager) IsCommitted(txID uint64) bool {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+
+	// 检查事务是否在活跃事务列表中
+	if tx, exists := tm.activeTx[txID]; exists {
+		return tx.status == TxCommitted
+	}
+
+	// 如果不在活跃事务列表中，假设是已提交的历史事务
+	// 在实际实现中，这里应该查询持久化的事务状态表
+	return true
+}
+
+// IsCommittedBefore 检查指定事务在给定时间戳之前是否已提交
+func (tm *TransactionManager) IsCommittedBefore(txID uint64, timestamp uint64) bool {
+	tm.mu.RLock()
+	defer tm.mu.RUnlock()
+
+	// 检查事务是否在活跃事务列表中
+	if tx, exists := tm.activeTx[txID]; exists {
+		// 如果事务仍然活跃，检查其开始时间是否在指定时间戳之前
+		if tx.status == TxCommitted && tx.startTS < timestamp {
+			return true
+		}
+		return false
+	}
+
+	// 如果不在活跃事务列表中，假设是已提交的历史事务
+	// 在实际实现中，这里应该查询持久化的事务状态表和提交时间
+	// 简化处理：假设历史事务都是在指定时间戳之前提交的
+	return txID < timestamp
+}
+
+// MarkCommitted 标记事务为已提交
+func (tm *TransactionManager) MarkCommitted(txID uint64) error {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+
+	if tx, exists := tm.activeTx[txID]; exists {
+		tx.status = TxCommitted
+		// 可以选择从活跃事务列表中移除，或保留一段时间供查询
+		delete(tm.activeTx, txID)
+		return nil
+	}
+	return fmt.Errorf("transaction %d not found in active transactions", txID)
+}
+
+// MarkAborted 标记事务为已中止
+func (tm *TransactionManager) MarkAborted(txID uint64) error {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+
+	if tx, exists := tm.activeTx[txID]; exists {
+		tx.status = TxAborted
+		delete(tm.activeTx, txID)
+		return nil
+	}
+	return fmt.Errorf("transaction %d not found in active transactions", txID)
 }
