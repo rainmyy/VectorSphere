@@ -24,6 +24,12 @@ type VectorDB struct {
 	indexed     bool      // 标记数据库是否已建立索引
 }
 
+const (
+	DEFAULT_VECTORIZED = iota
+	SIMPLE_VECTORIZED
+	TFIDF_VECTORIZED
+)
+
 // NewVectorDB 创建一个新的 VectorDB 实例。
 // 如果 filePath 非空且文件存在，则尝试从中加载数据。
 // numClusters 指定了用于索引的簇数量，如果 <=0，则不启用索引功能。
@@ -44,6 +50,35 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 		}
 	}
 	return db
+}
+
+// AddDocument 添加文档并将其转换为向量后存入数据库
+func (db *VectorDB) AddDocument(id string, doc string, vectorizedType int) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	vocab := []string{"apple", "banana", "cherry"}
+	var vectorized DocumentVectorized
+	switch vectorizedType {
+	case TFIDF_VECTORIZED:
+		vectorized = TFIDFVectorized(vocab, 10, nil)
+	case SIMPLE_VECTORIZED:
+		vectorized = SimpleBagOfWordsVectorized(vocab)
+	default:
+		panic("unhandled default case")
+	}
+	// 将文档转换为向量
+	vector, err := vectorized(doc)
+	if err != nil {
+		return fmt.Errorf("将文档 %s 转换为向量时出错: %w", id, err)
+	}
+
+	// 将向量添加到数据库
+	db.vectors[id] = vector
+	if db.indexed {
+		db.indexed = false // 索引失效，需要重建
+		fmt.Println("提示: 添加新文档向量后，索引已失效，请重新调用 BuildIndex()。")
+	}
+	return nil
 }
 
 // Add 添加向量。如果已建立索引，则将索引标记为失效。
