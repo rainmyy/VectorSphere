@@ -12,19 +12,22 @@ import (
 // WALEntry 预写日志条目
 type WALEntry struct {
 	txID      uint64
-	opType    OpType
+	opType    OperationType
 	key       Key
 	oldValue  Value
-	newValue  Value
+	value     Value
 	timestamp time.Time
 }
 
-type OpType int
+// OperationType 定义WAL操作类型
+type OperationType int
 
 const (
-	OpInsert OpType = iota
-	OpUpdate
+	OpPut OperationType = iota
 	OpDelete
+	OpCommit
+	OpAbort
+	OpPrepare // for 2PC
 )
 
 // WALManager 预写日志管理器
@@ -74,6 +77,44 @@ func (w *WALManager) Log(entry *WALEntry) error {
 
 	// 可选: 同步刷盘(影响性能但更安全)
 	// return w.file.Sync()
+	return nil
+}
+func (w *WALManager) Prepare(tx *Transaction) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	// 记录事务所有写操作到WAL，标记为Prepare
+	// 这通常是2PC的第一阶段
+	for _, write := range tx.writes {
+		entry := &WALEntry{
+			txID:      tx.txID,
+			opType:    OpPrepare, // 或者更具体的 OpPutPrepare
+			key:       write.Key,
+			value:     write.Value,
+			timestamp: time.Now(),
+		}
+		if err := w.Log(entry); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (w *WALManager) Commit(txID uint64) error {
+	entry := &WALEntry{
+		txID:      txID,
+		opType:    OpCommit,
+		timestamp: time.Now(),
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err := w.Log(entry); err != nil {
+		return err
+	}
+	return w.file.Sync()
+}
+
+func (w *WALManager) Abort(txID uint64) error {
+	// ... log abort record ...
 	return nil
 }
 

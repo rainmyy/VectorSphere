@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"os"
+	"seetaSearch/library/strategy"
 	"sync"
 )
 
@@ -25,9 +26,6 @@ type PersistentNode struct {
 	selfOffset   int64         //资深节点的偏移量
 	// 可能还有其他字段，如 pageID/offsetInFile 自身，方便缓存管理
 }
-
-type key interface{}
-type value interface{}
 
 func init() {
 	gob.Register(Key(0)) // Register Key type if it's custom and not a basic type
@@ -794,43 +792,39 @@ func (t *PersistentBPlusTree) insertIntoLeafWithoutLock(leaf *PersistentNode, ke
 }
 
 type NodeCache struct {
-	size  int
-	cache map[int64]*PersistentNode
-	mu    sync.RWMutex
+	lruList *strategy.LRUCache
+	mu      sync.RWMutex
 }
 
 func NewNodeCache(size int) *NodeCache {
 	return &NodeCache{
-		size:  size,
-		cache: make(map[int64]*PersistentNode),
+		lruList: strategy.NewLRUCache(size),
 	}
 }
 
 func (nc *NodeCache) Get(offset int64) (*PersistentNode, bool) {
-	nc.mu.RLock()
-	defer nc.mu.RUnlock()
-	node, ok := nc.cache[offset]
-	return node, ok
+	nc.mu.Lock()
+	defer nc.mu.Unlock()
+
+	elem, ok := nc.lruList.Get(offset)
+	if !ok {
+		return nil, false
+	}
+	return elem.(*PersistentNode), false
 }
 
 func (nc *NodeCache) Put(offset int64, node *PersistentNode) {
 	nc.mu.Lock()
 	defer nc.mu.Unlock()
 
-	if len(nc.cache) >= nc.size {
-		// 简单的LRU淘汰策略
-		for k := range nc.cache {
-			delete(nc.cache, k)
-			break
-		}
-	}
-	nc.cache[offset] = node
+	nc.lruList.Put(offset, node)
 }
 
 func (nc *NodeCache) Delete(offset int64) {
 	nc.mu.Lock()
 	defer nc.mu.Unlock()
-	delete(nc.cache, offset)
+
+	nc.lruList.Delete(offset)
 }
 
 func (n *PersistentNode) SetOffset(offset int64) {

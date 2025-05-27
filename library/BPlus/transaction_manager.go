@@ -9,13 +9,21 @@ import (
 	"time"
 )
 
+// WriteOp 代表一个写操作
+type WriteOp struct {
+	Key    Key
+	Value  Value
+	OpType string
+}
+
 // Transaction 表示一个事务
 type Transaction struct {
 	txID      uint64 // 事务ID
 	startTS   uint64
 	startTime time.Time           // 开始时间
 	readView  map[uint64]struct{} // 读视图(活跃事务ID集合)
-	snapshot  *BPlusTree          // 快照(用于可重复读)
+	snapshot  *MVCCBPlusTree      // 快照(用于可重复读)
+	writes    []WriteOp           // 事务的写操作记录
 	isolation IsolationLevel
 	status    TxStatus
 	mu        sync.RWMutex
@@ -47,8 +55,12 @@ type TransactionManager struct {
 
 func NewTransactionManager() *TransactionManager {
 	return &TransactionManager{
+		nextTxID: 1,
 		activeTx: make(map[uint64]*Transaction),
 	}
+}
+func (tx *Transaction) recordWrite(key Key, value Value) {
+	tx.writes = append(tx.writes, WriteOp{Key: key, Value: value})
 }
 
 // Begin 开始新事务
@@ -132,12 +144,12 @@ func (tm *TransactionManager) Abort(tx *Transaction) {
 	tm.mu.Unlock()
 }
 
-func createSnapshot(tm *TransactionManager) *BPlusTree {
+func createSnapshot(tm *TransactionManager) *MVCCBPlusTree {
 	if tm.activeTx == nil || len(tm.activeTx) == 0 {
 		return nil
 	}
 	// 获取当前活跃事务中的一个BPlusTree实例进行克隆
-	var tree *BPlusTree
+	var tree *MVCCBPlusTree
 	for _, tx := range tm.activeTx {
 		if tx.snapshot != nil {
 			tree = tx.snapshot
@@ -150,8 +162,8 @@ func createSnapshot(tm *TransactionManager) *BPlusTree {
 	return tree.Clone()
 }
 
-func (t *BPlusTree) Clone() *BPlusTree {
-	newTree := &BPlusTree{
+func (t *MVCCBPlusTree) Clone() *MVCCBPlusTree {
+	newTree := &MVCCBPlusTree{
 		order: t.order,
 		root:  cloneNode(t.root),
 	}

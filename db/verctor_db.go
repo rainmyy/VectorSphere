@@ -359,3 +359,22 @@ func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]string, e
 		return ids, nil
 	}
 }
+
+func normalizeVector(vec []float64) []float64 {
+	sum := 0.0
+	for _, v := range vec {
+		sum += v * v
+	}
+	norm := math.Sqrt(sum)
+
+	if norm == 0 {
+		return vec
+	}
+
+	normalized := make([]float64, len(vec))
+	for i, v := range vec {
+		normalized[i] = v / norm
+	}
+
+	return normalized
+}
