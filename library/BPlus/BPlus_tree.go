@@ -7,7 +7,11 @@ const (
 )
 
 // Key 类型
-type Key int
+// Key 类型，需要实现比较接口
+type Key interface {
+	Less(other Key) bool
+	Equal(other Key) bool
+}
 
 // Value 类型，可以根据需要修改
 type Value interface{}
@@ -63,7 +67,7 @@ func (t *BPlusTree) Insert(key Key, value Value) {
 	leaf := t.findLeaf(key)
 	// 检查是否已经存在该键
 	for i, k := range leaf.keys {
-		if k == key {
+		if k.Equal(key) {
 			// 键已存在，更新值
 			leaf.children[i] = value
 			return
@@ -87,7 +91,7 @@ func (t *BPlusTree) findLeaf(key Key) *Node {
 
 	for !current.isLeaf {
 		i := 0
-		for i < len(current.keys) && key >= current.keys[i] {
+		for i < len(current.keys) && !key.Less(current.keys[i]) {
 			i++
 		}
 
@@ -105,7 +109,7 @@ func (t *BPlusTree) insertIntoLeaf(leaf *Node, key Key, value Value) {
 	defer leaf.mu.Unlock()
 
 	i := 0
-	for i < len(leaf.keys) && leaf.keys[i] < key {
+	for i < len(leaf.keys) && leaf.keys[i].Less(key) {
 		i++
 	}
 
@@ -155,7 +159,7 @@ func (t *BPlusTree) insertIntoParent(left *Node, key Key, right *Node) {
 
 	// 找到插入位置
 	i := 0
-	for i < len(parent.keys) && key >= parent.keys[i] {
+	for i < len(parent.keys) && !key.Less(parent.keys[i]) {
 		i++
 	}
 
@@ -217,9 +221,9 @@ func (t *BPlusTree) RangeQuery(start, end Key) []Value {
 
 	for leaf != nil {
 		for i, key := range leaf.keys {
-			if key >= start && key <= end {
+			if (!start.Less(key) || start.Equal(key)) && (key.Less(end) || key.Equal(end)) {
 				results = append(results, leaf.children[i].(Value))
-			} else if key > end {
+			} else if end.Less(key) {
 				return results
 			}
 		}

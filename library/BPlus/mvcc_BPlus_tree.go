@@ -7,8 +7,6 @@ import (
 	"time"
 )
 
-type MccKey interface{}   // 键类型，应具体化并实现比较
-type MccValue interface{} // 值类型
 // Version 表示数据的一个版本
 type Version struct {
 	value   Value
@@ -26,7 +24,7 @@ type MVCCNode struct {
 
 	// 添加B+树节点必要的属性
 	isLeaf   bool          // 是否为叶子节点
-	keys     []MccKey      // 键数组
+	keys     []Key         // 键数组
 	children []interface{} // 子节点数组（可能是MVCCNode或其他类型）
 	next     *MVCCNode     // 叶子节点链表的下一个节点
 }
@@ -42,6 +40,14 @@ func (n *MVCCNode) GetValue(tx *Transaction) (Value, bool) {
 		}
 	}
 	return nil, false
+}
+
+func (n *MVCCNode) GetKeys() []Key {
+	return n.keys
+}
+
+func (n *MVCCNode) GetNext() *MVCCNode {
+	return n.next
 }
 
 // AddVersion 添加新版本
@@ -127,7 +133,7 @@ func NewMVCCBPlusTree(order int, txMgr *TransactionManager, lockMgr *LockManager
 	// 初始化空的B+树，根节点是一个叶子节点
 	rootNode := &MVCCNode{
 		isLeaf:   true,                   // 设置为叶子节点
-		keys:     make([]MccKey, 0),      // 初始化空的键数组
+		keys:     make([]Key, 0),         // 初始化空的键数组
 		children: make([]interface{}, 0), // 初始化空的子节点数组
 	}
 	return &MVCCBPlusTree{
@@ -342,7 +348,7 @@ func (t *MVCCBPlusTree) insertIntoLeafAndCreateMVCCNode(key Key, newNodeData *MV
 		idxToInsert++
 	}
 	// 插入key
-	leaf.keys = append(leaf.keys[:idxToInsert], append([]MccKey{key}, leaf.keys[idxToInsert:]...)...)
+	leaf.keys = append(leaf.keys[:idxToInsert], append([]Key{key}, leaf.keys[idxToInsert:]...)...)
 	// 插入MVCCNode
 	leaf.children = append(leaf.children[:idxToInsert], append([]interface{}{newNodeData}, leaf.children[idxToInsert:]...)...)
 
@@ -364,7 +370,7 @@ func (t *MVCCBPlusTree) splitLeaf(leaf *MVCCNode) {
 	// 创建新的右侧叶子节点
 	rightLeaf := &MVCCNode{
 		isLeaf:   true,
-		keys:     append([]MccKey{}, leaf.keys[midIdx:]...),
+		keys:     append([]Key{}, leaf.keys[midIdx:]...),
 		children: append([]interface{}{}, leaf.children[midIdx:]...),
 		next:     leaf.next,
 	}
@@ -381,7 +387,7 @@ func (t *MVCCBPlusTree) splitLeaf(leaf *MVCCNode) {
 	if leaf == t.root {
 		newRoot := &MVCCNode{
 			isLeaf:   false,
-			keys:     []MccKey{newKey},
+			keys:     []Key{newKey},
 			children: []interface{}{leaf, rightLeaf},
 		}
 		t.root = newRoot
@@ -398,7 +404,7 @@ func (t *MVCCBPlusTree) splitLeaf(leaf *MVCCNode) {
 }
 
 // insertIntoParent 将新键和子节点插入到父节点中，必要时递归分裂父节点
-func (t *MVCCBPlusTree) insertIntoParent(parent, leftChild *MVCCNode, newKey MccKey, rightChild *MVCCNode) {
+func (t *MVCCBPlusTree) insertIntoParent(parent, leftChild *MVCCNode, newKey Key, rightChild *MVCCNode) {
 	if parent == nil {
 		return
 	}
@@ -410,15 +416,62 @@ func (t *MVCCBPlusTree) insertIntoParent(parent, leftChild *MVCCNode, newKey Mcc
 	}
 
 	// 插入新键
-	parent.keys = append(parent.keys[:insertIndex], append([]MccKey{newKey}, parent.keys[insertIndex:])...)
+	parent.keys = append(parent.keys[:insertIndex], append([]Key{newKey}, parent.keys[insertIndex:]...)...)
 	// 插入新的子节点指针
 	parent.children = append(parent.children[:insertIndex+1], parent.children[insertIndex:]...)
-	parent.children[insertIndex+1] = rightChild
+	parent.children[insertIndex+1] = rightChild // 原代码这里逻辑有误，应改为正确插入新节点
 
 	// 检查父节点是否需要分裂
 	if len(parent.keys) > t.order-1 {
 		t.splitInternalNode(parent)
 	}
+}
+
+func (t *MVCCBPlusTree) RangeQuery(tx *Transaction, start, end Key) []Value {
+	var result []Value
+
+	// 找到起始键所在的叶子节点
+	startLeaf := t.findLeaf(t.root, start)
+	if startLeaf == nil {
+		return result
+	}
+
+	// 定位起始键在叶子节点中的位置
+	startIndex := 0
+	for startIndex < len(startLeaf.keys) && compareKeys(startLeaf.keys[startIndex], start) < 0 {
+		startIndex++
+	}
+
+	currentLeaf := startLeaf
+	currentIndex := startIndex
+
+	for currentLeaf != nil {
+		for i := currentIndex; i < len(currentLeaf.keys); i++ {
+			key := currentLeaf.keys[i]
+			// 检查是否超过结束键
+			if compareKeys(key, end) > 0 {
+				return result
+			}
+
+			// 获取 MVCCNode
+			mvccNode, ok := currentLeaf.children[i].(*MVCCNode)
+			if !ok {
+				continue
+			}
+
+			// 获取对事务可见的值
+			value, ok := mvccNode.GetValue(tx)
+			if ok {
+				result = append(result, value)
+			}
+		}
+
+		// 移动到下一个叶子节点
+		currentLeaf = currentLeaf.next
+		currentIndex = 0
+	}
+
+	return result
 }
 
 // splitInternalNode 分裂内部节点
@@ -429,7 +482,7 @@ func (t *MVCCBPlusTree) splitInternalNode(node *MVCCNode) {
 	// 创建新的右侧内部节点
 	rightNode := &MVCCNode{
 		isLeaf:   false,
-		keys:     append([]MccKey{}, node.keys[midIdx+1:]...),
+		keys:     append([]Key{}, node.keys[midIdx+1:]...),
 		children: append([]interface{}{}, node.children[midIdx+1:]...),
 	}
 
@@ -444,7 +497,7 @@ func (t *MVCCBPlusTree) splitInternalNode(node *MVCCNode) {
 		// 如果当前节点是根节点，创建新的根节点
 		newRoot := &MVCCNode{
 			isLeaf:   false,
-			keys:     []MccKey{promotedKey},
+			keys:     []Key{promotedKey},
 			children: []interface{}{node, rightNode},
 		}
 		t.root = newRoot
@@ -482,7 +535,7 @@ func cloneNode(node *MVCCNode) *MVCCNode {
 	}
 	newNode := &MVCCNode{
 		isLeaf:   node.isLeaf,
-		keys:     append([]MccKey{}, node.keys...),
+		keys:     append([]Key{}, node.keys...),
 		children: make([]interface{}, len(node.children)),
 		next:     node.next, // 叶子节点的 next 指针保持不变
 	}
@@ -1007,17 +1060,11 @@ func (t *MVCCBPlusTree) Clone() *MVCCBPlusTree {
 
 // compareKeys 是一个比较键的函数，你需要根据你的Key类型来实现它
 // 返回 -1 (k1 < k2), 0 (k1 == k2), 1 (k1 > k2)
-func compareKeys(k1, k2 MccKey) int {
-	// 假设Key是int类型，你需要替换成你实际的比较逻辑
-	k1Int, ok1 := k1.(int)
-	k2Int, ok2 := k2.(int)
-	if !ok1 || !ok2 {
-		panic("Key comparison error: keys are not integers")
-	}
-	if k1Int < k2Int {
+func compareKeys(k1, k2 Key) int {
+	if k1.Less(k2) {
 		return -1
 	}
-	if k1Int > k2Int {
+	if !k1.Less(k2) {
 		return 1
 	}
 	return 0

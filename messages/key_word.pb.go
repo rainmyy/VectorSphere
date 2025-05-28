@@ -27,49 +27,49 @@ type KeyWord struct {
 	Word  string `protobuf:"bytes,2,opt,name=Word,proto3" json:"Word,omitempty"`
 }
 
-func (m *KeyWord) Reset()         { *m = KeyWord{} }
-func (m *KeyWord) String() string { return proto.CompactTextString(m) }
-func (*KeyWord) ProtoMessage()    {}
+func (kw *KeyWord) Reset()         { *kw = KeyWord{} }
+func (kw *KeyWord) String() string { return proto.CompactTextString(kw) }
+func (*KeyWord) ProtoMessage()     {}
 func (*KeyWord) Descriptor() ([]byte, []int) {
 	return fileDescriptor_83a5b031d8c2f195, []int{0}
 }
-func (m *KeyWord) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
+func (kw *KeyWord) XXX_Unmarshal(b []byte) error {
+	return kw.Unmarshal(b)
 }
-func (m *KeyWord) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (kw *KeyWord) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_KeyWord.Marshal(b, m, deterministic)
+		return xxx_messageInfo_KeyWord.Marshal(b, kw, deterministic)
 	} else {
 		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
+		n, err := kw.MarshalToSizedBuffer(b)
 		if err != nil {
 			return nil, err
 		}
 		return b[:n], nil
 	}
 }
-func (m *KeyWord) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_KeyWord.Merge(m, src)
+func (kw *KeyWord) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_KeyWord.Merge(kw, src)
 }
-func (m *KeyWord) XXX_Size() int {
-	return m.Size()
+func (kw *KeyWord) XXX_Size() int {
+	return kw.Size()
 }
-func (m *KeyWord) XXX_DiscardUnknown() {
-	xxx_messageInfo_KeyWord.DiscardUnknown(m)
+func (kw *KeyWord) XXX_DiscardUnknown() {
+	xxx_messageInfo_KeyWord.DiscardUnknown(kw)
 }
 
 var xxx_messageInfo_KeyWord proto.InternalMessageInfo
 
-func (m *KeyWord) GetField() string {
-	if m != nil {
-		return m.Field
+func (kw *KeyWord) GetField() string {
+	if kw != nil {
+		return kw.Field
 	}
 	return ""
 }
 
-func (m *KeyWord) GetWord() string {
-	if m != nil {
-		return m.Word
+func (kw *KeyWord) GetWord() string {
+	if kw != nil {
+		return kw.Word
 	}
 	return ""
 }
@@ -92,37 +92,37 @@ var fileDescriptor_83a5b031d8c2f195 = []byte{
 	0x00, 0xff, 0xff, 0x9c, 0xa3, 0xd2, 0x67, 0x71, 0x00, 0x00, 0x00,
 }
 
-func (m *KeyWord) Marshal() (dAtA []byte, err error) {
-	size := m.Size()
+func (kw *KeyWord) Marshal() (dAtA []byte, err error) {
+	size := kw.Size()
 	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	n, err := kw.MarshalToSizedBuffer(dAtA[:size])
 	if err != nil {
 		return nil, err
 	}
 	return dAtA[:n], nil
 }
 
-func (m *KeyWord) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
+func (kw *KeyWord) MarshalTo(dAtA []byte) (int, error) {
+	size := kw.Size()
+	return kw.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *KeyWord) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (kw *KeyWord) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
 	_ = l
-	if len(m.Word) > 0 {
-		i -= len(m.Word)
-		copy(dAtA[i:], m.Word)
-		i = encodeVarintKeyWord(dAtA, i, uint64(len(m.Word)))
+	if len(kw.Word) > 0 {
+		i -= len(kw.Word)
+		copy(dAtA[i:], kw.Word)
+		i = encodeVarintKeyWord(dAtA, i, uint64(len(kw.Word)))
 		i--
 		dAtA[i] = 0x12
 	}
-	if len(m.Field) > 0 {
-		i -= len(m.Field)
-		copy(dAtA[i:], m.Field)
-		i = encodeVarintKeyWord(dAtA, i, uint64(len(m.Field)))
+	if len(kw.Field) > 0 {
+		i -= len(kw.Field)
+		copy(dAtA[i:], kw.Field)
+		i = encodeVarintKeyWord(dAtA, i, uint64(len(kw.Field)))
 		i--
 		dAtA[i] = 0xa
 	}
@@ -140,17 +140,17 @@ func encodeVarintKeyWord(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
-func (m *KeyWord) Size() (n int) {
-	if m == nil {
+func (kw *KeyWord) Size() (n int) {
+	if kw == nil {
 		return 0
 	}
 	var l int
 	_ = l
-	l = len(m.Field)
+	l = len(kw.Field)
 	if l > 0 {
 		n += 1 + l + sovKeyWord(uint64(l))
 	}
-	l = len(m.Word)
+	l = len(kw.Word)
 	if l > 0 {
 		n += 1 + l + sovKeyWord(uint64(l))
 	}
@@ -163,7 +163,7 @@ func sovKeyWord(x uint64) (n int) {
 func sozKeyWord(x uint64) (n int) {
 	return sovKeyWord(uint64((x << 1) ^ uint64((int64(x) >> 63))))
 }
-func (m *KeyWord) Unmarshal(dAtA []byte) error {
+func (kw *KeyWord) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -222,7 +222,7 @@ func (m *KeyWord) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Field = string(dAtA[iNdEx:postIndex])
+			kw.Field = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		case 2:
 			if wireType != 2 {
@@ -254,7 +254,7 @@ func (m *KeyWord) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Word = string(dAtA[iNdEx:postIndex])
+			kw.Word = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
