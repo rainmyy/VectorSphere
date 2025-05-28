@@ -6,7 +6,7 @@ import (
 	"path"
 	"path/filepath"
 	. "seetaSearch/library/common"
-	. "seetaSearch/library/strategy"
+	. "seetaSearch/library/tree"
 	"time"
 )
 

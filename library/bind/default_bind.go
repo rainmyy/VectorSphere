@@ -1,7 +1,7 @@
 package bind
 
 import (
-	. "seetaSearch/library/strategy"
+	. "seetaSearch/library/tree"
 )
 
 type Binder interface {

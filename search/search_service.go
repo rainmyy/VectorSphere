@@ -3,16 +3,16 @@ package search
 import (
 	"seetaSearch/db"
 	"seetaSearch/index"
-	bplus "seetaSearch/library/BPlus"
+	tree "seetaSearch/library/tree"
 	"seetaSearch/messages"
 )
 
 type SearchService struct {
 	VectorDB      *db.VectorDB
 	InvertedIndex *index.MVCCBPlusTreeInvertedIndex
-	TxMgr         *bplus.TransactionManager
-	LockMgr       *bplus.LockManager
-	WAL           *bplus.WALManager
+	TxMgr         *tree.TransactionManager
+	LockMgr       *tree.LockManager
+	WAL           *tree.WALManager
 }
 
 func NewSearchService(vectorDBPath string, numClusters int, invertedIndexOrder int, txMgr *bplus.TransactionManager, lockMgr *bplus.LockManager, wal *bplus.WALManager) *SearchService {
@@ -37,7 +37,7 @@ func (ss *SearchService) AddDocument(doc messages.Document, vectorizedType int) 
 	}
 
 	// 开启事务
-	tx := ss.TxMgr.Begin(bplus.Serializable)
+	tx := ss.TxMgr.Begin(tree.Serializable)
 	defer func() {
 		if err != nil {
 			ss.TxMgr.Rollback(tx)
@@ -64,8 +64,8 @@ func (ss *SearchService) DeleteDocument(docId string, scoreId int64, keyword *me
 	}
 
 	// 开启事务
-	tx := ss.TxMgr.Begin(bplus.Serializable)
-	defer func(TxMgr *bplus.TransactionManager, tx *bplus.Transaction) {
+	tx := ss.TxMgr.Begin(tree.Serializable)
+	defer func(TxMgr *tree.TransactionManager, tx *tree.Transaction) {
 		err := TxMgr.Commit(tx)
 		if err != nil {
 
@@ -90,7 +90,7 @@ func (ss *SearchService) Search(query *messages.TermQuery, vectorizedType int, k
 	}
 
 	// 开启事务
-	tx := ss.TxMgr.Begin(bplus.Serializable)
+	tx := ss.TxMgr.Begin(tree.Serializable)
 	defer ss.TxMgr.Commit(tx)
 
 	// 使用倒排索引进行表达式查询

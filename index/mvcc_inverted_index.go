@@ -3,7 +3,7 @@ package index
 import (
 	"fmt"
 	"hash/fnv"
-	BPlus "seetaSearch/library/bplus"
+	tree "seetaSearch/library/tree"
 	"seetaSearch/messages"
 	"sync"
 	"time"
@@ -19,14 +19,14 @@ type MvccSkipListValue struct {
 	ScoreId     int64
 }
 type MVCCBPlusTreeInvertedIndex struct {
-	tree  *BPlus.MVCCBPlusTree
+	tree  *tree.MVCCBPlusTree
 	order int
 	mu    sync.RWMutex
 }
 
-func NewMVCCBPlusTreeInvertedIndex(order int, txMgr *BPlus.TransactionManager, lockMgr *BPlus.LockManager, wal *BPlus.WALManager) *MVCCBPlusTreeInvertedIndex {
+func NewMVCCBPlusTreeInvertedIndex(order int, txMgr *tree.TransactionManager, lockMgr *tree.LockManager, wal *tree.WALManager) *MVCCBPlusTreeInvertedIndex {
 	return &MVCCBPlusTreeInvertedIndex{
-		tree:  BPlus.NewMVCCBPlusTree(order, txMgr, lockMgr, wal),
+		tree:  tree.NewMVCCBPlusTree(order, txMgr, lockMgr, wal),
 		order: order,
 	}
 }
@@ -52,7 +52,7 @@ func GenerateScoreId(doc messages.Document) int64 {
 }
 
 // Add 插入文档到倒排索引
-func (idx *MVCCBPlusTreeInvertedIndex) Add(tx *BPlus.Transaction, doc messages.Document) error {
+func (idx *MVCCBPlusTreeInvertedIndex) Add(tx *tree.Transaction, doc messages.Document) error {
 	scoreId := GenerateScoreId(doc)
 	for _, keyword := range doc.KeWords {
 		val, ok := idx.tree.Get(tx, keyword)
@@ -169,31 +169,31 @@ func (idx *MVCCBPlusTreeInvertedIndex) getMinMaxKeywords() (messages.KeyWord, me
 }
 
 // getFirstLeaf 获取第一个叶子节点，需要根据实际情况实现
-func (idx *MVCCBPlusTreeInvertedIndex) getFirstLeaf() *BPlus.MVCCNode {
+func (idx *MVCCBPlusTreeInvertedIndex) getFirstLeaf() *tree.MVCCNode {
 	// 这里需要实现获取第一个叶子节点的逻辑
 	// 可以从根节点开始遍历到最左边的叶子节点
 	current := idx.tree.GetRoot()
 	for current != nil && !current.IsLeaf() {
 		children := current.GetChildren()
-		current = children[0].(*BPlus.MVCCNode)
+		current = children[0].(*tree.MVCCNode)
 	}
 	return current
 }
 
 // getLastLeaf 获取最后一个叶子节点，需要根据实际情况实现
-func (idx *MVCCBPlusTreeInvertedIndex) getLastLeaf() *BPlus.MVCCNode {
+func (idx *MVCCBPlusTreeInvertedIndex) getLastLeaf() *tree.MVCCNode {
 	// 这里需要实现获取最后一个叶子节点的逻辑
 	// 可以从根节点开始遍历到最右边的叶子节点
 	current := idx.tree.GetRoot()
 	for current != nil && !current.IsLeaf() {
 		children := current.GetChildren()
-		current = children[len(children)-1].(*BPlus.MVCCNode)
+		current = children[len(children)-1].(*tree.MVCCNode)
 	}
 	return current
 }
 
 // Delete 从倒排索引中删除文档
-func (idx *MVCCBPlusTreeInvertedIndex) Delete(tx *BPlus.Transaction, scoreId int64, keyword *messages.KeyWord) error {
+func (idx *MVCCBPlusTreeInvertedIndex) Delete(tx *tree.Transaction, scoreId int64, keyword *messages.KeyWord) error {
 	doc, err := idx.GetDocumentByScoreId(scoreId)
 	if err != nil {
 		return err
@@ -214,7 +214,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) Delete(tx *BPlus.Transaction, scoreId int
 }
 
 // Search 查询倒排索引
-func (idx *MVCCBPlusTreeInvertedIndex) Search(tx *BPlus.Transaction, query *messages.TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) []string {
+func (idx *MVCCBPlusTreeInvertedIndex) Search(tx *tree.Transaction, query *messages.TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) []string {
 	result := idx.searchQuery(tx, query, onFlag, offFlag, orFlags)
 	if result == nil {
 		return nil
@@ -227,7 +227,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) Search(tx *BPlus.Transaction, query *mess
 }
 
 // 内部递归查询
-func (idx *MVCCBPlusTreeInvertedIndex) searchQuery(tx *BPlus.Transaction, query *messages.TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) InvertedList {
+func (idx *MVCCBPlusTreeInvertedIndex) searchQuery(tx *tree.Transaction, query *messages.TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) InvertedList {
 	switch {
 	case query.Keyword != nil:
 		val, ok := idx.tree.Get(tx, query.Keyword)

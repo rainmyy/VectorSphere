@@ -5,7 +5,7 @@ import (
 	"gopkg.in/yaml.v2"
 	"log"
 	"seetaSearch/library/bind"
-	. "seetaSearch/library/strategy"
+	. "seetaSearch/library/tree"
 )
 
 func ParserYamlContent(data []byte) ([]*TreeStruct, error) {

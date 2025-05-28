@@ -8,7 +8,7 @@ import (
 	"os"
 	. "seetaSearch/library/common"
 	"seetaSearch/library/parser"
-	. "seetaSearch/library/strategy"
+	. "seetaSearch/library/tree"
 	"strings"
 	"sync"
 )

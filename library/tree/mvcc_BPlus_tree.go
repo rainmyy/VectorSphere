@@ -1,4 +1,4 @@
-package bplus
+package tree
 
 import (
 	"errors"

@@ -1,4 +1,4 @@
-package bplus
+package tree
 
 import (
 	"encoding/binary"
@@ -121,27 +121,40 @@ func (wal *WALManager) LogWrite(txID uint64, key Key, value Value) error {
 		return errors.New("WAL file not initialized")
 	}
 
-	// 序列化日志条目
+	// 序列化日志条目（统一使用json.Marshal）
 	entry := WALEntry{
 		TxID:   txID,
 		OpType: OpPut,
 		Key:    key,
-		Value:  value,
+		//OldValue:  oldValue, // 填充旧值支持回滚
+		Value:     value,
+		Timestamp: time.Now(),
 	}
-	data, err := gob.Marshal(entry)
+	data, err := json.Marshal(entry)
 	if err != nil {
 		return fmt.Errorf("serialize WAL entry failed: %w", err)
 	}
 
 	// 写入日志长度前缀（4字节大端序）
 	length := uint32(len(data))
-	if _, err := wal.file.Write(uint32ToBytes(length)); err != nil {
-		return fmt.Errorf("write WAL length failed: %w", err)
-	}
+	lenBuf := make([]byte, 4)
+	binary.BigEndian.PutUint32(lenBuf, length)
 
-	// 写入日志数据
-	if _, err := wal.file.Write(data); err != nil {
-		return fmt.Errorf("write WAL entry failed: %w", err)
+	// 使用批量刷盘机制（通过batchChan传递）
+	select {
+	case wal.batchChan <- []*WALEntry{&entry}:
+		// 条目已加入批量队列，由flushBatch协程处理
+	default:
+		// 队列满时降级为直接写入（避免阻塞）
+		wal.mu.Lock()
+		defer wal.mu.Unlock()
+		if _, err := wal.file.Write(lenBuf); err != nil {
+			return fmt.Errorf("write WAL length failed: %w", err)
+		}
+		if _, err := wal.file.Write(data); err != nil {
+			return fmt.Errorf("write WAL entry failed: %w", err)
+		}
+		wal.file.Sync() // 直接写入时强制刷盘保证一致性
 	}
 
 	return nil

@@ -11,6 +11,9 @@ import (
 	"os"
 	"runtime"
 	"seetaSearch/library/algorithm"
+	"seetaSearch/library/entity"
+	"seetaSearch/library/tree"
+	"seetaSearch/library/util"
 	"sort"
 	"strings"
 	"sync"
@@ -125,7 +128,7 @@ func (db *VectorDB) preprocessVector(id string, vector []float64) {
 	}
 
 	// 预计算并存储归一化向量
-	db.normalizedVectors[id] = normalizeVector(vector)
+	db.normalizedVectors[id] = util.NormalizeVector(vector)
 }
 
 // AddDocument 添加文档并将其转换为向量后存入数据库
@@ -165,7 +168,7 @@ func (db *VectorDB) AddDocument(id string, doc string, vectorizedType int) error
 	// 将向量添加到数据库
 	db.vectors[id] = vector
 	// 预计算并存储归一化向量
-	db.normalizedVectors[id] = normalizeVector(vector)
+	db.normalizedVectors[id] = util.NormalizeVector(vector)
 
 	// 更新倒排索引
 	db.invertedMu.Lock()
@@ -214,7 +217,7 @@ func (db *VectorDB) Add(id string, vector []float64) {
 
 	db.vectors[id] = vector
 	// 预计算并存储归一化向量
-	db.normalizedVectors[id] = normalizeVector(vector)
+	db.normalizedVectors[id] = util.NormalizeVector(vector)
 
 	// 清除查询缓存
 	db.cacheMu.Lock()
@@ -287,7 +290,7 @@ func (db *VectorDB) Update(id string, vector []float64) error {
 
 	db.vectors[id] = vector
 	// 更新归一化向量
-	db.normalizedVectors[id] = normalizeVector(vector)
+	db.normalizedVectors[id] = util.NormalizeVector(vector)
 
 	// 清除查询缓存
 	db.cacheMu.Lock()
@@ -356,15 +359,110 @@ type MultiLevelIndex struct {
 
 // BuildMultiLevelIndex 在BuildIndex方法中构建多级索引
 func (db *VectorDB) BuildMultiLevelIndex(maxIterations int, tolerance float64) error {
-	// 第一级：构建IVF索引（与现有代码类似）
-	// ...
-
-	// 第二级：为每个簇构建子索引
-	for _ = range db.clusters {
-		// 为每个簇构建KD树或其他索引结构
-		// ...
+	// 检查参数有效性
+	if db.numClusters <= 0 {
+		return fmt.Errorf("未配置有效的簇数量 (numClusters: %d)，无法构建索引", db.numClusters)
 	}
 
+	if len(db.vectors) < db.numClusters {
+		db.indexed = false
+		return fmt.Errorf("向量数量 (%d) 少于簇数量 (%d)，无法构建有效索引", len(db.vectors), db.numClusters)
+	}
+
+	fmt.Println("开始构建多级索引...")
+	startTime := time.Now()
+
+	// 1. 收集所有向量及其ID
+	var allVectorsData []algorithm.Point
+	var vectorIDs []string // 保持与allVectorsData顺序一致的ID
+	for id, vec := range db.vectors {
+		allVectorsData = append(allVectorsData, algorithm.Point(vec))
+		vectorIDs = append(vectorIDs, id)
+	}
+
+	// 2. 第一级：构建IVF索引（调用KMeans算法）
+	centroids, assignments, err := algorithm.KMeans(allVectorsData, db.numClusters, maxIterations, tolerance)
+	if err != nil {
+		return fmt.Errorf("KMeans聚类失败: %w", err)
+	}
+
+	// 3. 根据KMeans结果填充db.clusters
+	db.clusters = make([]Cluster, db.numClusters)
+	for i := 0; i < db.numClusters; i++ {
+		db.clusters[i] = Cluster{
+			Centroid:  centroids[i],
+			VectorIDs: make([]string, 0),
+		}
+	}
+
+	for i, clusterIndex := range assignments {
+		if clusterIndex >= 0 && clusterIndex < db.numClusters { // 确保索引有效
+			db.clusters[clusterIndex].VectorIDs = append(db.clusters[clusterIndex].VectorIDs, vectorIDs[i])
+		} else {
+			fmt.Printf("警告: 向量 %s 被分配到无效的簇索引 %d\n", vectorIDs[i], clusterIndex)
+		}
+	}
+
+	// 4. 第二级：为每个簇构建KD树子索引
+	multiIndex := MultiLevelIndex{
+		clusters:    db.clusters,
+		subIndices:  make([]interface{}, db.numClusters),
+		numClusters: db.numClusters,
+		indexed:     true,
+		buildTime:   time.Now(),
+	}
+
+	// 并行构建每个簇的KD树
+	var wg sync.WaitGroup
+	for i := range db.clusters {
+		wg.Add(1)
+		go func(clusterIdx int) {
+			defer wg.Done()
+
+			// 跳过空簇
+			if len(db.clusters[clusterIdx].VectorIDs) == 0 {
+				return
+			}
+
+			// 创建KD树
+			tree := tree.NewKDTree(db.vectorDim)
+
+			// 将簇内所有向量插入KD树
+			for _, id := range db.clusters[clusterIdx].VectorIDs {
+				vec, exists := db.vectors[id]
+				if exists {
+					tree.Insert(vec, id)
+				}
+			}
+
+			// 保存KD树到多级索引
+			multiIndex.subIndices[clusterIdx] = tree
+		}(i)
+	}
+
+	// 等待所有KD树构建完成
+	wg.Wait()
+
+	// 更新索引状态
+	db.indexed = true
+
+	// 更新性能统计
+	db.statsMu.Lock()
+	db.stats.IndexBuildTime = time.Since(startTime)
+	db.stats.LastReindexTime = time.Now()
+
+	// 估算内存使用
+	var memStats runtime.MemStats
+	runtime.ReadMemStats(&memStats)
+	db.stats.MemoryUsage = memStats.Alloc
+	db.statsMu.Unlock()
+
+	// 清除查询缓存
+	db.cacheMu.Lock()
+	db.queryCache = make(map[string]queryCache)
+	db.cacheMu.Unlock()
+
+	fmt.Printf("多级索引构建完成，共 %d 个簇，耗时 %v\n", db.numClusters, time.Since(startTime))
 	return nil
 }
 
@@ -391,6 +489,13 @@ func (db *VectorDB) BuildIndex(maxIterations int, tolerance float64) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
+	// 检查是否启用了多级索引
+	if db.config.UseMultiLevelIndex {
+		// 使用多级索引构建
+		return db.BuildMultiLevelIndex(maxIterations, tolerance)
+	}
+
+	// 以下是原有的单级索引构建逻辑
 	if db.numClusters <= 0 {
 		return fmt.Errorf("未配置有效的簇数量 (numClusters: %d)，无法构建索引", db.numClusters)
 	}
@@ -533,7 +638,7 @@ func (db *VectorDB) LoadFromFile() error {
 		db.normalizedVectors = make(map[string][]float64)
 		// 如果没有加载到归一化向量，则重新计算
 		for id, vec := range db.vectors {
-			db.normalizedVectors[id] = normalizeVector(vec)
+			db.normalizedVectors[id] = util.NormalizeVector(vec)
 		}
 	}
 
@@ -628,7 +733,7 @@ func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]string, e
 	}
 
 	// 预处理查询向量 - 归一化可以提高相似度计算的准确性
-	normalizedQuery := normalizeVector(query)
+	normalizedQuery := util.NormalizeVector(query)
 	var ids []string
 	if db.indexed && len(db.clusters) > 0 && db.numClusters > 0 {
 		// --- 使用IVF索引进行搜索 ---
@@ -640,7 +745,7 @@ func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]string, e
 		}
 
 		// 使用堆结构来维护最近的nprobe个簇，避免全排序
-		centroidHeap := make(CentroidHeap, 0, db.numClusters)
+		centroidHeap := make(entity.CentroidHeap, 0, db.numClusters)
 
 		// 1. 找到查询向量最近的 nprobe 个簇中心
 		for i, cluster := range db.clusters {
@@ -648,18 +753,18 @@ func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]string, e
 			if err != nil {
 				continue
 			}
-			centroidHeap = append(centroidHeap, CentroidDist{index: i, distance: distSq})
+			centroidHeap = append(centroidHeap, entity.CentroidDist{Index: i, Distance: distSq})
 		}
 
 		// 堆化并提取最近的nprobe个簇
 		heap.Init(&centroidHeap)
 		var nearestClusters []int
 		for i := 0; i < nprobe && len(centroidHeap) > 0; i++ {
-			nearestClusters = append(nearestClusters, heap.Pop(&centroidHeap).(CentroidDist).index)
+			nearestClusters = append(nearestClusters, heap.Pop(&centroidHeap).(entity.CentroidDist).Index)
 		}
 
 		// 使用优先队列维护k个最近的向量
-		resultHeap := make(ResultHeap, 0, k)
+		resultHeap := make(entity.ResultHeap, 0, k)
 		heap.Init(&resultHeap)
 
 		// 2. 在这 nprobe 个簇中搜索向量
@@ -676,7 +781,7 @@ func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]string, e
 
 				// 并行处理每批向量
 				var wg sync.WaitGroup
-				resultChan := make(chan Result, end-i)
+				resultChan := make(chan entity.Result, end-i)
 
 				for j := i; j < end; j++ {
 					wg.Add(1)
@@ -687,8 +792,8 @@ func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]string, e
 							return
 						}
 						// 使用余弦相似度代替欧几里得距离，更适合高维向量
-						sim := cosineSimilarity(normalizedQuery, vec)
-						resultChan <- Result{id: vecID, similarity: sim}
+						sim := util.CosineSimilarity(normalizedQuery, vec)
+						resultChan <- entity.Result{Id: vecID, Similarity: sim}
 					}(selectedCluster.VectorIDs[j])
 				}
 
@@ -702,7 +807,7 @@ func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]string, e
 				for result := range resultChan {
 					if len(resultHeap) < k {
 						heap.Push(&resultHeap, result)
-					} else if result.similarity > resultHeap[0].similarity {
+					} else if result.Similarity > resultHeap[0].Similarity {
 						heap.Pop(&resultHeap)
 						heap.Push(&resultHeap, result)
 					}
@@ -713,18 +818,18 @@ func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]string, e
 		// 3. 从堆中提取结果，按相似度降序排列
 		ids = make([]string, 0, len(resultHeap))
 		for resultHeap.Len() > 0 {
-			ids = append([]string{heap.Pop(&resultHeap).(Result).id}, ids...)
+			ids = append([]string{heap.Pop(&resultHeap).(entity.Result).Id}, ids...)
 		}
 
 	} else {
 		// --- 回退到暴力搜索，但使用优化的实现 ---
-		resultHeap := make(ResultHeap, 0, k)
+		resultHeap := make(entity.ResultHeap, 0, k)
 		heap.Init(&resultHeap)
 
 		// 使用工作池并行处理向量比较
 		numWorkers := runtime.NumCPU()
 		workChan := make(chan string, len(db.vectors))
-		resultChan := make(chan Result, len(db.vectors))
+		resultChan := make(chan entity.Result, len(db.vectors))
 
 		// 启动工作协程
 		var wg sync.WaitGroup
@@ -734,8 +839,8 @@ func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]string, e
 				defer wg.Done()
 				for id := range workChan {
 					vec := db.vectors[id]
-					sim := cosineSimilarity(normalizedQuery, vec)
-					resultChan <- Result{id: id, similarity: sim}
+					sim := util.CosineSimilarity(normalizedQuery, vec)
+					resultChan <- entity.Result{Id: id, Similarity: sim}
 				}
 			}()
 		}
@@ -758,7 +863,7 @@ func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]string, e
 		for result := range resultChan {
 			if len(resultHeap) < k {
 				heap.Push(&resultHeap, result)
-			} else if result.similarity > resultHeap[0].similarity {
+			} else if result.Similarity > resultHeap[0].Similarity {
 				heap.Pop(&resultHeap)
 				heap.Push(&resultHeap, result)
 			}
@@ -767,7 +872,7 @@ func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]string, e
 		// 从堆中提取结果，按相似度降序排列
 		ids = make([]string, 0, len(resultHeap))
 		for resultHeap.Len() > 0 {
-			ids = append([]string{heap.Pop(&resultHeap).(Result).id}, ids...)
+			ids = append([]string{heap.Pop(&resultHeap).(entity.Result).Id}, ids...)
 		}
 	}
 	// 更新平均查询时间统计
@@ -791,8 +896,9 @@ type AdaptiveConfig struct {
 	CacheTimeout  time.Duration // 缓存超时时间
 
 	// 系统参数
-	MaxWorkers        int  // 最大工作协程数
-	VectorCompression bool // 是否启用向量压缩
+	MaxWorkers         int  // 最大工作协程数
+	VectorCompression  bool // 是否启用向量压缩
+	UseMultiLevelIndex bool // 是否使用多级索引
 }
 
 // AdjustConfig 自适应配置调整
@@ -829,87 +935,6 @@ func (db *VectorDB) AdjustConfig() {
 	db.mu.Unlock()
 }
 
-// CentroidDist 用于堆操作的簇中心距离结构
-type CentroidDist struct {
-	index    int
-	distance float64
-}
-
-// CentroidHeap 簇中心距离的最小堆实现
-type CentroidHeap []CentroidDist
-
-func (h CentroidHeap) Len() int           { return len(h) }
-func (h CentroidHeap) Less(i, j int) bool { return h[i].distance < h[j].distance }
-func (h CentroidHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
-
-func (h *CentroidHeap) Push(x interface{}) {
-	*h = append(*h, x.(CentroidDist))
-}
-
-func (h *CentroidHeap) Pop() interface{} {
-	old := *h
-	n := len(old)
-	x := old[n-1]
-	*h = old[0 : n-1]
-	return x
-}
-
-// Result 用于堆操作的结果结构
-type Result struct {
-	id         string
-	similarity float64 // 使用相似度而非距离，值越大越相似
-}
-
-// ResultHeap 结果的最小堆实现（按相似度排序，保留最大的k个）
-type ResultHeap []Result
-
-func (h ResultHeap) Len() int           { return len(h) }
-func (h ResultHeap) Less(i, j int) bool { return h[i].similarity < h[j].similarity } // 最小堆，相似度小的在顶部
-func (h ResultHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
-
-func (h *ResultHeap) Push(x interface{}) {
-	*h = append(*h, x.(Result))
-}
-
-func (h *ResultHeap) Pop() interface{} {
-	old := *h
-	n := len(old)
-	x := old[n-1]
-	*h = old[0 : n-1]
-	return x
-}
-
-// cosineSimilarity 计算两个向量的余弦相似度
-func cosineSimilarity(a, b []float64) float64 {
-	if len(a) != len(b) {
-		return -1 // 错误情况
-	}
-
-	// 计算点积
-	dotProduct := 0.0
-	for i := 0; i < len(a); i++ {
-		dotProduct += a[i] * b[i]
-	}
-
-	// 计算向量模长
-	magnitudeA := 0.0
-	magnitudeB := 0.0
-	for i := 0; i < len(a); i++ {
-		magnitudeA += a[i] * a[i]
-		magnitudeB += b[i] * b[i]
-	}
-
-	magnitudeA = math.Sqrt(magnitudeA)
-	magnitudeB = math.Sqrt(magnitudeB)
-
-	// 避免除零错误
-	if magnitudeA == 0 || magnitudeB == 0 {
-		return 0
-	}
-
-	return dotProduct / (magnitudeA * magnitudeB)
-}
-
 // HybridSearch 混合搜索策略
 func (db *VectorDB) HybridSearch(query []float64, k int, options SearchOptions) ([]string, error) {
 	// 根据向量维度和数据规模自动选择最佳搜索策略
@@ -941,16 +966,16 @@ func (db *VectorDB) bruteForceSearch(query []float64, k int) ([]string, error) {
 	}
 
 	// 预处理查询向量 - 归一化可以提高相似度计算的准确性
-	normalizedQuery := normalizeVector(query)
+	normalizedQuery := util.NormalizeVector(query)
 
 	// 使用优先队列维护k个最近的向量
-	resultHeap := make(ResultHeap, 0, k)
+	resultHeap := make(entity.ResultHeap, 0, k)
 	heap.Init(&resultHeap)
 
 	// 使用工作池并行处理向量比较
 	numWorkers := runtime.NumCPU()
 	workChan := make(chan string, len(db.vectors))
-	resultChan := make(chan Result, len(db.vectors))
+	resultChan := make(chan entity.Result, len(db.vectors))
 
 	// 启动工作协程
 	var wg sync.WaitGroup
@@ -961,8 +986,8 @@ func (db *VectorDB) bruteForceSearch(query []float64, k int) ([]string, error) {
 			for id := range workChan {
 				vec := db.vectors[id]
 				// 使用余弦相似度计算
-				sim := cosineSimilarity(normalizedQuery, vec)
-				resultChan <- Result{id: id, similarity: sim}
+				sim := util.CosineSimilarity(normalizedQuery, vec)
+				resultChan <- entity.Result{Id: id, Similarity: sim}
 			}
 		}()
 	}
@@ -985,7 +1010,7 @@ func (db *VectorDB) bruteForceSearch(query []float64, k int) ([]string, error) {
 	for result := range resultChan {
 		if len(resultHeap) < k {
 			heap.Push(&resultHeap, result)
-		} else if result.similarity > resultHeap[0].similarity {
+		} else if result.Similarity > resultHeap[0].Similarity {
 			heap.Pop(&resultHeap)
 			heap.Push(&resultHeap, result)
 		}
@@ -994,7 +1019,7 @@ func (db *VectorDB) bruteForceSearch(query []float64, k int) ([]string, error) {
 	// 从堆中提取结果，按相似度降序排列
 	ids := make([]string, 0, len(resultHeap))
 	for resultHeap.Len() > 0 {
-		ids = append([]string{heap.Pop(&resultHeap).(Result).id}, ids...)
+		ids = append([]string{heap.Pop(&resultHeap).(entity.Result).Id}, ids...)
 	}
 
 	return ids, nil
@@ -1030,7 +1055,7 @@ func (db *VectorDB) lshSearch(query []float64, k int, numTables int) ([]string, 
 	}
 
 	// 预处理查询向量
-	normalizedQuery := normalizeVector(query)
+	normalizedQuery := util.NormalizeVector(query)
 
 	// 使用LSH索引进行搜索
 	candidateSet := make(map[string]struct{})
@@ -1054,7 +1079,7 @@ func (db *VectorDB) lshSearch(query []float64, k int, numTables int) ([]string, 
 	}
 
 	// 对候选集中的向量计算精确距离
-	resultHeap := make(ResultHeap, 0, k)
+	resultHeap := make(entity.ResultHeap, 0, k)
 	heap.Init(&resultHeap)
 
 	for id := range candidateSet {
@@ -1064,20 +1089,20 @@ func (db *VectorDB) lshSearch(query []float64, k int, numTables int) ([]string, 
 		}
 
 		// 计算余弦相似度
-		sim := cosineSimilarity(normalizedQuery, vec)
+		sim := util.CosineSimilarity(normalizedQuery, vec)
 
 		if len(resultHeap) < k {
-			heap.Push(&resultHeap, Result{id: id, similarity: sim})
-		} else if sim > resultHeap[0].similarity {
+			heap.Push(&resultHeap, entity.Result{Id: id, Similarity: sim})
+		} else if sim > resultHeap[0].Similarity {
 			heap.Pop(&resultHeap)
-			heap.Push(&resultHeap, Result{id: id, similarity: sim})
+			heap.Push(&resultHeap, entity.Result{Id: id, Similarity: sim})
 		}
 	}
 
 	// 从堆中提取结果，按相似度降序排列
 	ids := make([]string, 0, len(resultHeap))
 	for resultHeap.Len() > 0 {
-		ids = append([]string{heap.Pop(&resultHeap).(Result).id}, ids...)
+		ids = append([]string{heap.Pop(&resultHeap).(entity.Result).Id}, ids...)
 	}
 
 	return ids, nil
@@ -1189,7 +1214,7 @@ func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]string, err
 	}
 
 	// 预处理查询向量
-	normalizedQuery := normalizeVector(query)
+	normalizedQuery := util.NormalizeVector(query)
 
 	// 设置默认nprobe值
 	if nprobe <= 0 {
@@ -1200,7 +1225,7 @@ func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]string, err
 	}
 
 	// 使用堆结构来维护最近的nprobe个簇
-	centroidHeap := make(CentroidHeap, 0, db.numClusters)
+	centroidHeap := make(entity.CentroidHeap, 0, db.numClusters)
 
 	// 找到查询向量最近的nprobe个簇中心
 	for i, cluster := range db.clusters {
@@ -1208,18 +1233,18 @@ func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]string, err
 		if err != nil {
 			continue
 		}
-		centroidHeap = append(centroidHeap, CentroidDist{index: i, distance: distSq})
+		centroidHeap = append(centroidHeap, entity.CentroidDist{Index: i, Distance: distSq})
 	}
 
 	// 堆化并提取最近的nprobe个簇
 	heap.Init(&centroidHeap)
 	var nearestClusters []int
 	for i := 0; i < nprobe && len(centroidHeap) > 0; i++ {
-		nearestClusters = append(nearestClusters, heap.Pop(&centroidHeap).(CentroidDist).index)
+		nearestClusters = append(nearestClusters, heap.Pop(&centroidHeap).(entity.CentroidDist).Index)
 	}
 
 	// 使用优先队列维护k个最近的向量
-	resultHeap := make(ResultHeap, 0, k)
+	resultHeap := make(entity.ResultHeap, 0, k)
 	heap.Init(&resultHeap)
 
 	// 在这nprobe个簇中搜索向量
@@ -1236,7 +1261,7 @@ func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]string, err
 
 			// 并行处理每批向量
 			var wg sync.WaitGroup
-			resultChan := make(chan Result, end-i)
+			resultChan := make(chan entity.Result, end-i)
 
 			for j := i; j < end; j++ {
 				wg.Add(1)
@@ -1247,8 +1272,8 @@ func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]string, err
 						return
 					}
 					// 计算余弦相似度
-					sim := cosineSimilarity(normalizedQuery, vec)
-					resultChan <- Result{id: vecID, similarity: sim}
+					sim := util.CosineSimilarity(normalizedQuery, vec)
+					resultChan <- entity.Result{Id: vecID, Similarity: sim}
 				}(selectedCluster.VectorIDs[j])
 			}
 
@@ -1262,7 +1287,7 @@ func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]string, err
 			for result := range resultChan {
 				if len(resultHeap) < k {
 					heap.Push(&resultHeap, result)
-				} else if result.similarity > resultHeap[0].similarity {
+				} else if result.Similarity > resultHeap[0].Similarity {
 					heap.Pop(&resultHeap)
 					heap.Push(&resultHeap, result)
 				}
@@ -1273,7 +1298,7 @@ func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]string, err
 	// 从堆中提取结果，按相似度降序排列
 	ids := make([]string, 0, len(resultHeap))
 	for resultHeap.Len() > 0 {
-		ids = append([]string{heap.Pop(&resultHeap).(Result).id}, ids...)
+		ids = append([]string{heap.Pop(&resultHeap).(entity.Result).Id}, ids...)
 	}
 
 	return ids, nil
@@ -1380,7 +1405,7 @@ func (db *VectorDB) FileSystemSearch(query string, vectorizedType int, k int, np
 				if !exists {
 					continue
 				}
-				sim := cosineSimilarity(queryVector, vec)
+				sim := util.CosineSimilarity(queryVector, vec)
 				resultChan <- result{id: c.id, similarity: sim, wordCount: c.count}
 			}
 		}()
@@ -1428,52 +1453,6 @@ func (db *VectorDB) FileSystemSearch(query string, vectorizedType int, k int, np
 	}
 
 	return ids, nil
-}
-
-func normalizeVector(vec []float64) []float64 {
-	sum := 0.0
-	for _, v := range vec {
-		sum += v * v
-	}
-	norm := math.Sqrt(sum)
-
-	if norm == 0 {
-		return vec
-	}
-
-	normalized := make([]float64, len(vec))
-	for i, v := range vec {
-		normalized[i] = v / norm
-	}
-
-	return normalized
-}
-
-// 优化距离计算函数，支持SIMD加速
-func optimizedCosineSimilarity(a, b []float64) float64 {
-	// 使用预计算的归一化向量直接计算点积
-	dotProduct := 0.0
-
-	// 向量长度检查
-	if len(a) != len(b) {
-		return -1
-	}
-
-	// 分块计算以提高缓存命中率
-	blockSize := 16
-	for i := 0; i < len(a); i += blockSize {
-		end := i + blockSize
-		if end > len(a) {
-			end = len(a)
-		}
-
-		// 计算当前块的点积
-		for j := i; j < end; j++ {
-			dotProduct += a[j] * b[j]
-		}
-	}
-
-	return dotProduct // 对于归一化向量，点积等于余弦相似度
 }
 
 // 改进的查询缓存结构
@@ -1542,7 +1521,7 @@ func (db *VectorDB) ParallelFindNearest(query []float64, k int) ([]string, error
 	vectorsPerWorker := (len(vectorIDs) + numWorkers - 1) / numWorkers
 
 	// 创建结果通道
-	resultChan := make(chan []Result, numWorkers)
+	resultChan := make(chan []entity.Result, numWorkers)
 
 	// 启动工作协程
 	var wg sync.WaitGroup
@@ -1565,17 +1544,17 @@ func (db *VectorDB) ParallelFindNearest(query []float64, k int) ([]string, error
 			}
 
 			// 处理分配的向量
-			localResults := make([]Result, 0, endIdx-startIdx)
+			localResults := make([]entity.Result, 0, endIdx-startIdx)
 			for idx := startIdx; idx < endIdx; idx++ {
 				id := vectorIDs[idx]
 				vec := db.vectors[id]
-				sim := optimizedCosineSimilarity(query, vec)
-				localResults = append(localResults, Result{id: id, similarity: sim})
+				sim := util.OptimizedCosineSimilarity(query, vec)
+				localResults = append(localResults, entity.Result{Id: id, Similarity: sim})
 			}
 
 			// 本地排序，减少全局合并开销
 			sort.Slice(localResults, func(i, j int) bool {
-				return localResults[i].similarity > localResults[j].similarity
+				return localResults[i].Similarity > localResults[j].Similarity
 			})
 
 			// 只保留前k个结果
@@ -1594,7 +1573,7 @@ func (db *VectorDB) ParallelFindNearest(query []float64, k int) ([]string, error
 	}()
 
 	// 合并结果
-	allResults := make([]Result, 0, k*numWorkers)
+	allResults := make([]entity.Result, 0, k*numWorkers)
 	for results := range resultChan {
 		if results != nil {
 			allResults = append(allResults, results...)
@@ -1603,7 +1582,7 @@ func (db *VectorDB) ParallelFindNearest(query []float64, k int) ([]string, error
 
 	// 全局排序并截取前k个结果
 	sort.Slice(allResults, func(i, j int) bool {
-		return allResults[i].similarity > allResults[j].similarity
+		return allResults[i].Similarity > allResults[j].Similarity
 	})
 
 	if len(allResults) > k {
@@ -1613,7 +1592,7 @@ func (db *VectorDB) ParallelFindNearest(query []float64, k int) ([]string, error
 	// 提取ID
 	ids := make([]string, len(allResults))
 	for i, result := range allResults {
-		ids[i] = result.id
+		ids[i] = result.Id
 	}
 
 	return ids, nil

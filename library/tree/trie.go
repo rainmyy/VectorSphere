@@ -1,4 +1,4 @@
-package strategy
+package tree
 
 import "strings"
 

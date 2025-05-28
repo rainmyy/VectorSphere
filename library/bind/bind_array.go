@@ -2,8 +2,7 @@ package bind
 
 import (
 	"fmt"
-
-	. "seetaSearch/library/strategy"
+	. "seetaSearch/library/tree"
 )
 
 type Array struct {

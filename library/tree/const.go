@@ -1,4 +1,4 @@
-package bplus
+package tree
 
 // Key 类型，需要实现比较接口
 type Key interface {

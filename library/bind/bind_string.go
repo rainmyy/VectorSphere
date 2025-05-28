@@ -3,7 +3,7 @@ package bind
 import (
 	. "bytes"
 	. "seetaSearch/library/common"
-	. "seetaSearch/library/strategy"
+	. "seetaSearch/library/tree"
 )
 
 type String struct {

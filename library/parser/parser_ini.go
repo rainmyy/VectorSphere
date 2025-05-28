@@ -3,9 +3,9 @@ package parser
 import (
 	"fmt"
 	. "seetaSearch/library/common"
+	. "seetaSearch/library/tree"
 	"seetaSearch/library/util"
 
-	. "seetaSearch/library/strategy"
 	"strings"
 )
 

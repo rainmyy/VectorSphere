@@ -1,7 +1,7 @@
 package parser
 
 import (
-	. "seetaSearch/library/strategy"
+	. "seetaSearch/library/tree"
 	"strings"
 )
 

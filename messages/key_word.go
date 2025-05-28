@@ -1,6 +1,6 @@
 package messages
 
-import bplus "seetaSearch/library/BPlus"
+import bplus "seetaSearch/library/tree"
 
 func (kw *KeyWord) ToString() string {
 	if len(kw.Word) > 0 {

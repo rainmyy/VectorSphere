@@ -3,7 +3,7 @@ package parser
 import (
 	"encoding/json"
 	"fmt"
-	. "seetaSearch/library/strategy"
+	. "seetaSearch/library/tree"
 )
 
 func ParserJsonContent(data []byte) ([]*TreeStruct, error) {
