@@ -1,6 +1,11 @@
 package util
 
-import "math"
+import (
+	"fmt"
+	"math"
+	"seetaSearch/library/entity"
+	"seetaSearch/library/enum"
+)
 
 // CosineSimilarity 计算两个向量的余弦相似度
 func CosineSimilarity(a, b []float64) float64 {
@@ -76,4 +81,70 @@ func OptimizedCosineSimilarity(a, b []float64) float64 {
 	}
 
 	return dotProduct // 对于归一化向量，点积等于余弦相似度
+}
+
+// 产品量化压缩
+func CompressByPQ(vec []float64, numSubvectors int, numCentroids int) entity.CompressedVector {
+	// 将向量分割为numSubvectors个子向量
+	// 对每个子向量进行K-means聚类，得到numCentroids个中心点
+	// 用中心点索引替代原始子向量值
+	// ...
+
+	return entity.CompressedVector{}
+}
+
+// CalculateDistance 添加多种距离计算函数
+func CalculateDistance(a, b []float64, method int) (float64, error) {
+	if len(a) != len(b) {
+		return 0, fmt.Errorf("向量维度不匹配: %d != %d", len(a), len(b))
+	}
+
+	switch method {
+	case enum.EuclideanDistance:
+		// 欧几里得距离
+		sum := 0.0
+		for i := range a {
+			diff := a[i] - b[i]
+			sum += diff * diff
+		}
+		return math.Sqrt(sum), nil
+
+	case enum.CosineDistance:
+		// 余弦距离 (1 - 余弦相似度)
+		// 假设输入向量已归一化
+		dotProduct := 0.0
+		for i := range a {
+			dotProduct += a[i] * b[i]
+		}
+		return 1.0 - dotProduct, nil
+
+	case enum.DotProduct:
+		// 点积（越大越相似，需要取负值作为距离）
+		dotProduct := 0.0
+		for i := range a {
+			dotProduct += a[i] * b[i]
+		}
+		return -dotProduct, nil
+
+	case enum.ManhattanDistance:
+		// 曼哈顿距离
+		sum := 0.0
+		for i := range a {
+			sum += math.Abs(a[i] - b[i])
+		}
+		return sum, nil
+
+	default:
+		return 0, fmt.Errorf("不支持的距离计算方法: %d", method)
+	}
+}
+
+// GenerateCacheKey 生成查询缓存键
+func GenerateCacheKey(query []float64, k, nprobe, method int) string {
+	// 简单哈希函数，将查询向量和参数转换为字符串
+	key := fmt.Sprintf("k=%d:nprobe=%d:method=%d:", k, nprobe, method)
+	for _, v := range query {
+		key += fmt.Sprintf("%.6f:", v)
+	}
+	return key
 }

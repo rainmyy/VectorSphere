@@ -41,6 +41,7 @@ type PerformanceStats struct {
 	LastReindexTime time.Time
 	MemoryUsage     uint64
 }
+
 type VectorDB struct {
 	vectors       map[string][]float64
 	mu            sync.RWMutex
@@ -61,8 +62,8 @@ type VectorDB struct {
 	vectorizedType    int                  // 默认向量化类型
 	normalizedVectors map[string][]float64 // 预计算的归一化向量
 
-	compressedVectors map[string]CompressedVector // 压缩后的向量
-	useCompression    bool                        // 是否使用压缩
+	compressedVectors map[string]entity.CompressedVector // 压缩后的向量
+	useCompression    bool                               // 是否使用压缩
 	stats             PerformanceStats
 	statsMu           sync.RWMutex
 	config            AdaptiveConfig
@@ -73,14 +74,6 @@ const (
 	SimpleVectorized
 	TfidfVectorized
 	WordEmbeddingVectorized
-)
-
-// 添加相似度计算方法枚举
-const (
-	EuclideanDistance = iota
-	CosineDistance
-	DotProduct
-	ManhattanDistance
 )
 
 // GetStats 获取性能统计信息
@@ -466,22 +459,6 @@ func (db *VectorDB) BuildMultiLevelIndex(maxIterations int, tolerance float64) e
 	return nil
 }
 
-// CompressedVector 向量量化压缩
-type CompressedVector struct {
-	data     []byte    // 压缩后的数据
-	codebook []float64 // 码本（可选，用于PQ压缩）
-}
-
-// 产品量化压缩
-func compressByPQ(vec []float64, numSubvectors int, numCentroids int) CompressedVector {
-	// 将向量分割为numSubvectors个子向量
-	// 对每个子向量进行K-means聚类，得到numCentroids个中心点
-	// 用中心点索引替代原始子向量值
-	// ...
-
-	return CompressedVector{}
-}
-
 // BuildIndex 使用K-Means算法为数据库中的向量构建索引。
 // maxIterations: K-Means的最大迭代次数。
 // tolerance: K-Means的收敛容忍度。
@@ -646,62 +623,6 @@ func (db *VectorDB) LoadFromFile() error {
 	return nil
 }
 
-// 添加多种距离计算函数
-func calculateDistance(a, b []float64, method int) (float64, error) {
-	if len(a) != len(b) {
-		return 0, fmt.Errorf("向量维度不匹配: %d != %d", len(a), len(b))
-	}
-
-	switch method {
-	case EuclideanDistance:
-		// 欧几里得距离
-		sum := 0.0
-		for i := range a {
-			diff := a[i] - b[i]
-			sum += diff * diff
-		}
-		return math.Sqrt(sum), nil
-
-	case CosineDistance:
-		// 余弦距离 (1 - 余弦相似度)
-		// 假设输入向量已归一化
-		dotProduct := 0.0
-		for i := range a {
-			dotProduct += a[i] * b[i]
-		}
-		return 1.0 - dotProduct, nil
-
-	case DotProduct:
-		// 点积（越大越相似，需要取负值作为距离）
-		dotProduct := 0.0
-		for i := range a {
-			dotProduct += a[i] * b[i]
-		}
-		return -dotProduct, nil
-
-	case ManhattanDistance:
-		// 曼哈顿距离
-		sum := 0.0
-		for i := range a {
-			sum += math.Abs(a[i] - b[i])
-		}
-		return sum, nil
-
-	default:
-		return 0, fmt.Errorf("不支持的距离计算方法: %d", method)
-	}
-}
-
-// 生成查询缓存键
-func generateCacheKey(query []float64, k, nprobe, method int) string {
-	// 简单哈希函数，将查询向量和参数转换为字符串
-	key := fmt.Sprintf("k=%d:nprobe=%d:method=%d:", k, nprobe, method)
-	for _, v := range query {
-		key += fmt.Sprintf("%.6f:", v)
-	}
-	return key
-}
-
 // FindNearest 优化后的FindNearest方法
 func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]string, error) {
 	startTime := time.Now()
@@ -710,7 +631,7 @@ func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]string, e
 	db.stats.TotalQueries++
 	db.statsMu.Unlock()
 	// 检查缓存
-	cacheKey := generateCacheKey(query, k, nprobe, 0)
+	cacheKey := util.GenerateCacheKey(query, k, nprobe, 0)
 	db.cacheMu.RLock()
 	if cache, exists := db.queryCache[cacheKey]; exists {
 		db.cacheMu.RUnlock()

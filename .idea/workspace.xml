@@ -5,34 +5,12 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/library/entity/centroid_heap.go" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/library/entity/result_heap.go" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/library/tree/kd_tree.go" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/library/util/vector_func.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/library/entity/vector.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/library/enum/vector_enum.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/db/verctor_db.go" beforeDir="false" afterPath="$PROJECT_DIR$/db/verctor_db.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/mvcc_inverted_index.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/mvcc_inverted_index.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/BPlus/BPlus_tree.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/tree/BPlus_tree.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/BPlus/const.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/tree/const.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/BPlus/lock_manager.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/tree/lock_manager.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/BPlus/mvcc_BPlus_tree.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/tree/mvcc_BPlus_tree.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/BPlus/persistent_BPlus_tree.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/tree/persistent_BPlus_tree.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/BPlus/transaction_manager.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/tree/transaction_manager.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/BPlus/wal_manager.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/tree/wal_manager.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/bind/bind_array.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/bind/bind_array.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/bind/bind_string.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/bind/bind_string.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/bind/bind_struct.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/bind/bind_struct.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/bind/default_bind.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/bind/default_bind.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/file/file_reader.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/file_reader.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/file/file_struct.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/file_struct.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/parser/parser_default.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/parser/parser_default.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/parser/parser_ini.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/parser/parser_ini.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/parser/parser_json.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/parser/parser_json.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/parser/parser_yaml.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/parser/parser_yaml.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/strategy/tree.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/tree/tree.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/strategy/trie.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/tree/trie.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/messages/key_word.go" beforeDir="false" afterPath="$PROJECT_DIR$/messages/key_word.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/search/search_service.go" beforeDir="false" afterPath="$PROJECT_DIR$/search/search_service.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/tree/wal_manager.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/tree/wal_manager.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/util/vector_func.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/util/vector_func.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

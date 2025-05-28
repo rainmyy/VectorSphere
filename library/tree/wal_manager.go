@@ -116,45 +116,49 @@ func (w *WALManager) Commit(txID uint64) error {
 }
 
 // LogWrite 将写操作记录到WAL
-func (wal *WALManager) LogWrite(txID uint64, key Key, value Value) error {
-	if wal.file == nil {
+func (w *WALManager) LogWrite(txID uint64, key Key, value Value) error {
+	if w.file == nil {
 		return errors.New("WAL file not initialized")
 	}
 
 	// 序列化日志条目（统一使用json.Marshal）
 	entry := WALEntry{
-		TxID:   txID,
-		OpType: OpPut,
-		Key:    key,
-		//OldValue:  oldValue, // 填充旧值支持回滚
+		TxID:      txID,
+		OpType:    OpPut,
+		Key:       key,
 		Value:     value,
 		Timestamp: time.Now(),
 	}
-	data, err := json.Marshal(entry)
-	if err != nil {
-		return fmt.Errorf("serialize WAL entry failed: %w", err)
-	}
-
-	// 写入日志长度前缀（4字节大端序）
-	length := uint32(len(data))
-	lenBuf := make([]byte, 4)
-	binary.BigEndian.PutUint32(lenBuf, length)
 
 	// 使用批量刷盘机制（通过batchChan传递）
 	select {
-	case wal.batchChan <- []*WALEntry{&entry}:
+	case w.batchChan <- []*WALEntry{&entry}:
 		// 条目已加入批量队列，由flushBatch协程处理
 	default:
 		// 队列满时降级为直接写入（避免阻塞）
-		wal.mu.Lock()
-		defer wal.mu.Unlock()
-		if _, err := wal.file.Write(lenBuf); err != nil {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+
+		data, err := json.Marshal(entry)
+		if err != nil {
+			return fmt.Errorf("serialize WAL entry failed: %w", err)
+		}
+
+		// 写入日志长度前缀（4字节大端序）
+		lenBuf := make([]byte, 4)
+		binary.BigEndian.PutUint32(lenBuf, uint32(len(data)))
+
+		if _, err := w.file.Write(lenBuf); err != nil {
 			return fmt.Errorf("write WAL length failed: %w", err)
 		}
-		if _, err := wal.file.Write(data); err != nil {
+		if _, err := w.file.Write(data); err != nil {
 			return fmt.Errorf("write WAL entry failed: %w", err)
 		}
-		wal.file.Sync() // 直接写入时强制刷盘保证一致性
+		// 直接写入时强制刷盘保证一致性
+		err = w.file.Sync()
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -193,7 +197,10 @@ func (w *WALManager) flushBatch() {
 				continue
 			}
 		}
-		w.file.Sync()
+		err := w.file.Sync()
+		if err != nil {
+			return
+		}
 		w.mu.Unlock()
 	}
 }
