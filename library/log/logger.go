@@ -113,7 +113,10 @@ func (l *Logger) logf(level Level, format string, v ...interface{}) {
 	l.rotateIfNeeded()
 	prefix := "[" + levelStr[level] + "] "
 	l.logger.SetPrefix(prefix)
-	l.logger.Output(3, formatLog(format, v...))
+	err := l.logger.Output(3, formatLog(format, v...))
+	if err != nil {
+		return
+	}
 	if level == FATAL {
 		os.Exit(1)
 	}
@@ -126,7 +129,7 @@ func formatLog(format string, v ...interface{}) string {
 	return fmt.Sprintf(format, v...)
 }
 
-// 对外接口
+// Fatal 对外接口
 func Fatal(format string, v ...interface{})   { defaultLogger.logf(FATAL, format, v...) }
 func Error(format string, v ...interface{})   { defaultLogger.logf(ERROR, format, v...) }
 func Warning(format string, v ...interface{}) { defaultLogger.logf(WARNING, format, v...) }

@@ -42,6 +42,14 @@ func (n *MVCCNode) GetValue(tx *Transaction) (Value, bool) {
 	return nil, false
 }
 
+func (n *MVCCNode) IsLeaf() bool {
+	return n.isLeaf
+}
+
+func (n *MVCCNode) GetChildren() []interface{} {
+	return n.children
+}
+
 func (n *MVCCNode) GetKeys() []Key {
 	return n.keys
 }
@@ -143,6 +151,10 @@ func NewMVCCBPlusTree(order int, txMgr *TransactionManager, lockMgr *LockManager
 		lockMgr: lockMgr,
 		wal:     wal,
 	}
+}
+
+func (t *MVCCBPlusTree) GetRoot() *MVCCNode {
+	return t.root
 }
 
 // Get 带事务的读取

@@ -124,12 +124,16 @@ func (idx *MVCCBPlusTreeInvertedIndex) GetDocumentByScoreId(scoreId int64) (mess
 // getAllKeywords 获取所有关键词，需要根据实际情况实现
 func (idx *MVCCBPlusTreeInvertedIndex) getAllKeywords() []messages.KeyWord {
 	var keywords []messages.KeyWord
+	seen := make(map[interface{}]struct{})
 	current := idx.getFirstLeaf()
 
 	for current != nil {
 		for _, key := range current.GetKeys() {
 			if kw, ok := key.(messages.KeyWord); ok {
-				keywords = append(keywords, kw)
+				if _, exists := seen[kw]; !exists {
+					keywords = append(keywords, kw)
+					seen[kw] = struct{}{}
+				}
 			}
 		}
 		current = current.GetNext()
@@ -148,10 +152,18 @@ func (idx *MVCCBPlusTreeInvertedIndex) getMinMaxKeywords() (messages.KeyWord, me
 	firstLeaf := idx.getFirstLeaf()
 	lastLeaf := idx.getLastLeaf()
 	if firstLeaf != nil && len(firstLeaf.GetKeys()) > 0 {
-		minKey = firstLeaf.GetKeys()[0].(messages.KeyWord)
+		keys := firstLeaf.GetKeys()
+		if keys == nil {
+			return minKey, maxKey
+		}
+		minKey = keys[0].(messages.KeyWord)
 	}
 	if lastLeaf != nil && len(lastLeaf.GetKeys()) > 0 {
-		maxKey = lastLeaf.GetKeys()[len(lastLeaf.GetKeys())-1].(messages.KeyWord)
+		keys := firstLeaf.GetKeys()
+		if keys == nil {
+			return minKey, maxKey
+		}
+		maxKey = keys[len(keys)-1].(messages.KeyWord)
 	}
 	return minKey, maxKey
 }
@@ -160,9 +172,10 @@ func (idx *MVCCBPlusTreeInvertedIndex) getMinMaxKeywords() (messages.KeyWord, me
 func (idx *MVCCBPlusTreeInvertedIndex) getFirstLeaf() *BPlus.MVCCNode {
 	// 这里需要实现获取第一个叶子节点的逻辑
 	// 可以从根节点开始遍历到最左边的叶子节点
-	current := idx.tree.Root
-	for current != nil && !current.IsLeaf {
-		current = current.Children[0].(*BPlus.MVCCNode)
+	current := idx.tree.GetRoot()
+	for current != nil && !current.IsLeaf() {
+		children := current.GetChildren()
+		current = children[0].(*BPlus.MVCCNode)
 	}
 	return current
 }
@@ -171,9 +184,10 @@ func (idx *MVCCBPlusTreeInvertedIndex) getFirstLeaf() *BPlus.MVCCNode {
 func (idx *MVCCBPlusTreeInvertedIndex) getLastLeaf() *BPlus.MVCCNode {
 	// 这里需要实现获取最后一个叶子节点的逻辑
 	// 可以从根节点开始遍历到最右边的叶子节点
-	current := idx.tree.Root
-	for current != nil && !current.IsLeaf {
-		current = current.Children[len(current.Children)-1].(*BPlus.MVCCNode)
+	current := idx.tree.GetRoot()
+	for current != nil && !current.IsLeaf() {
+		children := current.GetChildren()
+		current = children[len(children)-1].(*BPlus.MVCCNode)
 	}
 	return current
 }

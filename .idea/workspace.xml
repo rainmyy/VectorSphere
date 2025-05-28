@@ -5,12 +5,15 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/index/mvcc_inverted_index.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/library/BPlus/const.go" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/search/search_service.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/index/mvcc_inverted_index.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/mvcc_inverted_index.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/library/BPlus/BPlus_tree.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/BPlus/BPlus_tree.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/library/BPlus/mvcc_BPlus_tree.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/BPlus/mvcc_BPlus_tree.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/file/file_write.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/file/file_write.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/log/logger.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/log/logger.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/messages/key_word.go" beforeDir="false" afterPath="$PROJECT_DIR$/messages/key_word.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/messages/key_word.pb.go" beforeDir="false" afterPath="$PROJECT_DIR$/messages/key_word.pb.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
