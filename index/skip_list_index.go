@@ -102,29 +102,31 @@ func (index *SkipListInvertedIndex) searchQuery(query *messages.TermQuery, onFla
 				if intId > 0 && index.FilterBits(flag, onFlag, offFlag, orFlags) {
 					result.Insert(intId, skipListValue)
 				}
-				node = node.Next()
 			}
 			return result
 		}
 		return nil
 	case len(query.Must) > 0:
-		results := make([]*strategy.SkipList, 0, len(query.Must))
+		// 优化Must查询：任意子查询为空则整体为空
+		var validLists []*strategy.SkipList
 		for _, q := range query.Must {
 			subResult := index.searchQuery(q, onFlag, offFlag, orFlags)
-			if subResult != nil {
-				results = append(results, subResult)
+			if subResult == nil || subResult.Len() == 0 {
+				return nil // 任意Must条件无结果则整体无结果
 			}
+			validLists = append(validLists, subResult)
 		}
-		return index.IntersectionList(results...)
+		return index.IntersectionList(validLists...)
 	case len(query.Should) > 0:
-		results := make([]*strategy.SkipList, 0, len(query.Should))
+		// 优化Should查询：提前过滤空列表
+		var validLists []*strategy.SkipList
 		for _, q := range query.Should {
 			subResult := index.searchQuery(q, onFlag, offFlag, orFlags)
-			if subResult != nil {
-				results = append(results, subResult)
+			if subResult != nil && subResult.Len() > 0 {
+				validLists = append(validLists, subResult)
 			}
 		}
-		return index.UnionList(results...)
+		return index.UnionList(validLists...)
 	}
 	return nil
 }
@@ -166,6 +168,8 @@ func (index *SkipListInvertedIndex) UnionList(lists ...*strategy.SkipList) *stra
 
 	return result
 }
+
+// IntersectionList 优化交集操作（基于最短列表的快速查找）
 func (index *SkipListInvertedIndex) IntersectionList(lists ...*strategy.SkipList) *strategy.SkipList {
 	if len(lists) == 0 {
 		return nil
@@ -173,35 +177,36 @@ func (index *SkipListInvertedIndex) IntersectionList(lists ...*strategy.SkipList
 	if len(lists) == 1 {
 		return lists[0]
 	}
-	result := strategy.NewSkipList()
-	currNodes := make([]*strategy.Element, len(lists))
-	for i, list := range lists {
-		if list == nil || list.Len() == 0 {
-			return nil
+
+	// 选择最短的列表作为基准（减少查找次数）
+	shortest := lists[0]
+	for _, list := range lists[1:] {
+		if list.Len() < shortest.Len() {
+			shortest = list
 		}
-		currNodes[i] = list.Front()
 	}
-	for {
-		maxList := make(map[int]struct{}, len(currNodes))
-		var maxValue uint64 = 0
-		for i, node := range currNodes {
-			if node.Value.(uint64) > maxValue {
-				maxValue = node.Value.(uint64)
-				maxList = make(map[int]struct{})
-				maxList[i] = struct{}{}
-			} else if node.Value.(uint64) == maxValue {
-				maxList[i] = struct{}{}
+
+	result := strategy.NewSkipList()
+	iter := shortest.Front()
+	for iter != nil {
+		key := iter.Key().(int64)
+		value := iter.Value.(SkipListValue)
+		found := true
+
+		// 检查其他列表是否包含该键（利用跳表的Find方法）
+		for _, list := range lists {
+			if list == shortest {
+				continue
 			}
-		}
-		if len(maxList) == len(currNodes) {
-			result.Insert(currNodes[0].Key().(int64), currNodes[0].Value)
+			if elem, ok := list.Search(key); !ok || elem.Value != value {
+				found = false
+				break
+			}
 		}
 
-		for i, node := range currNodes {
-			currNodes[i] = node.Next()
-			if currNodes[i] == nil {
-				return result
-			}
+		if found {
+			result.Insert(key, value)
 		}
 	}
+	return result
 }
