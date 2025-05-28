@@ -218,3 +218,70 @@ func NewWordEmbeddingVectorized(embeddings map[string][]float64) DocumentVectori
 		return docVector, nil
 	}
 }
+
+// EnhancedWordEmbeddingVectorized 优化的词嵌入向量化函数
+func EnhancedWordEmbeddingVectorized(embeddings map[string][]float64) DocumentVectorized {
+	return func(doc string) ([]float64, error) {
+		// 使用更高级的分词方法
+		var seg gse.Segmenter
+		err := seg.LoadDict()
+		if err != nil {
+			return nil, err
+		}
+		words := seg.Cut(doc, true)
+
+		if len(words) == 0 {
+			return nil, fmt.Errorf("文档为空")
+		}
+
+		// 使用TF-IDF加权词向量
+		wordFreq := make(map[string]int)
+		for _, word := range words {
+			wordFreq[word]++
+		}
+
+		// 计算词频
+		for word := range wordFreq {
+			wordFreq[word] = wordFreq[word] / len(words)
+		}
+
+		// 初始化文档向量
+		var docVector []float64
+		validCount := 0
+
+		// 加权求和
+		for word, freq := range wordFreq {
+			if vec, exists := embeddings[word]; exists {
+				if docVector == nil {
+					docVector = make([]float64, len(vec))
+				}
+
+				// 使用词频作为权重
+				weight := float64(freq)
+				for i := range vec {
+					docVector[i] += vec[i] * weight
+				}
+				validCount++
+			}
+		}
+
+		if validCount == 0 {
+			return nil, fmt.Errorf("文档中没有有效的词向量")
+		}
+
+		// 归一化文档向量
+		norm := 0.0
+		for _, v := range docVector {
+			norm += v * v
+		}
+		norm = math.Sqrt(norm)
+
+		if norm > 0 {
+			for i := range docVector {
+				docVector[i] /= norm
+			}
+		}
+
+		return docVector, nil
+	}
+}

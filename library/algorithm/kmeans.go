@@ -185,6 +185,92 @@ func KMeans(data []Point, k int, maxIterations int, tolerance float64) ([]Point,
 	return centroids, assignments, nil
 }
 
+// 优化的K-Means++初始化
+func kMeansPlusPlusInit(data []Point, k int) ([]Point, error) {
+	if len(data) < k {
+		return nil, fmt.Errorf("数据点数量少于簇数量")
+	}
+
+	dim := len(data[0])
+	centroids := make([]Point, 0, k)
+
+	// 随机选择第一个质心
+	firstIdx := rand.Intn(len(data))
+	firstCentroid := make(Point, dim)
+	copy(firstCentroid, data[firstIdx])
+	centroids = append(centroids, firstCentroid)
+
+	// 使用采样优化K-Means++，对大数据集更高效
+	for i := 1; i < k; i++ {
+		// 对于大数据集，可以只采样部分点计算距离
+		sampleSize := min(len(data), 1000)
+		sampledIndices := randomSample(len(data), sampleSize)
+
+		distSqSum := 0.0
+		distSqList := make([]float64, sampleSize)
+
+		// 计算采样点到最近质心的距离
+		for j, idx := range sampledIndices {
+			point := data[idx]
+			minDistSq := math.MaxFloat64
+
+			for _, c := range centroids {
+				distSq, _ := EuclideanDistanceSquared(point, c)
+				if distSq < minDistSq {
+					minDistSq = distSq
+				}
+			}
+
+			distSqList[j] = minDistSq
+			distSqSum += minDistSq
+		}
+
+		// 根据距离概率选择下一个质心
+		r := rand.Float64() * distSqSum
+		accumulator := 0.0
+
+		for j, distSq := range distSqList {
+			accumulator += distSq
+			if accumulator >= r {
+				idx := sampledIndices[j]
+				newCentroid := make(Point, dim)
+				copy(newCentroid, data[idx])
+				centroids = append(centroids, newCentroid)
+				break
+			}
+		}
+	}
+
+	return centroids, nil
+}
+
+// 随机采样函数
+func randomSample(populationSize, sampleSize int) []int {
+	if sampleSize >= populationSize {
+		// 返回全部索引
+		indices := make([]int, populationSize)
+		for i := range indices {
+			indices[i] = i
+		}
+		return indices
+	}
+
+	// 使用map确保不重复
+	selected := make(map[int]struct{})
+	for len(selected) < sampleSize {
+		idx := rand.Intn(populationSize)
+		selected[idx] = struct{}{}
+	}
+
+	// 转换为切片
+	result := make([]int, 0, sampleSize)
+	for idx := range selected {
+		result = append(result, idx)
+	}
+
+	return result
+}
+
 // 示例用法
 /*
 func main() {
