@@ -28,12 +28,7 @@ type PersistentNode struct {
 }
 
 func init() {
-	gob.Register(Key(0)) // Register Key type if it's custom and not a basic type
 	gob.Register((*PersistentNode)(nil))
-	// Register concrete types that will be used for Value
-	// gob.Register(MyValueType{})
-	// gob.Register(AnotherValueType{})
-	// Register int64 because it's used in children for internal nodes
 	gob.Register(int64(0))
 }
 
@@ -337,7 +332,7 @@ func (t *PersistentBPlusTree) findLeaf(key Key) (*PersistentNode, error) {
 		i := 0
 		// Ensure key comparison is correct for your Key type
 		// For Key int, this is fine.
-		for i < len(current.keys) && key >= current.keys[i] {
+		for i < len(current.keys) && !key.Less(current.keys[i]) {
 			i++
 		}
 
@@ -597,9 +592,9 @@ func (t *PersistentBPlusTree) insertIntoParent(leftNodeOffset int64, key Key, ri
 	}
 
 	parent.mu.Lock()
-	// Find position to insert key and right child pointer
+	// Find position to insert a key and right child pointer
 	i := 0
-	for i < len(parent.keys) && key >= parent.keys[i] { // key >= parent.keys[i] for B+ tree property
+	for i < len(parent.keys) && !key.Less(parent.keys[i]) { // key >= parent.keys[i] for B+ tree property
 		i++
 	}
 
@@ -781,7 +776,7 @@ func (t *PersistentBPlusTree) insertIntoLeaf(leaf *PersistentNode, key Key, valu
 	defer leaf.mu.Unlock()
 
 	i := 0
-	for i < len(leaf.keys) && leaf.keys[i] < key {
+	for i < len(leaf.keys) && leaf.keys[i].Less(key) {
 		i++
 	}
 
@@ -796,7 +791,7 @@ func (t *PersistentBPlusTree) insertIntoLeafWithoutLock(leaf *PersistentNode, ke
 	i := 0
 	// Find position to insert key
 	// For Key int; this comparison is fine.
-	for i < len(leaf.keys) && key > leaf.keys[i] { // Corrected: key > leaf.keys[i] for sorted order
+	for i < len(leaf.keys) && leaf.keys[i].Less(key) { // Corrected: key > leaf.keys[i] for sorted order
 		i++
 	}
 
