@@ -47,11 +47,11 @@ func calculateMean(points []Point) (Point, error) {
 	return mean, nil
 }
 
-// KMeans 执行 K-Means 聚类算法
+// KMeans 执行 K-Means 聚类算法（优化版）
 // data: 数据集，每个元素是一个 Point
 // k: 簇的数量
 // maxIterations: 最大迭代次数
-// tolerance: 簇中心变化的容忍度，用于提前停止迭代
+// tolerance: 簇中心变化的容忍度（欧几里得距离），用于提前停止迭代
 // 返回值: 簇中心点列表, 每个数据点所属的簇索引列表, 错误
 func KMeans(data []Point, k int, maxIterations int, tolerance float64) ([]Point, []int, error) {
 	if k <= 0 {
@@ -66,22 +66,51 @@ func KMeans(data []Point, k int, maxIterations int, tolerance float64) ([]Point,
 
 	dim := len(data[0]) // 假设所有数据点维度相同
 
-	// 1. 初始化簇中心 (随机选择 K 个数据点)
+	// 使用 K-Means++ 初始化质心（避免初始质心过于集中）
 	rand.Seed(time.Now().UnixNano())
-	centroids := make([]Point, k)
-	perm := rand.Perm(len(data))
-	for i := 0; i < k; i++ {
-		centroids[i] = make(Point, dim)
-		copy(centroids[i], data[perm[i]])
+	centroids := make([]Point, 0, k)
+
+	// 1.1 随机选择第一个质心
+	firstIdx := rand.Intn(len(data))
+	centroids = append(centroids, make(Point, dim))
+	copy(centroids[0], data[firstIdx])
+
+	// 1.2 选择后续质心（基于距离概率分布）
+	for i := 1; i < k; i++ {
+		distSqSum := 0.0
+		distSqList := make([]float64, len(data))
+
+		// 计算每个点到最近已选质心的距离平方
+		for pIdx, point := range data {
+			minDistSq := math.MaxFloat64
+			for _, c := range centroids {
+				distSq, _ := EuclideanDistanceSquared(point, c)
+				if distSq < minDistSq {
+					minDistSq = distSq
+				}
+			}
+			distSqList[pIdx] = minDistSq
+			distSqSum += minDistSq
+		}
+
+		// 根据距离平方的概率分布选择下一个质心
+		r := rand.Float64() * distSqSum
+		accumulator := 0.0
+		for pIdx, distSq := range distSqList {
+			accumulator += distSq
+			if accumulator >= r {
+				newCentroid := make(Point, dim)
+				copy(newCentroid, data[pIdx])
+				centroids = append(centroids, newCentroid)
+				break
+			}
+		}
 	}
 
 	assignments := make([]int, len(data)) // 存储每个点分配到的簇索引
 	converged := false
 
 	for iter := 0; iter < maxIterations && !converged; iter++ {
-		fmt.Printf("K-Means 迭代: %d\n", iter+1)
-		centroidsMoved := false
-
 		// 2. 分配步骤：将每个点分配到最近的簇中心
 		for i, point := range data {
 			minDistSq := math.MaxFloat64
@@ -100,8 +129,6 @@ func KMeans(data []Point, k int, maxIterations int, tolerance float64) ([]Point,
 		}
 
 		// 3. 更新步骤：重新计算簇中心
-		newCentroids := make([]Point, k)
-		//clusterCounts := make([]int, k)
 		clusterPoints := make([][]Point, k)
 		for i := 0; i < k; i++ {
 			clusterPoints[i] = make([]Point, 0)
@@ -112,15 +139,18 @@ func KMeans(data []Point, k int, maxIterations int, tolerance float64) ([]Point,
 			clusterPoints[clusterIndex] = append(clusterPoints[clusterIndex], point)
 		}
 
+		newCentroids := make([]Point, k)
 		for j := 0; j < k; j++ {
 			if len(clusterPoints[j]) == 0 {
-				// 处理空簇：可以重新随机选择一个点作为该簇的中心，或保持不变
-				// 这里简单地保持不变，但在实际应用中可能需要更好的策略
-				fmt.Printf("警告: 簇 %d 为空，保持其质心不变。\n", j)
-				newCentroids[j] = make(Point, dim)
-				copy(newCentroids[j], centroids[j]) // 保持旧质心
+				// 优化3：空簇处理（随机选择一个数据点作为新质心）
+				fmt.Printf("警告: 簇 %d 为空，随机选择新质心。\n", j)
+				randomIdx := rand.Intn(len(data))
+				newCentroid := make(Point, dim)
+				copy(newCentroid, data[randomIdx])
+				newCentroids[j] = newCentroid
 				continue
 			}
+
 			mean, err := calculateMean(clusterPoints[j])
 			if err != nil {
 				return nil, nil, fmt.Errorf("计算簇 %d 的均值失败: %w", j, err)
@@ -133,7 +163,6 @@ func KMeans(data []Point, k int, maxIterations int, tolerance float64) ([]Point,
 		for j := 0; j < k; j++ {
 			shiftSq, err := EuclideanDistanceSquared(centroids[j], newCentroids[j])
 			if err != nil {
-				// 维度应该一致，理论上这里不应出错
 				return nil, nil, fmt.Errorf("计算质心移动距离失败: %w", err)
 			}
 			if shiftSq > maxCentroidShiftSq {
@@ -142,17 +171,10 @@ func KMeans(data []Point, k int, maxIterations int, tolerance float64) ([]Point,
 			centroids[j] = newCentroids[j] // 更新质心
 		}
 
-		if maxCentroidShiftSq <= tolerance*tolerance { // 比较平方值
-			fmt.Printf("K-Means 已收敛，最大质心移动平方: %f\n", maxCentroidShiftSq)
+		// 直接使用 tolerance 平方判断收敛（原代码中 tolerance 是距离阈值，这里比较平方值）
+		if maxCentroidShiftSq <= tolerance*tolerance {
+			fmt.Printf("K-Means 已收敛，最大质心移动距离平方: %f\n", maxCentroidShiftSq)
 			converged = true
-		} else {
-			centroidsMoved = true
-		}
-
-		// 如果没有质心移动，也认为收敛 (一种简单检查)
-		if !centroidsMoved && iter > 0 { // 避免第一次迭代就错误地认为收敛
-			fmt.Println("K-Means 已收敛，质心未移动。")
-			// converged = true // 这个条件可能过于严格或不准确，依赖 tolerance 更好
 		}
 	}
 
