@@ -2,7 +2,9 @@ package bplus
 
 import (
 	"errors"
+	"fmt"
 	"sync"
+	"time"
 )
 
 type LockType int
@@ -23,10 +25,12 @@ type LockRequest struct {
 
 // LockManager 锁管理器(实现2PL)
 type LockManager struct {
-	locks     map[Key]*LockRequest
-	txLocks   map[uint64][]Key // 事务持有的锁
-	mu        sync.Mutex
-	waitGraph map[uint64]map[uint64]struct{} // 等待图(用于死锁检测)
+	locks          map[Key]*LockRequest
+	txLocks        map[uint64][]Key // 事务持有的锁
+	mu             sync.Mutex
+	waitGraph      map[uint64]map[uint64]struct{}   // 等待图(用于死锁检测)
+	predicateLocks map[KeyRange]map[uint64]LockType // 谓词锁存储 key: key range, value: map of txID to lock mode
+	predicateMu    sync.RWMutex                     // 保护predicateLocks
 }
 
 func NewLockManager() *LockManager {
@@ -35,6 +39,86 @@ func NewLockManager() *LockManager {
 		txLocks:   make(map[uint64][]Key),
 		waitGraph: make(map[uint64]map[uint64]struct{}),
 	}
+}
+
+// KeyRange 辅助类型和函数
+type KeyRange struct {
+	Start Key
+	End   Key
+}
+
+func rangesOverlap(a, b KeyRange) bool {
+	return compareKeys(a.Start, b.End) <= 0 && compareKeys(a.End, b.Start) >= 0
+}
+
+func isCompatible(requested, existing LockType) bool {
+	if requested == LockShared || existing == LockShared {
+		return true
+	}
+	return false
+}
+
+// AcquirePredicateLock 实现谓词锁获取逻辑
+func (lm *LockManager) AcquirePredicateLock(txID uint64, startKey Key, endKey Key, mode LockType, timeout time.Duration) error {
+	keyRange := KeyRange{Start: startKey, End: endKey}
+
+	// 1. 检查锁冲突
+	lm.predicateMu.Lock()
+	defer lm.predicateMu.Unlock()
+
+	// 2. 检查当前事务是否已经持有相同范围的锁
+	if holders, exists := lm.predicateLocks[keyRange]; exists {
+		if currentMode, held := holders[txID]; held {
+			if currentMode == mode {
+				return nil // 已持有相同模式的锁
+			}
+			// 锁升级逻辑
+			return lm.upgradePredicateLock(txID, keyRange, currentMode, mode)
+		}
+	}
+
+	// 3. 检查范围重叠的现有锁
+	for existingRange, holders := range lm.predicateLocks {
+		if rangesOverlap(keyRange, existingRange) {
+			for holderID, holderMode := range holders {
+				if holderID != txID && !isCompatible(mode, holderMode) {
+					return fmt.Errorf("predicate lock conflict on range %v", existingRange)
+				}
+			}
+		}
+	}
+
+	// 4. 获取新锁
+	if lm.predicateLocks == nil {
+		lm.predicateLocks = make(map[KeyRange]map[uint64]LockType)
+	}
+	if _, exists := lm.predicateLocks[keyRange]; !exists {
+		lm.predicateLocks[keyRange] = make(map[uint64]LockType)
+	}
+	lm.predicateLocks[keyRange][txID] = mode
+	return nil
+}
+
+func (lm *LockManager) upgradePredicateLock(txID uint64, keyRange KeyRange, currentMode LockType, newMode LockType) error {
+	// 1. 检查锁升级是否允许（仅允许Shared -> Exclusive）
+	if currentMode == LockShared && newMode == LockExclusive {
+		// 2. 检查是否有其他事务持有冲突锁
+		for existingRange, holders := range lm.predicateLocks {
+			if rangesOverlap(keyRange, existingRange) {
+				for holderID, holderMode := range holders {
+					if holderID != txID && holderMode == LockExclusive {
+						return fmt.Errorf("cannot upgrade lock due to existing exclusive lock on range %v", existingRange)
+					}
+				}
+			}
+		}
+
+		// 3. 执行升级操作
+		lm.predicateLocks[keyRange][txID] = newMode
+		return nil
+	}
+
+	return fmt.Errorf("invalid lock upgrade from %v to %v", currentMode, newMode)
 }
 
 // Acquire 获取锁
@@ -164,4 +248,17 @@ func (lm *LockManager) Release(txID uint64, key Key) {
 			close(lr.waiters)
 		}
 	}
+}
+
+// ReleaseAll 在事务提交时添加谓词锁清理逻辑
+func (lm *LockManager) ReleaseAll(txID uint64) {
+	// 清理谓词锁
+	lm.predicateMu.Lock()
+	for r, holders := range lm.predicateLocks {
+		delete(holders, txID)
+		if len(holders) == 0 {
+			delete(lm.predicateLocks, r)
+		}
+	}
+	lm.predicateMu.Unlock()
 }

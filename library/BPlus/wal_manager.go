@@ -3,6 +3,8 @@ package bplus
 import (
 	"encoding/binary"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"seetaSearch/library/log"
 	"sync"
@@ -11,12 +13,12 @@ import (
 
 // WALEntry 预写日志条目
 type WALEntry struct {
-	txID      uint64
-	opType    OperationType
-	key       Key
-	oldValue  Value
-	value     Value
-	timestamp time.Time
+	TxID      uint64
+	OpType    OperationType
+	Key       Key
+	OldValue  Value
+	Value     Value
+	Timestamp time.Time
 }
 
 // OperationType 定义WAL操作类型
@@ -86,11 +88,11 @@ func (w *WALManager) Prepare(tx *Transaction) error {
 	// 这通常是2PC的第一阶段
 	for _, write := range tx.writes {
 		entry := &WALEntry{
-			txID:      tx.txID,
-			opType:    OpPrepare, // 或者更具体的 OpPutPrepare
-			key:       write.Key,
-			value:     write.Value,
-			timestamp: time.Now(),
+			TxID:      tx.txID,
+			OpType:    OpPrepare, // 或者更具体的 OpPutPrepare
+			Key:       write.Key,
+			Value:     write.Value,
+			Timestamp: time.Now(),
 		}
 		if err := w.Log(entry); err != nil {
 			return err
@@ -101,9 +103,9 @@ func (w *WALManager) Prepare(tx *Transaction) error {
 
 func (w *WALManager) Commit(txID uint64) error {
 	entry := &WALEntry{
-		txID:      txID,
-		opType:    OpCommit,
-		timestamp: time.Now(),
+		TxID:      txID,
+		OpType:    OpCommit,
+		Timestamp: time.Now(),
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -111,6 +113,48 @@ func (w *WALManager) Commit(txID uint64) error {
 		return err
 	}
 	return w.file.Sync()
+}
+
+// LogWrite 将写操作记录到WAL
+func (wal *WALManager) LogWrite(txID uint64, key Key, value Value) error {
+	if wal.file == nil {
+		return errors.New("WAL file not initialized")
+	}
+
+	// 序列化日志条目
+	entry := WALEntry{
+		TxID:   txID,
+		OpType: OpPut,
+		Key:    key,
+		Value:  value,
+	}
+	data, err := gob.Marshal(entry)
+	if err != nil {
+		return fmt.Errorf("serialize WAL entry failed: %w", err)
+	}
+
+	// 写入日志长度前缀（4字节大端序）
+	length := uint32(len(data))
+	if _, err := wal.file.Write(uint32ToBytes(length)); err != nil {
+		return fmt.Errorf("write WAL length failed: %w", err)
+	}
+
+	// 写入日志数据
+	if _, err := wal.file.Write(data); err != nil {
+		return fmt.Errorf("write WAL entry failed: %w", err)
+	}
+
+	return nil
+}
+
+// uint32ToBytes 将uint32转换为大端序字节数组
+func uint32ToBytes(n uint32) []byte {
+	return []byte{
+		byte(n >> 24),
+		byte(n >> 16),
+		byte(n >> 8),
+		byte(n),
+	}
 }
 
 // flushBatch 批量刷盘
@@ -150,9 +194,9 @@ func (w *WALManager) Sync() error {
 
 func (w *WALManager) Abort(txID uint64) error {
 	entry := &WALEntry{
-		txID:      txID,
-		opType:    OpAbort,
-		timestamp: time.Now(),
+		TxID:      txID,
+		OpType:    OpAbort,
+		Timestamp: time.Now(),
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()

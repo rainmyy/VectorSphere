@@ -163,78 +163,269 @@ func (t *MVCCBPlusTree) Get(tx *Transaction, key Key) (Value, bool) {
 	// 例如ReadCommitted通常不需要S锁，RR和Serializable可能在事务开始时获取范围锁或在读取时获取。
 	switch tx.isolation {
 	case ReadUncommitted:
-		// ReadUncommitted 读取最新的版本，不管是否提交
-		return t.getLatestVersionFromTree(key, tx) // 传入tx是为了能看到自己的未提交修改
+		// 1. 读取未提交：直接获取最新版本
+		t.mu.RLock()
+		defer t.mu.RUnlock()
+		_, mvccNode := t.findMVCCNodeInLeaf(key)
+		if mvccNode == nil {
+			return nil, false
+		}
+		return mvccNode.GetValue(tx)
 	case ReadCommitted:
-		// ReadCommitted 读取事务开始时已提交的最新版本
-		t.lockMgr.Acquire(tx.txID, key, LockShared) // RC通常不加读锁
+		// 2. 读取已提交：获取事务开始时已提交的最新版本
+		t.lockMgr.Acquire(tx.txID, key, LockShared)
 		defer t.lockMgr.Release(tx.txID, key)
+
+		t.mu.RLock()
+		defer t.mu.RUnlock()
 		return t.getVersionVisibleAt(key, tx)
 	case RepeatableRead:
-		// RepeatableRead 基于事务开始时的快照读取
-		// 如果实现了快照机制，则从快照读取
+		// 3. 可重复读：基于快照读取
 		if tx.snapshot != nil {
-			// return tx.snapshot.Get(tx, key) // 快照Get也需要事务上下文
-			// 简化：直接读取对当前事务可见的版本
-			return t.getVersionVisibleAt(key, tx)
+			return tx.snapshot.Get(tx, key)
 		}
-		// 如果没有快照，则读取事务开始时可见的版本
-		t.lockMgr.Acquire(tx.txID, key, LockShared) // 可能需要
+
+		// 获取快照锁并创建读取视图
+		t.lockMgr.Acquire(tx.txID, key, LockShared)
 		defer t.lockMgr.Release(tx.txID, key)
+
+		t.mu.RLock()
+		defer t.mu.RUnlock()
 		return t.getVersionVisibleAt(key, tx)
 	case Serializable:
-		// Serializable 类似RepeatableRead，但有更强的锁机制防止幻读
-		// 通常在扫描范围时使用谓词锁或范围锁
-		t.lockMgr.Acquire(tx.txID, key, LockShared) // S锁
+		// 4. 序列化：使用谓词锁防止幻读
+		if _, err := t.lockMgr.Acquire(tx.txID, key, LockShared); err != nil {
+			return nil, false
+		}
 		defer t.lockMgr.Release(tx.txID, key)
+
+		t.mu.RLock()
+		defer t.mu.RUnlock()
 		return t.getVersionVisibleAt(key, tx)
 	default:
 		return nil, false
 	}
 }
 
+//// Put 带事务的写入
+//func (t *MVCCBPlusTree) Put(tx *Transaction, key Key, value Value) error {
+//	t.mu.Lock()
+//	defer t.mu.Unlock()
+//
+//	// 在MVCC中，Put/Delete通常是创建新版本，而不是原地修改。
+//	// 写锁通常在事务提交阶段的两阶段锁协议中获取，或者在操作时获取并持有到事务结束。
+//	if _, err := t.lockMgr.Acquire(tx.txID, key, LockExclusive); err != nil { // X锁
+//		return err
+//	}
+//	// Release 应该在事务结束 (commit/abort) 时，这里用 defer 只是简化
+//	defer t.lockMgr.Release(tx.txID, key)
+//
+//	t.mu.RLock() // 读取树结构时加读锁
+//	leaf, mvccNode := t.findMVCCNodeInLeaf(key)
+//	t.mu.RUnlock()
+//
+//	if leaf == nil { // 意味着树是空的或者key的路径不存在，理论上findLeaf应该能处理空树
+//		// 如果树是空的，需要创建根，然后插入
+//		// 这里简化，假设findMVCCNodeInLeaf能找到或指示在哪里创建
+//		return errors.New("failed to find or create leaf path for key")
+//	}
+//
+//	if mvccNode == nil {
+//		mvccNode = &MVCCNode{key: key}
+//		// 将新的 MVCCNode 插入到 B+ 树的叶子节点中
+//		// 这需要写锁保护树结构 t.mu.Lock()
+//		t.mu.Lock()
+//		newLeaf, newMVCCNode := t.insertIntoLeafAndCreateMVCCNode(key, mvccNode) // 此方法需要处理分裂等
+//		t.mu.Unlock()
+//		if newLeaf == nil || newMVCCNode == nil {
+//			return errors.New("failed to insert new MVCCNode into B+ tree")
+//		}
+//		mvccNode = newMVCCNode // 使用实际插入或找到的节点
+//	}
+//
+//	// 添加新版本到MVCCNode
+//	mvccNode.AddVersion(value, tx)
+//
+//	// 记录写操作到事务的write set
+//	tx.recordWrite(key, value)
+//	return nil
+//}
+
 // Put 带事务的写入
 func (t *MVCCBPlusTree) Put(tx *Transaction, key Key, value Value) error {
+	// 1. 获取树结构的写锁
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	// 在MVCC中，Put/Delete通常是创建新版本，而不是原地修改。
-	// 写锁通常在事务提交阶段的两阶段锁协议中获取，或者在操作时获取并持有到事务结束。
-	if _, err := t.lockMgr.Acquire(tx.txID, key, LockExclusive); err != nil { // X锁
-		return err
+	// 2. 获取排他锁并注册到事务的写集合
+	if _, err := t.lockMgr.Acquire(tx.txID, key, LockExclusive); err != nil {
+		return fmt.Errorf("acquire X lock failed: %w", err)
 	}
-	// Release 应该在事务结束 (commit/abort) 时，这里用 defer 只是简化
-	defer t.lockMgr.Release(tx.txID, key)
-
-	t.mu.RLock() // 读取树结构时加读锁
-	leaf, mvccNode := t.findMVCCNodeInLeaf(key)
-	t.mu.RUnlock()
-
-	if leaf == nil { // 意味着树是空的或者key的路径不存在，理论上findLeaf应该能处理空树
-		// 如果树是空的，需要创建根，然后插入
-		// 这里简化，假设findMVCCNodeInLeaf能找到或指示在哪里创建
-		return errors.New("failed to find or create leaf path for key")
-	}
-
-	if mvccNode == nil {
-		mvccNode = &MVCCNode{key: key}
-		// 将新的 MVCCNode 插入到 B+ 树的叶子节点中
-		// 这需要写锁保护树结构 t.mu.Lock()
-		t.mu.Lock()
-		newLeaf, newMVCCNode := t.insertIntoLeafAndCreateMVCCNode(key, mvccNode) // 此方法需要处理分裂等
-		t.mu.Unlock()
-		if newLeaf == nil || newMVCCNode == nil {
-			return errors.New("failed to insert new MVCCNode into B+ tree")
-		}
-		mvccNode = newMVCCNode // 使用实际插入或找到的节点
-	}
-
-	// 添加新版本到MVCCNode
-	mvccNode.AddVersion(value, tx)
-
-	// 记录写操作到事务的write set
 	tx.recordWrite(key, value)
+
+	// 3. WAL日志记录
+	if t.wal != nil {
+		if err := t.wal.LogWrite(tx.txID, key, value); err != nil {
+			return fmt.Errorf("WAL log write failed: %w", err)
+		}
+	}
+
+	// 4. 查找或创建MVCC节点
+	leaf, mvccNode := t.findMVCCNodeInLeaf(key)
+	if mvccNode == nil {
+		var err error
+		leaf, mvccNode, err = t.createNewMVCCNode(key)
+		if err != nil {
+			return fmt.Errorf("create MVCC node failed: %w", err)
+		}
+	}
+
+	// 5. 添加新版本到MVCC节点
+	mvccNode.mu.Lock()
+	defer mvccNode.mu.Unlock()
+
+	newVersion := &Version{
+		value:   value,
+		txID:    tx.txID,
+		beginTS: tx.startTS,
+		prev:    mvccNode.versions,
+		endTS:   0, // 新版本默认为当前版本
+	}
+
+	// 更新旧版本的endTS
+	if mvccNode.versions != nil {
+		mvccNode.versions.endTS = tx.startTS
+	}
+
+	mvccNode.versions = newVersion
+
+	// 6. 处理节点分裂
+	if len(leaf.keys) >= t.order {
+		t.handleLeafSplit(leaf)
+	}
+
 	return nil
+}
+
+// 新增辅助方法
+func (t *MVCCBPlusTree) createNewMVCCNode(key Key) (*MVCCNode, *MVCCNode, error) {
+	newNode := &MVCCNode{
+		key:      key,
+		versions: nil,
+		isLeaf:   true,
+		keys:     []Key{key},
+		children: make([]interface{}, 0),
+	}
+
+	// 插入到B+树结构中
+	if err := t.insertNode(newNode); err != nil {
+		return nil, nil, err
+	}
+	return newNode, newNode, nil
+}
+
+func (t *MVCCBPlusTree) handleLeafSplit(leaf *MVCCNode) {
+	// 具体分裂逻辑（需要保持树结构一致性）
+	mid := len(leaf.keys) / 2
+	rightNode := &MVCCNode{
+		isLeaf:   true,
+		keys:     leaf.keys[mid:],
+		children: leaf.children[mid:],
+		next:     leaf.next,
+	}
+
+	// 更新原节点
+	leaf.keys = leaf.keys[:mid]
+	leaf.children = leaf.children[:mid]
+	leaf.next = rightNode
+
+	// 更新父节点（修复参数错误：promotedKey 应为 rightNode 的第一个键）
+	t.updateParent(leaf, rightNode, rightNode.keys[0])
+}
+
+// insertNode 将新节点插入到B+树中（处理叶子和内部节点插入）
+func (t *MVCCBPlusTree) insertNode(newNode *MVCCNode) error {
+	// 从根节点开始查找插入位置
+	current := t.root
+	for {
+		if current.isLeaf {
+			// 叶子节点插入逻辑
+			return t.insertIntoLeaf(current, newNode)
+		}
+		// 内部节点：找到子节点指针
+		idx := t.findInsertIndex(current.keys, newNode.keys[0])
+		child, ok := current.children[idx].(*MVCCNode)
+		if !ok {
+			return fmt.Errorf("invalid child type in internal node")
+		}
+		current = child
+	}
+}
+
+// insertIntoLeaf 在叶子节点中插入新节点（处理键和子节点的插入）
+func (t *MVCCBPlusTree) insertIntoLeaf(leaf *MVCCNode, newNode *MVCCNode) error {
+	// 找到插入位置
+	idx := t.findInsertIndex(leaf.keys, newNode.keys[0])
+
+	// 插入键和子节点
+	leaf.keys = append(leaf.keys[:idx], append([]Key{newNode.keys[0]}, leaf.keys[idx:]...)...)
+	leaf.children = append(leaf.children[:idx], append([]interface{}{newNode}, leaf.children[idx:]...)...)
+
+	// 检查是否需要分裂
+	if len(leaf.keys) > t.order-1 {
+		t.splitLeaf(leaf)
+	}
+	return nil
+}
+
+// findInsertIndex 找到键的插入位置
+func (t *MVCCBPlusTree) findInsertIndex(keys []Key, target Key) int {
+	idx := 0
+	for idx < len(keys) && compareKeys(target, keys[idx]) > 0 {
+		idx++
+	}
+	return idx
+}
+
+// updateParent 更新父节点的键和子节点指针（处理分裂后的父节点同步）
+func (t *MVCCBPlusTree) updateParent(oldChild, newChild *MVCCNode, promotedKey Key) {
+	parent := t.findParent(t.root, oldChild)
+	if parent == nil {
+		// 旧子节点是根节点，创建新根
+		newRoot := &MVCCNode{
+			isLeaf:   false,
+			keys:     []Key{promotedKey},
+			children: []interface{}{oldChild, newChild},
+		}
+		t.root = newRoot
+		return
+	}
+
+	// 找到旧子节点在父节点中的位置
+	idx := t.findChildIndex(parent, oldChild)
+	if idx == -1 {
+		return // 未找到父节点中的子节点（异常情况）
+	}
+
+	// 插入提升的键和新子节点
+	parent.keys = append(parent.keys[:idx], append([]Key{promotedKey}, parent.keys[idx:]...)...)
+	parent.children = append(parent.children[:idx+1], parent.children[idx:]...)
+	parent.children[idx+1] = newChild
+
+	// 检查父节点是否需要分裂
+	if len(parent.keys) > t.order-1 {
+		t.splitInternalNode(parent)
+	}
+}
+
+// findChildIndex 找到子节点在父节点中的索引
+func (t *MVCCBPlusTree) findChildIndex(parent *MVCCNode, child *MVCCNode) int {
+	for i, c := range parent.children {
+		if c == child {
+			return i
+		}
+	}
+	return -1
 }
 
 // Delete 带事务的删除 (通过插入一个nil值的版本来实现，即墓碑)
