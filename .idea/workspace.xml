@@ -5,12 +5,9 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/library/entity/vector.go" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/library/enum/vector_enum.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/db/verctor_db.go" beforeDir="false" afterPath="$PROJECT_DIR$/db/verctor_db.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/tree/wal_manager.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/tree/wal_manager.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/util/vector_func.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/util/vector_func.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/library/tree/mvcc_BPlus_tree.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/tree/mvcc_BPlus_tree.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

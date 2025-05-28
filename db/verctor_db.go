@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"seetaSearch/library/algorithm"
 	"seetaSearch/library/entity"
+	"seetaSearch/library/log"
 	"seetaSearch/library/tree"
 	"seetaSearch/library/util"
 	"sort"
@@ -103,7 +104,7 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 	}
 	if filePath != "" {
 		if err := db.LoadFromFile(); err != nil {
-			fmt.Printf("警告: 从 %s 加载向量数据库时出错: %v。将使用空数据库启动。\n", filePath, err)
+			log.Warning("警告: 从 %s 加载向量数据库时出错: %v。将使用空数据库启动。\n", filePath, err)
 			db.vectors = make(map[string][]float64)
 			db.clusters = make([]Cluster, 0)
 			db.indexed = false
@@ -143,7 +144,7 @@ func (db *VectorDB) AddDocument(id string, doc string, vectorizedType int) error
 		vectorized = EnhancedWordEmbeddingVectorized(embeddings)
 	case DefaultVectorized:
 	default:
-		panic("unhandled default case")
+		log.Fatal("unhandled default case")
 	}
 	// 将文档转换为向量
 	vector, err := vectorized(doc)
@@ -191,7 +192,7 @@ func (db *VectorDB) AddDocument(id string, doc string, vectorizedType int) error
 
 	if db.indexed {
 		db.indexed = false // 索引失效，需要重建
-		fmt.Println("提示: 添加新文档向量后，索引已失效，请重新调用 BuildIndex()。")
+		log.Info("提示: 添加新文档向量后，索引已失效，请重新调用 BuildIndex()。")
 	}
 	return nil
 }
@@ -205,7 +206,7 @@ func (db *VectorDB) Add(id string, vector []float64) {
 	if db.vectorDim == 0 && len(vector) > 0 {
 		db.vectorDim = len(vector)
 	} else if len(vector) != db.vectorDim && db.vectorDim > 0 {
-		panic(fmt.Sprintf("向量维度不匹配: 期望 %d, 实际 %d", db.vectorDim, len(vector)))
+		log.Fatal("向量维度不匹配: 期望 %d, 实际 %d", db.vectorDim, len(vector))
 	}
 
 	db.vectors[id] = vector
@@ -219,7 +220,7 @@ func (db *VectorDB) Add(id string, vector []float64) {
 
 	if db.indexed {
 		db.indexed = false // 索引失效，需要重建
-		fmt.Println("提示: 添加新向量后，索引已失效，请重新调用 BuildIndex()。")
+		log.Info("提示: 添加新向量后，索引已失效，请重新调用 BuildIndex()。")
 	}
 }
 
@@ -292,7 +293,7 @@ func (db *VectorDB) Update(id string, vector []float64) error {
 
 	if db.indexed {
 		db.indexed = false // 索引失效，需要重建
-		fmt.Println("提示: 更新向量后，索引已失效，请重新调用 BuildIndex()。")
+		log.Info("提示: 更新向量后，索引已失效，请重新调用 BuildIndex()。")
 	}
 	return nil
 }
@@ -331,7 +332,7 @@ func (db *VectorDB) Delete(id string) error {
 
 	if db.indexed {
 		db.indexed = false // 索引失效，需要重建
-		fmt.Println("提示: 删除向量后，索引已失效，请重新调用 BuildIndex()。")
+		log.Info("提示: 删除向量后，索引已失效，请重新调用 BuildIndex()。")
 	}
 	return nil
 }
@@ -482,7 +483,7 @@ func (db *VectorDB) BuildIndex(maxIterations int, tolerance float64) error {
 		return fmt.Errorf("向量数量 (%d) 少于簇数量 (%d)，无法构建有效索引", len(db.vectors), db.numClusters)
 	}
 
-	fmt.Println("开始构建索引...")
+	log.Info("开始构建索引...")
 	// 1. 收集所有向量及其ID
 	var allVectorsData []algorithm.Point
 	var vectorIDs []string // 保持与allVectorsData顺序一致的ID
@@ -510,7 +511,7 @@ func (db *VectorDB) BuildIndex(maxIterations int, tolerance float64) error {
 		if clusterIndex >= 0 && clusterIndex < db.numClusters { // 确保索引有效
 			db.clusters[clusterIndex].VectorIDs = append(db.clusters[clusterIndex].VectorIDs, vectorIDs[i])
 		} else {
-			fmt.Printf("警告: 向量 %s 被分配到无效的簇索引 %d\n", vectorIDs[i], clusterIndex)
+			log.Warning("警告: 向量 %s 被分配到无效的簇索引 %d\n", vectorIDs[i], clusterIndex)
 		}
 	}
 
@@ -520,7 +521,7 @@ func (db *VectorDB) BuildIndex(maxIterations int, tolerance float64) error {
 	db.queryCache = make(map[string]queryCache)
 	db.cacheMu.Unlock()
 
-	fmt.Printf("索引构建完成，共 %d 个簇。\n", db.numClusters)
+	log.Info("索引构建完成，共 %d 个簇。\n", db.numClusters)
 	return nil
 }
 
@@ -619,7 +620,7 @@ func (db *VectorDB) LoadFromFile() error {
 		}
 	}
 
-	fmt.Printf("从 %s 加载数据库成功。索引状态: %t, 簇数量: %d\n", db.filePath, db.indexed, db.numClusters)
+	log.Info("从 %s 加载数据库成功。索引状态: %t, 簇数量: %d\n", db.filePath, db.indexed, db.numClusters)
 	return nil
 }
 
@@ -971,7 +972,7 @@ func (db *VectorDB) lshSearch(query []float64, k int, numTables int) ([]string, 
 	lshTables, err := db.buildLSHIndex(numTables)
 	if err != nil {
 		// 如果构建LSH索引失败，回退到暴力搜索
-		fmt.Printf("构建LSH索引失败: %v，回退到暴力搜索\n", err)
+		log.Error("构建LSH索引失败: %v，回退到暴力搜索\n", err)
 		return db.bruteForceSearch(query, k)
 	}
 
@@ -1130,7 +1131,7 @@ func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]string, err
 	// 检查索引状态
 	if !db.indexed || len(db.clusters) == 0 || db.numClusters <= 0 {
 		// 如果索引未构建，回退到暴力搜索
-		fmt.Println("索引未构建，回退到暴力搜索")
+		log.Warning("索引未构建，回退到暴力搜索")
 		return db.bruteForceSearch(query, k)
 	}
 

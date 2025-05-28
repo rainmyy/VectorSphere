@@ -3,6 +3,7 @@ package tree
 import (
 	"errors"
 	"fmt"
+	"seetaSearch/library/log"
 	"sync"
 	"time"
 )
@@ -972,7 +973,7 @@ func (t *MVCCBPlusTree) rollbackTransaction(tx *Transaction) error {
 	}
 
 	// 记录回滚日志
-	fmt.Printf("Transaction %d rolled back\n", tx.txID)
+	log.Info("Transaction %d rolled back\n", tx.txID)
 	return nil
 }
 
