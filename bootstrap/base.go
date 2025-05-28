@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"net/http"
 	"seetaSearch/library/log"
 	"seetaSearch/library/res"
@@ -25,6 +28,9 @@ type AppServer struct {
 	funcRegister map[string]func()
 	server       *server.IndexServer
 	sentinel     *server.Sentinel
+	etcdCli      *clientv3.Client
+	grpcConn     *grpc.ClientConn
+	masterAddr   string
 }
 
 const (
@@ -61,7 +67,29 @@ func (app *AppServer) ReadServiceConf() (error, *ServiceConfig) {
 
 	return nil, &cfg
 }
-
+func (app *AppServer) RegisterToEtcd(serviceName, addr string) error {
+	key := fmt.Sprintf("/seetasearch/services/%s/%s", serviceName, addr)
+	_, err := app.etcdCli.Put(context.Background(), key, addr)
+	return err
+}
+func (app *AppServer) DiscoverMaster(serviceName string) (string, error) {
+	resp, err := app.etcdCli.Get(context.Background(), fmt.Sprintf("/seetasearch/services/%s/", serviceName), clientv3.WithPrefix())
+	if err != nil {
+		return "", err
+	}
+	for _, kv := range resp.Kvs {
+		return string(kv.Value), nil // 取第一个主服务地址
+	}
+	return "", fmt.Errorf("no master found")
+}
+func (app *AppServer) ConnectToMaster(masterAddr string) error {
+	conn, err := grpc.Dial(masterAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return err
+	}
+	app.grpcConn = conn
+	return nil
+}
 func (app *AppServer) RegisterService() {
 	err, config := app.ReadServiceConf()
 	if err != nil {
@@ -288,7 +316,7 @@ func (app *AppServer) ListenAPI() {
 		}
 		onFlag := uint64(0)
 		offFlag := uint64(0)
-		orFlags := []uint64{}
+		var orFlags []uint64
 		s := app.sentinel
 		err, result := s.Search(query, onFlag, offFlag, orFlags)
 		if err != nil {
@@ -299,7 +327,27 @@ func (app *AppServer) ListenAPI() {
 			log.Error("encode json failed, err:%v\n", err)
 		}
 	})
-
+	//mux.HandleFunc("/searchs", func(w http.ResponseWriter, r *http.Request) {
+	//	query := &messages.TermQuery{}
+	//	if err := json.NewDecoder(r.Body).Decode(query); err != nil {
+	//		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+	//		return
+	//	}
+	//	// 通过gRPC转发到主服务
+	//	if app.grpcConn == nil {
+	//		http.Error(w, "gRPC connection not established", http.StatusInternalServerError)
+	//		return
+	//	}
+	//	grpcClient := messages.NewSearchServiceClient(app.grpcConn)
+	//	resp, err := grpcClient.Search(context.Background(), query)
+	//	if err != nil {
+	//		http.Error(w, err.Error(), http.StatusInternalServerError)
+	//		return
+	//	}
+	//	if err := json.NewEncoder(w).Encode(resp); err != nil {
+	//		log.Error("encode json failed, err:%v\n", err)
+	//	}
+	//})
 	if err := http.ListenAndServe(serviceAddr, mux); err != nil {
 		log.Info("Master节点 %s 监听 API 请求失败: %v\n", serviceName, err)
 	}

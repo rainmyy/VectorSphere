@@ -146,7 +146,7 @@ func (tm *TransactionManager) Abort(tx *Transaction) {
 	}
 
 	// 回滚所有修改
-	tm.rollback(tx)
+	tm.Rollback(tx)
 
 	tx.status = TxAborted
 
@@ -209,7 +209,7 @@ func (tm *TransactionManager) writeCommitLog(tx *Transaction) error {
 	return nil
 }
 
-func (tm *TransactionManager) rollback(tx *Transaction) {
+func (tm *TransactionManager) Rollback(tx *Transaction) {
 	logFile, err := os.OpenFile("rollback_log.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		fmt.Println("Error opening rollback log file:", err)

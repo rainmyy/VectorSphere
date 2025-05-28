@@ -31,14 +31,20 @@ func NewSearchService(vectorDBPath string, numClusters int, invertedIndexOrder i
 // AddDocument 添加文档到搜索系统
 func (ss *SearchService) AddDocument(doc messages.Document, vectorizedType int) error {
 	// 将文档添加到向量数据库
-	err := ss.VectorDB.AddDocument(doc.Id, doc.Content, vectorizedType)
+	err := ss.VectorDB.AddDocument(doc.Id, string(doc.Bytes), vectorizedType)
 	if err != nil {
 		return err
 	}
 
 	// 开启事务
 	tx := ss.TxMgr.Begin(bplus.Serializable)
-	defer ss.TxMgr.Commit(tx)
+	defer func() {
+		if err != nil {
+			ss.TxMgr.Rollback(tx)
+		} else {
+			ss.TxMgr.Commit(tx)
+		}
+	}()
 
 	// 将文档添加到倒排索引
 	err = ss.InvertedIndex.Add(tx, doc)
@@ -78,7 +84,7 @@ func (ss *SearchService) DeleteDocument(docId string, scoreId int64, keyword *me
 // Search 支持表达式查询的搜索接口
 func (ss *SearchService) Search(query *messages.TermQuery, vectorizedType int, k int, probe int, onFlag uint64, offFlag uint64, orFlags []uint64) ([]string, error) {
 	// 使用向量搜索获取候选文件 ID
-	candidateIDs, err := ss.VectorDB.FileSystemSearch(query.Content, vectorizedType, k, probe)
+	candidateIDs, err := ss.VectorDB.FileSystemSearch(query.Keyword.ToString(), vectorizedType, k, probe)
 	if err != nil {
 		return nil, err
 	}
