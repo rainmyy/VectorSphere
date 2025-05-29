@@ -2,10 +2,13 @@ package search
 
 import (
 	"fmt"
+	"regexp"
 	"seetaSearch/db"
 	"seetaSearch/index"
 	tree "seetaSearch/library/tree"
 	"seetaSearch/messages"
+	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -294,4 +297,116 @@ func (mts *MultiTableSearchService) Search(tableName string, query *messages.Ter
 	// TODO: Implement more sophisticated result merging and scoring based on both indexResults and candidateIDs (with scores)
 
 	return finalResults, nil
+}
+
+// ExecuteQuery executes a SQL-like query against the specified table.
+// This method now includes basic parsing, query planning, and result processing.
+// Supported format: SELECT <fields> FROM <tableName> WHERE keyword = '...' [AND vector_query = '...'] [ORDER BY score DESC] [LIMIT ...] [OFFSET ...]
+func (mts *MultiTableSearchService) ExecuteQuery(query string) ([]string, error) {
+	// 1. 查询解析器
+	// 定义正则表达式来匹配查询的不同部分
+	// 简化：只支持 SELECT ... FROM ... WHERE ... LIMIT ... OFFSET ...
+	re := regexp.MustCompile(`SELECT\s+(.+?)\s+FROM\s+(\w+)(?:\s+WHERE\s+(.+?))?(?:\s+ORDER\s+BY\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+LIMIT\s+(\d+))?(?:\s+OFFSET\s+(\d+))?`)
+	matches := re.FindStringSubmatch(query)
+
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("invalid query format: %s", query)
+	}
+
+	// fields := strings.TrimSpace(matches[1]) // Currently not used, assuming we return doc IDs
+	tableName := strings.TrimSpace(matches[2])
+	whereClause := strings.TrimSpace(matches[3])
+	// orderByField := strings.TrimSpace(matches[4]) // Assuming always score for now
+	// orderByDirection := strings.TrimSpace(matches[5]) // Assuming always DESC for now
+	limitStr := strings.TrimSpace(matches[6])
+	offsetStr := strings.TrimSpace(matches[7])
+
+	limit := -1 // -1 means no limit
+	if limitStr != "" {
+		l, err := strconv.Atoi(limitStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid LIMIT value: %w", err)
+		}
+		limit = l
+	}
+
+	offset := 0 // 0 means no offset
+	if offsetStr != "" {
+		o, err := strconv.Atoi(offsetStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid OFFSET value: %w", err)
+		}
+		offset = o
+	}
+
+	// 解析 WHERE 子句
+	var keywordQuery string
+	var vectorQueryText string
+	// var useANN bool = false // Default to false, can be set by query hints or config
+
+	if whereClause != "" {
+		// 匹配 keyword = '...' 和 vector_query = '...'
+		keywordRe := regexp.MustCompile(`keyword\s*=\s*'([^']+)'`)
+		keywordMatch := keywordRe.FindStringSubmatch(whereClause)
+		if len(keywordMatch) > 1 {
+			keywordQuery = keywordMatch[1]
+		}
+
+		vectorRe := regexp.MustCompile(`vector_query\s*=\s*'([^']+)'`)
+		vectorMatch := vectorRe.FindStringSubmatch(whereClause)
+		if len(vectorMatch) > 1 {
+			vectorQueryText = vectorMatch[1]
+		}
+
+		// TODO: Parse other conditions like onFlag, offFlag, orFlags, useANN from WHERE clause
+		// For simplicity, these are hardcoded or default for now.
+	}
+
+	// 2. 查询计划器/执行器
+	// 构建 TermQuery
+	termQuery := &messages.TermQuery{
+		Keyword: &messages.KeyWord{Word: keywordQuery},
+		// Other fields of TermQuery can be populated from parsed query
+	}
+
+	// 调用底层的 Search 方法
+	// 假设 vectorizedType, k, probe, onFlag, offFlag, orFlags, useANN 都有默认值或从其他地方获取
+	// 这里为了演示，我们假设一些默认值或从 vectorQueryText 是否存在来推断 useANN
+	// 实际应用中，这些参数应该从查询或配置中获取
+
+	// If vectorQueryText is provided, assume we want to use vector search and potentially ANN
+	currentUseANN := (vectorQueryText != "") // A simple heuristic
+
+	// For now, k and probe are hardcoded, should be configurable or part of query
+	// Also, vectorizedType, onFlag, offFlag, orFlags are not parsed from query yet.
+	// You would extend the parser to handle these.
+	searchResults, err := mts.Search(
+		tableName,
+		termQuery,
+		0,             // vectorizedType: default or parsed
+		100,           // k: default or parsed
+		10,            // probe: default or parsed
+		0,             // onFlag: default or parsed
+		0,             // offFlag: default or parsed
+		nil,           // orFlags: default or parsed
+		currentUseANN, // useANN: based on vector_query presence
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("error executing search for table '%s': %w", tableName, err)
+	}
+
+	// 3. 结果处理 (LIMIT 和 OFFSET)
+	start := offset
+	end := offset + limit
+
+	if limit == -1 || end > len(searchResults) {
+		end = len(searchResults)
+	}
+
+	if start > len(searchResults) {
+		return []string{}, nil // Offset is beyond results, return empty
+	}
+
+	return searchResults[start:end], nil
 }

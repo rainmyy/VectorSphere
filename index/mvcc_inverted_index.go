@@ -57,6 +57,10 @@ func GenerateScoreId(doc messages.Document) int64 {
 	return scoreId
 }
 
+func (idx *MVCCBPlusTreeInvertedIndex) Close() {
+
+}
+
 // Add 插入文档到倒排索引
 func (idx *MVCCBPlusTreeInvertedIndex) Add(tx *tree.Transaction, doc messages.Document) error {
 	idx.mu.Lock() // Consider lock granularity; this locks the whole Add operation
