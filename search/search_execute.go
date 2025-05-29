@@ -2,9 +2,10 @@ package search
 
 import (
 	"fmt"
+	tree "seetaSearch/library/tree"
 	"seetaSearch/messages"
 	"sort"
-	// "strings" // 可能会用到
+	"strconv"
 )
 
 // SearchResultItem 定义了包含ID和可能的其他字段（如分数）的搜索结果项
@@ -12,6 +13,12 @@ type SearchResultItem struct {
 	ID     string
 	Fields map[string]interface{} // 用于存储 SELECT 出来的字段值
 	Score  float64                // 用于排序
+}
+
+// SelectField 结构体用于表示查询中的选择字段
+type SelectField struct {
+	FieldName string
+	Alias     string // 可选的字段别名
 }
 
 // SearchExecutor 结构体负责执行解析后的查询
@@ -44,21 +51,39 @@ func (se *SearchExecutor) ExecuteSearchPlan(parsedQuery *ParsedQuery) ([]SearchR
 	useANN := parsedQuery.UseANN
 	k := parsedQuery.K
 
+	// 将 Fields 转换为 SelectFields
+	var selectFields []SelectField
+	for _, field := range parsedQuery.Fields {
+		selectFields = append(selectFields, SelectField{
+			FieldName: field,
+			Alias:     field, // 默认别名与字段名相同
+		})
+	}
+
 	// 1. 根据 ParsedQuery.Filters 构建更复杂的过滤条件 (onFlag, offFlag, orFlags)
 	var onFlag, offFlag uint64
 	var orFlags []uint64
-	// TODO: 实现从 parsedQuery.Filters 到 onFlag, offFlag, orFlags 的转换逻辑
-	// 这部分需要详细定义 FilterCondition 的结构以及如何映射到这些位掩码标志
-	// 例如：
-	// for _, filter := range parsedQuery.Filters {
-	//     if filter.Operator == "=" && filter.Field == "status" && filter.Value == "active" {
-	//         onFlag |= (1 << 0) // 假设 status active 是第0位
-	//     } else if filter.Operator == "=" && filter.Field == "category" && filter.Value == "A" {
-	//         orFlags = append(orFlags, (1 << 1)) // 假设 category A 是第1位
-	//     } else if filter.Operator == "!=" && filter.Field == "type" && filter.Value == "internal" {
-	//         offFlag |= (1 << 2) // 假设 type internal 是第2位
-	//     }
-	// }
+
+	// 实现从 parsedQuery.Filters 到 onFlag, offFlag, orFlags 的转换逻辑
+	// 这里假设有一个映射关系，将字段和值映射到位掩码
+	for _, filter := range parsedQuery.Filters {
+		// 这里需要根据实际的字段和值定义映射规则
+		// 例如：status=active 映射到第0位，category=A 映射到第1位，等等
+
+		// 这里只是示例，实际实现需要根据业务逻辑定义
+		bitPosition := getBitPositionForField(filter.Field, filter.Value)
+		if bitPosition >= 0 {
+			switch filter.Operator {
+			case "=":
+				onFlag |= 1 << uint(bitPosition)
+			case "!=":
+				offFlag |= 1 << uint(bitPosition)
+			case "IN":
+				// 对于 IN 操作符，可以添加到 orFlags
+				orFlags = append(orFlags, 1<<uint(bitPosition))
+			}
+		}
+	}
 
 	// 2. 决策调用策略
 	var invertedIndexResults []string
@@ -71,22 +96,34 @@ func (se *SearchExecutor) ExecuteSearchPlan(parsedQuery *ParsedQuery) ([]SearchR
 	// - 如果有 vectorQueryText，则调用向量搜索
 	// - 如果两者都有，则都调用并合并
 	callInvertedIndex := keywordQuery != ""
-	callVectorSearch := vectorQueryText != "" // 或者根据 useANN 和 k > 0
+	callVectorSearch := vectorQueryText != "" && k > 0
+
+	// 获取表实例
+	table, err := se.service.GetTable(tableName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get table '%s': %w", tableName, err)
+	}
+
+	// 开启事务
+	tx := se.service.TxMgr.Begin(tree.Serializable)
+	defer se.service.TxMgr.Commit(tx)
 
 	if callInvertedIndex {
+		// 创建 TermQuery
 		termQuery := &messages.TermQuery{
 			Keyword: &messages.KeyWord{Word: keywordQuery},
 		}
-		invertedIndexResults, err = se.service.Search(
-			tableName,
+
+		// 直接使用 InvertedIndex 的 Search 方法
+		invertedIndexResults, err = table.InvertedIndex.Search(
+			tx,
 			termQuery,
-			0,  // vectorizedType (示例，可能需要从 parsedQuery 获取)
-			k,  // k (可能主要用于向量搜索，但 Search 接口需要)
-			10, // probe (示例)
 			onFlag,
 			offFlag,
 			orFlags,
-			false, // useANN for inverted index part is usually false, vector part handles it
+			"",    // 不使用向量查询文本
+			0,     // 不使用 kNearest
+			false, // 不使用 ANN
 		)
 		if err != nil {
 			return nil, fmt.Errorf("inverted index search failed: %w", err)
@@ -94,29 +131,19 @@ func (se *SearchExecutor) ExecuteSearchPlan(parsedQuery *ParsedQuery) ([]SearchR
 	}
 
 	if callVectorSearch {
-		// 假设 Search 方法内部能处理 vectorQueryText，或者需要一个专门的向量搜索接口
-		// MultiTableSearchService.Search 似乎混合了两者，需要确保其行为符合预期
-		// 这里我们假设 Search 方法能利用 vectorQueryText (如果 useANN 为 true)
-		// 或者，我们可能需要一个独立的 vector search 方法调用
-		// For simplicity, let's assume Search handles it if useANN is true and keyword is vector text
-		// This part might need significant refinement based on actual service capabilities.
+		// 直接使用 InvertedIndex 的 Search 方法进行向量搜索
+		// 创建一个空的 TermQuery，因为我们只关心向量搜索部分
+		emptyTermQuery := &messages.TermQuery{}
 
-		// 模拟向量搜索调用 (实际应调用服务)
-		// 如果 MultiTableSearchService.Search 能够根据 useANN 和 keyword(作为vector query) 进行向量搜索，则可以复用
-		// 否则，需要一个类似 table.VectorDB.Search(...) 的调用
-		termQueryForVector := &messages.TermQuery{
-			Keyword: &messages.KeyWord{Word: vectorQueryText}, // 使用 vectorQueryText
-		}
-		vectorResults, err = se.service.Search(
-			tableName,
-			termQueryForVector,
-			0, // vectorizedType
-			k,
-			10,     // probe
-			0,      // onFlag for vector search might be different or not applicable
-			0,      // offFlag
-			nil,    // orFlags
-			useANN, // Crucial for vector search
+		vectorResults, err = table.InvertedIndex.Search(
+			tx,
+			emptyTermQuery,
+			0,               // 向量搜索不使用 onFlag
+			0,               // 向量搜索不使用 offFlag
+			nil,             // 向量搜索不使用 orFlags
+			vectorQueryText, // 使用向量查询文本
+			k,               // 使用 kNearest
+			useANN,          // 使用 ANN
 		)
 		if err != nil {
 			return nil, fmt.Errorf("vector search failed: %w", err)
@@ -135,6 +162,18 @@ func (se *SearchExecutor) ExecuteSearchPlan(parsedQuery *ParsedQuery) ([]SearchR
 				finalDocIDs = append(finalDocIDs, id)
 			}
 		}
+
+		// 如果交集为空但两个结果集都不为空，可能是因为过滤条件太严格
+		// 在这种情况下，可以考虑放宽条件或使用其中一个结果集
+		if len(finalDocIDs) == 0 {
+			if len(invertedIndexResults) > 0 {
+				// 策略1：使用倒排索引结果（更精确的关键词匹配）
+				finalDocIDs = invertedIndexResults
+			} else if len(vectorResults) > 0 {
+				// 策略2：使用向量搜索结果（更好的语义相似性）
+				finalDocIDs = vectorResults
+			}
+		}
 	} else if callInvertedIndex {
 		finalDocIDs = invertedIndexResults
 	} else if callVectorSearch {
@@ -145,37 +184,39 @@ func (se *SearchExecutor) ExecuteSearchPlan(parsedQuery *ParsedQuery) ([]SearchR
 	}
 
 	// 3. 处理 SELECT 字段 (如果不仅仅是返回文档 ID)
-	// 这需要从数据库或其他存储中获取每个文档的实际字段值
-	// 当前 MultiTableSearchService.Search 只返回 []string (文档ID)
-	// 我们需要扩展它或添加新方法来获取文档的详细信息
 	processedResults := make([]SearchResultItem, 0, len(finalDocIDs))
 	for _, id := range finalDocIDs {
-		item := SearchResultItem{ID: id, Fields: make(map[string]interface{}), Score: 0.0 /* TODO: Get actual score */}
-		if parsedQuery.SelectFields != nil && len(parsedQuery.SelectFields) > 0 {
-			// 检查是否是 SELECT *
-			isSelectAll := false
-			for _, sf := range parsedQuery.SelectFields {
-				if sf.FieldName == "*" {
-					isSelectAll = true
-					break
-				}
-			}
+		item := SearchResultItem{ID: id, Fields: make(map[string]interface{}), Score: 0.0}
 
-			// TODO: 获取文档的实际数据
-			// docData, err := se.service.GetDocumentDetails(tableName, id, parsedQuery.SelectFields, isSelectAll)
-			// if err != nil { /* handle error, maybe skip this doc */ continue }
-			// item.Fields = docData.Fields
-			// item.Score = docData.Score // 如果服务能返回分数
-			// 示例：填充假数据
-			if isSelectAll {
-				item.Fields["title"] = "Sample Title for " + id
-				item.Fields["content"] = "Sample content..."
-			} else {
-				for _, sf := range parsedQuery.SelectFields {
-					item.Fields[sf.FieldName] = "Value for " + sf.FieldName
-				}
+		// 检查是否是 SELECT *
+		isSelectAll := false
+		for _, sf := range selectFields {
+			if sf.FieldName == "*" {
+				isSelectAll = true
+				break
 			}
 		}
+
+		// TODO: 获取文档的实际数据
+		// 这里需要实现从存储中获取文档详细信息的逻辑
+		// 可以添加一个 GetDocumentDetails 方法到 MultiTableSearchService
+		// docData, err := se.service.GetDocumentDetails(tableName, id, selectFields, isSelectAll)
+		// if err != nil { continue }
+		// item.Fields = docData.Fields
+		// item.Score = docData.Score
+
+		// 示例：填充假数据
+		if isSelectAll {
+			item.Fields["title"] = "Sample Title for " + id
+			item.Fields["content"] = "Sample content..."
+			item.Score = 0.95 // 示例分数
+		} else {
+			for _, sf := range selectFields {
+				item.Fields[sf.FieldName] = "Value for " + sf.FieldName
+			}
+			item.Score = 0.85 // 示例分数
+		}
+
 		processedResults = append(processedResults, item)
 	}
 
@@ -202,7 +243,7 @@ func (se *SearchExecutor) ExecuteSearchPlan(parsedQuery *ParsedQuery) ([]SearchR
 				return orderByDirection == "ASC"
 			} // j 没有，i 有。升序则 i 在前，降序则 j 在前
 
-			// 比较逻辑 (简化版，需要根据字段类型进行转换和比较)
+			// 比较逻辑 (完善版，根据字段类型进行转换和比较)
 			switch vI := valI.(type) {
 			case string:
 				vJ, ok := valJ.(string)
@@ -213,19 +254,125 @@ func (se *SearchExecutor) ExecuteSearchPlan(parsedQuery *ParsedQuery) ([]SearchR
 					return vI < vJ
 				}
 				return vI > vJ
-			case int, int32, int64:
-				// TODO: Convert to int64 and compare
-			case float32, float64:
-				// TODO: Convert to float64 and compare
-				// Example for score (float64)
-				fI, okfI := valI.(float64)
-				fJ, okfJ := valJ.(float64)
-				if okfI && okfJ {
-					if orderByDirection == "ASC" {
-						return fI < fJ
+			case int:
+				// 转换为 int64 进行比较
+				iI := int64(vI)
+				var iJ int64
+				switch vJ := valJ.(type) {
+				case int:
+					iJ = int64(vJ)
+				case int32:
+					iJ = int64(vJ)
+				case int64:
+					iJ = vJ
+				case string:
+					// 尝试将字符串转换为整数
+					if v, err := strconv.ParseInt(vJ, 10, 64); err == nil {
+						iJ = v
+					} else {
+						return false // 转换失败
 					}
-					return fI > fJ
+				default:
+					return false // 类型不匹配
 				}
+				if orderByDirection == "ASC" {
+					return iI < iJ
+				}
+				return iI > iJ
+			case int32:
+				// 转换为 int64 进行比较
+				iI := int64(vI)
+				var iJ int64
+				switch vJ := valJ.(type) {
+				case int:
+					iJ = int64(vJ)
+				case int32:
+					iJ = int64(vJ)
+				case int64:
+					iJ = vJ
+				case string:
+					// 尝试将字符串转换为整数
+					if v, err := strconv.ParseInt(vJ, 10, 64); err == nil {
+						iJ = v
+					} else {
+						return false // 转换失败
+					}
+				default:
+					return false // 类型不匹配
+				}
+				if orderByDirection == "ASC" {
+					return iI < iJ
+				}
+				return iI > iJ
+			case int64:
+				// 直接使用 int64 进行比较
+				var iJ int64
+				switch vJ := valJ.(type) {
+				case int:
+					iJ = int64(vJ)
+				case int32:
+					iJ = int64(vJ)
+				case int64:
+					iJ = vJ
+				case string:
+					// 尝试将字符串转换为整数
+					if v, err := strconv.ParseInt(vJ, 10, 64); err == nil {
+						iJ = v
+					} else {
+						return false // 转换失败
+					}
+				default:
+					return false // 类型不匹配
+				}
+				if orderByDirection == "ASC" {
+					return vI < iJ
+				}
+				return vI > iJ
+			case float32:
+				// 转换为 float64 进行比较
+				fI := float64(vI)
+				var fJ float64
+				switch vJ := valJ.(type) {
+				case float32:
+					fJ = float64(vJ)
+				case float64:
+					fJ = vJ
+				case string:
+					// 尝试将字符串转换为浮点数
+					if v, err := strconv.ParseFloat(vJ, 64); err == nil {
+						fJ = v
+					} else {
+						return false // 转换失败
+					}
+				default:
+					return false // 类型不匹配
+				}
+				if orderByDirection == "ASC" {
+					return fI < fJ
+				}
+				return fI > fJ
+			case float64:
+				// 直接使用 float64 进行比较
+				var fJ float64
+				switch vJ := valJ.(type) {
+				case float32:
+					fJ = float64(vJ)
+				case float64:
+					fJ = vJ
+				case string:
+					// 尝试将字符串转换为浮点数
+					if v, err := strconv.ParseFloat(vJ, 64); err == nil {
+						fJ = v
+					} else {
+						return false // 转换失败
+					}
+				default:
+					return false // 类型不匹配
+				}
+				if orderByDirection == "ASC" {
+					return vI < fJ
+				}
+				return vI > fJ
 			}
 			return false // 默认不排序或类型不支持
 		})
@@ -235,7 +382,7 @@ func (se *SearchExecutor) ExecuteSearchPlan(parsedQuery *ParsedQuery) ([]SearchR
 	start := int(offset)
 	end := int(offset + limit)
 
-	if limit == 0 { // limit 0 可能表示不限制，或者需要根据具体语义调整
+	if limit == 0 { // limit 0 表示不限制
 		end = len(processedResults)
 	} else if limit < 0 { // limit < 0 通常表示不限制
 		end = len(processedResults)
@@ -256,4 +403,46 @@ func (se *SearchExecutor) ExecuteSearchPlan(parsedQuery *ParsedQuery) ([]SearchR
 	}
 
 	return processedResults[start:end], nil
+}
+
+// getBitPositionForField 根据字段名和值获取对应的位位置
+// 这个函数需要根据实际业务逻辑实现
+func getBitPositionForField(field string, value interface{}) int {
+	// 这里只是示例，实际实现需要根据业务逻辑定义
+	// 例如：可以使用一个映射表将字段名和值映射到位位置
+
+	// 示例映射逻辑
+	switch field {
+	case "status":
+		if strValue, ok := value.(string); ok {
+			switch strValue {
+			case "active":
+				return 0
+			case "inactive":
+				return 1
+			}
+		}
+	case "category":
+		if strValue, ok := value.(string); ok {
+			switch strValue {
+			case "A":
+				return 2
+			case "B":
+				return 3
+			case "C":
+				return 4
+			}
+		}
+	case "type":
+		if strValue, ok := value.(string); ok {
+			switch strValue {
+			case "internal":
+				return 5
+			case "external":
+				return 6
+			}
+		}
+	}
+
+	return -1 // 表示没有找到对应的位位置
 }
