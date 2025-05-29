@@ -7,6 +7,7 @@ import (
 	"text/scanner"
 	"unicode"
 )
+
 /*
 - Lexer ( nextToken ) :
 - 重写了 nextToken 以手动处理字符流，而不是完全依赖 text/scanner 的 Scan() 。这能更好地控制多字符操作符（如 >= , <= , != ）和错误处理。
@@ -49,7 +50,6 @@ import (
 // TokenType 定义了词法单元的类型
 type TokenType int
 
-// ... (TokenType constants remain the same)
 const (
 	TokenEOF TokenType = iota
 	TokenError
@@ -82,7 +82,23 @@ var tokenKeywords = map[string]TokenType{
 	"false":  TokenKeyword,
 	"null":   TokenKeyword,
 }
+// GroupedExpression for ( expression )
+type GroupedExpression struct {
+	Token       Token // The '(' token
+	SubExpression Expression
+}
 
+func (ge *GroupedExpression) expressionNode()      {}
+func (ge *GroupedExpression) TokenLiteral() string { return ge.Token.Literal }
+func (ge *GroupedExpression) String() string {
+	var out strings.Builder
+	out.WriteString("(")
+	if ge.SubExpression != nil {
+		out.WriteString(ge.SubExpression.String())
+	}
+	out.WriteString(")")
+	return out.String()
+}
 // Token 结构体表示一个词法单元
 type Token struct {
 	Type    TokenType
@@ -322,7 +338,6 @@ func isLetter(ch byte) bool {
 	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch == '_'
 }
 
-// --- AST Node Definitions (largely the same, with minor additions/clarifications) ---
 type ASTNode interface {
 	TokenLiteral() string
 	String() string
@@ -529,17 +544,17 @@ func NewParser(l *Lexer) *Parser {
 	p.registerPrefix(TokenNumber, p.parseNumberLiteral)
 	p.registerPrefix(TokenString, p.parseStringLiteral)
 	p.registerPrefix(TokenStar, p.parseStarExpression)
-	p.registerPrefix(TokenKeyword, p.parseKeywordLiteral) // For true, false, null, AND, OR
-	p.registerPrefix(TokenLParen, p.parseGroupedExpression)
+	p.registerPrefix(TokenKeyword, p.parseKeywordLiteral) // For true, false, null
+	p.registerPrefix(TokenLParen, p.parseGroupedExpression) // Register for '('
 
 	p.registerInfix(TokenOperator, p.parseInfixExpression) // For =, >, <, etc.
-	// Register AND and OR specifically as infix operators
-	p.registerInfix(TokenKeyword, p.parseInfixExpression) // AND, OR will be handled here by checking curToken.Literal
+	p.registerInfix(TokenKeyword, p.parseInfixExpression)  // For AND, OR
 
 	p.nextToken() // Set curToken
 	p.nextToken() // Set peekToken
 	return p
 }
+
 
 func (p *Parser) Errors() []string {
 	return p.errors
@@ -759,12 +774,19 @@ func (p *Parser) parseKeywordLiteral() Expression {
 }
 
 func (p *Parser) parseGroupedExpression() Expression {
-	p.nextToken() // Consume '('
-	exp := p.parseExpression(LOWEST)
-	if !p.expectPeek(TokenRParen) {
+	startToken := p.curToken // Keep the '(' token for the AST node
+	p.nextToken()          // Consume '('
+
+	subExpression := p.parseExpression(LOWEST)
+
+	if !p.expect(TokenRParen) { // Expect and consume ')'
 		return nil
 	}
-	return exp
+
+	return &GroupedExpression{
+		Token:       startToken,
+		SubExpression: subExpression,
+	}
 }
 
 func (p *Parser) parseInfixExpression(left Expression) Expression {
@@ -788,7 +810,7 @@ func (p *Parser) parseOrderByClause() *OrderByClause {
 	}
 	p.nextToken()                      // Consume BY
 	p.nextToken()                      // Consume field identifier
-	clause.Field = p.parseIdentifier() // Simplified, could be more complex expression
+	clause.Field = p.parseIdentifier() // Simplified could be more complex expression
 
 	clause.Direction = "ASC" // Default
 	if p.peekTokenIsKeyword("asc") || p.peekTokenIsKeyword("desc") {
@@ -956,22 +978,13 @@ func ConvertASTToParsedQuery(stmt *SelectStatement) (*ParsedQuery, error) {
 	return pq, nil
 }
 
-// extractConditions recursively extracts filter conditions, keyword queries, and vector queries
-// from the WHERE clause AST.
-// This is a simplified version and needs to be more robust for complex boolean logic.
+// extractConditions recursively extracts filter conditions...
 func extractConditions(expr Expression) (filters []FilterCondition, keywordQuery string, vectorQuery string, err error) {
 	switch e := expr.(type) {
 	case *BinaryExpression:
-		// Handle simple binary expressions like 'field = value', 'field > value'
-		// Also handle 'AND' and 'OR' by recursively calling extractConditions
-		// For now, we'll simplify and assume AND for multiple conditions at the same level.
-		// A proper implementation needs to build a tree or a more structured representation.
-
+		// ... (BinaryExpression handling remains the same, but will benefit from GroupedExpression)
 		leftIdent, leftIsIdent := e.Left.(*Identifier)
-		// rightLiteral, rightIsLiteral := e.Right.(*LiteralExpression) // Or Identifier for field-to-field comparison
 
-		// Simplistic check for keyword/vector query (e.g., content MATCH 'search terms' or embedding SIMILAR 'vector text')
-		// This needs a more defined syntax.
 		if leftIsIdent && strings.ToLower(leftIdent.Value) == "_keyword_" && e.Operator == "=" {
 			if lit, ok := e.Right.(*LiteralExpression); ok {
 				if strVal, okStr := lit.Value.(string); okStr {
@@ -987,9 +1000,6 @@ func extractConditions(expr Expression) (filters []FilterCondition, keywordQuery
 				}
 			}
 		} else if strings.ToUpper(e.Operator) == "AND" || strings.ToUpper(e.Operator) == "OR" {
-			// Recursive call for AND/OR. This part needs careful thought on how to combine results.
-			// For now, we'll just collect all conditions and assume they are ANDed at the top level.
-			// A proper solution would build a tree of conditions.
 			lFilters, lKeyword, lVector, lErr := extractConditions(e.Left)
 			rFilters, rKeyword, rVector, rErr := extractConditions(e.Right)
 			if lErr != nil {
@@ -1006,13 +1016,12 @@ func extractConditions(expr Expression) (filters []FilterCondition, keywordQuery
 			if rVector != "" { vectorQuery = rVector } // This overwrites
 			return
 		} else if leftIsIdent {
-			// Standard filter condition: field <op> value
 			fc := FilterCondition{Field: leftIdent.Value, Operator: e.Operator}
 			switch val := e.Right.(type) {
 			case *LiteralExpression:
 				fc.Value = val.Value
-			case *Identifier: // field = other_field (less common for basic filters, but possible)
-				fc.Value = val.Value // Or treat as a special type of value
+			case *Identifier:
+				fc.Value = val.Value
 			default:
 				return nil, "", "", fmt.Errorf("unsupported right-hand side type in binary expression: %T", e.Right)
 			}
@@ -1027,28 +1036,28 @@ func extractConditions(expr Expression) (filters []FilterCondition, keywordQuery
 		return
 	case *LiteralExpression: // e.g. WHERE true
 		if boolVal, ok := e.Value.(bool); ok && boolVal {
-			// This means the condition is just 'true', effectively no filter from this part.
 			return
 		} else if ok && !boolVal {
-			// This means 'false', so the query should return no results. How to signal this?
-			// For now, maybe add a special filter or return an error/specific state.
 			return nil, "", "", fmt.Errorf("WHERE clause evaluates to constant false")
 		}
 		return nil, "", "", fmt.Errorf("unsupported literal expression in WHERE clause: %v", e.Value)
 
-	// TODO: Handle UnaryExpression (e.g., NOT condition)
-	// TODO: Handle GroupedExpression (parentheses) by recursively calling extractConditions on the inner expression.
-	//case *GroupedExpression:
-	//	// This is where we'd handle parentheses by recursively calling extractConditions
-	//	// on the inner expression. For example: (e.SubExpression)
-	//	// return extractConditions(e.SubExpression) // Assuming GroupedExpression has a SubExpression field
-	//	return nil, "", "", fmt.Errorf("grouped expressions in WHERE not fully supported yet")
+	case *GroupedExpression: // Handle parentheses
+		// Recursively call extractConditions on the sub-expression
+		// The results from the sub-expression are treated as a single unit
+		// in the context of the outer expression. How these are combined
+		// (e.g. if this grouped expression is part of an AND/OR) depends on the
+		// calling context in the BinaryExpression case for AND/OR.
+		// For now, we just pass through the extracted conditions from the sub-expression.
+		// A more robust solution would involve building a condition tree.
+		return extractConditions(e.SubExpression)
 
 	default:
 		return nil, "", "", fmt.Errorf("unsupported expression type in WHERE clause: %T", expr)
 	}
 	return
 }
+
 type QueryConditionNode interface {
 	// Marker interface
 }
