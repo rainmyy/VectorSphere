@@ -114,6 +114,10 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 	return db
 }
 
+func (db *VectorDB) GetVectors() map[string][]float64 {
+	return db.vectors
+}
+
 // 优化7: 添加向量预处理函数
 func (db *VectorDB) preprocessVector(id string, vector []float64) {
 	// 更新向量维度
@@ -130,33 +134,16 @@ func (db *VectorDB) AddDocument(id string, doc string, vectorizedType int) error
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
-	var vectorized DocumentVectorized
-	switch vectorizedType {
-	case TfidfVectorized:
-		vectorized = TFIDFVectorized()
-	case SimpleVectorized:
-		vectorized = SimpleBagOfWordsVectorized()
-	case WordEmbeddingVectorized:
-		embeddings, err := LoadWordEmbeddings("path/to/pretrained_embeddings.txt")
-		if err != nil {
-			return fmt.Errorf("加载词向量文件失败: %w", err)
-		}
-		vectorized = EnhancedWordEmbeddingVectorized(embeddings)
-	case DefaultVectorized:
-	default:
-		log.Fatal("unhandled default case")
-	}
-	// 将文档转换为向量
-	vector, err := vectorized(doc)
+	vector, err := db.GetVectorForText(doc, vectorizedType) // Use GetVectorForText internally
 	if err != nil {
-		return fmt.Errorf("将文档 %s 转换为向量时出错: %w", id, err)
+		return fmt.Errorf("failed to vectorize document %s for AddDocument: %w", id, err)
 	}
 
 	// 设置向量维度（如果尚未设置）
 	if db.vectorDim == 0 && len(vector) > 0 {
 		db.vectorDim = len(vector)
-	} else if len(vector) != db.vectorDim && db.vectorDim > 0 {
-		return fmt.Errorf("向量维度不匹配: 期望 %d, 实际 %d", db.vectorDim, len(vector))
+	} else if db.vectorDim > 0 && len(vector) != db.vectorDim {
+		return fmt.Errorf("vector dimension mismatch: expected %d, got %d for document %s", db.vectorDim, len(vector), id)
 	}
 
 	// 将向量添加到数据库
@@ -197,6 +184,43 @@ func (db *VectorDB) AddDocument(id string, doc string, vectorizedType int) error
 	return nil
 }
 
+// GetVectorForText 将文本根据指定的向量化类型转换为向量
+func (db *VectorDB) GetVectorForText(text string, vectorizedType int) ([]float64, error) {
+	var vectorized DocumentVectorized
+	// 注意：WordEmbeddingVectorized 可能需要预加载词向量文件路径，这里暂时硬编码或假设已加载
+	// 实际应用中，这个路径应该可配置
+	switch vectorizedType {
+	case TfidfVectorized:
+		vectorized = TFIDFVectorized() // TFIDFVectorized 内部管理其状态，每次调用可能基于已处理文档更新
+	case SimpleVectorized:
+		vectorized = SimpleBagOfWordsVectorized()
+	case WordEmbeddingVectorized:
+		// 假设 LoadWordEmbeddings 在 NewVectorDB 或其他初始化阶段被调用并存储了 embeddings
+		// 或者在这里按需加载，但这效率较低。更好的方式是 VectorDB 持有 embeddings。
+		// For now, let's assume a path or that embeddings are globally available/configured.
+		embeddings, err := LoadWordEmbeddings("path/to/pretrained_embeddings.txt") // Placeholder path
+		if err != nil {
+			return nil, fmt.Errorf("failed to load word embeddings for GetVectorForText: %w", err)
+		}
+		vectorized = EnhancedWordEmbeddingVectorized(embeddings) // Assuming EnhancedWordEmbeddingVectorized exists
+	case DefaultVectorized:
+		// Define what DefaultVectorized means, e.g., SimpleBagOfWordsVectorized
+		vectorized = SimpleBagOfWordsVectorized()
+	default:
+		return nil, fmt.Errorf("unhandled vectorizedType: %d", vectorizedType)
+	}
+
+	if vectorized == nil {
+		return nil, fmt.Errorf("vectorized function is nil for type: %d", vectorizedType)
+	}
+
+	vector, err := vectorized(text)
+	if err != nil {
+		return nil, fmt.Errorf("failed to vectorize text: %w", err)
+	}
+	return vector, nil
+}
+
 // Add 添加向量。如果已建立索引，则将索引标记为失效。
 func (db *VectorDB) Add(id string, vector []float64) {
 	db.mu.Lock()
@@ -222,6 +246,43 @@ func (db *VectorDB) Add(id string, vector []float64) {
 		db.indexed = false // 索引失效，需要重建
 		log.Info("提示: 添加新向量后，索引已失效，请重新调用 BuildIndex()。")
 	}
+}
+
+// DeleteVector 从数据库中删除指定ID的向量
+func (db *VectorDB) DeleteVector(id string) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	if _, exists := db.vectors[id]; !exists {
+		return fmt.Errorf("vector with id %s not found for deletion", id)
+	}
+	delete(db.vectors, id)
+	delete(db.normalizedVectors, id)
+	// TODO: 如果使用了压缩，也需要删除压缩向量
+	// delete(db.compressedVectors, id)
+
+	// TODO: 如果使用了IVF索引 (db.indexed is true and db.clusters is populated),
+	// 需要从相应的簇中移除该 vectorID。
+	// 这部分逻辑会比较复杂，需要遍历 clusters 或维护一个反向映射。
+	if db.indexed {
+		for i := range db.clusters {
+			newVectorIDs := make([]string, 0, len(db.clusters[i].VectorIDs))
+			for _, vecID := range db.clusters[i].VectorIDs {
+				if vecID != id {
+					newVectorIDs = append(newVectorIDs, vecID)
+				}
+			}
+			db.clusters[i].VectorIDs = newVectorIDs
+		}
+	}
+
+	// 清除查询缓存，因为数据已更改
+	db.cacheMu.Lock()
+	db.queryCache = make(map[string]queryCache)
+	db.cacheMu.Unlock()
+
+	log.Info("Vector with id %s deleted successfully.", id)
+	return nil
 }
 
 // UpdateIndexIncrementally 增量更新索引
@@ -807,6 +868,134 @@ func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]string, e
 	return ids, nil
 }
 
+// FindNearestWithScores 查找最近的k个向量，并返回它们的ID和相似度分数
+func (db *VectorDB) FindNearestWithScores(query []float64, k int, nprobe int) ([]entity.Result, error) {
+	startTime := time.Now()
+	if k <= 0 {
+		return nil, fmt.Errorf("k 必须是正整数")
+	}
+	if len(db.vectors) == 0 {
+		return []entity.Result{}, nil
+	}
+	normalizedQuery := util.NormalizeVector(query)
+	var results []entity.Result
+	if db.indexed && len(db.clusters) > 0 && db.numClusters > 0 {
+		if nprobe <= 0 {
+			nprobe = 1
+		}
+		if nprobe > db.numClusters {
+			nprobe = db.numClusters
+		}
+		centroidHeap := make(entity.CentroidHeap, 0, db.numClusters)
+		for i, cluster := range db.clusters {
+			distSq, err := algorithm.EuclideanDistanceSquared(normalizedQuery, cluster.Centroid)
+			if err != nil {
+				continue
+			}
+			centroidHeap = append(centroidHeap, entity.CentroidDist{Index: i, Distance: distSq})
+		}
+		heap.Init(&centroidHeap)
+		var nearestClusters []int
+		for i := 0; i < nprobe && len(centroidHeap) > 0; i++ {
+			nearestClusters = append(nearestClusters, heap.Pop(&centroidHeap).(entity.CentroidDist).Index)
+		}
+		resultHeap := make(entity.ResultHeap, 0, k)
+		heap.Init(&resultHeap)
+		for _, clusterIndex := range nearestClusters {
+			selectedCluster := db.clusters[clusterIndex]
+			batchSize := 100
+			for i := 0; i < len(selectedCluster.VectorIDs); i += batchSize {
+				end := i + batchSize
+				if end > len(selectedCluster.VectorIDs) {
+					end = len(selectedCluster.VectorIDs)
+				}
+				var wg sync.WaitGroup
+				resultChan := make(chan entity.Result, end-i)
+				for j := i; j < end; j++ {
+					wg.Add(1)
+					go func(vecID string) {
+						defer wg.Done()
+						vec, exists := db.vectors[vecID]
+						if !exists {
+							return
+						}
+						sim := util.CosineSimilarity(normalizedQuery, vec)
+						resultChan <- entity.Result{Id: vecID, Similarity: sim}
+					}(selectedCluster.VectorIDs[j])
+				}
+				go func() {
+					wg.Wait()
+					close(resultChan)
+				}()
+				for res := range resultChan {
+					if len(resultHeap) < k {
+						heap.Push(&resultHeap, res)
+					} else if res.Similarity > resultHeap[0].Similarity {
+						heap.Pop(&resultHeap)
+						heap.Push(&resultHeap, res)
+					}
+				}
+			}
+		}
+		results = make([]entity.Result, len(resultHeap))
+		for i := len(resultHeap) - 1; i >= 0; i-- {
+			results[i] = heap.Pop(&resultHeap).(entity.Result)
+		}
+		sort.Slice(results, func(i, j int) bool {
+			return results[i].Similarity > results[j].Similarity
+		})
+	} else {
+		resultHeap := make(entity.ResultHeap, 0, k)
+		heap.Init(&resultHeap)
+		numWorkers := runtime.NumCPU()
+		workChan := make(chan string, len(db.vectors))
+		innerResultChan := make(chan entity.Result, len(db.vectors))
+		var wg sync.WaitGroup
+		for i := 0; i < numWorkers; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for id := range workChan {
+					vec := db.vectors[id]
+					sim := util.CosineSimilarity(normalizedQuery, vec)
+					innerResultChan <- entity.Result{Id: id, Similarity: sim}
+				}
+			}()
+		}
+		go func() {
+			for id := range db.vectors {
+				workChan <- id
+			}
+			close(workChan)
+		}()
+		go func() {
+			wg.Wait()
+			close(innerResultChan)
+		}()
+		for res := range innerResultChan {
+			if len(resultHeap) < k {
+				heap.Push(&resultHeap, res)
+			} else if res.Similarity > resultHeap[0].Similarity {
+				heap.Pop(&resultHeap)
+				heap.Push(&resultHeap, res)
+			}
+		}
+		results = make([]entity.Result, len(resultHeap))
+		for i := len(resultHeap) - 1; i >= 0; i-- {
+			results[i] = heap.Pop(&resultHeap).(entity.Result)
+		}
+		sort.Slice(results, func(i, j int) bool {
+			return results[i].Similarity > results[j].Similarity
+		})
+	}
+	queryTime := time.Since(startTime)
+	db.statsMu.Lock()
+	alpha := 0.1
+	db.stats.AvgQueryTime = time.Duration(float64(db.stats.AvgQueryTime)*(1-alpha) + float64(queryTime)*alpha)
+	db.statsMu.Unlock()
+	return results, nil
+}
+
 // AdaptiveConfig 自适应配置结构
 type AdaptiveConfig struct {
 	// 索引参数
@@ -858,7 +1047,7 @@ func (db *VectorDB) AdjustConfig() {
 }
 
 // HybridSearch 混合搜索策略
-func (db *VectorDB) HybridSearch(query []float64, k int, options SearchOptions) ([]string, error) {
+func (db *VectorDB) HybridSearch(query []float64, k int, options SearchOptions) ([]entity.Result, error) {
 	// 根据向量维度和数据规模自动选择最佳搜索策略
 	if len(db.vectors) < 1000 || !db.indexed {
 		// 小数据集使用暴力搜索
@@ -874,7 +1063,7 @@ func (db *VectorDB) HybridSearch(query []float64, k int, options SearchOptions) 
 
 // bruteForceSearch 实现暴力搜索策略
 // 适用于小数据集或索引未构建的情况
-func (db *VectorDB) bruteForceSearch(query []float64, k int) ([]string, error) {
+func (db *VectorDB) bruteForceSearch(query []float64, k int) ([]entity.Result, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
@@ -884,7 +1073,7 @@ func (db *VectorDB) bruteForceSearch(query []float64, k int) ([]string, error) {
 	}
 
 	if len(db.vectors) == 0 {
-		return []string{}, nil
+		return nil, fmt.Errorf("vector is nil")
 	}
 
 	// 预处理查询向量 - 归一化可以提高相似度计算的准确性
@@ -939,9 +1128,9 @@ func (db *VectorDB) bruteForceSearch(query []float64, k int) ([]string, error) {
 	}
 
 	// 从堆中提取结果，按相似度降序排列
-	ids := make([]string, 0, len(resultHeap))
+	ids := make([]entity.Result, 0, len(resultHeap))
 	for resultHeap.Len() > 0 {
-		ids = append([]string{heap.Pop(&resultHeap).(entity.Result).Id}, ids...)
+		ids = append([]entity.Result{heap.Pop(&resultHeap).(entity.Result)}, ids...)
 	}
 
 	return ids, nil
@@ -955,7 +1144,7 @@ type LSHTable struct {
 
 // lshSearch 实现局部敏感哈希搜索
 // 适用于高维向量搜索
-func (db *VectorDB) lshSearch(query []float64, k int, numTables int) ([]string, error) {
+func (db *VectorDB) lshSearch(query []float64, k int, numTables int) ([]entity.Result, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
@@ -965,7 +1154,7 @@ func (db *VectorDB) lshSearch(query []float64, k int, numTables int) ([]string, 
 	}
 
 	if len(db.vectors) == 0 {
-		return []string{}, nil
+		return nil, fmt.Errorf("vector is nil")
 	}
 
 	// 如果LSH索引未构建，则动态构建
@@ -1022,9 +1211,9 @@ func (db *VectorDB) lshSearch(query []float64, k int, numTables int) ([]string, 
 	}
 
 	// 从堆中提取结果，按相似度降序排列
-	ids := make([]string, 0, len(resultHeap))
+	ids := make([]entity.Result, 0, len(resultHeap))
 	for resultHeap.Len() > 0 {
-		ids = append([]string{heap.Pop(&resultHeap).(entity.Result).Id}, ids...)
+		ids = append([]entity.Result{heap.Pop(&resultHeap).(entity.Result)}, ids...)
 	}
 
 	return ids, nil
@@ -1115,7 +1304,7 @@ func (db *VectorDB) computeLSHHash(vec []float64, hashFunctions [][]float64) uin
 
 // ivfSearch 实现倒排文件索引搜索
 // 适用于已构建索引的一般情况
-func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]string, error) {
+func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]entity.Result, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
@@ -1125,7 +1314,7 @@ func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]string, err
 	}
 
 	if len(db.vectors) == 0 {
-		return []string{}, nil
+		return nil, fmt.Errorf("vector is nil")
 	}
 
 	// 检查索引状态
@@ -1218,9 +1407,9 @@ func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]string, err
 	}
 
 	// 从堆中提取结果，按相似度降序排列
-	ids := make([]string, 0, len(resultHeap))
+	ids := make([]entity.Result, 0, len(resultHeap))
 	for resultHeap.Len() > 0 {
-		ids = append([]string{heap.Pop(&resultHeap).(entity.Result).Id}, ids...)
+		ids = append([]entity.Result{heap.Pop(&resultHeap).(entity.Result)}, ids...)
 	}
 
 	return ids, nil
@@ -1518,6 +1707,10 @@ func (db *VectorDB) ParallelFindNearest(query []float64, k int) ([]string, error
 	}
 
 	return ids, nil
+}
+
+func (db *VectorDB) GetDataSize() int {
+	return len(db.vectors)
 }
 
 // SearchOptions 搜索选项结构
