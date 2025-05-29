@@ -1,6 +1,7 @@
 package search
 
 import (
+	"fmt"
 	"seetaSearch/db"
 	"seetaSearch/index"
 	tree "seetaSearch/library/tree"
@@ -56,26 +57,37 @@ func (ss *SearchService) AddDocument(doc messages.Document, vectorizedType int) 
 }
 
 // DeleteDocument 从搜索系统中删除文档
-func (ss *SearchService) DeleteDocument(docId string, scoreId int64, keyword *messages.KeyWord) error {
-	// 从向量数据库中删除文档
-	err := ss.VectorDB.Delete(docId)
+func (ss *SearchService) DeleteDocument(docId string, keywords []*messages.KeyWord) (err error) {
+	// 开启事务
+	tx := ss.TxMgr.Begin(tree.Serializable)
+	defer func() {
+		if err != nil {
+			ss.TxMgr.Rollback(tx)
+		} else {
+			err = ss.TxMgr.Commit(tx)
+			if err != nil {
+				// 如果提交失败，也需要回滚，并记录错误
+				ss.TxMgr.Rollback(tx)
+			}
+		}
+	}()
+
+	// 从倒排索引中删除文档
+	err = ss.InvertedIndex.Delete(tx, docId, keywords)
 	if err != nil {
 		return err
 	}
 
-	// 开启事务
-	tx := ss.TxMgr.Begin(tree.Serializable)
-	defer func(TxMgr *tree.TransactionManager, tx *tree.Transaction) {
-		err := TxMgr.Commit(tx)
+	// 从向量数据库中删除文档
+	// 注意：这里将VectorDB的删除放在B+Tree之后，以便在VectorDB删除失败时，
+	// B+Tree的事务可以回滚。如果VectorDB删除成功，B+Tree的事务再提交。
+	// 这种顺序有助于维护数据一致性，尽管VectorDB本身可能不支持事务回滚。
+	if ss.VectorDB != nil { // 添加对VectorDB实例的判断
+		err = ss.VectorDB.DeleteVector(docId)
 		if err != nil {
-
+			// 如果VectorDB删除失败，B+Tree的事务会在defer中回滚
+			return fmt.Errorf("failed to delete document %s from VectorDB: %w", docId, err)
 		}
-	}(ss.TxMgr, tx)
-
-	// 从倒排索引中删除文档
-	err = ss.InvertedIndex.Delete(tx, scoreId, keyword)
-	if err != nil {
-		return err
 	}
 
 	return nil
@@ -94,7 +106,7 @@ func (ss *SearchService) Search(query *messages.TermQuery, vectorizedType int, k
 	defer ss.TxMgr.Commit(tx)
 
 	// 使用倒排索引进行表达式查询
-	indexResults := ss.InvertedIndex.Search(tx, query, onFlag, offFlag, orFlags)
+	indexResults, _ := ss.InvertedIndex.Search(tx, query, onFlag, offFlag, orFlags)
 
 	// 合并结果
 	var finalResults []string
