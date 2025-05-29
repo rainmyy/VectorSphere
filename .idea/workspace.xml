@@ -6,8 +6,8 @@
   <component name="ChangeListManager">
     <list default="true" id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/db/verctor_db.go" beforeDir="false" afterPath="$PROJECT_DIR$/db/verctor_db.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/tree/mvcc_BPlus_tree.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/tree/mvcc_BPlus_tree.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/messages/key_word.go" beforeDir="false" afterPath="$PROJECT_DIR$/messages/key_word.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/search/search_service.go" beforeDir="false" afterPath="$PROJECT_DIR$/search/search_service.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

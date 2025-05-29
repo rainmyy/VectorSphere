@@ -1,6 +1,6 @@
 package messages
 
-import bplus "seetaSearch/library/tree"
+import "seetaSearch/library/tree"
 
 func (kw *KeyWord) ToString() string {
 	if len(kw.Word) > 0 {
@@ -11,7 +11,7 @@ func (kw *KeyWord) ToString() string {
 }
 
 // Less 实现 Key 接口
-func (kw KeyWord) Less(other bplus.Key) bool {
+func (kw KeyWord) Less(other tree.Key) bool {
 	otherKW, ok := other.(*KeyWord)
 	if !ok {
 		panic("other is not a KeyWord")
@@ -19,7 +19,7 @@ func (kw KeyWord) Less(other bplus.Key) bool {
 	return kw.ToString() < otherKW.ToString()
 }
 
-func (kw KeyWord) Equal(other bplus.Key) bool {
+func (kw KeyWord) Equal(other tree.Key) bool {
 	otherKW, ok := other.(*KeyWord)
 	if !ok {
 		return false

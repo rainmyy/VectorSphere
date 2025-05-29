@@ -15,7 +15,7 @@ type SearchService struct {
 	WAL           *tree.WALManager
 }
 
-func NewSearchService(vectorDBPath string, numClusters int, invertedIndexOrder int, txMgr *bplus.TransactionManager, lockMgr *bplus.LockManager, wal *bplus.WALManager) *SearchService {
+func NewSearchService(vectorDBPath string, numClusters int, invertedIndexOrder int, txMgr *tree.TransactionManager, lockMgr *tree.LockManager, wal *tree.WALManager) *SearchService {
 	vectorDB := db.NewVectorDB(vectorDBPath, numClusters)
 	invertedIndex := index.NewMVCCBPlusTreeInvertedIndex(invertedIndexOrder, txMgr, lockMgr, wal)
 
