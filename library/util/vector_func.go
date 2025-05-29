@@ -1,7 +1,9 @@
 package util
 
 import (
+	"encoding/binary"
 	"fmt"
+	"hash/fnv"
 	"math"
 	"seetaSearch/library/entity"
 	"seetaSearch/library/enum"
@@ -147,4 +149,13 @@ func GenerateCacheKey(query []float64, k, nprobe, method int) string {
 		key += fmt.Sprintf("%.6f:", v)
 	}
 	return key
+}
+
+// ComputeVectorHash 计算向量哈希值，用于缓存键
+func ComputeVectorHash(vec []float64) uint64 {
+	h := fnv.New64a()
+	for _, v := range vec {
+		binary.Write(h, binary.LittleEndian, v)
+	}
+	return h.Sum64()
 }

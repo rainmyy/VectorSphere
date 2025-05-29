@@ -18,7 +18,7 @@ type SearchService struct {
 
 func NewSearchService(vectorDBPath string, numClusters int, invertedIndexOrder int, txMgr *tree.TransactionManager, lockMgr *tree.LockManager, wal *tree.WALManager) *SearchService {
 	vectorDB := db.NewVectorDB(vectorDBPath, numClusters)
-	invertedIndex := index.NewMVCCBPlusTreeInvertedIndex(invertedIndexOrder, txMgr, lockMgr, wal)
+	invertedIndex := index.NewMVCCBPlusTreeInvertedIndex(invertedIndexOrder, txMgr, lockMgr, wal, vectorDB)
 
 	return &SearchService{
 		VectorDB:      vectorDB,
@@ -105,8 +105,15 @@ func (ss *SearchService) Search(query *messages.TermQuery, vectorizedType int, k
 	tx := ss.TxMgr.Begin(tree.Serializable)
 	defer ss.TxMgr.Commit(tx)
 
+	// 获取向量查询文本
+	var vectorQueryText string
+	if query.Keyword != nil {
+		vectorQueryText = query.Keyword.ToString()
+	}
+
 	// 使用倒排索引进行表达式查询
-	indexResults, _ := ss.InvertedIndex.Search(tx, query, onFlag, offFlag, orFlags)
+	// 补齐缺少的参数：vectorQueryText, k, 是否使用ANN(根据probe值决定)
+	indexResults, _ := ss.InvertedIndex.Search(tx, query, onFlag, offFlag, orFlags, vectorQueryText, k, probe > 0)
 
 	// 合并结果
 	var finalResults []string

@@ -2,7 +2,6 @@ package db
 
 import (
 	"container/heap"
-	"encoding/binary"
 	"encoding/gob"
 	"fmt"
 	"hash/fnv"
@@ -83,8 +82,13 @@ func (db *VectorDB) GetStats() PerformanceStats {
 	defer db.statsMu.RUnlock()
 	return db.stats
 }
+
 func (db *VectorDB) Close() {
 
+}
+
+func (db *VectorDB) IsIndexed() bool {
+	return db.indexed
 }
 
 // NewVectorDB 创建一个新的 VectorDB 实例。
@@ -1574,15 +1578,6 @@ type enhancedQueryCache struct {
 	results    []string  // 结果ID列表
 	timestamp  time.Time // 缓存创建时间
 	vectorHash uint64    // 查询向量的哈希值
-}
-
-// 计算向量哈希值，用于缓存键
-func computeVectorHash(vec []float64) uint64 {
-	h := fnv.New64a()
-	for _, v := range vec {
-		binary.Write(h, binary.LittleEndian, v)
-	}
-	return h.Sum64()
 }
 
 // ShardedVectorDB 分片锁结构

@@ -8,45 +8,6 @@ import (
 	"unicode"
 )
 
-/*
-- Lexer ( nextToken ) :
-- 重写了 nextToken 以手动处理字符流，而不是完全依赖 text/scanner 的 Scan() 。这能更好地控制多字符操作符（如 >= , <= , != ）和错误处理。
-- 添加了 skipWhitespace , readIdentifier , readNumber , readString 等辅助函数。
-- 改进了对字符串字面量的处理（简单版本，未处理转义）。
-- AST节点 :
-- 为 SelectStatement 添加了 Fields []Expression 以支持选择特定字段（当前解析逻辑仍简化）。
-- 添加了 StarExpression 代表 SELECT * 。
-- LiteralExpression 的 Value 改为 interface{} 以存储实际Go类型。
-- 为AST节点添加了 String() 方法，方便调试和打印AST。
-- Parser :
-- ParseStatement 现在调用 parseSelectStatement 。
-- parseSelectStatement 开始填充 Fields , From , Where , OrderBy , Limit , Offset 。
-- parseExpression 是Pratt解析器的核心，用于处理表达式和操作符优先级。当前它非常基础。
-- 添加了 parseIdentifier , parseNumberLiteral , parseStringLiteral , parseStarExpression , parseKeywordLiteral (for true/false/null), parseGroupedExpression , parseInfixExpression 。
-- 添加了 parseOrderByClause , parseLimitClause , parseOffsetClause 的基本实现。
-- 错误处理通过 p.errorf 和 p.peekError 收集到 p.errors 。
-- 错误处理 :
-- Lexer现在可以生成 TokenError 。
-- Parser收集Lexer错误和自身的解析错误。
-- ParseQueryWithAST 返回错误列表。
-- AST到查询参数 ( ConvertASTToParsedQuery ) :
-- 新增 ParsedQuery 结构体（可以根据需要调整，使其更接近您系统所需参数）。
-- 新增 FilterCondition 结构体。
-- ConvertASTToParsedQuery 函数遍历 SelectStatement AST，并将信息提取到 ParsedQuery 结构中。
-- extractConditions 是一个非常简化的函数，用于从 WHERE 子句的AST中提取条件。一个完整的实现需要正确处理 AND , OR , NOT 以及括号构成的复杂逻辑树。
-- Lexer ( Lexer , NewLexer , readChar , nextToken , skipWhitespaceAndComments , readString , readNumber ) :
-- Lexer 结构体增加了 line 和 column 用于更精确的错误定位。
-- readChar 现在会更新行号和列号。
-- skipWhitespaceAndComments 函数被添加用于跳过空格、制表符、换行符以及 SQL 风格的单行注释 ( -- ) 和多行注释 ( /* ... */ )
-- readString 进行了改进，以初步支持 SQL 中的 '' (两个单引号表示一个单引号字符) 和常见的C风格转义序列 (如 \n , \t , \' , \\ )。更复杂的转义规则可能后续还需要完善。
-- readNumber 稍微调整以更好地区分整数和浮点数（尽管这里的逻辑还可以进一步加强以符合SQL数字字面量的完整规范）。
-- Parser ( NewParser , parseSelectStatement , parseSelectList , expectKeyword , expect ) :
-- parseSelectStatement : 调整了对 FROM 和表名的期望，使用新的 expectKeyword 和 expect 辅助函数，这些函数在检查失败时会记录错误并尝试继续（或者根据策略停止）。
-- parseSelectList : 这是新增的核心逻辑，用于解析 SELECT 后的字段列表。它可以处理 SELECT * , SELECT field1 , SELECT field1, field2, ... 。它会循环查找逗号并解析后续的表达式。当前的表达式解析还比较简单，主要处理标识符和星号。
-- expectKeyword 和 expect : 新的辅助函数，用于简化对当前 Token 的检查和消费，并在不匹配时记录错误。
-- precedences 和 NewParser 中的 registerInfix 为后续处理 AND / OR 等逻辑操作符做了准备，将 TokenKeyword 也注册为潜在的中缀操作符类型。
-*/
-
 // TokenType 定义了词法单元的类型
 type TokenType int
 
@@ -82,9 +43,10 @@ var tokenKeywords = map[string]TokenType{
 	"false":  TokenKeyword,
 	"null":   TokenKeyword,
 }
+
 // GroupedExpression for ( expression )
 type GroupedExpression struct {
-	Token       Token // The '(' token
+	Token         Token // The '(' token
 	SubExpression Expression
 }
 
@@ -99,6 +61,7 @@ func (ge *GroupedExpression) String() string {
 	out.WriteString(")")
 	return out.String()
 }
+
 // Token 结构体表示一个词法单元
 type Token struct {
 	Type    TokenType
@@ -237,6 +200,7 @@ func (l *Lexer) nextToken() Token {
 	l.readChar()
 	return tok
 }
+
 func (l *Lexer) skipWhitespaceAndComments() {
 	for {
 		if l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' {
@@ -266,6 +230,7 @@ func (l *Lexer) skipWhitespaceAndComments() {
 		break
 	}
 }
+
 func (l *Lexer) skipWhitespace() {
 	for l.ch == ' ' || l.ch == '\t' || l.ch == '\n' || l.ch == '\r' {
 		l.readChar()
@@ -366,6 +331,7 @@ type SelectStatement struct {
 
 func (ss *SelectStatement) statementNode()       {}
 func (ss *SelectStatement) TokenLiteral() string { return ss.Token.Literal }
+
 func (ss *SelectStatement) String() string {
 	var out strings.Builder
 	out.WriteString("SELECT ")
@@ -477,9 +443,7 @@ type OffsetClause struct {
 func (oc *OffsetClause) TokenLiteral() string { return oc.Token.Literal }
 func (oc *OffsetClause) String() string       { return fmt.Sprintf("OFFSET %d", oc.Value) }
 
-// --- Parser (Recursive Descent with Pratt parsing ideas for expressions) ---
-
-// Operator precedence (example)
+// Operator precedence
 const (
 	_ int = iota
 	LOWEST
@@ -498,6 +462,7 @@ var precedences = map[TokenType]int{
 	// Specific keywords for logical operators will need their own precedence
 	// We'll handle AND/OR based on their TokenKeyword type in parseInfixExpression
 }
+
 // getPrecedence returns the precedence of the current token.
 // It handles both operator tokens and keyword tokens that act as operators (AND, OR).
 func (p *Parser) getPrecedence(tok Token) int {
@@ -544,7 +509,7 @@ func NewParser(l *Lexer) *Parser {
 	p.registerPrefix(TokenNumber, p.parseNumberLiteral)
 	p.registerPrefix(TokenString, p.parseStringLiteral)
 	p.registerPrefix(TokenStar, p.parseStarExpression)
-	p.registerPrefix(TokenKeyword, p.parseKeywordLiteral) // For true, false, null
+	p.registerPrefix(TokenKeyword, p.parseKeywordLiteral)   // For true, false, null
 	p.registerPrefix(TokenLParen, p.parseGroupedExpression) // Register for '('
 
 	p.registerInfix(TokenOperator, p.parseInfixExpression) // For =, >, <, etc.
@@ -554,7 +519,6 @@ func NewParser(l *Lexer) *Parser {
 	p.nextToken() // Set peekToken
 	return p
 }
-
 
 func (p *Parser) Errors() []string {
 	return p.errors
@@ -627,6 +591,7 @@ func (p *Parser) parseSelectStatement() *SelectStatement {
 
 	return stmt
 }
+
 // Helper to expect a specific keyword (consumes it if found)
 func (p *Parser) expectKeyword(keyword string) bool {
 	if p.curTokenIsKeyword(keyword) {
@@ -636,6 +601,7 @@ func (p *Parser) expectKeyword(keyword string) bool {
 	p.errorf(p.curToken.Pos, "expected keyword '%s', got %s (%s) instead", keyword, p.curToken.Literal, p.curToken.Type)
 	return false
 }
+
 // Helper to expect a specific token type (consumes it if found)
 func (p *Parser) expect(tokenType TokenType) bool {
 	if p.curTokenIs(tokenType) {
@@ -775,7 +741,7 @@ func (p *Parser) parseKeywordLiteral() Expression {
 
 func (p *Parser) parseGroupedExpression() Expression {
 	startToken := p.curToken // Keep the '(' token for the AST node
-	p.nextToken()          // Consume '('
+	p.nextToken()            // Consume '('
 
 	subExpression := p.parseExpression(LOWEST)
 
@@ -784,7 +750,7 @@ func (p *Parser) parseGroupedExpression() Expression {
 	}
 
 	return &GroupedExpression{
-		Token:       startToken,
+		Token:         startToken,
 		SubExpression: subExpression,
 	}
 }
@@ -891,23 +857,18 @@ func (p *Parser) peekPrecedence() int {
 	return LOWEST
 }
 
-// --- AST to Query Parameters (Step 5) ---
-
-// ParsedQuery structure to hold all extracted query parameters
-// This structure will be populated by ConvertASTToParsedQuery
 type ParsedQuery struct {
 	TableName        string
-	Fields           []string // Fields to select (e.g., ["id", "name"] or ["*"])
-	KeywordQuery     string   // For full-text search part of WHERE
-	VectorQueryText  string   // For vector similarity search part of WHERE
+	Fields           []string          // Fields to select (e.g., ["id", "name"] or ["*"])
+	KeywordQuery     string            // For full-text search part of WHERE
+	VectorQueryText  string            // For vector similarity search part of WHERE
 	Filters          []FilterCondition // For structured data filtering (e.g., age > 30 AND city = 'New York')
 	OrderByField     string
 	OrderByDirection string // "ASC" or "DESC"
 	Limit            int64
 	Offset           int64
-	UseANN           bool  // Whether to use Approximate Nearest Neighbor search
-	K                int   // Number of nearest neighbors for vector search
-	// We might need a more complex structure for Filters if we have nested AND/OR
+	UseANN           bool // Whether to use Approximate Nearest Neighbor search
+	K                int  // Number of nearest neighbors for vector search
 }
 
 // FilterCondition represents a single filter condition (e.g., field = value)
@@ -1010,10 +971,18 @@ func extractConditions(expr Expression) (filters []FilterCondition, keywordQuery
 			}
 			filters = append(lFilters, rFilters...)
 			// Simplistic combination of keyword/vector queries (likely needs better logic)
-			if lKeyword != "" { keywordQuery = lKeyword }
-			if rKeyword != "" { keywordQuery = rKeyword } // This overwrites, needs AND/OR logic
-			if lVector != "" { vectorQuery = lVector }
-			if rVector != "" { vectorQuery = rVector } // This overwrites
+			if lKeyword != "" {
+				keywordQuery = lKeyword
+			}
+			if rKeyword != "" {
+				keywordQuery = rKeyword
+			} // This overwrites, needs AND/OR logic
+			if lVector != "" {
+				vectorQuery = lVector
+			}
+			if rVector != "" {
+				vectorQuery = rVector
+			} // This overwrites
 			return
 		} else if leftIsIdent {
 			fc := FilterCondition{Field: leftIdent.Value, Operator: e.Operator}

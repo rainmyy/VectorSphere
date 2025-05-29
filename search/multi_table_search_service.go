@@ -2,14 +2,20 @@ package search
 
 import (
 	"fmt"
+	"math/rand"
 	"regexp"
+	"runtime"
 	"seetaSearch/db"
 	"seetaSearch/index"
+	"seetaSearch/library/entity"
+	"seetaSearch/library/log"
 	tree "seetaSearch/library/tree"
+	"seetaSearch/library/util"
 	"seetaSearch/messages"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // TableInstance 包含一个表的倒排索引和向量数据库实例
@@ -18,23 +24,105 @@ type TableInstance struct {
 	VectorDB      *db.VectorDB
 }
 
-// MultiTableSearchService 管理多个 TableInstance
+// MultiTableSearchService 结构体中添加缓存字段
 type MultiTableSearchService struct {
 	tables  map[string]*TableInstance
 	mu      sync.RWMutex
 	TxMgr   *tree.TransactionManager
 	LockMgr *tree.LockManager
 	WAL     *tree.WALManager
+	// 添加查询缓存
+	queryCache   map[string]queryCacheEntry
+	queryCacheMu sync.RWMutex
+	maxCacheSize int
+	cacheTTL     time.Duration
+	config       ServiceConfig
 }
 
-// NewMultiTableSearchService 创建一个新的 MultiTableSearchService 实例
+// 缓存条目结构
+type queryCacheEntry struct {
+	results    []string
+	timestamp  time.Time
+	vectorHash uint64 // 用于向量查询的哈希
+}
+
+// NewMultiTableSearchService 中初始化配置
 func NewMultiTableSearchService(txMgr *tree.TransactionManager, lockMgr *tree.LockManager, wal *tree.WALManager) *MultiTableSearchService {
 	return &MultiTableSearchService{
-		tables:  make(map[string]*TableInstance),
-		TxMgr:   txMgr,
-		LockMgr: lockMgr,
-		WAL:     wal,
+		tables:     make(map[string]*TableInstance),
+		TxMgr:      txMgr,
+		LockMgr:    lockMgr,
+		WAL:        wal,
+		queryCache: make(map[string]queryCacheEntry),
+		config: ServiceConfig{
+			MaxCacheSize:          1000,
+			CacheTTL:              5 * time.Minute,
+			DefaultVectorized:     db.SimpleVectorized,
+			DefaultK:              100,
+			DefaultProbe:          10,
+			UseAdaptiveConfig:     true,
+			MaxWorkers:            runtime.NumCPU(),
+			IndexRebuildThreshold: 0.1, // 10%的数据变化触发重建索引
+		},
 	}
+}
+
+// 添加缓存管理方法
+func (mts *MultiTableSearchService) getCachedResults(cacheKey string) ([]string, bool) {
+	mts.queryCacheMu.RLock()
+	defer mts.queryCacheMu.RUnlock()
+
+	entry, exists := mts.queryCache[cacheKey]
+	if !exists {
+		return nil, false
+	}
+
+	// 检查缓存是否过期
+	if time.Since(entry.timestamp) > mts.cacheTTL {
+		return nil, false
+	}
+
+	return entry.results, true
+}
+func (mts *MultiTableSearchService) cacheResults(cacheKey string, results []string, vectorHash uint64) {
+	mts.queryCacheMu.Lock()
+	defer mts.queryCacheMu.Unlock()
+
+	// 如果缓存已满，清除最旧的条目
+	if len(mts.queryCache) >= mts.maxCacheSize {
+		mts.evictOldestCacheEntry()
+	}
+
+	mts.queryCache[cacheKey] = queryCacheEntry{
+		results:    results,
+		timestamp:  time.Now(),
+		vectorHash: vectorHash,
+	}
+}
+
+func (mts *MultiTableSearchService) evictOldestCacheEntry() {
+	var oldestKey string
+	var oldestTime time.Time
+
+	// 找到最旧的缓存条目
+	for key, entry := range mts.queryCache {
+		if oldestTime.IsZero() || entry.timestamp.Before(oldestTime) {
+			oldestKey = key
+			oldestTime = entry.timestamp
+		}
+	}
+
+	if oldestKey != "" {
+		delete(mts.queryCache, oldestKey)
+	}
+}
+
+// 生成缓存键
+func generateCacheKey(tableName string, query *messages.TermQuery, vectorizedType int, k int, probe int, onFlag uint64, offFlag uint64, orFlags []uint64, useANN bool) string {
+	// 将查询参数序列化为缓存键
+	key := fmt.Sprintf("%s:%s:%d:%d:%d:%d:%d:%v:%v", tableName,
+		query.Keyword.ToString(), vectorizedType, k, probe, onFlag, offFlag, orFlags, useANN)
+	return key
 }
 
 // CreateTable 创建一个新的表
@@ -43,9 +131,10 @@ func (mts *MultiTableSearchService) CreateTable(tableName string, vectorDBBasePa
 	defer mts.mu.Unlock()
 
 	if _, exists := mts.tables[tableName]; exists {
-		return fmt.Errorf("table '%s' already exists", tableName)
+		err := fmt.Errorf("table '%s' already exists", tableName)
+		mts.logError("CreateTable", err)
+		return err
 	}
-
 	// 为新表创建独立的 VectorDB 和 InvertedIndex 实例
 	vectorDBPath := fmt.Sprintf("%s/%s", vectorDBBasePath, tableName) // 假设每个表有独立的 VectorDB 存储路径
 	vectorDB := db.NewVectorDB(vectorDBPath, numClusters)
@@ -147,41 +236,34 @@ func (mts *MultiTableSearchService) CloseTable(tableName string) error {
 	return err // Return the first error encountered during closing
 }
 
-// AddDocument 添加文档到指定表
-func (mts *MultiTableSearchService) AddDocument(tableName string, doc messages.Document, vectorizedType int) (err error) {
+// 使用重试机制的 AddDocument 方法
+func (mts *MultiTableSearchService) AddDocument(tableName string, doc messages.Document, vectorizedType int) error {
 	table, err := mts.GetTable(tableName)
 	if err != nil {
 		return err
 	}
 
-	// 开启事务 (使用 MultiTableSearchService 的 TxMgr)
-	tx := mts.TxMgr.Begin(tree.Serializable)
-	defer func() {
+	// 使用重试机制执行事务
+	err = mts.withRetry(func(tx *tree.Transaction) error {
+		// 将文档添加到倒排索引
+		err := table.InvertedIndex.Add(tx, doc)
 		if err != nil {
-			mts.TxMgr.Rollback(tx)
-		} else {
-			err = mts.TxMgr.Commit(tx)
-			if err != nil {
-				// 如果提交失败，也需要回滚，并记录错误
-				mts.TxMgr.Rollback(tx)
-			}
+			return err
 		}
-	}()
+		return nil
+	}, 3) // 最多重试3次
 
-	// 将文档添加到倒排索引
-	err = table.InvertedIndex.Add(tx, doc)
 	if err != nil {
 		return err
 	}
 
 	// 将文档添加到向量数据库
-	// 注意：这里将VectorDB的添加放在B+Tree之后，以便在VectorDB添加失败时，
-	// B+Tree的事务可以回滚。如果VectorDB添加成功，B+Tree的事务再提交。
-	// 这种顺序有助于维护数据一致性，尽管VectorDB本身可能不支持事务回滚。
 	if table.VectorDB != nil {
 		err = table.VectorDB.AddDocument(doc.Id, string(doc.Bytes), vectorizedType)
 		if err != nil {
-			// 如果VectorDB添加失败，B+Tree的事务会在defer中回滚
+			// 如果向量数据库添加失败，尝试回滚倒排索引的添加
+			// 注意：这里可能无法保证原子性，因为倒排索引的事务已经提交
+			mts.logError("AddDocument to VectorDB", err)
 			return fmt.Errorf("failed to add document %s to VectorDB in table '%s': %w", doc.Id, tableName, err)
 		}
 	}
@@ -232,7 +314,7 @@ func (mts *MultiTableSearchService) DeleteDocument(tableName string, docId strin
 }
 
 // Search 在指定表中执行搜索
-func (mts *MultiTableSearchService) Search(tableName string, query *messages.TermQuery, vectorizedType int, k int, probe int, onFlag uint64, offFlag uint64, orFlags []uint64, useANN bool) ([]string, error) {
+func (mts *MultiTableSearchService) searchBa(tableName string, query *messages.TermQuery, vectorizedType int, k int, probe int, onFlag uint64, offFlag uint64, orFlags []uint64, useANN bool) ([]string, error) {
 	table, err := mts.GetTable(tableName)
 	if err != nil {
 		return nil, err
@@ -299,42 +381,148 @@ func (mts *MultiTableSearchService) Search(tableName string, query *messages.Ter
 	return finalResults, nil
 }
 
-// ExecuteQuery executes a SQL-like query against the specified table.
-// This method now includes basic parsing, query planning, and result processing.
-// Supported format: SELECT <fields> FROM <tableName> WHERE keyword = '...' [AND vector_query = '...'] [ORDER BY score DESC] [LIMIT ...] [OFFSET ...]
+// Search 在指定表中执行搜索 - 优化版本
+func (mts *MultiTableSearchService) Search(tableName string, query *messages.TermQuery, vectorizedType int, k int, probe int, onFlag uint64, offFlag uint64, orFlags []uint64, useANN bool) ([]string, error) {
+	table, err := mts.GetTable(tableName)
+	if err != nil {
+		return nil, err
+	}
+
+	// 生成缓存键并检查缓存
+	cacheKey := generateCacheKey(tableName, query, vectorizedType, k, probe, onFlag, offFlag, orFlags, useANN)
+	if cachedResults, found := mts.getCachedResults(cacheKey); found {
+		return cachedResults, nil
+	}
+
+	var candidateIDs []string
+	var vectorResults []entity.Result
+	var vectorHash uint64
+
+	// 使用向量搜索获取候选文件 ID
+	if table.VectorDB != nil && query.Keyword != nil && query.Keyword.ToString() != "" {
+		// 获取查询向量
+		queryVector, err := table.VectorDB.GetVectorForText(query.Keyword.ToString(), vectorizedType)
+		if err != nil {
+			return nil, fmt.Errorf("failed to vectorize query text: %w", err)
+		}
+
+		// 计算向量哈希用于缓存
+		vectorHash = util.ComputeVectorHash(queryVector)
+
+		// 根据数据规模和用户设置决定使用哪种搜索方法
+		dataSize := table.VectorDB.GetDataSize()
+		if useANN || dataSize > 1000 {
+			// 使用 HybridSearch 进行近似最近邻搜索
+			options := db.SearchOptions{
+				Nprobe:        probe,
+				UseANN:        true,
+				SearchTimeout: 5 * time.Second, // 可配置的超时时间
+			}
+			vectorResults, err = table.VectorDB.HybridSearch(queryVector, k, options)
+		} else {
+			// 使用 FindNearestWithScores 进行精确搜索
+			vectorResults, err = table.VectorDB.FindNearestWithScores(queryVector, k, probe)
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("vector search failed in table '%s': %w", tableName, err)
+		}
+
+		// 提取ID
+		for _, result := range vectorResults {
+			candidateIDs = append(candidateIDs, result.Id)
+		}
+	}
+
+	// 开启事务 (使用 MultiTableSearchService 的 TxMgr)
+	tx := mts.TxMgr.Begin(tree.Serializable)
+	defer mts.TxMgr.Commit(tx)
+
+	// 使用倒排索引进行表达式查询
+	indexResults, err := table.InvertedIndex.Search(tx, query, onFlag, offFlag, orFlags, query.Keyword.ToString(), k, useANN)
+	if err != nil {
+		return nil, fmt.Errorf("inverted index search failed in table '%s': %w", tableName, err)
+	}
+
+	// 合并结果：如果有向量搜索结果，取交集；否则直接使用倒排索引结果
+	var finalResults []string
+	if len(candidateIDs) > 0 {
+		// 创建倒排索引结果集
+		indexResultSet := make(map[string]struct{})
+		for _, id := range indexResults {
+			indexResultSet[id] = struct{}{}
+		}
+
+		// 取交集并保持向量搜索的排序
+		for _, id := range candidateIDs {
+			if _, ok := indexResultSet[id]; ok {
+				finalResults = append(finalResults, id)
+			}
+		}
+
+		// 如果交集为空但两个结果集都不为空，可能是因为过滤条件太严格
+		// 在这种情况下，可以考虑放宽条件或使用其中一个结果集
+		if len(finalResults) == 0 && len(indexResults) > 0 && len(candidateIDs) > 0 {
+			// 策略1：使用倒排索引结果（更精确的关键词匹配）
+			finalResults = indexResults
+			// 策略2：使用向量搜索结果（更好的语义相似性）
+			// finalResults = candidateIDs
+		}
+	} else {
+		// 如果没有向量搜索结果，直接使用倒排索引结果
+		finalResults = indexResults
+	}
+
+	// 缓存结果
+	mts.cacheResults(cacheKey, finalResults, vectorHash)
+
+	return finalResults, nil
+}
+
+// ExecuteQuery 执行类SQL查询 - 优化版本
 func (mts *MultiTableSearchService) ExecuteQuery(query string) ([]string, error) {
-	// 1. 查询解析器
-	// 定义正则表达式来匹配查询的不同部分
-	// 简化：只支持 SELECT ... FROM ... WHERE ... LIMIT ... OFFSET ...
-	re := regexp.MustCompile(`SELECT\s+(.+?)\s+FROM\s+(\w+)(?:\s+WHERE\s+(.+?))?(?:\s+ORDER\s+BY\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+LIMIT\s+(\d+))?(?:\s+OFFSET\s+(\d+))?`)
+	// 1. 查询解析器 - 使用更强大的正则表达式
+	re := regexp.MustCompile(`(?i)SELECT\s+(.+?)\s+FROM\s+(\w+)(?:\s+WHERE\s+(.+?))?(?:\s+ORDER\s+BY\s+(\w+)(?:\s+(ASC|DESC))?)?(?:\s+LIMIT\s+(\d+))?(?:\s+OFFSET\s+(\d+))?`)
 	matches := re.FindStringSubmatch(query)
 
 	if len(matches) == 0 {
 		return nil, fmt.Errorf("invalid query format: %s", query)
 	}
 
-	// fields := strings.TrimSpace(matches[1]) // Currently not used, assuming we return doc IDs
+	_ = strings.TrimSpace(matches[1])
 	tableName := strings.TrimSpace(matches[2])
 	whereClause := strings.TrimSpace(matches[3])
-	// orderByField := strings.TrimSpace(matches[4]) // Assuming always score for now
-	// orderByDirection := strings.TrimSpace(matches[5]) // Assuming always DESC for now
+	orderByField := strings.TrimSpace(matches[4])
+	_ = strings.TrimSpace(matches[5])
 	limitStr := strings.TrimSpace(matches[6])
 	offsetStr := strings.TrimSpace(matches[7])
 
-	limit := -1 // -1 means no limit
+	// 验证表是否存在
+	if _, err := mts.GetTable(tableName); err != nil {
+		return nil, fmt.Errorf("table '%s' not found: %w", tableName, err)
+	}
+
+	// 解析 LIMIT 和 OFFSET
+	limit := -1 // -1 表示无限制
 	if limitStr != "" {
 		l, err := strconv.Atoi(limitStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid LIMIT value: %w", err)
 		}
+		if l < 0 {
+			return nil, fmt.Errorf("LIMIT cannot be negative")
+		}
 		limit = l
 	}
 
-	offset := 0 // 0 means no offset
+	offset := 0
 	if offsetStr != "" {
 		o, err := strconv.Atoi(offsetStr)
 		if err != nil {
 			return nil, fmt.Errorf("invalid OFFSET value: %w", err)
+		}
+		if o < 0 {
+			return nil, fmt.Errorf("OFFSET cannot be negative")
 		}
 		offset = o
 	}
@@ -342,71 +530,506 @@ func (mts *MultiTableSearchService) ExecuteQuery(query string) ([]string, error)
 	// 解析 WHERE 子句
 	var keywordQuery string
 	var vectorQueryText string
-	// var useANN bool = false // Default to false, can be set by query hints or config
+	var vectorizedType int = 0 // 默认向量化类型
+	var k int = 100            // 默认返回结果数量
+	var probe int = 10         // 默认探测簇数量
+	var onFlag uint64 = 0
+	var offFlag uint64 = 0
+	var orFlags []uint64
+	var useANN bool = false
 
 	if whereClause != "" {
-		// 匹配 keyword = '...' 和 vector_query = '...'
+		// 解析关键词查询
 		keywordRe := regexp.MustCompile(`keyword\s*=\s*'([^']+)'`)
 		keywordMatch := keywordRe.FindStringSubmatch(whereClause)
 		if len(keywordMatch) > 1 {
 			keywordQuery = keywordMatch[1]
 		}
 
+		// 解析向量查询
 		vectorRe := regexp.MustCompile(`vector_query\s*=\s*'([^']+)'`)
 		vectorMatch := vectorRe.FindStringSubmatch(whereClause)
 		if len(vectorMatch) > 1 {
 			vectorQueryText = vectorMatch[1]
+			useANN = true // 如果有向量查询，默认使用ANN
 		}
 
-		// TODO: Parse other conditions like onFlag, offFlag, orFlags, useANN from WHERE clause
-		// For simplicity, these are hardcoded or default for now.
+		// 解析向量化类型
+		typeRe := regexp.MustCompile(`vectorized_type\s*=\s*(\d+)`)
+		typeMatch := typeRe.FindStringSubmatch(whereClause)
+		if len(typeMatch) > 1 {
+			vectorizedType, _ = strconv.Atoi(typeMatch[1])
+		}
+
+		// 解析k值
+		kRe := regexp.MustCompile(`k\s*=\s*(\d+)`)
+		kMatch := kRe.FindStringSubmatch(whereClause)
+		if len(kMatch) > 1 {
+			k, _ = strconv.Atoi(kMatch[1])
+		}
+
+		// 解析probe值
+		probeRe := regexp.MustCompile(`probe\s*=\s*(\d+)`)
+		probeMatch := probeRe.FindStringSubmatch(whereClause)
+		if len(probeMatch) > 1 {
+			probe, _ = strconv.Atoi(probeMatch[1])
+		}
+
+		// 解析useANN标志
+		annRe := regexp.MustCompile(`use_ann\s*=\s*(true|false)`)
+		annMatch := annRe.FindStringSubmatch(whereClause)
+		if len(annMatch) > 1 {
+			useANN = annMatch[1] == "true"
+		}
+
+		// 解析onFlag
+		onFlagRe := regexp.MustCompile(`on_flag\s*=\s*(\d+)`)
+		onFlagMatch := onFlagRe.FindStringSubmatch(whereClause)
+		if len(onFlagMatch) > 1 {
+			onFlag, _ = strconv.ParseUint(onFlagMatch[1], 10, 64)
+		}
+
+		// 解析offFlag
+		offFlagRe := regexp.MustCompile(`off_flag\s*=\s*(\d+)`)
+		offFlagMatch := offFlagRe.FindStringSubmatch(whereClause)
+		if len(offFlagMatch) > 1 {
+			offFlag, _ = strconv.ParseUint(offFlagMatch[1], 10, 64)
+		}
+
+		// 解析orFlags
+		orFlagsRe := regexp.MustCompile(`or_flags\s*=\s*\[(\d+(?:,\s*\d+)*)\]`)
+		orFlagsMatch := orFlagsRe.FindStringSubmatch(whereClause)
+		if len(orFlagsMatch) > 1 {
+			flagsStr := strings.Split(orFlagsMatch[1], ",")
+			for _, flagStr := range flagsStr {
+				flagStr = strings.TrimSpace(flagStr)
+				flag, err := strconv.ParseUint(flagStr, 10, 64)
+				if err == nil {
+					orFlags = append(orFlags, flag)
+				}
+			}
+		}
 	}
 
-	// 2. 查询计划器/执行器
 	// 构建 TermQuery
 	termQuery := &messages.TermQuery{
 		Keyword: &messages.KeyWord{Word: keywordQuery},
-		// Other fields of TermQuery can be populated from parsed query
+	}
+
+	// 如果提供了向量查询文本，设置到 TermQuery 中
+	if vectorQueryText != "" {
+		termQuery.Keyword.Word = vectorQueryText
 	}
 
 	// 调用底层的 Search 方法
-	// 假设 vectorizedType, k, probe, onFlag, offFlag, orFlags, useANN 都有默认值或从其他地方获取
-	// 这里为了演示，我们假设一些默认值或从 vectorQueryText 是否存在来推断 useANN
-	// 实际应用中，这些参数应该从查询或配置中获取
-
-	// If vectorQueryText is provided, assume we want to use vector search and potentially ANN
-	currentUseANN := (vectorQueryText != "") // A simple heuristic
-
-	// For now, k and probe are hardcoded, should be configurable or part of query
-	// Also, vectorizedType, onFlag, offFlag, orFlags are not parsed from query yet.
-	// You would extend the parser to handle these.
-	searchResults, err := mts.Search(
-		tableName,
-		termQuery,
-		0,             // vectorizedType: default or parsed
-		100,           // k: default or parsed
-		10,            // probe: default or parsed
-		0,             // onFlag: default or parsed
-		0,             // offFlag: default or parsed
-		nil,           // orFlags: default or parsed
-		currentUseANN, // useANN: based on vector_query presence
-	)
+	searchResults, err := mts.Search(tableName, termQuery, vectorizedType, k, probe, onFlag, offFlag, orFlags, useANN)
 
 	if err != nil {
 		return nil, fmt.Errorf("error executing search for table '%s': %w", tableName, err)
 	}
 
-	// 3. 结果处理 (LIMIT 和 OFFSET)
-	start := offset
-	end := offset + limit
+	// 处理 ORDER BY
+	if orderByField != "" {
+		// 这里可以实现排序逻辑
+		// 例如，如果 orderByField 是 "score"，可以根据相似度分数排序
+		// 目前简化处理，假设结果已经按相关性排序
+	}
 
-	if limit == -1 || end > len(searchResults) {
+	// 处理 LIMIT 和 OFFSET
+	start := offset
+	end := len(searchResults)
+	if limit >= 0 {
+		end = offset + limit
+	}
+
+	if end > len(searchResults) {
 		end = len(searchResults)
 	}
 
-	if start > len(searchResults) {
-		return []string{}, nil // Offset is beyond results, return empty
+	if start >= len(searchResults) {
+		return []string{}, nil // Offset 超出结果范围，返回空
 	}
 
 	return searchResults[start:end], nil
+}
+
+// BatchAddDocuments 批量添加文档到指定表
+func (mts *MultiTableSearchService) BatchAddDocuments(tableName string, docs []messages.Document, vectorizedType int) error {
+	table, err := mts.GetTable(tableName)
+	if err != nil {
+		return err
+	}
+
+	// 开启事务
+	tx := mts.TxMgr.Begin(tree.Serializable)
+	defer func() {
+		if err != nil {
+			mts.TxMgr.Rollback(tx)
+		} else {
+			err = mts.TxMgr.Commit(tx)
+			if err != nil {
+				mts.TxMgr.Rollback(tx)
+			}
+		}
+	}()
+
+	// 批量添加到倒排索引
+	for _, doc := range docs {
+		err = table.InvertedIndex.Add(tx, doc)
+		if err != nil {
+			return fmt.Errorf("failed to add document %s to inverted index: %w", doc.Id, err)
+		}
+	}
+
+	// 批量添加到向量数据库
+	if table.VectorDB != nil {
+		// 使用工作池并行处理
+		numWorkers := runtime.NumCPU()
+		workChan := make(chan messages.Document, len(docs))
+		errChan := make(chan error, len(docs))
+		doneChan := make(chan bool, 1)
+
+		// 启动工作协程
+		var wg sync.WaitGroup
+		for i := 0; i < numWorkers; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for doc := range workChan {
+					err := table.VectorDB.AddDocument(doc.Id, string(doc.Bytes), vectorizedType)
+					if err != nil {
+						errChan <- fmt.Errorf("failed to add document %s to VectorDB: %w", doc.Id, err)
+						return
+					}
+				}
+			}()
+		}
+
+		// 发送工作
+		go func() {
+			for _, doc := range docs {
+				workChan <- doc
+			}
+			close(workChan)
+		}()
+
+		// 等待所有工作完成
+		go func() {
+			wg.Wait()
+			close(errChan)
+			doneChan <- true
+		}()
+
+		// 收集错误
+		select {
+		case err := <-errChan:
+			if err != nil {
+				return err
+			}
+		case <-doneChan:
+			// 所有工作完成，无错误
+		}
+	}
+
+	return nil
+}
+
+// BatchDeleteDocuments 批量删除文档
+func (mts *MultiTableSearchService) BatchDeleteDocuments(tableName string, docIds []string, keywordsList [][]*messages.KeyWord) error {
+	if len(docIds) != len(keywordsList) {
+		return fmt.Errorf("docIds and keywordsList must have the same length")
+	}
+
+	table, err := mts.GetTable(tableName)
+	if err != nil {
+		return err
+	}
+
+	// 开启事务
+	tx := mts.TxMgr.Begin(tree.Serializable)
+	defer func() {
+		if err != nil {
+			mts.TxMgr.Rollback(tx)
+		} else {
+			err = mts.TxMgr.Commit(tx)
+			if err != nil {
+				mts.TxMgr.Rollback(tx)
+			}
+		}
+	}()
+
+	// 批量从倒排索引中删除
+	for i, docId := range docIds {
+		err = table.InvertedIndex.Delete(tx, docId, keywordsList[i])
+		if err != nil {
+			return fmt.Errorf("failed to delete document %s from inverted index: %w", docId, err)
+		}
+	}
+
+	// 批量从向量数据库中删除
+	if table.VectorDB != nil {
+		// 使用工作池并行处理
+		numWorkers := runtime.NumCPU()
+		workChan := make(chan string, len(docIds))
+		errChan := make(chan error, len(docIds))
+		doneChan := make(chan bool, 1)
+
+		// 启动工作协程
+		var wg sync.WaitGroup
+		for i := 0; i < numWorkers; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for docId := range workChan {
+					err := table.VectorDB.DeleteVector(docId)
+					if err != nil {
+						errChan <- fmt.Errorf("failed to delete document %s from VectorDB: %w", docId, err)
+						return
+					}
+				}
+			}()
+		}
+
+		// 发送工作
+		go func() {
+			for _, docId := range docIds {
+				workChan <- docId
+			}
+			close(workChan)
+		}()
+
+		// 等待所有工作完成
+		go func() {
+			wg.Wait()
+			close(errChan)
+			doneChan <- true
+		}()
+
+		// 收集错误
+		select {
+		case err := <-errChan:
+			if err != nil {
+				return err
+			}
+		case <-doneChan:
+			// 所有工作完成，无错误
+		}
+	}
+
+	return nil
+}
+
+// ServiceStats 服务统计信息结构
+type ServiceStats struct {
+	TableCount     int
+	TotalDocuments int
+	CacheSize      int
+	CacheHitRate   float64
+	AvgQueryTime   time.Duration
+	TableStats     map[string]TableStats
+}
+
+type TableStats struct {
+	DocumentCount int
+	VectorDBStats db.PerformanceStats
+	IndexedStatus bool
+	LastUpdated   time.Time
+}
+
+// GetServiceStats 获取服务统计信息
+func (mts *MultiTableSearchService) GetServiceStats() ServiceStats {
+	mts.mu.RLock()
+	defer mts.mu.RUnlock()
+
+	stats := ServiceStats{
+		TableCount: len(mts.tables),
+		TableStats: make(map[string]TableStats),
+	}
+
+	var totalDocs int
+
+	// 收集每个表的统计信息
+	for name, table := range mts.tables {
+		tableStats := TableStats{}
+
+		if table.VectorDB != nil {
+			tableStats.DocumentCount = table.VectorDB.GetDataSize()
+			tableStats.VectorDBStats = table.VectorDB.GetStats()
+			tableStats.IndexedStatus = table.VectorDB.IsIndexed()
+		}
+
+		stats.TableStats[name] = tableStats
+		totalDocs += tableStats.DocumentCount
+	}
+
+	stats.TotalDocuments = totalDocs
+
+	// 缓存统计
+	mts.queryCacheMu.RLock()
+	stats.CacheSize = len(mts.queryCache)
+	// 这里可以添加缓存命中率计算
+	mts.queryCacheMu.RUnlock()
+
+	return stats
+}
+
+// HealthCheck 健康检查方法
+func (mts *MultiTableSearchService) HealthCheck() (bool, map[string]string) {
+	health := make(map[string]string)
+	allHealthy := true
+
+	// 检查事务管理器
+	if mts.TxMgr == nil {
+		health["TxMgr"] = "Not initialized"
+		allHealthy = false
+	} else {
+		health["TxMgr"] = "OK"
+	}
+
+	// 检查锁管理器
+	if mts.LockMgr == nil {
+		health["LockMgr"] = "Not initialized"
+		allHealthy = false
+	} else {
+		health["LockMgr"] = "OK"
+	}
+
+	// 检查WAL管理器
+	if mts.WAL == nil {
+		health["WAL"] = "Not initialized"
+		allHealthy = false
+	} else {
+		health["WAL"] = "OK"
+	}
+
+	// 检查表状态
+	mts.mu.RLock()
+	tableCount := len(mts.tables)
+	mts.mu.RUnlock()
+
+	health["TableCount"] = fmt.Sprintf("%d", tableCount)
+
+	return allHealthy, health
+}
+
+// ServiceConfig 服务配置结构
+type ServiceConfig struct {
+	MaxCacheSize          int
+	CacheTTL              time.Duration
+	DefaultVectorized     int
+	DefaultK              int
+	DefaultProbe          int
+	UseAdaptiveConfig     bool
+	MaxWorkers            int
+	IndexRebuildThreshold float64
+}
+
+// UpdateConfig 更新服务配置
+func (mts *MultiTableSearchService) UpdateConfig(newConfig ServiceConfig) {
+	mts.mu.Lock()
+	defer mts.mu.Unlock()
+
+	mts.config = newConfig
+
+	// 如果缓存大小减小，可能需要清理一些缓存条目
+	if newConfig.MaxCacheSize < mts.maxCacheSize {
+		mts.queryCacheMu.Lock()
+		for len(mts.queryCache) > newConfig.MaxCacheSize {
+			mts.evictOldestCacheEntry()
+		}
+		mts.queryCacheMu.Unlock()
+	}
+
+	mts.maxCacheSize = newConfig.MaxCacheSize
+	mts.cacheTTL = newConfig.CacheTTL
+}
+
+// AdaptiveOptimize 自适应优化方法
+func (mts *MultiTableSearchService) AdaptiveOptimize() {
+	if !mts.config.UseAdaptiveConfig {
+		return
+	}
+
+	// 获取系统资源使用情况
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	// 根据内存使用情况调整缓存大小
+	if m.Alloc > 1024*1024*1024 { // 如果内存使用超过1GB
+		// 减小缓存大小
+		newMaxCache := mts.maxCacheSize / 2
+		if newMaxCache < 100 {
+			newMaxCache = 100 // 最小缓存大小
+		}
+
+		mts.queryCacheMu.Lock()
+		for len(mts.queryCache) > newMaxCache {
+			mts.evictOldestCacheEntry()
+		}
+		mts.maxCacheSize = newMaxCache
+		mts.queryCacheMu.Unlock()
+	}
+
+	// 对每个表进行优化
+	mts.mu.RLock()
+	tables := make([]*TableInstance, 0, len(mts.tables))
+	for _, table := range mts.tables {
+		tables = append(tables, table)
+	}
+	mts.mu.RUnlock()
+
+	for _, table := range tables {
+		if table.VectorDB != nil {
+			// 调用VectorDB的自适应配置调整
+			table.VectorDB.AdjustConfig()
+		}
+	}
+}
+
+// 封装错误处理函数
+func (mts *MultiTableSearchService) logError(operation string, err error) {
+	log.Error("[ERROR] %s: %v", operation, err)
+}
+
+// 封装日志记录函数
+func (mts *MultiTableSearchService) logInfo(format string, args ...interface{}) {
+	log.Info("[INFO] "+format, args...)
+}
+
+// 事务重试函数
+func (mts *MultiTableSearchService) withRetry(operation func(*tree.Transaction) error, maxRetries int) error {
+	var err error
+	for i := 0; i < maxRetries; i++ {
+		tx := mts.TxMgr.Begin(tree.Serializable)
+		err = operation(tx)
+		if err != nil {
+			mts.TxMgr.Rollback(tx)
+			if strings.Contains(err.Error(), "transaction conflict") {
+				// 如果是事务冲突，等待一小段时间后重试
+				time.Sleep(time.Duration(rand.Intn(50)+10) * time.Millisecond)
+				continue
+			}
+			// 其他错误直接返回
+			return err
+		}
+
+		// 尝试提交事务
+		err = mts.TxMgr.Commit(tx)
+		if err != nil {
+			mts.TxMgr.Rollback(tx)
+			if strings.Contains(err.Error(), "transaction conflict") {
+				// 如果是事务冲突，等待一小段时间后重试
+				time.Sleep(time.Duration(rand.Intn(50)+10) * time.Millisecond)
+				continue
+			}
+			// 其他错误直接返回
+			return err
+		}
+
+		// 事务成功提交
+		return nil
+	}
+
+	// 达到最大重试次数
+	return fmt.Errorf("operation failed after %d retries: %w", maxRetries, err)
 }
