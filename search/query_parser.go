@@ -8,6 +8,43 @@ import (
 	"unicode"
 )
 
+/**
+- 重写了 nextToken 以手动处理字符流，而不是完全依赖 text/scanner 的 Scan() 。这能更好地控制多字符操作符（如 >= , <= , != ）和错误处理。
+- 添加了 skipWhitespace , readIdentifier , readNumber , readString 等辅助函数。
+- 改进了对字符串字面量的处理（简单版本，未处理转义）。
+- AST节点 :
+- 为 SelectStatement 添加了 Fields []Expression 以支持选择特定字段（当前解析逻辑仍简化）。
+- 添加了 StarExpression 代表 SELECT * 。
+- LiteralExpression 的 Value 改为 interface{} 以存储实际Go类型。
+- 为AST节点添加了 String() 方法，方便调试和打印AST。
+- Parser :
+- ParseStatement 现在调用 parseSelectStatement 。
+- parseSelectStatement 开始填充 Fields , From , Where , OrderBy , Limit , Offset 。
+- parseExpression 是Pratt解析器的核心，用于处理表达式和操作符优先级。当前它非常基础。
+- 添加了 parseIdentifier , parseNumberLiteral , parseStringLiteral , parseStarExpression , parseKeywordLiteral (for true/false/null), parseGroupedExpression , parseInfixExpression 。
+- 添加了 parseOrderByClause , parseLimitClause , parseOffsetClause 的基本实现。
+- 错误处理通过 p.errorf 和 p.peekError 收集到 p.errors 。
+- 错误处理 :
+- Lexer现在可以生成 TokenError 。
+- Parser收集Lexer错误和自身的解析错误。
+- ParseQueryWithAST 返回错误列表。
+- AST到查询参数 ( ConvertASTToParsedQuery ) :
+- 新增 ParsedQuery 结构体（可以根据需要调整，使其更接近您系统所需参数）。
+- 新增 FilterCondition 结构体。
+- ConvertASTToParsedQuery 函数遍历 SelectStatement AST，并将信息提取到 ParsedQuery 结构中。
+- extractConditions 是一个非常简化的函数，用于从 WHERE 子句的AST中提取条件。一个完整的实现需要正确处理 AND , OR , NOT 以及括号构成的复杂逻辑树。
+- Lexer ( Lexer , NewLexer , readChar , nextToken , skipWhitespaceAndComments , readString , readNumber ) :
+- Lexer 结构体增加了 line 和 column 用于更精确的错误定位。
+- readChar 现在会更新行号和列号。
+- skipWhitespaceAndComments 函数被添加用于跳过空格、制表符、换行符以及 SQL 风格的单行注释和多行注释readString 进行了改进，以初步支持 SQL 中的 '' (两个单引号表示一个单引号字符) 和常见的C风格转义序列 (如 \n , \t , \' , \\ )。更复杂的转义规则可能后续还需要完善。
+- readNumber 稍微调整以更好地区分整数和浮点数（尽管这里的逻辑还可以进一步加强以符合SQL数字字面量的完整规范）。
+- Parser ( NewParser , parseSelectStatement , parseSelectList , expectKeyword , expect ) :
+- parseSelectStatement : 调整了对 FROM 和表名的期望，使用新的 expectKeyword 和 expect 辅助函数，这些函数在检查失败时会记录错误并尝试继续（或者根据策略停止）。
+- parseSelectList : 这是新增的核心逻辑，用于解析 SELECT 后的字段列表。它可以处理 SELECT * , SELECT field1 , SELECT field1, field2, ... 。它会循环查找逗号并解析后续的表达式。当前的表达式解析还比较简单，主要处理标识符和星号。
+- expectKeyword 和 expect : 新的辅助函数，用于简化对当前 Token 的检查和消费，并在不匹配时记录错误。
+- precedences 和 NewParser 中的 registerInfix 为后续处理 AND / OR 等逻辑操作符做了准备，将 TokenKeyword 也注册为潜在的中缀操作符类型。
+*/
+
 // TokenType 定义了词法单元的类型
 type TokenType int
 

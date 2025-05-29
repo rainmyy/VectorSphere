@@ -5,13 +5,9 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="3984efa8-3b0a-4615-bca8-11261078f06d" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/search/test.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/db/verctor_db.go" beforeDir="false" afterPath="$PROJECT_DIR$/db/verctor_db.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/index/mvcc_inverted_index.go" beforeDir="false" afterPath="$PROJECT_DIR$/index/mvcc_inverted_index.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/library/util/vector_func.go" beforeDir="false" afterPath="$PROJECT_DIR$/library/util/vector_func.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/search/multi_table_search_service.go" beforeDir="false" afterPath="$PROJECT_DIR$/search/multi_table_search_service.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/search/query_parser.go" beforeDir="false" afterPath="$PROJECT_DIR$/search/query_parser.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/search/search_service.go" beforeDir="false" afterPath="$PROJECT_DIR$/search/search_service.go" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
