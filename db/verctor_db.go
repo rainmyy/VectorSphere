@@ -83,6 +83,9 @@ func (db *VectorDB) GetStats() PerformanceStats {
 	defer db.statsMu.RUnlock()
 	return db.stats
 }
+func (db *VectorDB) Close() {
+
+}
 
 // NewVectorDB 创建一个新的 VectorDB 实例。
 // 如果 filePath 非空且文件存在，则尝试从中加载数据。
