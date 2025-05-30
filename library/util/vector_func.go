@@ -85,7 +85,7 @@ func OptimizedCosineSimilarity(a, b []float64) float64 {
 	return dotProduct // 对于归一化向量，点积等于余弦相似度
 }
 
-// 产品量化压缩
+// CompressByPQ 产品量化压缩
 func CompressByPQ(vec []float64, numSubvectors int, numCentroids int) entity.CompressedVector {
 	// 将向量分割为numSubvectors个子向量
 	// 对每个子向量进行K-means聚类，得到numCentroids个中心点

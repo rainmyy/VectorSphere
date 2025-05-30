@@ -86,7 +86,7 @@ func (tm *TransactionManager) Begin(isolation IsolationLevel) *Transaction {
 
 	// 创建快照(RepeatableRead及以上)
 	if isolation >= RepeatableRead {
-		// 这里简化处理，实际需要实现快照机制
+		// 快照机制
 		tx.snapshot = createSnapshot(tm)
 	}
 

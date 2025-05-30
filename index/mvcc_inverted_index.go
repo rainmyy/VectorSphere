@@ -239,7 +239,16 @@ func GenerateScoreId(doc messages.Document) int64 {
 }
 
 func (idx *MVCCBPlusTreeInvertedIndex) Close() {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
 
+	if idx.vectorDB != nil {
+		idx.vectorDB.Close()
+	}
+
+	idx.cacheMu.Lock()
+	idx.queryCache = make(map[string]queryCache)
+	idx.cacheMu.Unlock()
 }
 
 // 添加LRU缓存淘汰策略
@@ -742,7 +751,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) Search(
 							NumHashTables: 4 + vectorCount/10000, // 根据数据规模调整哈希表数量
 							UseANN:        true,
 						}
-						ids, err = idx.vectorDB.HybridSearch(queryVec, kNearest, options)
+						ids, err = idx.vectorDB.HybridSearch(queryVec, kNearest, options, nprobe)
 					} else {
 						// 小规模数据使用精确搜索
 						ids, err = idx.vectorDB.FindNearestWithScores(queryVec, kNearest, 0.0)

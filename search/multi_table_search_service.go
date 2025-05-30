@@ -236,7 +236,7 @@ func (mts *MultiTableSearchService) CloseTable(tableName string) error {
 	return err // Return the first error encountered during closing
 }
 
-// 使用重试机制的 AddDocument 方法
+// AddDocument 使用重试机制的 AddDocument 方法
 func (mts *MultiTableSearchService) AddDocument(tableName string, doc messages.Document, vectorizedType int) error {
 	table, err := mts.GetTable(tableName)
 	if err != nil {
@@ -418,7 +418,7 @@ func (mts *MultiTableSearchService) Search(tableName string, query *messages.Ter
 				UseANN:        true,
 				SearchTimeout: 5 * time.Second, // 可配置的超时时间
 			}
-			vectorResults, err = table.VectorDB.HybridSearch(queryVector, k, options)
+			vectorResults, err = table.VectorDB.HybridSearch(queryVector, k, options, probe)
 		} else {
 			// 使用 FindNearestWithScores 进行精确搜索
 			vectorResults, err = table.VectorDB.FindNearestWithScores(queryVector, k, probe)
