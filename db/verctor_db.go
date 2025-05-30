@@ -68,6 +68,12 @@ type VectorDB struct {
 	statsMu           sync.RWMutex
 	multiIndex        *MultiLevelIndex // 存储构建的多级索引
 	config            AdaptiveConfig
+
+	// 新增 PQ 相关字段
+	pqCodebookFile           string // 全局 PQ 码本路径
+	numSubvectors            int    // PQ 的子向量数量
+	numCentroidsPerSubvector int    // 每个子向量空间的质心数量
+	usePQCompression         bool   // 标志是否启用 PQ 压缩
 }
 
 const (
@@ -141,6 +147,12 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 		vectorizedType:    DefaultVectorized,
 		normalizedVectors: make(map[string][]float64),
 		config:            AdaptiveConfig{},
+
+		// 初始化 PQ 相关字段
+		pqCodebookFile:           "",
+		numSubvectors:            0, // 默认为0，表示未配置或不使用
+		numCentroidsPerSubvector: 0, // 默认为0
+		usePQCompression:         false,
 	}
 	if filePath != "" {
 		if err := db.LoadFromFile(); err != nil {
@@ -149,9 +161,73 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 			db.clusters = make([]Cluster, 0)
 			db.indexed = false
 			db.normalizedVectors = make(map[string][]float64)
+			db.compressedVectors = make(map[string]entity.CompressedVector) // 确保加载失败也初始化
 		}
 	}
 	return db
+}
+
+// EnablePQCompression 启用 PQ 压缩并设置相关参数
+func (db *VectorDB) EnablePQCompression(codebookPath string, numSubvectors int, numCentroidsPerSubvector int) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	if len(codebookPath) == 0 {
+		return fmt.Errorf("PQ 码本不能为空")
+	}
+	if numSubvectors <= 0 {
+		return fmt.Errorf("子向量数量必须为正")
+	}
+	if numCentroidsPerSubvector <= 0 {
+		return fmt.Errorf("每个子向量的质心数量必须为正")
+	}
+
+	// 简单的码本大小校验，更复杂的校验应在 util.CompressByPQ 中进行
+	// 假设码本是平铺的，并且维度与 numSubvectors * numCentroidsPerSubvector * (vectorDim / numSubvectors) 相关
+	if db.vectorDim > 0 && len(codebook) != numSubvectors*numCentroidsPerSubvector*(db.vectorDim/numSubvectors) {
+		// 这个校验比较粗略，实际码本结构可能更复杂
+		// log.Warning("提供的码本大小与向量维度和PQ参数可能不匹配，请确保码本正确。")
+	}
+
+	db.pqCodebook = codebook
+	db.numSubvectors = numSubvectors
+	db.numCentroidsPerSubvector = numCentroidsPerSubvector
+	db.usePQCompression = true
+
+	log.Info("PQ 压缩已启用。子向量数: %d, 每子空间质心数: %d", numSubvectors, numCentroidsPerSubvector)
+
+	// 提示用户可能需要压缩现有向量
+	if len(db.vectors) > 0 && len(db.compressedVectors) < len(db.vectors) {
+		log.Info("数据库中存在未压缩的向量，请考虑调用 CompressExistingVectors() 进行压缩。")
+	}
+
+	return nil
+}
+
+// CompressExistingVectors 对数据库中所有尚未压缩的向量进行 PQ 压缩
+func (db *VectorDB) CompressExistingVectors() error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	if !db.usePQCompression || db.pqCodebook == nil {
+		return fmt.Errorf("PQ 压缩未启用或码本未设置")
+	}
+
+	log.Info("开始压缩现有向量...")
+	compressedCount := 0
+	for id, vec := range db.vectors {
+		if _, exists := db.compressedVectors[id]; !exists {
+			compressedVec, err := util.CompressByPQ(vec, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector)
+			if err != nil {
+				log.Error("压缩向量 %s 失败: %v", id, err)
+				continue // 跳过压缩失败的向量
+			}
+			db.compressedVectors[id] = compressedVec
+			compressedCount++
+		}
+	}
+	log.Info("现有向量压缩完成，共压缩了 %d 个向量。", compressedCount)
+	return nil
 }
 
 func (db *VectorDB) GetVectors() map[string][]float64 {
@@ -190,7 +266,16 @@ func (db *VectorDB) AddDocument(id string, doc string, vectorizedType int) error
 	db.vectors[id] = vector
 	// 预计算并存储归一化向量
 	db.normalizedVectors[id] = util.NormalizeVector(vector)
-
+	// 如果启用了 PQ 压缩，则压缩向量
+	if db.usePQCompression && db.pqCodebook != nil {
+		compressedVec, err := util.CompressByPQ(vector, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector)
+		if err != nil {
+			// 即使压缩失败，原始向量也已添加，这里只记录错误
+			log.Error("为文档 %s 添加时压缩向量失败: %v", id, err)
+		} else {
+			db.compressedVectors[id] = compressedVec
+		}
+	}
 	// 更新倒排索引
 	db.invertedMu.Lock()
 	words := strings.Fields(doc)
@@ -275,6 +360,15 @@ func (db *VectorDB) Add(id string, vector []float64) {
 	db.vectors[id] = vector
 	// 预计算并存储归一化向量
 	db.normalizedVectors[id] = util.NormalizeVector(vector)
+	// 如果启用了 PQ 压缩，则压缩向量
+	if db.usePQCompression && db.pqCodebook != nil {
+		compressedVec, err := util.CompressByPQ(vector, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector)
+		if err != nil {
+			log.Error("为向量 %s 添加时压缩向量失败: %v", id, err)
+		} else {
+			db.compressedVectors[id] = compressedVec
+		}
+	}
 
 	// 清除查询缓存
 	db.cacheMu.Lock()
@@ -297,8 +391,7 @@ func (db *VectorDB) DeleteVector(id string) error {
 	}
 	delete(db.vectors, id)
 	delete(db.normalizedVectors, id)
-	// TODO: 如果使用了压缩，也需要删除压缩向量
-	// delete(db.compressedVectors, id)
+	delete(db.compressedVectors, id)
 
 	// TODO: 如果使用了IVF索引 (db.indexed is true and db.clusters is populated),
 	// 需要从相应的簇中移除该 vectorID。
@@ -385,7 +478,17 @@ func (db *VectorDB) Update(id string, vector []float64) error {
 	db.vectors[id] = vector
 	// 更新归一化向量
 	db.normalizedVectors[id] = util.NormalizeVector(vector)
-
+	// 如果启用了 PQ 压缩，则更新压缩向量
+	if db.usePQCompression && db.pqCodebook != nil {
+		compressedVec, err := util.CompressByPQ(vector, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector)
+		if err != nil {
+			log.Error("为向量 %s 更新时压缩向量失败: %v", id, err)
+			// 即使压缩失败，原始向量也已更新
+			delete(db.compressedVectors, id) // 删除旧的压缩向量，因为它不再有效
+		} else {
+			db.compressedVectors[id] = compressedVec
+		}
+	}
 	// 清除查询缓存
 	db.cacheMu.Lock()
 	db.queryCache = make(map[string]queryCache)
@@ -407,6 +510,7 @@ func (db *VectorDB) Delete(id string) error {
 	}
 	delete(db.vectors, id)
 	delete(db.normalizedVectors, id)
+	delete(db.compressedVectors, id) // 删除压缩向量
 
 	// 清除查询缓存
 	db.cacheMu.Lock()
@@ -519,18 +623,18 @@ func (db *VectorDB) BuildMultiLevelIndex(maxIterations int, tolerance float64) e
 			}
 
 			// 创建KD树
-			tree := tree.NewKDTree(db.vectorDim)
+			kdTree := tree.NewKDTree(db.vectorDim)
 
 			// 将簇内所有向量插入KD树
 			for _, id := range db.clusters[clusterIdx].VectorIDs {
 				vec, exists := db.vectors[id]
 				if exists {
-					tree.Insert(vec, id)
+					kdTree.Insert(vec, id)
 				}
 			}
 
 			// 保存KD树到多级索引
-			multiIndex.subIndices[clusterIdx] = tree
+			multiIndex.subIndices[clusterIdx] = kdTree
 		}(i)
 	}
 
@@ -629,13 +733,18 @@ func (db *VectorDB) BuildIndex(maxIterations int, tolerance float64) error {
 
 // dataToSave 结构用于 gob 编码，包含所有需要持久化的字段
 type dataToSave struct {
-	Vectors           map[string][]float64
-	Clusters          []Cluster
-	NumClusters       int
-	Indexed           bool
-	InvertedIndex     map[string][]string
-	VectorDim         int
-	NormalizedVectors map[string][]float64
+	Vectors                  map[string][]float64
+	Clusters                 []Cluster
+	NumClusters              int
+	Indexed                  bool
+	InvertedIndex            map[string][]string
+	VectorDim                int
+	NormalizedVectors        map[string][]float64
+	CompressedVectors        map[string]entity.CompressedVector
+	PQCodebook               []float64
+	NumSubvectors            int
+	NumCentroidsPerSubvector int
+	UsePQCompression         bool
 }
 
 // SaveToFile 将当前数据库状态（包括索引）保存到其配置的文件中。
@@ -655,13 +764,18 @@ func (db *VectorDB) SaveToFile() error {
 	defer file.Close()
 
 	data := dataToSave{
-		Vectors:           db.vectors,
-		Clusters:          db.clusters,
-		NumClusters:       db.numClusters,
-		Indexed:           db.indexed,
-		InvertedIndex:     db.invertedIndex,
-		VectorDim:         db.vectorDim,
-		NormalizedVectors: db.normalizedVectors,
+		Vectors:                  db.vectors,
+		Clusters:                 db.clusters,
+		NumClusters:              db.numClusters,
+		Indexed:                  db.indexed,
+		InvertedIndex:            db.invertedIndex,
+		VectorDim:                db.vectorDim,
+		NormalizedVectors:        db.normalizedVectors,
+		CompressedVectors:        db.compressedVectors,
+		PQCodebook:               db.pqCodebook,
+		NumSubvectors:            db.numSubvectors,
+		NumCentroidsPerSubvector: db.numCentroidsPerSubvector,
+		UsePQCompression:         db.usePQCompression,
 	}
 
 	encoder := gob.NewEncoder(file)
@@ -703,6 +817,11 @@ func (db *VectorDB) LoadFromFile() error {
 	db.invertedIndex = loadedData.InvertedIndex
 	db.vectorDim = loadedData.VectorDim
 	db.normalizedVectors = loadedData.NormalizedVectors
+	db.compressedVectors = loadedData.CompressedVectors
+	db.pqCodebook = loadedData.PQCodebook
+	db.numSubvectors = loadedData.NumSubvectors
+	db.numCentroidsPerSubvector = loadedData.NumCentroidsPerSubvector
+	db.usePQCompression = loadedData.UsePQCompression
 
 	// 确保 map 和 slice 在加载后不是 nil，即使它们是空的
 	if db.vectors == nil {
@@ -721,9 +840,43 @@ func (db *VectorDB) LoadFromFile() error {
 			db.normalizedVectors[id] = util.NormalizeVector(vec)
 		}
 	}
-
-	log.Info("从 %s 加载数据库成功。索引状态: %t, 簇数量: %d\n", db.filePath, db.indexed, db.numClusters)
+	if db.compressedVectors == nil {
+		db.compressedVectors = make(map[string]entity.CompressedVector)
+	}
+	log.Info("从 %s 成功加载向量数据库。向量数: %d, 是否已索引: %t, 是否启用PQ: %t",
+		db.filePath, len(db.vectors), db.indexed, db.usePQCompression)
 	return nil
+}
+
+// FindNearest 查找与查询向量最相似的k个向量。
+// ... (此函数需要重大修改以支持基于 PQ 的 ADC/SDC 距离计算)
+// 如果启用了 PQ 压缩，并且希望利用它进行快速近似搜索，
+// 则需要实现相应的距离计算函数，例如 util.ApproximateDistancePQ。
+// 当前的 FindNearest 仍然基于原始向量进行精确搜索。
+// ... existing code ...
+
+// CalculateApproximateDistancePQ 以下是一个基于 PQ 的近似距离计算的简化示例，需要集成到 FindNearest 或新的搜索函数中
+// CalculateApproximateDistancePQ 计算查询向量与数据库中压缩向量的近似距离 (ADC)
+func (db *VectorDB) CalculateApproximateDistancePQ(queryVector []float64, compressedDBVector entity.CompressedVector) (float64, error) {
+	if !db.usePQCompression || db.pqCodebook == nil {
+		return 0, fmt.Errorf("PQ 压缩未启用或码本未设置")
+	}
+	if len(queryVector) != db.vectorDim {
+		return 0, fmt.Errorf("查询向量维度 %d 与数据库向量维度 %d 不匹配", len(queryVector), db.vectorDim)
+	}
+
+	// 调用 util 中的 PQ 近似距离计算函数 (假设已实现)
+	// dist, err := util.ApproximateDistanceADC(queryVector, compressedDBVector.Data, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector, db.vectorDim/db.numSubvectors)
+	// if err != nil {
+	// 	return 0, fmt.Errorf("计算 PQ 近似距离失败: %w", err)
+	// }
+	// return dist
+
+	// 这是一个占位符，您需要实现实际的 PQ ADC/SDC 距离计算
+	// 例如，可以先将查询向量也进行量化（如果使用 SDC），或者直接与码本中的子质心计算距离（ADC）
+	// 然后根据 compressedDBVector.Data 中的索引组合这些子距离。
+	log.Warning("CalculateApproximateDistancePQ 尚未完全实现，返回占位符距离。")
+	return math.MaxFloat64, fmt.Errorf("PQ 近似距离计算尚未实现")
 }
 func (db *VectorDB) CalculateAvgQueryTime(startTime time.Time) time.Duration {
 	avgTimeMicroSeconds := db.stats.AvgQueryTime.Microseconds()

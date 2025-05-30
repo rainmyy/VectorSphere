@@ -166,7 +166,6 @@ func TrainPQCodebook(
 	sampleRate float64,
 	trainFilePath string,
 ) error {
-	// ... (大部分内部逻辑不变，除了最后的返回部分) ...
 	if len(trainingVectors) == 0 {
 		return fmt.Errorf("训练向量集合不能为空")
 	}
