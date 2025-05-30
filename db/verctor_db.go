@@ -70,10 +70,11 @@ type VectorDB struct {
 	config            AdaptiveConfig
 
 	// 新增 PQ 相关字段
-	pqCodebookFile           string // 全局 PQ 码本路径
-	numSubvectors            int    // PQ 的子向量数量
-	numCentroidsPerSubvector int    // 每个子向量空间的质心数量
-	usePQCompression         bool   // 标志是否启用 PQ 压缩
+	pqCodebook               [][]algorithm.Point // 从文件加载的 PQ 码本
+	pqCodebookFilePath       string              // PQ 码本文件路径，用于热加载
+	numSubvectors            int                 // PQ 的子向量数量
+	numCentroidsPerSubvector int                 // 每个子向量空间的质心数量
+	usePQCompression         bool                // 标志是否启用 PQ 压缩
 }
 
 const (
@@ -149,7 +150,7 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 		config:            AdaptiveConfig{},
 
 		// 初始化 PQ 相关字段
-		pqCodebookFile:           "",
+		pqCodebook:               nil,
 		numSubvectors:            0, // 默认为0，表示未配置或不使用
 		numCentroidsPerSubvector: 0, // 默认为0
 		usePQCompression:         false,
@@ -167,13 +168,136 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 	return db
 }
 
+// GetTrainingVectors 从数据库中获取用于训练的向量样本
+// sampleRate: 采样率 (0.0 to 1.0)
+// maxVectors: 最大采样向量数 (0 表示无限制，除非 sampleRate 也为0)
+func (db *VectorDB) GetTrainingVectors(sampleRate float64, maxVectors int) ([][]float64, error) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	if len(db.vectors) == 0 {
+		return nil, fmt.Errorf("数据库中没有向量可供训练")
+	}
+
+	var sampledVectors [][]float64
+	allVectorIDs := make([]string, 0, len(db.vectors))
+	for id := range db.vectors {
+		allVectorIDs = append(allVectorIDs, id)
+	}
+
+	rand.Shuffle(len(allVectorIDs), func(i, j int) {
+		allVectorIDs[i], allVectorIDs[j] = allVectorIDs[j], allVectorIDs[i]
+	})
+
+	numToSample := 0
+	if sampleRate > 0 {
+		numToSample = int(float64(len(db.vectors)) * sampleRate)
+	}
+
+	if maxVectors > 0 {
+		if numToSample == 0 || numToSample > maxVectors { // 如果采样数超过最大数，或未通过采样率设置
+			numToSample = maxVectors
+		}
+	}
+
+	if numToSample == 0 { // 如果两者都未有效设置，则默认采样一小部分或全部（如果数据量小）
+		numToSample = len(db.vectors)
+		if numToSample > 10000 { // 避免采样过多数据，设定一个上限
+			numToSample = 10000
+		}
+	}
+
+	if numToSample > len(allVectorIDs) {
+		numToSample = len(allVectorIDs)
+	}
+
+	sampledVectors = make([][]float64, 0, numToSample)
+	for i := 0; i < numToSample; i++ {
+		id := allVectorIDs[i]
+		// 需要复制一份，避免外部修改影响原始数据
+		vecCopy := make([]float64, len(db.vectors[id]))
+		copy(vecCopy, db.vectors[id])
+		sampledVectors = append(sampledVectors, vecCopy)
+	}
+
+	log.Info("从 VectorDB 采样了 %d 个向量用于训练", len(sampledVectors))
+	return sampledVectors, nil
+}
+
+// LoadPQCodebookFromFile 从文件加载 PQ 码本
+func (db *VectorDB) LoadPQCodebookFromFile(filePath string) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	if filePath == "" {
+		log.Warning("PQ 码本文件路径为空，跳过加载。")
+		db.pqCodebook = nil
+		db.usePQCompression = false // 如果码本路径为空，则禁用PQ
+		return nil
+	}
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			log.Warning("PQ 码本文件 %s 不存在，PQ 压缩将不可用。", filePath)
+			db.pqCodebook = nil
+			db.usePQCompression = false
+			return nil // 文件不存在不是致命错误，只是PQ不可用
+		}
+		return fmt.Errorf("打开 PQ 码本文件 %s 失败: %v", filePath, err)
+	}
+	defer file.Close()
+
+	decoder := gob.NewDecoder(file)
+	var codebook [][]algorithm.Point
+	if err := decoder.Decode(&codebook); err != nil {
+		return fmt.Errorf("解码 PQ 码本文件 %s 失败: %v", filePath, err)
+	}
+
+	db.pqCodebook = codebook
+	db.pqCodebookFilePath = filePath // 存储路径以备将来热更新检查
+	// 可以在这里根据码本结构验证 numSubvectors 和 numCentroidsPerSubvector
+	if len(codebook) > 0 {
+		db.numSubvectors = len(codebook)
+		if len(codebook[0]) > 0 {
+			db.numCentroidsPerSubvector = len(codebook[0])
+		} else {
+			log.Warning("加载的 PQ 码本子空间为空，PQ 参数可能不正确。")
+			db.numCentroidsPerSubvector = 0
+		}
+	} else {
+		log.Warning("加载的 PQ 码本为空，PQ 参数可能不正确。")
+		db.numSubvectors = 0
+		db.numCentroidsPerSubvector = 0
+	}
+
+	log.Info("成功从 %s 加载 PQ 码本。子空间数: %d, 每子空间质心数: %d", filePath, db.numSubvectors, db.numCentroidsPerSubvector)
+	return nil
+}
+
 // EnablePQCompression 启用 PQ 压缩并设置相关参数
+// codebookPath: 码本文件路径。如果为空，则尝试使用之前配置的路径加载，或禁用PQ。
+// numSubvectors, numCentroidsPerSubvector: 这些参数现在主要用于信息展示和潜在的校验，实际值会从加载的码本中推断。
 func (db *VectorDB) EnablePQCompression(codebookPath string, numSubvectors int, numCentroidsPerSubvector int) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
-	if len(codebookPath) == 0 {
-		return fmt.Errorf("PQ 码本不能为空")
+	// 如果传入了新的 codebookPath，则使用它
+	// 如果 codebookPath 为空，则尝试使用 db.pqCodebookFilePath (如果之前设置过)
+	pathToLoad := codebookPath
+	if pathToLoad == "" {
+		pathToLoad = db.pqCodebookFilePath
+	}
+
+	if pathToLoad == "" {
+		db.mu.Lock()
+		log.Warning("未提供 PQ 码本文件路径，且之前未配置，PQ 压缩将禁用。")
+		db.usePQCompression = false
+		db.pqCodebook = nil
+		db.numSubvectors = 0
+		db.numCentroidsPerSubvector = 0
+		db.mu.Unlock()
+		return nil // 不是错误，只是禁用
 	}
 	if numSubvectors <= 0 {
 		return fmt.Errorf("子向量数量必须为正")
@@ -182,24 +306,38 @@ func (db *VectorDB) EnablePQCompression(codebookPath string, numSubvectors int, 
 		return fmt.Errorf("每个子向量的质心数量必须为正")
 	}
 
-	// 简单的码本大小校验，更复杂的校验应在 util.CompressByPQ 中进行
-	// 假设码本是平铺的，并且维度与 numSubvectors * numCentroidsPerSubvector * (vectorDim / numSubvectors) 相关
-	if db.vectorDim > 0 && len(codebook) != numSubvectors*numCentroidsPerSubvector*(db.vectorDim/numSubvectors) {
-		// 这个校验比较粗略，实际码本结构可能更复杂
-		// log.Warning("提供的码本大小与向量维度和PQ参数可能不匹配，请确保码本正确。")
+	if err := db.LoadPQCodebookFromFile(pathToLoad); err != nil {
+		// LoadPQCodebookFromFile 内部会处理文件不存在的情况并禁用PQ，这里只处理其他加载错误
+		db.mu.Lock()
+		db.usePQCompression = false // 加载失败，禁用PQ
+		db.pqCodebook = nil
+		db.numSubvectors = 0
+		db.numCentroidsPerSubvector = 0
+		db.mu.Unlock()
+		return fmt.Errorf("启用 PQ 压缩失败，加载码本时出错: %v", err)
 	}
+	db.mu.Lock() // 确保在更新 usePQCompression 之前获取锁
+	// 只有当码本成功加载且非空时，才真正启用PQ
+	if db.pqCodebook != nil && len(db.pqCodebook) > 0 {
+		db.usePQCompression = true
+		// 更新 numSubvectors 和 numCentroidsPerSubvector 以匹配加载的码本
+		db.numSubvectors = len(db.pqCodebook)
+		if len(db.pqCodebook[0]) > 0 {
+			db.numCentroidsPerSubvector = len(db.pqCodebook[0])
+		} else {
+			db.numCentroidsPerSubvector = 0 // 或者报错，取决于策略
+		}
+		log.Info("PQ 压缩已启用。码本路径: %s, 子向量数: %d, 每子空间质心数: %d", db.pqCodebookFilePath, db.numSubvectors, db.numCentroidsPerSubvector)
 
-	db.pqCodebook = codebook
-	db.numSubvectors = numSubvectors
-	db.numCentroidsPerSubvector = numCentroidsPerSubvector
-	db.usePQCompression = true
-
-	log.Info("PQ 压缩已启用。子向量数: %d, 每子空间质心数: %d", numSubvectors, numCentroidsPerSubvector)
-
-	// 提示用户可能需要压缩现有向量
-	if len(db.vectors) > 0 && len(db.compressedVectors) < len(db.vectors) {
-		log.Info("数据库中存在未压缩的向量，请考虑调用 CompressExistingVectors() 进行压缩。")
+		// 提示用户可能需要压缩现有向量
+		if len(db.vectors) > 0 && len(db.compressedVectors) < len(db.vectors) {
+			log.Info("VectorDB 中存在未压缩的向量。您可能需要调用 CompressExistingVectors 来压缩它们。")
+		}
+	} else {
+		db.usePQCompression = false
+		log.Warning("PQ 码本加载后为空或加载失败，PQ 压缩已禁用。")
 	}
+	db.mu.Unlock()
 
 	return nil
 }
@@ -364,9 +502,14 @@ func (db *VectorDB) Add(id string, vector []float64) {
 	if db.usePQCompression && db.pqCodebook != nil {
 		compressedVec, err := util.CompressByPQ(vector, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector)
 		if err != nil {
-			log.Error("为向量 %s 添加时压缩向量失败: %v", id, err)
+			log.Error("向量 %s 压缩失败: %v。该向量将只以原始形式存储。", id, err)
+			// 根据策略，可以选择是否回滚添加操作或仅记录错误
 		} else {
+			if db.compressedVectors == nil {
+				db.compressedVectors = make(map[string]entity.CompressedVector)
+			}
 			db.compressedVectors[id] = compressedVec
+			log.Trace("向量 %s 已压缩并存储。", id)
 		}
 	}
 
@@ -749,102 +892,198 @@ type dataToSave struct {
 
 // SaveToFile 将当前数据库状态（包括索引）保存到其配置的文件中。
 func (db *VectorDB) SaveToFile() error {
-	if db.filePath == "" {
-		return fmt.Errorf("此 VectorDB 实例未配置 filePath")
-	}
 	db.mu.RLock()
-	db.invertedMu.RLock()
 	defer db.mu.RUnlock()
-	defer db.invertedMu.RUnlock()
+
+	if db.filePath == "" {
+		return fmt.Errorf("文件路径未设置，无法保存数据库")
+	}
 
 	file, err := os.Create(db.filePath)
 	if err != nil {
-		return fmt.Errorf("创建文件 %s 失败: %w", db.filePath, err)
+		return fmt.Errorf("创建数据库文件 %s 失败: %v", db.filePath, err)
 	}
 	defer file.Close()
 
-	data := dataToSave{
+	encoder := gob.NewEncoder(file)
+
+	// 序列化 VectorDB 的核心数据
+	// 为了向前兼容和模块化，可以考虑为每个主要部分创建独立的结构进行序列化
+	data := struct {
+		Vectors           map[string][]float64
+		Clusters          []Cluster
+		NumClusters       int
+		Indexed           bool
+		InvertedIndex     map[string][]string
+		VectorDim         int
+		VectorizedType    int
+		NormalizedVectors map[string][]float64
+		CompressedVectors map[string]entity.CompressedVector
+		UseCompression    bool
+		// PQ 相关字段也需要保存，以便下次加载时能正确恢复状态
+		PqCodebookFilePath       string // 保存码本路径，而不是码本本身，码本由外部文件管理
+		NumSubvectors            int
+		NumCentroidsPerSubvector int
+		UsePQCompression         bool
+		// MultiIndex 和 Config 可能也需要保存，取决于其具体实现和是否可序列化
+		// MultiIndex *MultiLevelIndex // 如果 MultiLevelIndex 可序列化
+		// Config AdaptiveConfig // 如果 AdaptiveConfig 可序列化
+	}{
 		Vectors:                  db.vectors,
 		Clusters:                 db.clusters,
 		NumClusters:              db.numClusters,
 		Indexed:                  db.indexed,
 		InvertedIndex:            db.invertedIndex,
 		VectorDim:                db.vectorDim,
+		VectorizedType:           db.vectorizedType,
 		NormalizedVectors:        db.normalizedVectors,
 		CompressedVectors:        db.compressedVectors,
-		PQCodebook:               db.pqCodebook,
+		UseCompression:           db.useCompression,
+		PqCodebookFilePath:       db.pqCodebookFilePath, // 保存码本文件路径
 		NumSubvectors:            db.numSubvectors,
 		NumCentroidsPerSubvector: db.numCentroidsPerSubvector,
 		UsePQCompression:         db.usePQCompression,
 	}
 
-	encoder := gob.NewEncoder(file)
 	if err := encoder.Encode(data); err != nil {
-		return fmt.Errorf("将数据编码到文件 %s 失败: %w", db.filePath, err)
+		return fmt.Errorf("序列化数据库到 %s 失败: %v", db.filePath, err)
 	}
+
+	log.Info("VectorDB 数据成功保存到 %s", db.filePath)
 	return nil
 }
 
 // LoadFromFile 从其配置的文件中加载数据库状态（包括索引）。
 func (db *VectorDB) LoadFromFile() error {
-	if db.filePath == "" {
-		return fmt.Errorf("此 VectorDB 实例未配置 filePath")
-	}
 	db.mu.Lock()
-	db.invertedMu.Lock()
 	defer db.mu.Unlock()
-	defer db.invertedMu.Unlock()
+
+	if db.filePath == "" {
+		return fmt.Errorf("文件路径未设置，无法加载数据库")
+	}
 
 	file, err := os.Open(db.filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil // 文件未找到对于初始加载不是错误
+			log.Info("数据库文件 %s 不存在，将创建一个新的空数据库。", db.filePath)
+			// 初始化为空数据库状态，确保所有 map 都已创建
+			db.vectors = make(map[string][]float64)
+			db.clusters = make([]Cluster, 0)
+			db.indexed = false
+			db.invertedIndex = make(map[string][]string)
+			db.queryCache = make(map[string]queryCache)
+			db.normalizedVectors = make(map[string][]float64)
+			db.compressedVectors = make(map[string]entity.CompressedVector)
+			db.pqCodebook = nil
+			return nil // 文件不存在不是错误，是正常启动流程
 		}
-		return fmt.Errorf("打开文件 %s 失败: %w", db.filePath, err)
+		return fmt.Errorf("打开数据库文件 %s 失败: %v", db.filePath, err)
 	}
 	defer file.Close()
 
-	var loadedData dataToSave
 	decoder := gob.NewDecoder(file)
-	if err := decoder.Decode(&loadedData); err != nil {
-		return fmt.Errorf("从文件 %s 解码数据失败: %w", db.filePath, err)
+
+	data := struct {
+		Vectors                  map[string][]float64
+		Clusters                 []Cluster
+		NumClusters              int
+		Indexed                  bool
+		InvertedIndex            map[string][]string
+		VectorDim                int
+		VectorizedType           int
+		NormalizedVectors        map[string][]float64
+		CompressedVectors        map[string]entity.CompressedVector
+		UseCompression           bool
+		PqCodebookFilePath       string
+		NumSubvectors            int
+		NumCentroidsPerSubvector int
+		UsePQCompression         bool
+	}{}
+
+	if err := decoder.Decode(&data); err != nil {
+		// 如果解码失败，可能是文件损坏或格式不兼容
+		// 记录错误，并以空数据库启动，避免程序崩溃
+		log.Error("从 %s 反序列化数据库失败: %v。将使用空数据库启动。", db.filePath, err)
+		db.vectors = make(map[string][]float64)
+		db.clusters = make([]Cluster, 0)
+		db.indexed = false
+		db.invertedIndex = make(map[string][]string)
+		db.queryCache = make(map[string]queryCache)
+		db.normalizedVectors = make(map[string][]float64)
+		db.compressedVectors = make(map[string]entity.CompressedVector)
+		db.pqCodebook = nil
+		return nil // 即使加载失败，也返回nil，让程序继续运行
 	}
 
-	db.vectors = loadedData.Vectors
-	db.clusters = loadedData.Clusters
-	db.numClusters = loadedData.NumClusters
-	db.indexed = loadedData.Indexed
-	db.invertedIndex = loadedData.InvertedIndex
-	db.vectorDim = loadedData.VectorDim
-	db.normalizedVectors = loadedData.NormalizedVectors
-	db.compressedVectors = loadedData.CompressedVectors
-	db.pqCodebook = loadedData.PQCodebook
-	db.numSubvectors = loadedData.NumSubvectors
-	db.numCentroidsPerSubvector = loadedData.NumCentroidsPerSubvector
-	db.usePQCompression = loadedData.UsePQCompression
+	// 恢复数据
+	db.vectors = data.Vectors
+	db.clusters = data.Clusters
+	db.numClusters = data.NumClusters
+	db.indexed = data.Indexed
+	db.invertedIndex = data.InvertedIndex
+	db.vectorDim = data.VectorDim
+	db.vectorizedType = data.VectorizedType
+	db.normalizedVectors = data.NormalizedVectors
+	db.compressedVectors = data.CompressedVectors
+	db.useCompression = data.UseCompression
+	db.pqCodebookFilePath = data.PqCodebookFilePath
+	db.numSubvectors = data.NumSubvectors
+	db.numCentroidsPerSubvector = data.NumCentroidsPerSubvector
+	db.usePQCompression = data.UsePQCompression
 
-	// 确保 map 和 slice 在加载后不是 nil，即使它们是空的
+	// 确保 map 在 nil 的情况下被初始化
 	if db.vectors == nil {
 		db.vectors = make(map[string][]float64)
-	}
-	if db.clusters == nil {
-		db.clusters = make([]Cluster, 0)
 	}
 	if db.invertedIndex == nil {
 		db.invertedIndex = make(map[string][]string)
 	}
 	if db.normalizedVectors == nil {
 		db.normalizedVectors = make(map[string][]float64)
-		// 如果没有加载到归一化向量，则重新计算
-		for id, vec := range db.vectors {
-			db.normalizedVectors[id] = util.NormalizeVector(vec)
-		}
 	}
 	if db.compressedVectors == nil {
 		db.compressedVectors = make(map[string]entity.CompressedVector)
 	}
-	log.Info("从 %s 成功加载向量数据库。向量数: %d, 是否已索引: %t, 是否启用PQ: %t",
-		db.filePath, len(db.vectors), db.indexed, db.usePQCompression)
+	if db.queryCache == nil { // queryCache 不在 gob 中，需要单独初始化
+		db.queryCache = make(map[string]queryCache)
+	}
+
+	// 如果启用了 PQ 压缩且有码本路径，则尝试加载码本
+	if db.usePQCompression && db.pqCodebookFilePath != "" {
+		// 这里使用临时变量，避免在 LoadPQCodebookFromFile 中发生死锁
+		tempPath := db.pqCodebookFilePath
+		db.pqCodebookFilePath = "" // 暂时清除，避免 LoadPQCodebookFromFile 内部逻辑冲突
+		db.usePQCompression = false
+
+		db.mu.Unlock() // 解锁以便 LoadPQCodebookFromFile 可以获取锁
+		errLoadCodebook := db.LoadPQCodebookFromFile(tempPath)
+		db.mu.Lock() // 重新获取锁
+
+		if errLoadCodebook != nil {
+			log.Error("从 %s 加载数据库后，尝试加载 PQ 码本 %s 失败: %v。PQ 压缩将禁用。", db.filePath, tempPath, errLoadCodebook)
+			db.usePQCompression = false
+			db.pqCodebook = nil
+		} else {
+			// LoadPQCodebookFromFile 会更新 db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector
+			// 它也会在成功加载码本后设置 db.usePQCompression = true (如果码本非空)
+			// 所以这里我们只需要确保 db.usePQCompression 反映了加载结果
+			if db.pqCodebook == nil || len(db.pqCodebook) == 0 {
+				db.usePQCompression = false
+			} else {
+				db.usePQCompression = true // 确保与加载的码本状态一致
+			}
+		}
+		// 恢复原始配置的 usePQCompression 状态，如果码本加载失败，则它会被设为 false
+		// 如果码本加载成功，LoadPQCodebookFromFile 内部会处理
+		// 实际上，我们应该信任 LoadPQCodebookFromFile 设置的 usePQCompression
+		// 所以，如果 tempUsePQ 为 true 但加载失败，usePQCompression 会是 false，这是正确的
+	} else if db.usePQCompression && db.pqCodebookFilePath == "" {
+		log.Warning("数据库配置为使用 PQ 压缩，但未指定码本文件路径。PQ 压缩将禁用。")
+		db.usePQCompression = false
+		db.pqCodebook = nil
+	}
+
+	log.Info("VectorDB 数据成功从 %s 加载。向量数: %d, 是否已索引: %t, PQ压缩: %t", db.filePath, len(db.vectors), db.indexed, db.usePQCompression)
 	return nil
 }
 

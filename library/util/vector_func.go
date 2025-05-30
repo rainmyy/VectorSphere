@@ -11,6 +11,7 @@ import (
 	"seetaSearch/library/algorithm"
 	"seetaSearch/library/entity"
 	"seetaSearch/library/enum"
+	"seetaSearch/library/log"
 	"time"
 )
 
@@ -90,6 +91,12 @@ func OptimizedCosineSimilarity(a, b []float64) float64 {
 	return dotProduct // 对于归一化向量，点积等于余弦相似度
 }
 
+// TrainingDataSource 定义了获取训练向量的接口
+type TrainingDataSource interface {
+	GetTrainingVectors(sampleRate float64, maxVectors int) ([][]float64, error)
+	GetVectorDimension() (int, error)
+}
+
 // SavePQCodebookToFile 将 PQ 码本保存到文件
 func SavePQCodebookToFile(codebook [][]algorithm.Point, filePath string) error {
 	file, err := os.Create(filePath)
@@ -147,32 +154,34 @@ func LoadPQCodebookFromFile(filePath string) ([][]algorithm.Point, error) {
 }
 
 // TrainPQCodebook 根据训练数据生成产品量化的码本
-// trainingVectors: 用于训练的向量集合，每个向量是一个 []float64
+// dataSource: 提供训练向量的数据源
 // numSubvectors: 子向量的数量 (M)
 // numCentroidsPerSubvector: 每个子向量空间的质心数量 (K*), 通常为 256
 // maxKMeansIterations: K-Means 算法的最大迭代次数
 // kMeansTolerance: K-Means 算法的收敛容忍度
-// sampleRate: 从训练向量中采样用于训练每个子空间码本的比例 (0.0 to 1.0)。如果为1.0，则使用所有向量。
-//
-//	如果训练数据量非常大，可以采样以加速训练。
-//
-// 返回: 全局码本 (所有子空间质心的拼接), 错误
+// sampleRateForSubspaceTraining: 从 dataSource 获取的向量中，为每个子空间码本训练实际使用的采样率 (0.0 to 1.0)
+// maxVectorsForTraining: 从 dataSource 获取用于训练的最大向量数量 (0 表示无限制，但受 sampleRateForSubspaceTraining 影响)
+// codebookFilePath: 训练完成后码本的保存路径
 func TrainPQCodebook(
-	trainingVectors [][]float64,
+	datasource TrainingDataSource,
 	numSubvectors int,
 	numCentroidsPerSubvector int,
 	maxKMeansIterations int,
 	kMeansTolerance float64,
-	sampleRate float64,
-	trainFilePath string,
+	sampleRateForSubspaceTraining float64, // 注意：这个采样率是针对从数据源获取到的向量，再为每个子空间训练采样
+	maxVectorsForTraining int,
+	codebookFilePath string,
 ) error {
-	if len(trainingVectors) == 0 {
-		return fmt.Errorf("训练向量集合不能为空")
+	if datasource == nil {
+		return fmt.Errorf("训练数据源不能为空")
 	}
 	if numSubvectors <= 0 {
 		return fmt.Errorf("子向量数量必须为正")
 	}
-	firstVectorDim := len(trainingVectors[0])
+	firstVectorDim, err := datasource.GetVectorDimension()
+	if err != nil {
+		return fmt.Errorf("获取向量维度失败: %w", err)
+	}
 	if firstVectorDim == 0 {
 		return fmt.Errorf("训练向量维度不能为0")
 	}
@@ -183,37 +192,58 @@ func TrainPQCodebook(
 		return fmt.Errorf("每个子向量的质心数量必须为正")
 	}
 	if numCentroidsPerSubvector > 255 {
-		// 如果质心索引要用byte存储，那么每个子空间的质心数不能超过255
-		// 如果允许更多，CompressByPQ中的 compressedData 类型需要调整
 		return fmt.Errorf("每个子空间的质心数量 %d 超过了byte的最大表示 (255)", numCentroidsPerSubvector)
 	}
-	if sampleRate <= 0 || sampleRate > 1.0 {
-		return fmt.Errorf("采样率必须在 (0.0, 1.0] 之间")
+	if sampleRateForSubspaceTraining <= 0 || sampleRateForSubspaceTraining > 1.0 {
+		return fmt.Errorf("子空间训练采样率必须在 (0.0, 1.0] 之间")
 	}
+	if codebookFilePath == "" {
+		return fmt.Errorf("码本保存路径不能为空")
+	}
+
+	// 从数据源获取训练向量
+	// 注意：这里的 sampleRate 传递给 GetTrainingVectors 是为了初步筛选，
+	// 实际用于子空间训练的采样是 sampleRateForSubspaceTraining
+	trainingVectors, err := datasource.GetTrainingVectors(1.0, maxVectorsForTraining) // 先获取一批数据
+	if err != nil {
+		return fmt.Errorf("从数据源获取训练向量失败: %w", err)
+	}
+	if len(trainingVectors) == 0 {
+		return fmt.Errorf("从数据源获取的训练向量集合为空")
+	}
+	fmt.Printf("从数据源获取了 %d 个向量用于PQ码本训练。\n", len(trainingVectors))
 
 	subvectorDim := firstVectorDim / numSubvectors
 	allSubspaceCodebooks := make([][]algorithm.Point, numSubvectors)
 
 	rand.Seed(time.Now().UnixNano())
 
-	fmt.Printf("开始训练PQ码本: %d 个子向量, 每个子空间 %d 个质心\n", numSubvectors, numCentroidsPerSubvector)
+	fmt.Printf("开始训练PQ码本: %d 个子向量, 每个子空间 %d 个质心。保存路径: %s\n", numSubvectors, numCentroidsPerSubvector, codebookFilePath)
 
 	for i := 0; i < numSubvectors; i++ {
 		fmt.Printf("  训练子空间 %d/%d 的码本...\n", i+1, numSubvectors)
 		subspaceTrainingPoints := make([]algorithm.Point, 0)
-		numSamples := int(float64(len(trainingVectors)) * sampleRate)
-		if numSamples < numCentroidsPerSubvector {
-			fmt.Printf("    警告: 采样数量 (%d) 小于质心数量 (%d)，将使用所有训练向量进行当前子空间训练。\n", numSamples, numCentroidsPerSubvector)
-			numSamples = len(trainingVectors)
+
+		// 对从数据源获取的 trainingVectors 进行采样，用于当前子空间的训练
+		numSamplesForSubspace := int(float64(len(trainingVectors)) * sampleRateForSubspaceTraining)
+		if numSamplesForSubspace < numCentroidsPerSubvector && len(trainingVectors) >= numCentroidsPerSubvector {
+			fmt.Printf("    警告: 子空间训练采样数量 (%d) 小于质心数量 (%d)，将使用 %d 个向量进行当前子空间训练。\n", numSamplesForSubspace, numCentroidsPerSubvector, numCentroidsPerSubvector)
+			numSamplesForSubspace = numCentroidsPerSubvector
+		} else if len(trainingVectors) < numCentroidsPerSubvector {
+			return fmt.Errorf("用于子空间 %d 训练的向量数 (%d) 少于质心数 (%d)", i, len(trainingVectors), numCentroidsPerSubvector)
 		}
 
 		sampledIndices := make([]int, len(trainingVectors))
 		for idx := range sampledIndices {
 			sampledIndices[idx] = idx
 		}
-		if sampleRate < 1.0 && numSamples < len(trainingVectors) {
+		if sampleRateForSubspaceTraining < 1.0 && numSamplesForSubspace < len(trainingVectors) {
 			rand.Shuffle(len(sampledIndices), func(k, l int) { sampledIndices[k], sampledIndices[l] = sampledIndices[l], sampledIndices[k] })
-			sampledIndices = sampledIndices[:numSamples]
+			sampledIndices = sampledIndices[:numSamplesForSubspace]
+		} else {
+			// 如果采样率是1.0，或者样本数不足，就用所有获取到的向量
+			// 或者如果 numSamplesForSubspace >= len(trainingVectors)，也用所有获取到的向量
+			sampledIndices = sampledIndices[:len(trainingVectors)]
 		}
 
 		for _, originalVecIdx := range sampledIndices {
@@ -227,7 +257,7 @@ func TrainPQCodebook(
 		}
 
 		if len(subspaceTrainingPoints) < numCentroidsPerSubvector {
-			return fmt.Errorf("子空间 %d 的训练点数量 (%d) 少于质心数量 (%d)，无法进行K-Means", i, len(subspaceTrainingPoints), numCentroidsPerSubvector)
+			return fmt.Errorf("子空间 %d 的实际训练点数量 (%d) 少于质心数量 (%d)，无法进行K-Means", i, len(subspaceTrainingPoints), numCentroidsPerSubvector)
 		}
 
 		fmt.Printf("    对 %d 个子向量进行K-Means聚类...\n", len(subspaceTrainingPoints))
@@ -240,36 +270,36 @@ func TrainPQCodebook(
 		fmt.Printf("    子空间 %d 码本训练完成，获得 %d 个质心。\n", i+1, len(centroids))
 	}
 
-	fmt.Printf("PQ码本训练完成。\n")
-	return SavePQCodebookToFile(allSubspaceCodebooks, trainFilePath)
+	fmt.Printf("PQ码本训练完成。正在保存到 %s ...\n", codebookFilePath)
+	err = SavePQCodebookToFile(allSubspaceCodebooks, codebookFilePath)
+	if err != nil {
+		return fmt.Errorf("保存PQ码本到文件 %s 失败: %w", codebookFilePath, err)
+	}
+	fmt.Printf("PQ码本已成功保存到 %s。\n", codebookFilePath)
+	return nil
 }
 
 // CompressByPQ 产品量化压缩
 // vec: 原始向量 []float64
-// subspaceCodebooks: 预先训练好的、按子空间组织的码本。
-//
-//	格式: [][]algorithm.Point, 其中 subspaceCodebooks[m] 是第 m 个子空间的质心列表。
-//
-// numSubvectors: 子向量的数量 (M)。也应等于 len(subspaceCodebooks)。
-// numCentroidsPerSubvector: 每个子向量空间的质心数量 (K*)。也应等于 len(subspaceCodebooks[m])。
-func CompressByPQ(vec []float64, trainFilePath string, numSubvectors int, numCentroidsPerSubvector int) (entity.CompressedVector, error) {
+// loadedCodebook: 从文件预加载的码本 [][]algorithm.Point
+// numSubvectors: 子向量的数量 (M) - 应与加载的码本结构一致
+// numCentroidsPerSubvector: 每个子向量空间的质心数量 (K*) - 应与加载的码本结构一致
+func CompressByPQ(vec []float64, loadedCodebook [][]algorithm.Point, numSubvectors int, numCentroidsPerSubvector int) (entity.CompressedVector, error) {
 	// 1. 参数校验
 	if len(vec) == 0 {
 		return entity.CompressedVector{}, fmt.Errorf("输入向量不能为空")
 	}
+	if loadedCodebook == nil || len(loadedCodebook) == 0 {
+		return entity.CompressedVector{}, fmt.Errorf("提供的预加载码本不能为空")
+	}
 	if numSubvectors <= 0 {
 		return entity.CompressedVector{}, fmt.Errorf("子向量数量必须为正")
 	}
+	if len(loadedCodebook) != numSubvectors {
+		return entity.CompressedVector{}, fmt.Errorf("加载的码本中的子空间数量 %d 与指定的子向量数量 %d 不匹配", len(loadedCodebook), numSubvectors)
+	}
 	if len(vec)%numSubvectors != 0 {
 		return entity.CompressedVector{}, fmt.Errorf("向量维度 %d 不能被子向量数量 %d 整除", len(vec), numSubvectors)
-	}
-
-	subspaceCodebooks, err := LoadPQCodebookFromFile(trainFilePath)
-	if err != nil {
-		return entity.CompressedVector{}, fmt.Errorf("加载训练集失败: %w", err)
-	}
-	if len(subspaceCodebooks) != numSubvectors {
-		return entity.CompressedVector{}, fmt.Errorf("提供的子空间码本数量 %d 与指定的子向量数量 %d 不匹配", len(subspaceCodebooks), numSubvectors)
 	}
 
 	subvectorDim := len(vec) / numSubvectors
@@ -281,12 +311,14 @@ func CompressByPQ(vec []float64, trainFilePath string, numSubvectors int, numCen
 		subVecPoint := algorithm.Point(subVecData)
 
 		// 获取当前子空间的码本
-		currentSubspaceCodebook := subspaceCodebooks[i]
-		if len(currentSubspaceCodebook) != numCentroidsPerSubvector {
-			return entity.CompressedVector{}, fmt.Errorf("子空间 %d 的码本中的质心数量 %d 与期望的 %d 不符", i, len(currentSubspaceCodebook), numCentroidsPerSubvector)
-		}
+		currentSubspaceCodebook := loadedCodebook[i]
 		if len(currentSubspaceCodebook) == 0 {
 			return entity.CompressedVector{}, fmt.Errorf("子空间 %d 的码本为空", i)
+		}
+		// 校验 numCentroidsPerSubvector (如果提供)
+		if numCentroidsPerSubvector > 0 && len(currentSubspaceCodebook) != numCentroidsPerSubvector {
+			log.Warning("子空间 %d 的码本中的质心数量 %d 与期望的 %d 不符。将使用码本中的实际数量。", i, len(currentSubspaceCodebook), numCentroidsPerSubvector)
+			// 不再是致命错误，但需要记录。实际压缩会基于码本的真实大小。
 		}
 		// 校验子空间码本中质心的维度
 		if len(currentSubspaceCodebook[0]) != subvectorDim {
@@ -311,8 +343,9 @@ func CompressByPQ(vec []float64, trainFilePath string, numSubvectors int, numCen
 		if assignedCentroidIndex == -1 {
 			return entity.CompressedVector{}, fmt.Errorf("未能为子向量 %d 分配质心", i)
 		}
-		// 确保 assignedCentroidIndex 在 byte 的表示范围内
 		if assignedCentroidIndex >= 256 {
+			// 这个检查理论上不应该触发，因为 TrainPQCodebook 限制了 numCentroidsPerSubvector <= 255
+			// 但如果码本是外部生成的，这个检查仍然有用。
 			return entity.CompressedVector{}, fmt.Errorf("质心索引 %d 超出byte表示范围，请确保每个子空间的质心数量不超过255", assignedCentroidIndex)
 		}
 		compressedData[i] = byte(assignedCentroidIndex)
@@ -320,7 +353,7 @@ func CompressByPQ(vec []float64, trainFilePath string, numSubvectors int, numCen
 
 	return entity.CompressedVector{
 		Data:     compressedData,
-		Codebook: subspaceCodebooks, // 全局码本通常不随每个压缩向量存储
+		Codebook: nil, // 压缩结果不包含码本，码本是全局/外部管理的
 	}, nil
 }
 
