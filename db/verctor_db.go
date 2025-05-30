@@ -91,6 +91,9 @@ func (db *VectorDB) GetStats() PerformanceStats {
 	return db.stats
 }
 
+func (db *VectorDB) IsPQCompressionEnabled() bool {
+	return db.useCompression
+}
 func (db *VectorDB) Close() {
 	db.mu.Lock()
 	defer db.mu.Unlock()
@@ -166,6 +169,30 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 		}
 	}
 	return db
+}
+
+// GetVectorDimension 返回数据库中向量的维度
+// 如果尚未添加任何向量或维度未初始化，则返回 0
+func (db *VectorDB) GetVectorDimension() (int, error) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+	if db.vectorDim == 0 && len(db.vectors) > 0 {
+		// 如果 vectorDim 未初始化，但存在向量，尝试从第一个向量获取维度
+		// 这是一个后备逻辑，理想情况下 vectorDim 应该在添加第一个向量时设置
+		for _, v := range db.vectors {
+			db.mu.RUnlock() // 释放读锁，准备获取写锁
+			db.mu.Lock()
+			db.vectorDim = len(v) // 设置维度
+			db.mu.Unlock()
+			db.mu.RLock() // 重新获取读锁
+			log.Info("Vector dimension was not initialized, inferred as %d from existing vectors.", db.vectorDim)
+			break
+		}
+	}
+	if db.vectorDim == 0 {
+		return 0, fmt.Errorf("向量维度尚未初始化，数据库中可能没有向量")
+	}
+	return db.vectorDim, nil
 }
 
 // GetTrainingVectors 从数据库中获取用于训练的向量样本

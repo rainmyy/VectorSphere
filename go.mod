@@ -12,6 +12,7 @@ require (
 	github.com/leemcloughlin/gofarmhash v0.0.0-20160919192320-0a055c5b87a8
 	github.com/lib/pq v1.10.9
 	github.com/mattn/go-sqlite3 v1.14.28
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/wangbin/jiebago v0.3.2
 	go.etcd.io/bbolt v1.4.0
