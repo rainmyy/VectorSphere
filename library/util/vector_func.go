@@ -11,7 +11,6 @@ import (
 	"seetaSearch/library/algorithm"
 	"seetaSearch/library/entity"
 	"seetaSearch/library/enum"
-	"seetaSearch/library/log"
 	"time"
 )
 
@@ -317,8 +316,6 @@ func CompressByPQ(vec []float64, loadedCodebook [][]algorithm.Point, numSubvecto
 		}
 		// 校验 numCentroidsPerSubvector (如果提供)
 		if numCentroidsPerSubvector > 0 && len(currentSubspaceCodebook) != numCentroidsPerSubvector {
-			log.Warning("子空间 %d 的码本中的质心数量 %d 与期望的 %d 不符。将使用码本中的实际数量。", i, len(currentSubspaceCodebook), numCentroidsPerSubvector)
-			// 不再是致命错误，但需要记录。实际压缩会基于码本的真实大小。
 		}
 		// 校验子空间码本中质心的维度
 		if len(currentSubspaceCodebook[0]) != subvectorDim {
@@ -414,6 +411,68 @@ func CalculateDistance(a, b []float64, method int) (float64, error) {
 	default:
 		return 0, fmt.Errorf("不支持的距离计算方法: %d", method)
 	}
+}
+
+// ApproximateDistanceADC 计算查询向量与压缩向量之间的非对称距离 (Asymmetric Distance Computation)
+// queryVector: 查询向量 []float64
+// compressedVector: 数据库中存储的压缩向量 entity.CompressedVector (其 Data 字段为 []byte)
+// codebook: 预加载的完整PQ码本 [][]algorithm.Point, 其中 codebook[m] 是第m个子空间的码本
+// numSubvectors: 子向量的数量 (M)
+// 返回近似的平方欧氏距离
+func ApproximateDistanceADC(queryVector []float64, compressedVector entity.CompressedVector, codebook [][]algorithm.Point, numSubvectors int) (float64, error) {
+	if len(queryVector) == 0 {
+		return 0, fmt.Errorf("查询向量不能为空")
+	}
+	if compressedVector.Data == nil || len(compressedVector.Data) == 0 {
+		return 0, fmt.Errorf("压缩向量数据不能为空")
+	}
+	if codebook == nil || len(codebook) == 0 {
+		return 0, fmt.Errorf("码本不能为空")
+	}
+	if numSubvectors <= 0 {
+		return 0, fmt.Errorf("子向量数量必须为正")
+	}
+	if len(queryVector)%numSubvectors != 0 {
+		return 0, fmt.Errorf("查询向量维度 %d 不能被子向量数量 %d 整除", len(queryVector), numSubvectors)
+	}
+	if len(compressedVector.Data) != numSubvectors {
+		return 0, fmt.Errorf("压缩向量的数据长度 %d 与子向量数量 %d 不匹配", len(compressedVector.Data), numSubvectors)
+	}
+	if len(codebook) != numSubvectors {
+		return 0, fmt.Errorf("码本中的子空间数量 %d 与子向量数量 %d 不匹配", len(codebook), numSubvectors)
+	}
+
+	subvectorDim := len(queryVector) / numSubvectors
+	totalSquaredDistance := 0.0
+
+	for m := 0; m < numSubvectors; m++ {
+		// 1. 获取查询向量的第 m 个子向量
+		querySubvector := algorithm.Point(queryVector[m*subvectorDim : (m+1)*subvectorDim])
+
+		// 2. 获取压缩向量中第 m 个子向量对应的码字 (质心索引)
+		centroidIndex := int(compressedVector.Data[m])
+
+		// 3. 从码本中获取该子空间的码本
+		currentSubspaceCodebook := codebook[m]
+		if centroidIndex < 0 || centroidIndex >= len(currentSubspaceCodebook) {
+			return 0, fmt.Errorf("子空间 %d 的质心索引 %d 超出范围 [0, %d)", m, centroidIndex, len(currentSubspaceCodebook))
+		}
+
+		// 4. 获取对应的质心向量
+		centroidSubvector := currentSubspaceCodebook[centroidIndex]
+		if len(centroidSubvector) != subvectorDim {
+			return 0, fmt.Errorf("子空间 %d 码本中的质心维度 %d 与子向量维度 %d 不符", m, len(centroidSubvector), subvectorDim)
+		}
+
+		// 5. 计算查询子向量与质心子向量之间的平方欧氏距离
+		distSq, err := algorithm.EuclideanDistanceSquared(querySubvector, centroidSubvector)
+		if err != nil {
+			return 0, fmt.Errorf("计算子空间 %d 的距离失败: %w", m, err)
+		}
+		totalSquaredDistance += distSq
+	}
+
+	return totalSquaredDistance, nil
 }
 
 // GenerateCacheKey 生成查询缓存键

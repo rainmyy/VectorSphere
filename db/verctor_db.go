@@ -75,6 +75,8 @@ type VectorDB struct {
 	numSubvectors            int                 // PQ 的子向量数量
 	numCentroidsPerSubvector int                 // 每个子向量空间的质心数量
 	usePQCompression         bool                // 标志是否启用 PQ 压缩
+
+	stopCh chan struct{}
 }
 
 const (
@@ -99,7 +101,11 @@ func (db *VectorDB) Close() {
 	defer db.mu.Unlock()
 
 	log.Info("Closing VectorDB...")
-
+	// 发送停止信号给后台任务
+	if db.stopCh != nil {
+		close(db.stopCh) // 关闭channel以通知goroutine停止
+		log.Info("Stop signal sent to background tasks.")
+	}
 	// 尝试保存数据到文件
 	if db.filePath != "" {
 		log.Info("Attempting to save VectorDB data to %s before closing...", db.filePath)
@@ -157,6 +163,7 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 		numSubvectors:            0, // 默认为0，表示未配置或不使用
 		numCentroidsPerSubvector: 0, // 默认为0
 		usePQCompression:         false,
+		stopCh:                   make(chan struct{}), // 初始化stopCh
 	}
 	if filePath != "" {
 		if err := db.LoadFromFile(); err != nil {
@@ -563,8 +570,7 @@ func (db *VectorDB) DeleteVector(id string) error {
 	delete(db.normalizedVectors, id)
 	delete(db.compressedVectors, id)
 
-	// TODO: 如果使用了IVF索引 (db.indexed is true and db.clusters is populated),
-	// 需要从相应的簇中移除该 vectorID。
+	// 如果使用了IVF索引 需要从相应的簇中移除该 vectorID。
 	// 这部分逻辑会比较复杂，需要遍历 clusters 或维护一个反向映射。
 	if db.indexed {
 		for i := range db.clusters {
@@ -599,29 +605,162 @@ func (db *VectorDB) UpdateIndexIncrementally(id string, vector []float64) error 
 
 	// 找到最近的簇
 	minDist := math.MaxFloat64
-	nearestCluster := -1
+	nearestClusterIndex := -1
+
+	// 使用归一化向量进行距离计算（如果可用）
+	var queryVecForDist []float64
+	if db.normalizedVectors[id] != nil {
+		queryVecForDist = db.normalizedVectors[id]
+	} else {
+		queryVecForDist = util.NormalizeVector(vector) // 如果没有预计算，则动态计算
+	}
 
 	for i, cluster := range db.clusters {
-		dist, err := algorithm.EuclideanDistanceSquared(vector, cluster.Centroid)
+		// 假设簇中心也是归一化的，或者在KMeans时已处理
+		dist, err := algorithm.EuclideanDistanceSquared(queryVecForDist, cluster.Centroid) // 或者使用余弦相似度
 		if err != nil {
+			log.Warning("计算到簇 %d 中心的距离失败: %v", i, err)
 			continue
 		}
 		if dist < minDist {
 			minDist = dist
-			nearestCluster = i
+			nearestClusterIndex = i
 		}
 	}
 
-	if nearestCluster >= 0 {
-		// 将向量添加到最近的簇
-		db.clusters[nearestCluster].VectorIDs = append(
-			db.clusters[nearestCluster].VectorIDs, id)
+	if nearestClusterIndex != -1 {
+		// 从旧的簇中移除 (如果它之前在某个簇中)
+		// 注意: 这需要一种方式来追踪向量当前属于哪个簇，或者遍历所有簇移除旧的ID
+		// 为简化，这里假设我们只添加新的或更新的，旧的分配关系通过其他方式处理或在rebuild时修正
+		// 一个更健壮的实现可能需要一个 map[string]int 来存储 vectorID -> clusterIndex 的映射
 
-		// 可选：更新簇中心（可能需要定期执行而不是每次都更新）
-		// ...
+		// 将向量ID添加到最近的簇
+		// 首先检查是否已存在，避免重复添加
+		found := false
+		for _, vecID := range db.clusters[nearestClusterIndex].VectorIDs {
+			if vecID == id {
+				found = true
+				break
+			}
+		}
+		if !found {
+			db.clusters[nearestClusterIndex].VectorIDs = append(db.clusters[nearestClusterIndex].VectorIDs, id)
+			log.Info("向量 %s 已增量添加到簇 %d。", id, nearestClusterIndex)
+		}
+	} else {
+		log.Warning("未能为向量 %s 找到最近的簇进行增量更新。", id)
 	}
 
 	return nil
+}
+
+// recalculateClusterCentroid 重新计算指定簇的中心点
+func (db *VectorDB) recalculateClusterCentroid(clusterIndex int) error {
+	db.mu.Lock() // 注意：这里获取了写锁，如果频繁调用且簇很多，可能需要更细粒度的锁
+	defer db.mu.Unlock()
+
+	if clusterIndex < 0 || clusterIndex >= len(db.clusters) {
+		return fmt.Errorf("无效的簇索引: %d", clusterIndex)
+	}
+
+	cluster := &db.clusters[clusterIndex]
+	if len(cluster.VectorIDs) == 0 {
+		// log.Warning("簇 %d 为空，无法重新计算中心点。可能保持旧的中心点或置为nil。", clusterIndex)
+		// 根据策略，可以选择保留旧中心点，或者如果允许，将其标记为无效/删除
+		return nil // 或者返回一个特定的错误/警告
+	}
+
+	if db.vectorDim == 0 {
+		// 尝试从向量中推断维度，如果之前未设置
+		firstVecID := cluster.VectorIDs[0]
+		if vec, ok := db.vectors[firstVecID]; ok {
+			db.vectorDim = len(vec)
+		} else {
+			return fmt.Errorf("无法获取簇 %d 中向量 %s 的数据以确定维度", clusterIndex, firstVecID)
+		}
+		if db.vectorDim == 0 {
+			return fmt.Errorf("向量维度为0，无法计算中心点")
+		}
+	}
+	newCentroid := make(algorithm.Point, db.vectorDim)
+	validVectorsCount := 0
+	for _, vecID := range cluster.VectorIDs {
+		var vecData []float64
+		var ok bool
+
+		// 优先使用归一化向量（如果存在且配置使用）
+		// 假设：如果启用了某种形式的归一化，则在计算簇中心时也应使用归一化向量
+		if len(db.normalizedVectors) > 0 {
+			vecData, ok = db.normalizedVectors[vecID]
+		} else {
+			vecData, ok = db.vectors[vecID]
+		}
+
+		if !ok {
+			log.Warning("重新计算簇 %d 中心时，向量 %s 未找到，跳过此向量。", clusterIndex, vecID)
+			continue
+		}
+		if len(vecData) != db.vectorDim {
+			log.Warning("向量 %s 的维度 (%d) 与期望维度 (%d) 不符，跳过此向量。", vecID, len(vecData), db.vectorDim)
+			continue
+		}
+
+		for i, val := range vecData {
+			newCentroid[i] += val
+		}
+		validVectorsCount++
+	}
+
+	if validVectorsCount == 0 {
+		log.Warning("簇 %d 中没有有效的向量来计算新的中心点，保留旧中心点。", clusterIndex)
+		return nil
+	}
+
+	for i := 0; i < db.vectorDim; i++ {
+		newCentroid[i] /= float64(len(cluster.VectorIDs))
+	}
+
+	cluster.Centroid = newCentroid
+	log.Info("簇 %d 的中心点已重新计算。", clusterIndex)
+	return nil
+}
+
+// StartClusterCentroidUpdater 启动一个定时器，定期更新所有簇的中心点
+// updateInterval: 更新间隔，例如 time.Minute * 5 表示每5分钟更新一次
+func (db *VectorDB) StartClusterCentroidUpdater(interval time.Duration) {
+	if !db.indexed || db.numClusters <= 0 {
+		log.Info("索引未启用或簇数量未设置，不启动簇中心更新器。")
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		log.Info("簇中心定期更新器已启动，更新间隔: %s", interval.String())
+
+		for {
+			select {
+			case <-ticker.C:
+				log.Info("开始定期重新计算所有簇中心...")
+				db.mu.Lock() // 获取写锁以更新簇中心
+				if len(db.clusters) == 0 {
+					db.mu.Unlock()
+					log.Info("当前没有簇，跳过簇中心重新计算。")
+					continue
+				}
+				for i := range db.clusters {
+					if err := db.recalculateClusterCentroid(i); err != nil {
+						log.Error("重新计算簇 %d 的中心失败: %v", i, err)
+					}
+				}
+				db.mu.Unlock()
+				log.Info("所有簇中心重新计算完成。")
+			case <-db.stopCh: // 监听停止信号
+				log.Info("接收到停止信号，簇中心更新器正在关闭...")
+				return // 退出goroutine
+			}
+		}
+	}()
 }
 
 // Get 获取向量
@@ -952,9 +1091,8 @@ func (db *VectorDB) SaveToFile() error {
 		NumSubvectors            int
 		NumCentroidsPerSubvector int
 		UsePQCompression         bool
-		// MultiIndex 和 Config 可能也需要保存，取决于其具体实现和是否可序列化
-		// MultiIndex *MultiLevelIndex // 如果 MultiLevelIndex 可序列化
-		// Config AdaptiveConfig // 如果 AdaptiveConfig 可序列化
+		MultiIndex               *MultiLevelIndex // 如果 MultiLevelIndex 可序列化
+		Config                   AdaptiveConfig   // 如果 AdaptiveConfig 可序列化
 	}{
 		Vectors:                  db.vectors,
 		Clusters:                 db.clusters,
@@ -970,6 +1108,8 @@ func (db *VectorDB) SaveToFile() error {
 		NumSubvectors:            db.numSubvectors,
 		NumCentroidsPerSubvector: db.numCentroidsPerSubvector,
 		UsePQCompression:         db.usePQCompression,
+		MultiIndex:               db.multiIndex,
+		Config:                   db.config,
 	}
 
 	if err := encoder.Encode(data); err != nil {
@@ -1114,13 +1254,6 @@ func (db *VectorDB) LoadFromFile() error {
 	return nil
 }
 
-// FindNearest 查找与查询向量最相似的k个向量。
-// ... (此函数需要重大修改以支持基于 PQ 的 ADC/SDC 距离计算)
-// 如果启用了 PQ 压缩，并且希望利用它进行快速近似搜索，
-// 则需要实现相应的距离计算函数，例如 util.ApproximateDistancePQ。
-// 当前的 FindNearest 仍然基于原始向量进行精确搜索。
-// ... existing code ...
-
 // CalculateApproximateDistancePQ 以下是一个基于 PQ 的近似距离计算的简化示例，需要集成到 FindNearest 或新的搜索函数中
 // CalculateApproximateDistancePQ 计算查询向量与数据库中压缩向量的近似距离 (ADC)
 func (db *VectorDB) CalculateApproximateDistancePQ(queryVector []float64, compressedDBVector entity.CompressedVector) (float64, error) {
@@ -1132,18 +1265,13 @@ func (db *VectorDB) CalculateApproximateDistancePQ(queryVector []float64, compre
 	}
 
 	// 调用 util 中的 PQ 近似距离计算函数 (假设已实现)
-	// dist, err := util.ApproximateDistanceADC(queryVector, compressedDBVector.Data, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector, db.vectorDim/db.numSubvectors)
-	// if err != nil {
-	// 	return 0, fmt.Errorf("计算 PQ 近似距离失败: %w", err)
-	// }
-	// return dist
-
-	// 这是一个占位符，您需要实现实际的 PQ ADC/SDC 距离计算
-	// 例如，可以先将查询向量也进行量化（如果使用 SDC），或者直接与码本中的子质心计算距离（ADC）
-	// 然后根据 compressedDBVector.Data 中的索引组合这些子距离。
-	log.Warning("CalculateApproximateDistancePQ 尚未完全实现，返回占位符距离。")
-	return math.MaxFloat64, fmt.Errorf("PQ 近似距离计算尚未实现")
+	dist, err := util.ApproximateDistanceADC(queryVector, compressedDBVector, db.pqCodebook, db.numSubvectors)
+	if err != nil {
+		return 0, fmt.Errorf("计算 PQ 近似距离失败: %w", err)
+	}
+	return dist, nil
 }
+
 func (db *VectorDB) CalculateAvgQueryTime(startTime time.Time) time.Duration {
 	avgTimeMicroSeconds := db.stats.AvgQueryTime.Microseconds()
 	startTimeMicroSeconds := time.Since(startTime).Microseconds()
