@@ -5,6 +5,7 @@ package server;
 // 从-I指定的目录下寻找该proto文件
 import "doc.proto";
 import "term_query.proto";
+import "key_word.proto";
 
 message DocId {
   string Id = 1;
@@ -29,11 +30,83 @@ message Result {
 message CountRequest {
 }
 
+// 任务请求
+message TaskRequest {
+  string task_id = 1;         // 任务ID
+  string task_type = 2;       // 任务类型
+  bytes task_data = 3;        // 任务数据
+  int64 timeout = 4;          // 超时时间（毫秒）
+}
+
+// 任务响应
+message TaskResponse {
+  string task_id = 1;         // 任务ID
+  string slave_id = 2;
+  bool success = 3;           // 是否成功
+  bytes result_data = 4;      // 结果数据
+  string error_message = 5;   // 错误信息
+  int64 end_time = 6;
+}
+// 创建表请求
+message CreateTableRequest {
+  string table_name = 1;
+  string vector_db_path = 2;
+  int32 num_clusters = 3;
+  int32 inverted_index_order = 4;
+}
+// 表请求
+message TableRequest {
+  string table_name = 1;
+}
+
+// 添加文档请求
+message AddDocumentRequest {
+  string table_name = 1;
+  messages.Document document = 2;
+  int32 vectorized_type = 3;
+}
+
+// 删除文档请求
+message DeleteDocumentRequest {
+  string table_name = 1;
+  string doc_id = 2;
+  repeated messages.KeyWord keywords = 3;
+}
+
+// 搜索请求
+message SearchRequest {
+  string table_name = 1;
+  messages.TermQuery query = 2;
+  int32 vectorized_type = 3;
+  int32 k = 4;
+  int32 probe = 5;
+  uint64 on_flag = 6;
+  uint64 off_flag = 7;
+  repeated uint64 or_flags = 8;
+  bool use_ann = 9;
+}
+
+// 搜索结果
+message SearchResult {
+  repeated string doc_ids = 1;
+}
+
 service IndexService {
   rpc DelDoc(DocId) returns (ResCount);
   rpc AddDoc(messages.Document) returns (ResCount);
   rpc Search(Request) returns (Result);
   rpc Count(CountRequest) returns (ResCount);
+
+  // 新增任务相关方法
+  rpc ExecuteTask(TaskRequest) returns (TaskResponse);  // 从服务执行任务
+  rpc ReportTaskResult(TaskResponse) returns (ResCount); // 从服务上报任务结果
+
+  // 多表操作
+  rpc CreateTable(CreateTableRequest) returns (ResCount);
+  rpc DeleteTable(TableRequest) returns (ResCount);
+  rpc AddDocumentToTable(AddDocumentRequest) returns (ResCount);
+  rpc DeleteDocumentFromTable(DeleteDocumentRequest) returns (ResCount);
+  rpc SearchTable(SearchRequest) returns (SearchResult);
 }
 
 // protoc -I=D:/code/seetaSearch/messages/proto --gogofaster_opt=Mdoc.proto=seetaSearch/messages --gogofaster_opt=Mterm_query.proto=seetaSearch/messages --gogofaster_out=plugins=grpc:./server --proto_path=./server/proto request.proto

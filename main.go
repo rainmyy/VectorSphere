@@ -1,19 +1,106 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"seetaSearch/bootstrap"
+	"google.golang.org/grpc"
+	"net"
+	"seetaSearch/library/log"
+	"seetaSearch/server"
+	"strings"
 )
 
-/***
-* julySearch 服务端入库
- */
 func main() {
-	bootstrap.GenInstance().Setup()
-	bootstrap.GenInstance().Start()
-	defer func() {
-		if err := recover(); err != nil {
-			fmt.Println(err)
+	// 解析命令行参数
+	mode := flag.String("mode", "standalone", "运行模式: master, slave 或 standalone")
+	port := flag.Int("port", 8080, "服务端口")
+	etcdEndpoints := flag.String("etcd", "localhost:2379", "etcd 端点，多个端点用逗号分隔")
+	serviceName := flag.String("service", "seetaSearch", "服务名称")
+	dataDir := flag.String("data", "./data", "数据目录")
+	docNumEstimate := flag.Int("doc-num", 10000, "文档数量估计")
+	dbType := flag.Int("db-type", 0, "数据库类型")
+	flag.Parse()
+
+	// 解析 etcd 端点
+	endpointList := strings.Split(*etcdEndpoints, ",")
+	var endpoints []server.EndPoint
+	for _, ep := range endpointList {
+		endpoints = append(endpoints, server.EndPoint{Ip: ep})
+	}
+
+	// 根据运行模式启动不同的服务
+	switch *mode {
+	case "master":
+		// 启动主服务
+		localhost := fmt.Sprintf("localhost:%d", *port)
+		master, err := server.NewMasterService(endpoints, *serviceName, localhost)
+		if err != nil {
+			log.Fatal("创建主服务失败: %v", err)
 		}
-	}()
+
+		// 启动主服务
+		err = master.Start()
+		if err != nil {
+			log.Fatal("启动主服务失败: %v", err)
+		}
+
+		// 启动 gRPC 服务器
+		lis, err := net.Listen("tcp", localhost)
+		if err != nil {
+			log.Fatal("监听端口失败: %v", err)
+		}
+
+		s := grpc.NewServer()
+		server.RegisterIndexServiceServer(s, master)
+
+		log.Info("主服务启动，监听端口: %d", *port)
+		if err := s.Serve(lis); err != nil {
+			log.Fatal("启动 gRPC 服务器失败: %v", err)
+		}
+
+	case "slave":
+		// 启动从服务
+		slave, err := server.NewSlaveService(endpoints, *serviceName, *port)
+		if err != nil {
+			log.Fatal("创建从服务失败: %v", err)
+		}
+
+		// 初始化索引服务
+		err = slave.Init(*docNumEstimate, *dbType, *dataDir)
+		if err != nil {
+			log.Fatal("初始化索引服务失败: %v", err)
+		}
+
+		// 启动从服务
+		err = slave.Start()
+		if err != nil {
+			log.Fatal("启动从服务失败: %v", err)
+		}
+
+		// 启动 gRPC 服务器
+		lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
+		if err != nil {
+			log.Fatal("监听端口失败: %v", err)
+		}
+
+		s := grpc.NewServer()
+		server.RegisterIndexServiceServer(s, slave)
+
+		log.Info("从服务启动，监听端口: %d", *port)
+		if err := s.Serve(lis); err != nil {
+			log.Fatal("启动 gRPC 服务器失败: %v", err)
+		}
+
+	case "standalone":
+		// 启动独立服务
+		// ... 原有的独立服务启动代码 ...
+
+	default:
+		log.Fatal("未知的运行模式: %s", *mode)
+	}
 }
+
+// etcd --listen-client-urls http://localhost:2379 --advertise-client-urls http://localhost:2379
+// go run main.go --mode=master --port=8080 --etcd=localhost:2379 --service=seetaSearch
+// go run main.go --mode=slave --port=8082 --etcd=localhost:2379 --service=seetaSearch
+//go run main.go --mode=slave --port=8083 --etcd=localhost:2379 --service=seetaSearch

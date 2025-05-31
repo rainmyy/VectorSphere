@@ -28,7 +28,8 @@ var _ = math.Inf
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 type DocId struct {
-	Id string `protobuf:"bytes,1,opt,name=Id,proto3" json:"Id,omitempty"`
+	Id     string `protobuf:"bytes,1,opt,name=Id,proto3" json:"Id,omitempty"`
+	Weight int64  `protobuf:"varint,2,opt,name=Weight,proto3" json:"Weight,omitempty"`
 }
 
 func (m *DocId) Reset()         { *m = DocId{} }
@@ -71,22 +72,29 @@ func (m *DocId) GetId() string {
 	return ""
 }
 
-type ReqCount struct {
+func (m *DocId) GetWeight() int64 {
+	if m != nil {
+		return m.Weight
+	}
+	return 0
+}
+
+type ResCount struct {
 	Count int32 `protobuf:"varint,1,opt,name=Count,proto3" json:"Count,omitempty"`
 }
 
-func (m *ReqCount) Reset()         { *m = ReqCount{} }
-func (m *ReqCount) String() string { return proto.CompactTextString(m) }
-func (*ReqCount) ProtoMessage()    {}
-func (*ReqCount) Descriptor() ([]byte, []int) {
+func (m *ResCount) Reset()         { *m = ResCount{} }
+func (m *ResCount) String() string { return proto.CompactTextString(m) }
+func (*ResCount) ProtoMessage()    {}
+func (*ResCount) Descriptor() ([]byte, []int) {
 	return fileDescriptor_7f73548e33e655fe, []int{1}
 }
-func (m *ReqCount) XXX_Unmarshal(b []byte) error {
+func (m *ResCount) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *ReqCount) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *ResCount) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_ReqCount.Marshal(b, m, deterministic)
+		return xxx_messageInfo_ResCount.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -96,19 +104,19 @@ func (m *ReqCount) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 		return b[:n], nil
 	}
 }
-func (m *ReqCount) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_ReqCount.Merge(m, src)
+func (m *ResCount) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ResCount.Merge(m, src)
 }
-func (m *ReqCount) XXX_Size() int {
+func (m *ResCount) XXX_Size() int {
 	return m.Size()
 }
-func (m *ReqCount) XXX_DiscardUnknown() {
-	xxx_messageInfo_ReqCount.DiscardUnknown(m)
+func (m *ResCount) XXX_DiscardUnknown() {
+	xxx_messageInfo_ResCount.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_ReqCount proto.InternalMessageInfo
+var xxx_messageInfo_ResCount proto.InternalMessageInfo
 
-func (m *ReqCount) GetCount() int32 {
+func (m *ResCount) GetCount() int32 {
 	if m != nil {
 		return m.Count
 	}
@@ -263,41 +271,630 @@ func (m *CountRequest) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_CountRequest proto.InternalMessageInfo
 
+// 任务请求
+type TaskRequest struct {
+	TaskId   string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	TaskType string `protobuf:"bytes,2,opt,name=task_type,json=taskType,proto3" json:"task_type,omitempty"`
+	TaskData []byte `protobuf:"bytes,3,opt,name=task_data,json=taskData,proto3" json:"task_data,omitempty"`
+	Timeout  int64  `protobuf:"varint,4,opt,name=timeout,proto3" json:"timeout,omitempty"`
+}
+
+func (m *TaskRequest) Reset()         { *m = TaskRequest{} }
+func (m *TaskRequest) String() string { return proto.CompactTextString(m) }
+func (*TaskRequest) ProtoMessage()    {}
+func (*TaskRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_7f73548e33e655fe, []int{5}
+}
+func (m *TaskRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *TaskRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_TaskRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *TaskRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_TaskRequest.Merge(m, src)
+}
+func (m *TaskRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *TaskRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_TaskRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_TaskRequest proto.InternalMessageInfo
+
+func (m *TaskRequest) GetTaskId() string {
+	if m != nil {
+		return m.TaskId
+	}
+	return ""
+}
+
+func (m *TaskRequest) GetTaskType() string {
+	if m != nil {
+		return m.TaskType
+	}
+	return ""
+}
+
+func (m *TaskRequest) GetTaskData() []byte {
+	if m != nil {
+		return m.TaskData
+	}
+	return nil
+}
+
+func (m *TaskRequest) GetTimeout() int64 {
+	if m != nil {
+		return m.Timeout
+	}
+	return 0
+}
+
+// 任务响应
+type TaskResponse struct {
+	TaskId       string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
+	SlaveId      string `protobuf:"bytes,2,opt,name=slave_id,json=slaveId,proto3" json:"slave_id,omitempty"`
+	Success      bool   `protobuf:"varint,3,opt,name=success,proto3" json:"success,omitempty"`
+	ResultData   []byte `protobuf:"bytes,4,opt,name=result_data,json=resultData,proto3" json:"result_data,omitempty"`
+	ErrorMessage string `protobuf:"bytes,5,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	EndTime      int64  `protobuf:"varint,6,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
+}
+
+func (m *TaskResponse) Reset()         { *m = TaskResponse{} }
+func (m *TaskResponse) String() string { return proto.CompactTextString(m) }
+func (*TaskResponse) ProtoMessage()    {}
+func (*TaskResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_7f73548e33e655fe, []int{6}
+}
+func (m *TaskResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *TaskResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_TaskResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *TaskResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_TaskResponse.Merge(m, src)
+}
+func (m *TaskResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *TaskResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_TaskResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_TaskResponse proto.InternalMessageInfo
+
+func (m *TaskResponse) GetTaskId() string {
+	if m != nil {
+		return m.TaskId
+	}
+	return ""
+}
+
+func (m *TaskResponse) GetSlaveId() string {
+	if m != nil {
+		return m.SlaveId
+	}
+	return ""
+}
+
+func (m *TaskResponse) GetSuccess() bool {
+	if m != nil {
+		return m.Success
+	}
+	return false
+}
+
+func (m *TaskResponse) GetResultData() []byte {
+	if m != nil {
+		return m.ResultData
+	}
+	return nil
+}
+
+func (m *TaskResponse) GetErrorMessage() string {
+	if m != nil {
+		return m.ErrorMessage
+	}
+	return ""
+}
+
+func (m *TaskResponse) GetEndTime() int64 {
+	if m != nil {
+		return m.EndTime
+	}
+	return 0
+}
+
+// 创建表请求
+type CreateTableRequest struct {
+	TableName          string `protobuf:"bytes,1,opt,name=table_name,json=tableName,proto3" json:"table_name,omitempty"`
+	VectorDbPath       string `protobuf:"bytes,2,opt,name=vector_db_path,json=vectorDbPath,proto3" json:"vector_db_path,omitempty"`
+	NumClusters        int32  `protobuf:"varint,3,opt,name=num_clusters,json=numClusters,proto3" json:"num_clusters,omitempty"`
+	InvertedIndexOrder int32  `protobuf:"varint,4,opt,name=inverted_index_order,json=invertedIndexOrder,proto3" json:"inverted_index_order,omitempty"`
+}
+
+func (m *CreateTableRequest) Reset()         { *m = CreateTableRequest{} }
+func (m *CreateTableRequest) String() string { return proto.CompactTextString(m) }
+func (*CreateTableRequest) ProtoMessage()    {}
+func (*CreateTableRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_7f73548e33e655fe, []int{7}
+}
+func (m *CreateTableRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *CreateTableRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_CreateTableRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *CreateTableRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_CreateTableRequest.Merge(m, src)
+}
+func (m *CreateTableRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *CreateTableRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_CreateTableRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_CreateTableRequest proto.InternalMessageInfo
+
+func (m *CreateTableRequest) GetTableName() string {
+	if m != nil {
+		return m.TableName
+	}
+	return ""
+}
+
+func (m *CreateTableRequest) GetVectorDbPath() string {
+	if m != nil {
+		return m.VectorDbPath
+	}
+	return ""
+}
+
+func (m *CreateTableRequest) GetNumClusters() int32 {
+	if m != nil {
+		return m.NumClusters
+	}
+	return 0
+}
+
+func (m *CreateTableRequest) GetInvertedIndexOrder() int32 {
+	if m != nil {
+		return m.InvertedIndexOrder
+	}
+	return 0
+}
+
+// 表请求
+type TableRequest struct {
+	TableName string `protobuf:"bytes,1,opt,name=table_name,json=tableName,proto3" json:"table_name,omitempty"`
+}
+
+func (m *TableRequest) Reset()         { *m = TableRequest{} }
+func (m *TableRequest) String() string { return proto.CompactTextString(m) }
+func (*TableRequest) ProtoMessage()    {}
+func (*TableRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_7f73548e33e655fe, []int{8}
+}
+func (m *TableRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *TableRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_TableRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *TableRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_TableRequest.Merge(m, src)
+}
+func (m *TableRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *TableRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_TableRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_TableRequest proto.InternalMessageInfo
+
+func (m *TableRequest) GetTableName() string {
+	if m != nil {
+		return m.TableName
+	}
+	return ""
+}
+
+// 添加文档请求
+type AddDocumentRequest struct {
+	TableName      string             `protobuf:"bytes,1,opt,name=table_name,json=tableName,proto3" json:"table_name,omitempty"`
+	Document       *messages.Document `protobuf:"bytes,2,opt,name=document,proto3" json:"document,omitempty"`
+	VectorizedType int32              `protobuf:"varint,3,opt,name=vectorized_type,json=vectorizedType,proto3" json:"vectorized_type,omitempty"`
+}
+
+func (m *AddDocumentRequest) Reset()         { *m = AddDocumentRequest{} }
+func (m *AddDocumentRequest) String() string { return proto.CompactTextString(m) }
+func (*AddDocumentRequest) ProtoMessage()    {}
+func (*AddDocumentRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_7f73548e33e655fe, []int{9}
+}
+func (m *AddDocumentRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *AddDocumentRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_AddDocumentRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *AddDocumentRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_AddDocumentRequest.Merge(m, src)
+}
+func (m *AddDocumentRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *AddDocumentRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_AddDocumentRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_AddDocumentRequest proto.InternalMessageInfo
+
+func (m *AddDocumentRequest) GetTableName() string {
+	if m != nil {
+		return m.TableName
+	}
+	return ""
+}
+
+func (m *AddDocumentRequest) GetDocument() *messages.Document {
+	if m != nil {
+		return m.Document
+	}
+	return nil
+}
+
+func (m *AddDocumentRequest) GetVectorizedType() int32 {
+	if m != nil {
+		return m.VectorizedType
+	}
+	return 0
+}
+
+// 删除文档请求
+type DeleteDocumentRequest struct {
+	TableName string     `protobuf:"bytes,1,opt,name=table_name,json=tableName,proto3" json:"table_name,omitempty"`
+	DocId     string     `protobuf:"bytes,2,opt,name=doc_id,json=docId,proto3" json:"doc_id,omitempty"`
+	Keywords  []*KeyWord `protobuf:"bytes,3,rep,name=keywords,proto3" json:"keywords,omitempty"`
+}
+
+func (m *DeleteDocumentRequest) Reset()         { *m = DeleteDocumentRequest{} }
+func (m *DeleteDocumentRequest) String() string { return proto.CompactTextString(m) }
+func (*DeleteDocumentRequest) ProtoMessage()    {}
+func (*DeleteDocumentRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_7f73548e33e655fe, []int{10}
+}
+func (m *DeleteDocumentRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *DeleteDocumentRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_DeleteDocumentRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *DeleteDocumentRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_DeleteDocumentRequest.Merge(m, src)
+}
+func (m *DeleteDocumentRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *DeleteDocumentRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_DeleteDocumentRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_DeleteDocumentRequest proto.InternalMessageInfo
+
+func (m *DeleteDocumentRequest) GetTableName() string {
+	if m != nil {
+		return m.TableName
+	}
+	return ""
+}
+
+func (m *DeleteDocumentRequest) GetDocId() string {
+	if m != nil {
+		return m.DocId
+	}
+	return ""
+}
+
+func (m *DeleteDocumentRequest) GetKeywords() []*KeyWord {
+	if m != nil {
+		return m.Keywords
+	}
+	return nil
+}
+
+// 搜索请求
+type SearchRequest struct {
+	TableName      string              `protobuf:"bytes,1,opt,name=table_name,json=tableName,proto3" json:"table_name,omitempty"`
+	Query          *messages.TermQuery `protobuf:"bytes,2,opt,name=query,proto3" json:"query,omitempty"`
+	VectorizedType int32               `protobuf:"varint,3,opt,name=vectorized_type,json=vectorizedType,proto3" json:"vectorized_type,omitempty"`
+	K              int32               `protobuf:"varint,4,opt,name=k,proto3" json:"k,omitempty"`
+	Probe          int32               `protobuf:"varint,5,opt,name=probe,proto3" json:"probe,omitempty"`
+	OnFlag         uint64              `protobuf:"varint,6,opt,name=on_flag,json=onFlag,proto3" json:"on_flag,omitempty"`
+	OffFlag        uint64              `protobuf:"varint,7,opt,name=off_flag,json=offFlag,proto3" json:"off_flag,omitempty"`
+	OrFlags        []uint64            `protobuf:"varint,8,rep,packed,name=or_flags,json=orFlags,proto3" json:"or_flags,omitempty"`
+	UseAnn         bool                `protobuf:"varint,9,opt,name=use_ann,json=useAnn,proto3" json:"use_ann,omitempty"`
+}
+
+func (m *SearchRequest) Reset()         { *m = SearchRequest{} }
+func (m *SearchRequest) String() string { return proto.CompactTextString(m) }
+func (*SearchRequest) ProtoMessage()    {}
+func (*SearchRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_7f73548e33e655fe, []int{11}
+}
+func (m *SearchRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SearchRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SearchRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SearchRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SearchRequest.Merge(m, src)
+}
+func (m *SearchRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *SearchRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_SearchRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SearchRequest proto.InternalMessageInfo
+
+func (m *SearchRequest) GetTableName() string {
+	if m != nil {
+		return m.TableName
+	}
+	return ""
+}
+
+func (m *SearchRequest) GetQuery() *messages.TermQuery {
+	if m != nil {
+		return m.Query
+	}
+	return nil
+}
+
+func (m *SearchRequest) GetVectorizedType() int32 {
+	if m != nil {
+		return m.VectorizedType
+	}
+	return 0
+}
+
+func (m *SearchRequest) GetK() int32 {
+	if m != nil {
+		return m.K
+	}
+	return 0
+}
+
+func (m *SearchRequest) GetProbe() int32 {
+	if m != nil {
+		return m.Probe
+	}
+	return 0
+}
+
+func (m *SearchRequest) GetOnFlag() uint64 {
+	if m != nil {
+		return m.OnFlag
+	}
+	return 0
+}
+
+func (m *SearchRequest) GetOffFlag() uint64 {
+	if m != nil {
+		return m.OffFlag
+	}
+	return 0
+}
+
+func (m *SearchRequest) GetOrFlags() []uint64 {
+	if m != nil {
+		return m.OrFlags
+	}
+	return nil
+}
+
+func (m *SearchRequest) GetUseAnn() bool {
+	if m != nil {
+		return m.UseAnn
+	}
+	return false
+}
+
+// 搜索结果
+type SearchResult struct {
+	DocIds []string `protobuf:"bytes,1,rep,name=doc_ids,json=docIds,proto3" json:"doc_ids,omitempty"`
+}
+
+func (m *SearchResult) Reset()         { *m = SearchResult{} }
+func (m *SearchResult) String() string { return proto.CompactTextString(m) }
+func (*SearchResult) ProtoMessage()    {}
+func (*SearchResult) Descriptor() ([]byte, []int) {
+	return fileDescriptor_7f73548e33e655fe, []int{12}
+}
+func (m *SearchResult) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *SearchResult) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_SearchResult.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *SearchResult) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_SearchResult.Merge(m, src)
+}
+func (m *SearchResult) XXX_Size() int {
+	return m.Size()
+}
+func (m *SearchResult) XXX_DiscardUnknown() {
+	xxx_messageInfo_SearchResult.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_SearchResult proto.InternalMessageInfo
+
+func (m *SearchResult) GetDocIds() []string {
+	if m != nil {
+		return m.DocIds
+	}
+	return nil
+}
+
 func init() {
 	proto.RegisterType((*DocId)(nil), "server.DocId")
-	proto.RegisterType((*ReqCount)(nil), "server.ReqCount")
+	proto.RegisterType((*ResCount)(nil), "server.ResCount")
 	proto.RegisterType((*Request)(nil), "server.Request")
 	proto.RegisterType((*Result)(nil), "server.Result")
 	proto.RegisterType((*CountRequest)(nil), "server.CountRequest")
+	proto.RegisterType((*TaskRequest)(nil), "server.TaskRequest")
+	proto.RegisterType((*TaskResponse)(nil), "server.TaskResponse")
+	proto.RegisterType((*CreateTableRequest)(nil), "server.CreateTableRequest")
+	proto.RegisterType((*TableRequest)(nil), "server.TableRequest")
+	proto.RegisterType((*AddDocumentRequest)(nil), "server.AddDocumentRequest")
+	proto.RegisterType((*DeleteDocumentRequest)(nil), "server.DeleteDocumentRequest")
+	proto.RegisterType((*SearchRequest)(nil), "server.SearchRequest")
+	proto.RegisterType((*SearchResult)(nil), "server.SearchResult")
 }
 
 func init() { proto.RegisterFile("request.proto", fileDescriptor_7f73548e33e655fe) }
 
 var fileDescriptor_7f73548e33e655fe = []byte{
-	// 356 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x6c, 0x91, 0x4f, 0x6b, 0xea, 0x40,
-	0x14, 0xc5, 0x1d, 0x35, 0xf1, 0x79, 0xfd, 0xf3, 0x64, 0x9e, 0xbc, 0x17, 0xb2, 0x08, 0x21, 0x2b,
-	0x85, 0x47, 0x0a, 0x16, 0xba, 0x6f, 0x1b, 0x0a, 0x59, 0x49, 0xc7, 0xee, 0x8b, 0x4d, 0xae, 0xb6,
-	0x60, 0x32, 0x75, 0x26, 0x91, 0x76, 0xd7, 0x8f, 0xd0, 0x2f, 0x55, 0xe8, 0xd2, 0x65, 0x97, 0x45,
-	0xbf, 0x48, 0xc9, 0x8c, 0xa9, 0x42, 0xdd, 0xdd, 0x73, 0x7f, 0x87, 0x99, 0x33, 0x67, 0xa0, 0x23,
-	0x70, 0x99, 0xa3, 0xcc, 0xfc, 0x47, 0xc1, 0x33, 0x4e, 0x4d, 0x89, 0x62, 0x85, 0xc2, 0x6e, 0xc6,
-	0x3c, 0xd2, 0x2b, 0xbb, 0x97, 0xa1, 0x48, 0x6e, 0x97, 0x39, 0x8a, 0x67, 0xbd, 0xf1, 0xfe, 0x81,
-	0x11, 0xf0, 0x28, 0x8c, 0x69, 0x17, 0xaa, 0x61, 0x6c, 0x11, 0x97, 0x0c, 0x9a, 0xac, 0x1a, 0xc6,
-	0x9e, 0x0b, 0xbf, 0x18, 0x2e, 0x2f, 0x79, 0x9e, 0x66, 0xb4, 0x0f, 0x86, 0x1a, 0x14, 0x36, 0x98,
-	0x16, 0xde, 0x0b, 0x81, 0x06, 0xd3, 0x37, 0xd2, 0x21, 0x18, 0xd7, 0xc5, 0xa9, 0xca, 0xd1, 0x1a,
-	0xfd, 0xf1, 0x13, 0x94, 0x72, 0x3a, 0x47, 0xe9, 0xdf, 0xa0, 0x48, 0x14, 0x62, 0xda, 0x41, 0xff,
-	0x82, 0x39, 0x4e, 0xaf, 0x16, 0xd3, 0xb9, 0x55, 0x75, 0xc9, 0xa0, 0xce, 0x76, 0x8a, 0x5a, 0xd0,
-	0x18, 0xcf, 0x66, 0x0a, 0xd4, 0x14, 0x28, 0xa5, 0x22, 0xa2, 0x98, 0xa4, 0x55, 0x77, 0x6b, 0x8a,
-	0x68, 0xe9, 0x9d, 0x81, 0xc9, 0x50, 0xe6, 0x8b, 0x8c, 0xfe, 0x2f, 0xb2, 0x14, 0x93, 0xb4, 0x88,
-	0x5b, 0x1b, 0xb4, 0x46, 0x74, 0x1f, 0x21, 0xe0, 0x51, 0x9e, 0x60, 0x9a, 0xb1, 0xd2, 0xe2, 0x75,
-	0xa1, 0xad, 0xde, 0xb0, 0x8b, 0x3f, 0x7a, 0x23, 0xd0, 0x0e, 0xd3, 0x18, 0x9f, 0x26, 0x28, 0x56,
-	0x0f, 0x11, 0xd2, 0x21, 0x98, 0x01, 0x2e, 0x02, 0x1e, 0xd1, 0x8e, 0xaf, 0x6b, 0xf4, 0x55, 0x4d,
-	0x76, 0xaf, 0x94, 0xdf, 0xe5, 0xf8, 0x60, 0x9e, 0xc7, 0x71, 0x61, 0x3d, 0x72, 0xe5, 0x11, 0xff,
-	0x10, 0xcc, 0x09, 0x4e, 0x45, 0x74, 0x4f, 0x7f, 0x1f, 0xb0, 0x22, 0x86, 0xdd, 0xdd, 0x2f, 0xd4,
-	0xa3, 0x4e, 0x76, 0xbd, 0xd3, 0x7e, 0x09, 0x0e, 0x53, 0xff, 0x3c, 0xfb, 0xc2, 0x7a, 0xdf, 0x38,
-	0x64, 0xbd, 0x71, 0xc8, 0xe7, 0xc6, 0x21, 0xaf, 0x5b, 0xa7, 0xb2, 0xde, 0x3a, 0x95, 0x8f, 0xad,
-	0x53, 0xb9, 0x33, 0xd5, 0x77, 0x9f, 0x7e, 0x05, 0x00, 0x00, 0xff, 0xff, 0x5e, 0x4a, 0x23, 0x5c,
-	0x24, 0x02, 0x00, 0x00,
+	// 954 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x56, 0x51, 0x6f, 0xe3, 0x44,
+	0x10, 0xae, 0xdb, 0xd8, 0x49, 0xc6, 0x6e, 0xae, 0xec, 0xb5, 0xd4, 0x17, 0x74, 0x21, 0x18, 0xa4,
+	0x6b, 0x25, 0x2e, 0x87, 0x8a, 0x40, 0xe8, 0x78, 0xba, 0x6b, 0x38, 0x29, 0x20, 0x28, 0xf8, 0x22,
+	0xdd, 0xa3, 0xe5, 0x78, 0x27, 0x6d, 0x94, 0xd8, 0x9b, 0xdb, 0x5d, 0x87, 0xcb, 0x89, 0x07, 0x7e,
+	0x00, 0x42, 0xfc, 0x12, 0xfe, 0x01, 0xef, 0x3c, 0xde, 0x23, 0x8f, 0xa8, 0xfd, 0x19, 0xbc, 0xa0,
+	0xdd, 0xb5, 0x93, 0x94, 0x1a, 0x54, 0xde, 0x3c, 0xf3, 0xcd, 0xee, 0x7c, 0x33, 0x3b, 0xf3, 0xc9,
+	0xb0, 0xcb, 0xf1, 0x65, 0x8e, 0x42, 0xf6, 0xe6, 0x9c, 0x49, 0x46, 0x1c, 0x81, 0x7c, 0x81, 0xbc,
+	0xdd, 0xa4, 0x2c, 0x31, 0xae, 0xf6, 0x9e, 0x44, 0x9e, 0x46, 0x2f, 0x73, 0xe4, 0xcb, 0xc2, 0xd3,
+	0x9a, 0xe2, 0x32, 0xfa, 0x9e, 0x71, 0x6a, 0xec, 0xe0, 0x11, 0xd8, 0x7d, 0x96, 0x0c, 0x28, 0x69,
+	0xc1, 0xf6, 0x80, 0xfa, 0x56, 0xd7, 0x3a, 0x6a, 0x86, 0xdb, 0x03, 0x4a, 0xde, 0x06, 0xe7, 0x05,
+	0x4e, 0xce, 0x2f, 0xa4, 0xbf, 0xdd, 0xb5, 0x8e, 0x76, 0xc2, 0xc2, 0x0a, 0xba, 0xd0, 0x08, 0x51,
+	0x9c, 0xb2, 0x3c, 0x93, 0x64, 0x1f, 0x6c, 0xfd, 0xa1, 0x8f, 0xd9, 0xa1, 0x31, 0x82, 0x1f, 0x2d,
+	0xa8, 0x87, 0x86, 0x19, 0x39, 0x06, 0xfb, 0x3b, 0x95, 0x5d, 0x47, 0xb8, 0x27, 0x77, 0x7b, 0x29,
+	0x0a, 0x11, 0x9f, 0xa3, 0xe8, 0x0d, 0x91, 0xa7, 0x1a, 0x0a, 0x4d, 0x84, 0x4a, 0x78, 0x96, 0x3d,
+	0x9b, 0xc5, 0xe7, 0x3a, 0x61, 0x2d, 0x2c, 0x2c, 0xe2, 0x43, 0xfd, 0x6c, 0x3c, 0xd6, 0xc0, 0x8e,
+	0x06, 0x4a, 0x53, 0x23, 0x5c, 0x7d, 0x09, 0xbf, 0xd6, 0xdd, 0xd1, 0x88, 0x31, 0x83, 0x4f, 0xc1,
+	0x09, 0x51, 0xe4, 0x33, 0x49, 0x3e, 0x54, 0x5c, 0xd4, 0x97, 0xf0, 0xad, 0xee, 0xce, 0x91, 0x7b,
+	0x42, 0xd6, 0x14, 0xfa, 0x2c, 0xc9, 0x53, 0xcc, 0x64, 0x58, 0x86, 0x04, 0x2d, 0xf0, 0x74, 0x0d,
+	0x05, 0xfd, 0xe0, 0x35, 0xb8, 0xc3, 0x58, 0x4c, 0xcb, 0x6a, 0x0e, 0xa1, 0x2e, 0x63, 0x31, 0x8d,
+	0x26, 0x65, 0xa3, 0x1c, 0x65, 0x0e, 0x28, 0x79, 0x07, 0x9a, 0x1a, 0x90, 0xcb, 0x39, 0x6a, 0xfa,
+	0xcd, 0xb0, 0xa1, 0x1c, 0xc3, 0xe5, 0x1c, 0x57, 0x20, 0x8d, 0x65, 0xac, 0x4b, 0xf0, 0x0c, 0xd8,
+	0x8f, 0x65, 0xac, 0x6a, 0x90, 0x93, 0x14, 0x59, 0x2e, 0xfd, 0x9a, 0xee, 0x73, 0x69, 0x06, 0xbf,
+	0x59, 0xe0, 0x99, 0xe4, 0x62, 0xce, 0x32, 0x81, 0xff, 0x9e, 0xfd, 0x1e, 0x34, 0xc4, 0x2c, 0x5e,
+	0xa0, 0x42, 0x4c, 0xf2, 0xba, 0xb6, 0x07, 0x54, 0x5d, 0x2f, 0xf2, 0x24, 0x41, 0x21, 0x74, 0xe6,
+	0x46, 0x58, 0x9a, 0xe4, 0x5d, 0x70, 0xb9, 0xae, 0xda, 0xf0, 0xaa, 0x69, 0x5e, 0x60, 0x5c, 0x9a,
+	0xd9, 0xfb, 0xb0, 0x8b, 0x9c, 0x33, 0x1e, 0x15, 0xfd, 0xf2, 0x6d, 0x7d, 0xb5, 0xa7, 0x9d, 0x5f,
+	0x1b, 0x9f, 0x4a, 0x8d, 0x19, 0x8d, 0x14, 0x67, 0xdf, 0x31, 0xfc, 0x31, 0xa3, 0xc3, 0x49, 0x8a,
+	0xc1, 0xaf, 0x16, 0x90, 0x53, 0x8e, 0xb1, 0xc4, 0x61, 0x3c, 0x9a, 0x61, 0xd9, 0xc3, 0xfb, 0x00,
+	0x52, 0xd9, 0x51, 0x16, 0xa7, 0x58, 0x14, 0xd2, 0xd4, 0x9e, 0x6f, 0xe2, 0x14, 0xc9, 0x07, 0xd0,
+	0x5a, 0x60, 0x22, 0x19, 0x8f, 0xe8, 0x28, 0x9a, 0xc7, 0xf2, 0xa2, 0xa8, 0xc8, 0x33, 0xde, 0xfe,
+	0xe8, 0xdb, 0x58, 0x5e, 0x90, 0xf7, 0xc0, 0xcb, 0xf2, 0x34, 0x4a, 0x66, 0xb9, 0x90, 0xc8, 0x4d,
+	0x6d, 0x76, 0xe8, 0x66, 0x79, 0x7a, 0x5a, 0xb8, 0xc8, 0x47, 0xb0, 0x3f, 0xc9, 0x16, 0xc8, 0x25,
+	0xd2, 0x68, 0x92, 0x51, 0x7c, 0x15, 0x31, 0x4e, 0x91, 0xeb, 0x42, 0xed, 0x90, 0x94, 0xd8, 0x40,
+	0x41, 0x67, 0x0a, 0x09, 0x1e, 0xaa, 0x7e, 0xdf, 0x9a, 0x69, 0xf0, 0x93, 0x05, 0xe4, 0x09, 0xa5,
+	0xab, 0x21, 0xba, 0x5d, 0x7d, 0x3d, 0x68, 0xd0, 0xe2, 0x84, 0xae, 0xac, 0x7a, 0x20, 0x57, 0x31,
+	0xe4, 0x01, 0xdc, 0x31, 0x95, 0x4f, 0x5e, 0x23, 0x35, 0xf3, 0x65, 0x8a, 0x6d, 0xad, 0xdd, 0x6a,
+	0xca, 0x82, 0x1f, 0xe0, 0xa0, 0x8f, 0x33, 0x94, 0xf8, 0x3f, 0x09, 0x1d, 0x80, 0x43, 0x59, 0xb2,
+	0x1e, 0x1d, 0x9b, 0x6a, 0x39, 0x78, 0x08, 0x8d, 0x29, 0x2e, 0x95, 0x50, 0xa8, 0xee, 0xaa, 0xc5,
+	0x79, 0x6b, 0xcd, 0xf3, 0x2b, 0x5c, 0xbe, 0x60, 0x9c, 0x86, 0xab, 0x90, 0xe0, 0xe7, 0x6d, 0xd8,
+	0x7d, 0x8e, 0x31, 0x4f, 0x2e, 0x6e, 0x99, 0xf6, 0x18, 0x6c, 0x2d, 0x4b, 0x45, 0x13, 0xaa, 0x85,
+	0x41, 0x47, 0xdc, 0xba, 0x05, 0xc4, 0x03, 0x6b, 0x5a, 0xbc, 0xaf, 0x35, 0x55, 0xe2, 0x34, 0xe7,
+	0x6c, 0x64, 0xe6, 0xd6, 0x0e, 0x8d, 0xa1, 0x96, 0x88, 0x65, 0xd1, 0x58, 0xa9, 0x89, 0x63, 0x64,
+	0x86, 0x19, 0x99, 0xb9, 0x07, 0x0d, 0x36, 0x1e, 0x1b, 0xa4, 0x6e, 0x74, 0x86, 0x15, 0x3a, 0xa3,
+	0x20, 0xae, 0x11, 0xe1, 0x37, 0x8c, 0xd0, 0x30, 0x23, 0x34, 0xea, 0xba, 0x5c, 0x60, 0x14, 0x67,
+	0x99, 0xdf, 0xd4, 0xfb, 0xe5, 0xe4, 0x02, 0x9f, 0x64, 0x59, 0xf0, 0x00, 0xbc, 0xb2, 0x1f, 0x5a,
+	0x87, 0x0e, 0xa1, 0x6e, 0xda, 0x6c, 0x74, 0xa8, 0x19, 0x3a, 0xba, 0xcf, 0xe2, 0xe4, 0xaf, 0x1a,
+	0x78, 0x7a, 0x08, 0x9f, 0x23, 0x5f, 0x4c, 0x12, 0xd5, 0x19, 0xa7, 0x8f, 0xb3, 0x3e, 0x4b, 0xc8,
+	0x6e, 0xcf, 0x28, 0x7a, 0x4f, 0x2b, 0x74, 0x7b, 0xaf, 0x34, 0x57, 0xfa, 0xdb, 0x03, 0xc7, 0x4c,
+	0x20, 0xa9, 0x18, 0xa2, 0x8a, 0xf8, 0x63, 0x70, 0x0c, 0x29, 0x72, 0x67, 0x8d, 0xe9, 0xe7, 0x6a,
+	0xb7, 0x36, 0x82, 0x15, 0xdf, 0x47, 0x85, 0xb4, 0x93, 0xfd, 0x12, 0xd8, 0x14, 0xc6, 0x8a, 0xbb,
+	0x3f, 0x03, 0xf7, 0x8b, 0x57, 0x98, 0xe4, 0x6a, 0xdd, 0xc5, 0x94, 0xdc, 0x2d, 0x03, 0x36, 0xf4,
+	0xb3, 0xbd, 0x7f, 0xdd, 0x59, 0xe8, 0xda, 0x63, 0xd8, 0x0b, 0x71, 0xce, 0xb8, 0x2c, 0xbc, 0x2a,
+	0x7d, 0x65, 0x64, 0x45, 0xd6, 0xcf, 0xc1, 0xdd, 0xd0, 0x18, 0xd2, 0x5e, 0x91, 0xbd, 0x21, 0x3c,
+	0x15, 0x87, 0x3f, 0x01, 0xd7, 0xac, 0x8c, 0x39, 0xbc, 0x91, 0xf3, 0x3f, 0x8f, 0x3d, 0xbd, 0xb6,
+	0xf7, 0x43, 0xf6, 0x8f, 0xd4, 0x37, 0x35, 0xa1, 0xe2, 0x8e, 0x2f, 0xe1, 0xf0, 0xfa, 0xb6, 0x3e,
+	0xe3, 0x2c, 0x35, 0x17, 0xdd, 0x5f, 0xbd, 0x7a, 0xd5, 0x3a, 0x57, 0xdc, 0xf5, 0x18, 0x5c, 0xf3,
+	0xaa, 0xe6, 0xfc, 0x41, 0x19, 0x70, 0x6d, 0x1f, 0xd7, 0xbd, 0xdf, 0x1c, 0xcb, 0xa7, 0xfe, 0xef,
+	0x97, 0x1d, 0xeb, 0xcd, 0x65, 0xc7, 0xfa, 0xf3, 0xb2, 0x63, 0xfd, 0x72, 0xd5, 0xd9, 0x7a, 0x73,
+	0xd5, 0xd9, 0xfa, 0xe3, 0xaa, 0xb3, 0x35, 0x72, 0xf4, 0xff, 0xc1, 0xc7, 0x7f, 0x07, 0x00, 0x00,
+	0xff, 0xff, 0xe7, 0x53, 0x04, 0x69, 0x65, 0x08, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -312,10 +909,19 @@ const _ = grpc.SupportPackageIsVersion4
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type IndexServiceClient interface {
-	DelDoc(ctx context.Context, in *DocId, opts ...grpc.CallOption) (*ReqCount, error)
-	AddDoc(ctx context.Context, in *messages.Document, opts ...grpc.CallOption) (*ReqCount, error)
+	DelDoc(ctx context.Context, in *DocId, opts ...grpc.CallOption) (*ResCount, error)
+	AddDoc(ctx context.Context, in *messages.Document, opts ...grpc.CallOption) (*ResCount, error)
 	Search(ctx context.Context, in *Request, opts ...grpc.CallOption) (*Result, error)
-	Count(ctx context.Context, in *CountRequest, opts ...grpc.CallOption) (*ReqCount, error)
+	Count(ctx context.Context, in *CountRequest, opts ...grpc.CallOption) (*ResCount, error)
+	// 新增任务相关方法
+	ExecuteTask(ctx context.Context, in *TaskRequest, opts ...grpc.CallOption) (*TaskResponse, error)
+	ReportTaskResult(ctx context.Context, in *TaskResponse, opts ...grpc.CallOption) (*ResCount, error)
+	// 多表操作
+	CreateTable(ctx context.Context, in *CreateTableRequest, opts ...grpc.CallOption) (*ResCount, error)
+	DeleteTable(ctx context.Context, in *TableRequest, opts ...grpc.CallOption) (*ResCount, error)
+	AddDocumentToTable(ctx context.Context, in *AddDocumentRequest, opts ...grpc.CallOption) (*ResCount, error)
+	DeleteDocumentFromTable(ctx context.Context, in *DeleteDocumentRequest, opts ...grpc.CallOption) (*ResCount, error)
+	SearchTable(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchResult, error)
 }
 
 type indexServiceClient struct {
@@ -326,8 +932,8 @@ func NewIndexServiceClient(cc *grpc.ClientConn) IndexServiceClient {
 	return &indexServiceClient{cc}
 }
 
-func (c *indexServiceClient) DelDoc(ctx context.Context, in *DocId, opts ...grpc.CallOption) (*ReqCount, error) {
-	out := new(ReqCount)
+func (c *indexServiceClient) DelDoc(ctx context.Context, in *DocId, opts ...grpc.CallOption) (*ResCount, error) {
+	out := new(ResCount)
 	err := c.cc.Invoke(ctx, "/server.IndexService/DelDoc", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -335,8 +941,8 @@ func (c *indexServiceClient) DelDoc(ctx context.Context, in *DocId, opts ...grpc
 	return out, nil
 }
 
-func (c *indexServiceClient) AddDoc(ctx context.Context, in *messages.Document, opts ...grpc.CallOption) (*ReqCount, error) {
-	out := new(ReqCount)
+func (c *indexServiceClient) AddDoc(ctx context.Context, in *messages.Document, opts ...grpc.CallOption) (*ResCount, error) {
+	out := new(ResCount)
 	err := c.cc.Invoke(ctx, "/server.IndexService/AddDoc", in, out, opts...)
 	if err != nil {
 		return nil, err
@@ -353,9 +959,72 @@ func (c *indexServiceClient) Search(ctx context.Context, in *Request, opts ...gr
 	return out, nil
 }
 
-func (c *indexServiceClient) Count(ctx context.Context, in *CountRequest, opts ...grpc.CallOption) (*ReqCount, error) {
-	out := new(ReqCount)
+func (c *indexServiceClient) Count(ctx context.Context, in *CountRequest, opts ...grpc.CallOption) (*ResCount, error) {
+	out := new(ResCount)
 	err := c.cc.Invoke(ctx, "/server.IndexService/Count", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *indexServiceClient) ExecuteTask(ctx context.Context, in *TaskRequest, opts ...grpc.CallOption) (*TaskResponse, error) {
+	out := new(TaskResponse)
+	err := c.cc.Invoke(ctx, "/server.IndexService/ExecuteTask", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *indexServiceClient) ReportTaskResult(ctx context.Context, in *TaskResponse, opts ...grpc.CallOption) (*ResCount, error) {
+	out := new(ResCount)
+	err := c.cc.Invoke(ctx, "/server.IndexService/ReportTaskResult", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *indexServiceClient) CreateTable(ctx context.Context, in *CreateTableRequest, opts ...grpc.CallOption) (*ResCount, error) {
+	out := new(ResCount)
+	err := c.cc.Invoke(ctx, "/server.IndexService/CreateTable", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *indexServiceClient) DeleteTable(ctx context.Context, in *TableRequest, opts ...grpc.CallOption) (*ResCount, error) {
+	out := new(ResCount)
+	err := c.cc.Invoke(ctx, "/server.IndexService/DeleteTable", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *indexServiceClient) AddDocumentToTable(ctx context.Context, in *AddDocumentRequest, opts ...grpc.CallOption) (*ResCount, error) {
+	out := new(ResCount)
+	err := c.cc.Invoke(ctx, "/server.IndexService/AddDocumentToTable", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *indexServiceClient) DeleteDocumentFromTable(ctx context.Context, in *DeleteDocumentRequest, opts ...grpc.CallOption) (*ResCount, error) {
+	out := new(ResCount)
+	err := c.cc.Invoke(ctx, "/server.IndexService/DeleteDocumentFromTable", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *indexServiceClient) SearchTable(ctx context.Context, in *SearchRequest, opts ...grpc.CallOption) (*SearchResult, error) {
+	out := new(SearchResult)
+	err := c.cc.Invoke(ctx, "/server.IndexService/SearchTable", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -364,27 +1033,57 @@ func (c *indexServiceClient) Count(ctx context.Context, in *CountRequest, opts .
 
 // IndexServiceServer is the server API for IndexService service.
 type IndexServiceServer interface {
-	DelDoc(context.Context, *DocId) (*ReqCount, error)
-	AddDoc(context.Context, *messages.Document) (*ReqCount, error)
+	DelDoc(context.Context, *DocId) (*ResCount, error)
+	AddDoc(context.Context, *messages.Document) (*ResCount, error)
 	Search(context.Context, *Request) (*Result, error)
-	Count(context.Context, *CountRequest) (*ReqCount, error)
+	Count(context.Context, *CountRequest) (*ResCount, error)
+	// 新增任务相关方法
+	ExecuteTask(context.Context, *TaskRequest) (*TaskResponse, error)
+	ReportTaskResult(context.Context, *TaskResponse) (*ResCount, error)
+	// 多表操作
+	CreateTable(context.Context, *CreateTableRequest) (*ResCount, error)
+	DeleteTable(context.Context, *TableRequest) (*ResCount, error)
+	AddDocumentToTable(context.Context, *AddDocumentRequest) (*ResCount, error)
+	DeleteDocumentFromTable(context.Context, *DeleteDocumentRequest) (*ResCount, error)
+	SearchTable(context.Context, *SearchRequest) (*SearchResult, error)
 }
 
 // UnimplementedIndexServiceServer can be embedded to have forward compatible implementations.
 type UnimplementedIndexServiceServer struct {
 }
 
-func (*UnimplementedIndexServiceServer) DelDoc(ctx context.Context, req *DocId) (*ReqCount, error) {
+func (*UnimplementedIndexServiceServer) DelDoc(ctx context.Context, req *DocId) (*ResCount, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DelDoc not implemented")
 }
-func (*UnimplementedIndexServiceServer) AddDoc(ctx context.Context, req *messages.Document) (*ReqCount, error) {
+func (*UnimplementedIndexServiceServer) AddDoc(ctx context.Context, req *messages.Document) (*ResCount, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method AddDoc not implemented")
 }
 func (*UnimplementedIndexServiceServer) Search(ctx context.Context, req *Request) (*Result, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Search not implemented")
 }
-func (*UnimplementedIndexServiceServer) Count(ctx context.Context, req *CountRequest) (*ReqCount, error) {
+func (*UnimplementedIndexServiceServer) Count(ctx context.Context, req *CountRequest) (*ResCount, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Count not implemented")
+}
+func (*UnimplementedIndexServiceServer) ExecuteTask(ctx context.Context, req *TaskRequest) (*TaskResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ExecuteTask not implemented")
+}
+func (*UnimplementedIndexServiceServer) ReportTaskResult(ctx context.Context, req *TaskResponse) (*ResCount, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReportTaskResult not implemented")
+}
+func (*UnimplementedIndexServiceServer) CreateTable(ctx context.Context, req *CreateTableRequest) (*ResCount, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateTable not implemented")
+}
+func (*UnimplementedIndexServiceServer) DeleteTable(ctx context.Context, req *TableRequest) (*ResCount, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteTable not implemented")
+}
+func (*UnimplementedIndexServiceServer) AddDocumentToTable(ctx context.Context, req *AddDocumentRequest) (*ResCount, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddDocumentToTable not implemented")
+}
+func (*UnimplementedIndexServiceServer) DeleteDocumentFromTable(ctx context.Context, req *DeleteDocumentRequest) (*ResCount, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteDocumentFromTable not implemented")
+}
+func (*UnimplementedIndexServiceServer) SearchTable(ctx context.Context, req *SearchRequest) (*SearchResult, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SearchTable not implemented")
 }
 
 func RegisterIndexServiceServer(s *grpc.Server, srv IndexServiceServer) {
@@ -463,6 +1162,132 @@ func _IndexService_Count_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IndexService_ExecuteTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TaskRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IndexServiceServer).ExecuteTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/server.IndexService/ExecuteTask",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IndexServiceServer).ExecuteTask(ctx, req.(*TaskRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IndexService_ReportTaskResult_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TaskResponse)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IndexServiceServer).ReportTaskResult(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/server.IndexService/ReportTaskResult",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IndexServiceServer).ReportTaskResult(ctx, req.(*TaskResponse))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IndexService_CreateTable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateTableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IndexServiceServer).CreateTable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/server.IndexService/CreateTable",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IndexServiceServer).CreateTable(ctx, req.(*CreateTableRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IndexService_DeleteTable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IndexServiceServer).DeleteTable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/server.IndexService/DeleteTable",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IndexServiceServer).DeleteTable(ctx, req.(*TableRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IndexService_AddDocumentToTable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddDocumentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IndexServiceServer).AddDocumentToTable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/server.IndexService/AddDocumentToTable",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IndexServiceServer).AddDocumentToTable(ctx, req.(*AddDocumentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IndexService_DeleteDocumentFromTable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteDocumentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IndexServiceServer).DeleteDocumentFromTable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/server.IndexService/DeleteDocumentFromTable",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IndexServiceServer).DeleteDocumentFromTable(ctx, req.(*DeleteDocumentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IndexService_SearchTable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SearchRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IndexServiceServer).SearchTable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/server.IndexService/SearchTable",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IndexServiceServer).SearchTable(ctx, req.(*SearchRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _IndexService_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "server.IndexService",
 	HandlerType: (*IndexServiceServer)(nil),
@@ -482,6 +1307,34 @@ var _IndexService_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Count",
 			Handler:    _IndexService_Count_Handler,
+		},
+		{
+			MethodName: "ExecuteTask",
+			Handler:    _IndexService_ExecuteTask_Handler,
+		},
+		{
+			MethodName: "ReportTaskResult",
+			Handler:    _IndexService_ReportTaskResult_Handler,
+		},
+		{
+			MethodName: "CreateTable",
+			Handler:    _IndexService_CreateTable_Handler,
+		},
+		{
+			MethodName: "DeleteTable",
+			Handler:    _IndexService_DeleteTable_Handler,
+		},
+		{
+			MethodName: "AddDocumentToTable",
+			Handler:    _IndexService_AddDocumentToTable_Handler,
+		},
+		{
+			MethodName: "DeleteDocumentFromTable",
+			Handler:    _IndexService_DeleteDocumentFromTable_Handler,
+		},
+		{
+			MethodName: "SearchTable",
+			Handler:    _IndexService_SearchTable_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -508,6 +1361,11 @@ func (m *DocId) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.Weight != 0 {
+		i = encodeVarintRequest(dAtA, i, uint64(m.Weight))
+		i--
+		dAtA[i] = 0x10
+	}
 	if len(m.Id) > 0 {
 		i -= len(m.Id)
 		copy(dAtA[i:], m.Id)
@@ -518,7 +1376,7 @@ func (m *DocId) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
-func (m *ReqCount) Marshal() (dAtA []byte, err error) {
+func (m *ResCount) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -528,12 +1386,12 @@ func (m *ReqCount) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *ReqCount) MarshalTo(dAtA []byte) (int, error) {
+func (m *ResCount) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *ReqCount) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *ResCount) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -669,6 +1527,423 @@ func (m *CountRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *TaskRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *TaskRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *TaskRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Timeout != 0 {
+		i = encodeVarintRequest(dAtA, i, uint64(m.Timeout))
+		i--
+		dAtA[i] = 0x20
+	}
+	if len(m.TaskData) > 0 {
+		i -= len(m.TaskData)
+		copy(dAtA[i:], m.TaskData)
+		i = encodeVarintRequest(dAtA, i, uint64(len(m.TaskData)))
+		i--
+		dAtA[i] = 0x1a
+	}
+	if len(m.TaskType) > 0 {
+		i -= len(m.TaskType)
+		copy(dAtA[i:], m.TaskType)
+		i = encodeVarintRequest(dAtA, i, uint64(len(m.TaskType)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.TaskId) > 0 {
+		i -= len(m.TaskId)
+		copy(dAtA[i:], m.TaskId)
+		i = encodeVarintRequest(dAtA, i, uint64(len(m.TaskId)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *TaskResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *TaskResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *TaskResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.EndTime != 0 {
+		i = encodeVarintRequest(dAtA, i, uint64(m.EndTime))
+		i--
+		dAtA[i] = 0x30
+	}
+	if len(m.ErrorMessage) > 0 {
+		i -= len(m.ErrorMessage)
+		copy(dAtA[i:], m.ErrorMessage)
+		i = encodeVarintRequest(dAtA, i, uint64(len(m.ErrorMessage)))
+		i--
+		dAtA[i] = 0x2a
+	}
+	if len(m.ResultData) > 0 {
+		i -= len(m.ResultData)
+		copy(dAtA[i:], m.ResultData)
+		i = encodeVarintRequest(dAtA, i, uint64(len(m.ResultData)))
+		i--
+		dAtA[i] = 0x22
+	}
+	if m.Success {
+		i--
+		if m.Success {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x18
+	}
+	if len(m.SlaveId) > 0 {
+		i -= len(m.SlaveId)
+		copy(dAtA[i:], m.SlaveId)
+		i = encodeVarintRequest(dAtA, i, uint64(len(m.SlaveId)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.TaskId) > 0 {
+		i -= len(m.TaskId)
+		copy(dAtA[i:], m.TaskId)
+		i = encodeVarintRequest(dAtA, i, uint64(len(m.TaskId)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *CreateTableRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *CreateTableRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *CreateTableRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.InvertedIndexOrder != 0 {
+		i = encodeVarintRequest(dAtA, i, uint64(m.InvertedIndexOrder))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.NumClusters != 0 {
+		i = encodeVarintRequest(dAtA, i, uint64(m.NumClusters))
+		i--
+		dAtA[i] = 0x18
+	}
+	if len(m.VectorDbPath) > 0 {
+		i -= len(m.VectorDbPath)
+		copy(dAtA[i:], m.VectorDbPath)
+		i = encodeVarintRequest(dAtA, i, uint64(len(m.VectorDbPath)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.TableName) > 0 {
+		i -= len(m.TableName)
+		copy(dAtA[i:], m.TableName)
+		i = encodeVarintRequest(dAtA, i, uint64(len(m.TableName)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *TableRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *TableRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *TableRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.TableName) > 0 {
+		i -= len(m.TableName)
+		copy(dAtA[i:], m.TableName)
+		i = encodeVarintRequest(dAtA, i, uint64(len(m.TableName)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *AddDocumentRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *AddDocumentRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *AddDocumentRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.VectorizedType != 0 {
+		i = encodeVarintRequest(dAtA, i, uint64(m.VectorizedType))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.Document != nil {
+		{
+			size, err := m.Document.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintRequest(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.TableName) > 0 {
+		i -= len(m.TableName)
+		copy(dAtA[i:], m.TableName)
+		i = encodeVarintRequest(dAtA, i, uint64(len(m.TableName)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *DeleteDocumentRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *DeleteDocumentRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *DeleteDocumentRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Keywords) > 0 {
+		for iNdEx := len(m.Keywords) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Keywords[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintRequest(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x1a
+		}
+	}
+	if len(m.DocId) > 0 {
+		i -= len(m.DocId)
+		copy(dAtA[i:], m.DocId)
+		i = encodeVarintRequest(dAtA, i, uint64(len(m.DocId)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.TableName) > 0 {
+		i -= len(m.TableName)
+		copy(dAtA[i:], m.TableName)
+		i = encodeVarintRequest(dAtA, i, uint64(len(m.TableName)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *SearchRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SearchRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SearchRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.UseAnn {
+		i--
+		if m.UseAnn {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x48
+	}
+	if len(m.OrFlags) > 0 {
+		dAtA6 := make([]byte, len(m.OrFlags)*10)
+		var j5 int
+		for _, num := range m.OrFlags {
+			for num >= 1<<7 {
+				dAtA6[j5] = uint8(uint64(num)&0x7f | 0x80)
+				num >>= 7
+				j5++
+			}
+			dAtA6[j5] = uint8(num)
+			j5++
+		}
+		i -= j5
+		copy(dAtA[i:], dAtA6[:j5])
+		i = encodeVarintRequest(dAtA, i, uint64(j5))
+		i--
+		dAtA[i] = 0x42
+	}
+	if m.OffFlag != 0 {
+		i = encodeVarintRequest(dAtA, i, uint64(m.OffFlag))
+		i--
+		dAtA[i] = 0x38
+	}
+	if m.OnFlag != 0 {
+		i = encodeVarintRequest(dAtA, i, uint64(m.OnFlag))
+		i--
+		dAtA[i] = 0x30
+	}
+	if m.Probe != 0 {
+		i = encodeVarintRequest(dAtA, i, uint64(m.Probe))
+		i--
+		dAtA[i] = 0x28
+	}
+	if m.K != 0 {
+		i = encodeVarintRequest(dAtA, i, uint64(m.K))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.VectorizedType != 0 {
+		i = encodeVarintRequest(dAtA, i, uint64(m.VectorizedType))
+		i--
+		dAtA[i] = 0x18
+	}
+	if m.Query != nil {
+		{
+			size, err := m.Query.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintRequest(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.TableName) > 0 {
+		i -= len(m.TableName)
+		copy(dAtA[i:], m.TableName)
+		i = encodeVarintRequest(dAtA, i, uint64(len(m.TableName)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *SearchResult) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *SearchResult) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *SearchResult) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.DocIds) > 0 {
+		for iNdEx := len(m.DocIds) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.DocIds[iNdEx])
+			copy(dAtA[i:], m.DocIds[iNdEx])
+			i = encodeVarintRequest(dAtA, i, uint64(len(m.DocIds[iNdEx])))
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintRequest(dAtA []byte, offset int, v uint64) int {
 	offset -= sovRequest(v)
 	base := offset
@@ -690,10 +1965,13 @@ func (m *DocId) Size() (n int) {
 	if l > 0 {
 		n += 1 + l + sovRequest(uint64(l))
 	}
+	if m.Weight != 0 {
+		n += 1 + sovRequest(uint64(m.Weight))
+	}
 	return n
 }
 
-func (m *ReqCount) Size() (n int) {
+func (m *ResCount) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -752,6 +2030,197 @@ func (m *CountRequest) Size() (n int) {
 	}
 	var l int
 	_ = l
+	return n
+}
+
+func (m *TaskRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.TaskId)
+	if l > 0 {
+		n += 1 + l + sovRequest(uint64(l))
+	}
+	l = len(m.TaskType)
+	if l > 0 {
+		n += 1 + l + sovRequest(uint64(l))
+	}
+	l = len(m.TaskData)
+	if l > 0 {
+		n += 1 + l + sovRequest(uint64(l))
+	}
+	if m.Timeout != 0 {
+		n += 1 + sovRequest(uint64(m.Timeout))
+	}
+	return n
+}
+
+func (m *TaskResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.TaskId)
+	if l > 0 {
+		n += 1 + l + sovRequest(uint64(l))
+	}
+	l = len(m.SlaveId)
+	if l > 0 {
+		n += 1 + l + sovRequest(uint64(l))
+	}
+	if m.Success {
+		n += 2
+	}
+	l = len(m.ResultData)
+	if l > 0 {
+		n += 1 + l + sovRequest(uint64(l))
+	}
+	l = len(m.ErrorMessage)
+	if l > 0 {
+		n += 1 + l + sovRequest(uint64(l))
+	}
+	if m.EndTime != 0 {
+		n += 1 + sovRequest(uint64(m.EndTime))
+	}
+	return n
+}
+
+func (m *CreateTableRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.TableName)
+	if l > 0 {
+		n += 1 + l + sovRequest(uint64(l))
+	}
+	l = len(m.VectorDbPath)
+	if l > 0 {
+		n += 1 + l + sovRequest(uint64(l))
+	}
+	if m.NumClusters != 0 {
+		n += 1 + sovRequest(uint64(m.NumClusters))
+	}
+	if m.InvertedIndexOrder != 0 {
+		n += 1 + sovRequest(uint64(m.InvertedIndexOrder))
+	}
+	return n
+}
+
+func (m *TableRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.TableName)
+	if l > 0 {
+		n += 1 + l + sovRequest(uint64(l))
+	}
+	return n
+}
+
+func (m *AddDocumentRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.TableName)
+	if l > 0 {
+		n += 1 + l + sovRequest(uint64(l))
+	}
+	if m.Document != nil {
+		l = m.Document.Size()
+		n += 1 + l + sovRequest(uint64(l))
+	}
+	if m.VectorizedType != 0 {
+		n += 1 + sovRequest(uint64(m.VectorizedType))
+	}
+	return n
+}
+
+func (m *DeleteDocumentRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.TableName)
+	if l > 0 {
+		n += 1 + l + sovRequest(uint64(l))
+	}
+	l = len(m.DocId)
+	if l > 0 {
+		n += 1 + l + sovRequest(uint64(l))
+	}
+	if len(m.Keywords) > 0 {
+		for _, e := range m.Keywords {
+			l = e.Size()
+			n += 1 + l + sovRequest(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *SearchRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.TableName)
+	if l > 0 {
+		n += 1 + l + sovRequest(uint64(l))
+	}
+	if m.Query != nil {
+		l = m.Query.Size()
+		n += 1 + l + sovRequest(uint64(l))
+	}
+	if m.VectorizedType != 0 {
+		n += 1 + sovRequest(uint64(m.VectorizedType))
+	}
+	if m.K != 0 {
+		n += 1 + sovRequest(uint64(m.K))
+	}
+	if m.Probe != 0 {
+		n += 1 + sovRequest(uint64(m.Probe))
+	}
+	if m.OnFlag != 0 {
+		n += 1 + sovRequest(uint64(m.OnFlag))
+	}
+	if m.OffFlag != 0 {
+		n += 1 + sovRequest(uint64(m.OffFlag))
+	}
+	if len(m.OrFlags) > 0 {
+		l = 0
+		for _, e := range m.OrFlags {
+			l += sovRequest(uint64(e))
+		}
+		n += 1 + sovRequest(uint64(l)) + l
+	}
+	if m.UseAnn {
+		n += 2
+	}
+	return n
+}
+
+func (m *SearchResult) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.DocIds) > 0 {
+		for _, s := range m.DocIds {
+			l = len(s)
+			n += 1 + l + sovRequest(uint64(l))
+		}
+	}
 	return n
 }
 
@@ -822,6 +2291,25 @@ func (m *DocId) Unmarshal(dAtA []byte) error {
 			}
 			m.Id = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Weight", wireType)
+			}
+			m.Weight = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Weight |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
 		default:
 			iNdEx = preIndex
 			skippy, err := skipRequest(dAtA[iNdEx:])
@@ -843,7 +2331,7 @@ func (m *DocId) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *ReqCount) Unmarshal(dAtA []byte) error {
+func (m *ResCount) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -866,10 +2354,10 @@ func (m *ReqCount) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: ReqCount: wiretype end group for non-group")
+			return fmt.Errorf("proto: ResCount: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: ReqCount: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: ResCount: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -1225,6 +2713,1302 @@ func (m *CountRequest) Unmarshal(dAtA []byte) error {
 			return fmt.Errorf("proto: CountRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
+		default:
+			iNdEx = preIndex
+			skippy, err := skipRequest(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *TaskRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowRequest
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: TaskRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: TaskRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TaskId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthRequest
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.TaskId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TaskType", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthRequest
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.TaskType = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TaskData", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthRequest
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.TaskData = append(m.TaskData[:0], dAtA[iNdEx:postIndex]...)
+			if m.TaskData == nil {
+				m.TaskData = []byte{}
+			}
+			iNdEx = postIndex
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Timeout", wireType)
+			}
+			m.Timeout = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Timeout |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipRequest(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *TaskResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowRequest
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: TaskResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: TaskResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TaskId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthRequest
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.TaskId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SlaveId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthRequest
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.SlaveId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Success", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.Success = bool(v != 0)
+		case 4:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ResultData", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthRequest
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ResultData = append(m.ResultData[:0], dAtA[iNdEx:postIndex]...)
+			if m.ResultData == nil {
+				m.ResultData = []byte{}
+			}
+			iNdEx = postIndex
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ErrorMessage", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthRequest
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ErrorMessage = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 6:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EndTime", wireType)
+			}
+			m.EndTime = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.EndTime |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipRequest(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *CreateTableRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowRequest
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: CreateTableRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: CreateTableRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TableName", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthRequest
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.TableName = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field VectorDbPath", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthRequest
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.VectorDbPath = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field NumClusters", wireType)
+			}
+			m.NumClusters = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.NumClusters |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field InvertedIndexOrder", wireType)
+			}
+			m.InvertedIndexOrder = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.InvertedIndexOrder |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipRequest(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *TableRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowRequest
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: TableRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: TableRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TableName", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthRequest
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.TableName = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipRequest(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *AddDocumentRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowRequest
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: AddDocumentRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: AddDocumentRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TableName", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthRequest
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.TableName = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Document", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthRequest
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Document == nil {
+				m.Document = &messages.Document{}
+			}
+			if err := m.Document.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field VectorizedType", wireType)
+			}
+			m.VectorizedType = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.VectorizedType |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipRequest(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *DeleteDocumentRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowRequest
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: DeleteDocumentRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: DeleteDocumentRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TableName", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthRequest
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.TableName = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DocId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthRequest
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.DocId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Keywords", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthRequest
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Keywords = append(m.Keywords, &KeyWord{})
+			if err := m.Keywords[len(m.Keywords)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipRequest(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SearchRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowRequest
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SearchRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SearchRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field TableName", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthRequest
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.TableName = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Query", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthRequest
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Query == nil {
+				m.Query = &messages.TermQuery{}
+			}
+			if err := m.Query.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field VectorizedType", wireType)
+			}
+			m.VectorizedType = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.VectorizedType |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field K", wireType)
+			}
+			m.K = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.K |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 5:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Probe", wireType)
+			}
+			m.Probe = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.Probe |= int32(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 6:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field OnFlag", wireType)
+			}
+			m.OnFlag = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.OnFlag |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 7:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field OffFlag", wireType)
+			}
+			m.OffFlag = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.OffFlag |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 8:
+			if wireType == 0 {
+				var v uint64
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowRequest
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= uint64(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				m.OrFlags = append(m.OrFlags, v)
+			} else if wireType == 2 {
+				var packedLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowRequest
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					packedLen |= int(b&0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if packedLen < 0 {
+					return ErrInvalidLengthRequest
+				}
+				postIndex := iNdEx + packedLen
+				if postIndex < 0 {
+					return ErrInvalidLengthRequest
+				}
+				if postIndex > l {
+					return io.ErrUnexpectedEOF
+				}
+				var elementCount int
+				var count int
+				for _, integer := range dAtA[iNdEx:postIndex] {
+					if integer < 128 {
+						count++
+					}
+				}
+				elementCount = count
+				if elementCount != 0 && len(m.OrFlags) == 0 {
+					m.OrFlags = make([]uint64, 0, elementCount)
+				}
+				for iNdEx < postIndex {
+					var v uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowRequest
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						v |= uint64(b&0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					m.OrFlags = append(m.OrFlags, v)
+				}
+			} else {
+				return fmt.Errorf("proto: wrong wireType = %d for field OrFlags", wireType)
+			}
+		case 9:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field UseAnn", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.UseAnn = bool(v != 0)
+		default:
+			iNdEx = preIndex
+			skippy, err := skipRequest(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *SearchResult) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowRequest
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: SearchResult: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: SearchResult: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DocIds", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRequest
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthRequest
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthRequest
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.DocIds = append(m.DocIds, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipRequest(dAtA[iNdEx:])

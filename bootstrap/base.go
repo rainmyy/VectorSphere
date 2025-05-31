@@ -327,73 +327,10 @@ func (app *AppServer) ListenAPI() {
 			log.Error("encode json failed, err:%v\n", err)
 		}
 	})
-	//mux.HandleFunc("/searchs", func(w http.ResponseWriter, r *http.Request) {
-	//	query := &messages.TermQuery{}
-	//	if err := json.NewDecoder(r.Body).Decode(query); err != nil {
-	//		http.Error(w, "Invalid request payload", http.StatusBadRequest)
-	//		return
-	//	}
-	//	// 通过gRPC转发到主服务
-	//	if app.grpcConn == nil {
-	//		http.Error(w, "gRPC connection not established", http.StatusInternalServerError)
-	//		return
-	//	}
-	//	grpcClient := messages.NewSearchServiceClient(app.grpcConn)
-	//	resp, err := grpcClient.Search(context.Background(), query)
-	//	if err != nil {
-	//		http.Error(w, err.Error(), http.StatusInternalServerError)
-	//		return
-	//	}
-	//	if err := json.NewEncoder(w).Encode(resp); err != nil {
-	//		log.Error("encode json failed, err:%v\n", err)
-	//	}
-	//})
+
 	if err := http.ListenAndServe(serviceAddr, mux); err != nil {
 		log.Info("Master节点 %s 监听 API 请求失败: %v\n", serviceName, err)
 	}
-
-	//for name, ep := range config.Endpoints {
-	//	if !ep.IsMaster {
-	//		address := fmt.Sprintf("%s:%d", ep.Ip, config.DefaultPort)
-	//		log.Info("Master节点 %s 开始监听 API 请求: %s\n", name, address)
-	//		mux := http.NewServeMux()
-	//		mux.HandleFunc("/addDoc", func(w http.ResponseWriter, r *http.Request) {
-	//			// 处理添加文档请求
-	//			// 这里需要根据实际情况解析请求参数并调用相应的服务方法
-	//			// 示例代码
-	//			doc := &messages.Document{}
-	//			s := app.sentinel
-	//			affected, err := s.AddDoc(doc)
-	//			if err != nil {
-	//				http.Error(w, err.Error(), http.StatusInternalServerError)
-	//				return
-	//			}
-	//			log.Info("添加文档成功，影响文档数量: %d", affected)
-	//		})
-	//
-	//		mux.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
-	//			query := &messages.TermQuery{}
-	//			onFlag := uint64(0)
-	//			offFlag := uint64(0)
-	//			orFlags := []uint64{}
-	//			s := new(server.Sentinel)
-	//			err, result := s.Search(query, onFlag, offFlag, orFlags)
-	//			if err != nil {
-	//				http.Error(w, err.Error(), http.StatusInternalServerError)
-	//				return
-	//			}
-	//			// 这里需要将结果序列化为 JSON 并返回给客户端
-	//			err = json.NewEncoder(w).Encode(result)
-	//			if err != nil {
-	//				log.Error("encode json failed, err:%v\n", err)
-	//			}
-	//		})
-	//
-	//		if err := http.ListenAndServe(address, mux); err != nil {
-	//			log.Info("Master节点 %s 监听 API 请求失败: %v\n", name, err)
-	//		}
-	//	}
-	//}
 }
 
 func (app *AppServer) Start() map[string]*res.Response {

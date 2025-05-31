@@ -46,6 +46,7 @@ type VectorDB struct {
 	vectors       map[string][]float64
 	mu            sync.RWMutex
 	filePath      string              // 数据库文件的存储路径
+	backupPath    string              //数据备份逻辑
 	clusters      []Cluster           // 存储簇信息，用于IVF索引
 	numClusters   int                 // K-Means中的K值，即簇的数量
 	indexed       bool                // 标记数据库是否已建立索引
@@ -107,7 +108,7 @@ func (db *VectorDB) Close() {
 		log.Info("Stop signal sent to background tasks.")
 	}
 	// 尝试保存数据到文件
-	if db.filePath != "" {
+	if db.backupPath != "" {
 		log.Info("Attempting to save VectorDB data to %s before closing...", db.filePath)
 		if err := db.SaveToFile(); err != nil {
 			log.Error("Error saving VectorDB data to %s: %v", db.filePath, err)
@@ -174,6 +175,7 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 			db.normalizedVectors = make(map[string][]float64)
 			db.compressedVectors = make(map[string]entity.CompressedVector) // 确保加载失败也初始化
 		}
+		db.backupPath = filePath + ".bat"
 	}
 	return db
 }
@@ -1061,13 +1063,13 @@ func (db *VectorDB) SaveToFile() error {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
-	if db.filePath == "" {
+	if db.backupPath == "" {
 		return fmt.Errorf("文件路径未设置，无法保存数据库")
 	}
 
-	file, err := os.Create(db.filePath)
+	file, err := os.Create(db.backupPath)
 	if err != nil {
-		return fmt.Errorf("创建数据库文件 %s 失败: %v", db.filePath, err)
+		return fmt.Errorf("创建数据库文件 %s 失败: %v", db.backupPath, err)
 	}
 	defer file.Close()
 
