@@ -3,6 +3,7 @@ package scheduler
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"seetaSearch/library/log"
 
@@ -16,6 +17,13 @@ type ScheduledTask interface {
 	GetName() string     // 获取任务的名称，用于日志和管理
 	Init() error         // 可选：任务初始化逻辑
 	Stop() error         // 可选：任务停止前的清理逻辑
+
+	Name() string                   // 获取任务名称
+	Params() map[string]interface{} // 获取任务参数
+	Timeout() time.Duration         // 获取任务超时时间
+	Clone() ScheduledTask           // 克隆任务
+	SetID(id string)                // 设置任务ID
+	SetTarget(target string)        // 设置任务目标
 }
 
 // TaskPoolManager 管理一组定时任务
@@ -33,6 +41,26 @@ func NewTaskPoolManager() *TaskPoolManager {
 		tasks:  make(map[string]ScheduledTask),
 		stopCh: make(chan struct{}),
 	}
+}
+
+// Submit 提交一个任务到任务池执行
+func (pm *TaskPoolManager) Submit(task ScheduledTask) error {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	log.Info("提交任务 '%s' 到任务池执行", task.GetName())
+
+	// 直接执行任务，不进行调度
+	go func() {
+		log.Info("开始执行任务: %s", task.GetName())
+		if err := task.Run(); err != nil {
+			log.Error("执行任务 '%s' 失败: %v", task.GetName(), err)
+		} else {
+			log.Info("任务 '%s' 执行完成", task.GetName())
+		}
+	}()
+
+	return nil
 }
 
 // RegisterTasks 批量注册一个或多个定时任务

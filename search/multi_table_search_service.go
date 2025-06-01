@@ -67,6 +67,19 @@ func NewMultiTableSearchService(txMgr *tree.TransactionManager, lockMgr *tree.Lo
 	}
 }
 
+// ListTables 返回所有表的名称列表
+func (mts *MultiTableSearchService) ListTables() ([]string, error) {
+	mts.mu.RLock()
+	defer mts.mu.RUnlock()
+
+	tableNames := make([]string, 0, len(mts.tables))
+	for name := range mts.tables {
+		tableNames = append(tableNames, name)
+	}
+
+	return tableNames, nil
+}
+
 // 添加缓存管理方法
 func (mts *MultiTableSearchService) getCachedResults(cacheKey string) ([]string, bool) {
 	mts.queryCacheMu.RLock()

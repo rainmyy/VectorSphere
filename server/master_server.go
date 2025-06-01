@@ -43,6 +43,8 @@ type TaskInfo struct {
 	ResultsLock sync.RWMutex
 }
 
+var _ IndexServiceServer = (*MasterService)(nil)
+
 // MasterService 主服务结构体
 type MasterService struct {
 	// etcd 相关
@@ -72,6 +74,31 @@ type MasterService struct {
 	// 任务管理相关
 	tasks      map[string]*TaskInfo
 	tasksMutex sync.RWMutex
+}
+
+func (m *MasterService) CreateTable(ctx context.Context, request *CreateTableRequest) (*ResCount, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *MasterService) DeleteTable(ctx context.Context, request *TableRequest) (*ResCount, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *MasterService) AddDocumentToTable(ctx context.Context, request *AddDocumentRequest) (*ResCount, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *MasterService) DeleteDocumentFromTable(ctx context.Context, request *DeleteDocumentRequest) (*ResCount, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *MasterService) SearchTable(ctx context.Context, request *SearchRequest) (*SearchResult, error) {
+	//TODO implement me
+	panic("implement me")
 }
 
 // NewMasterService 创建主服务实例
@@ -141,7 +168,7 @@ func (m *MasterService) ScheduleTask(task scheduler.ScheduledTask) error {
 		StartTime: time.Now(),
 		Timeout:   task.Timeout(),
 		Slaves:    make([]string, 0, len(slaves)),
-		Results:   make(map[string]*TaskResult),
+		Results:   make(map[string]*TaskResponse), // 修改这里，使用TaskResponse而不是TaskResult
 	}
 
 	// 将任务分配给从节点

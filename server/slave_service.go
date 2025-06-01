@@ -235,20 +235,28 @@ func (s *SlaveService) Stop() {
 	s.masterMutex.Unlock()
 
 	// 关闭客户端
-	s.client.Close()
+	if s.client != nil {
+		s.client.Close()
+	}
 
 	// 停止任务执行器
-	s.taskExecutor.Stop()
+	if s.taskExecutor != nil {
+		s.taskExecutor.Stop()
+	}
 
 	// 关闭索引
-	s.Index.Close()
+	if s.Index != nil {
+		s.Index.Close()
+	}
 
 	// 关闭多表搜索服务
-	// 遍历所有表并关闭
-	tables, err := s.multiTableService.ListTables()
-	if err == nil {
-		for _, tableName := range tables {
-			s.multiTableService.CloseTable(tableName)
+	if s.multiTableService != nil {
+		// 遍历所有表并关闭
+		tables, err := s.multiTableService.ListTables()
+		if err == nil {
+			for _, tableName := range tables {
+				s.multiTableService.CloseTable(tableName)
+			}
 		}
 	}
 }
@@ -289,8 +297,15 @@ func (s *SlaveService) Count(ctx context.Context, request *CountRequest) (*ResCo
 	}, nil
 }
 
-// ExecuteTask 执行任务
 func (s *SlaveService) ExecuteTask(ctx context.Context, request *TaskRequest) (*TaskResponse, error) {
+	// 检查请求是否为空
+	if request == nil {
+		return &TaskResponse{
+			Success:      false,
+			ErrorMessage: "请求为空",
+		}, nil
+	}
+
 	// 解析任务数据
 	var taskData map[string]interface{}
 	err := json.Unmarshal(request.TaskData, &taskData)
@@ -299,6 +314,15 @@ func (s *SlaveService) ExecuteTask(ctx context.Context, request *TaskRequest) (*
 			TaskId:       request.TaskId,
 			Success:      false,
 			ErrorMessage: fmt.Sprintf("解析任务数据失败: %v", err),
+		}, nil
+	}
+
+	// 检查多表服务是否初始化
+	if s.multiTableService == nil {
+		return &TaskResponse{
+			TaskId:       request.TaskId,
+			Success:      false,
+			ErrorMessage: "多表搜索服务未初始化",
 		}, nil
 	}
 
@@ -323,11 +347,44 @@ func (s *SlaveService) ExecuteTask(ctx context.Context, request *TaskRequest) (*
 			break
 		}
 
+		// 检查表实例是否为空
+		if table == nil {
+			errorMessage = fmt.Sprintf("表 %s 不存在", tableName)
+			break
+		}
+
 		// 重建索引
 		if table.VectorDB != nil {
+			// 使用新实现的 RebuildIndex 方法
 			err = table.VectorDB.RebuildIndex()
 			if err != nil {
 				errorMessage = fmt.Sprintf("重建索引失败: %v", err)
+				break
+			}
+
+			// 如果表有倒排索引，也尝试优化它
+			if table.InvertedIndex != nil {
+				optErr := table.InvertedIndex.Optimize()
+				if optErr != nil {
+					log.Warning("优化倒排索引失败: %v", optErr)
+					// 不中断流程，只记录警告
+				}
+			}
+		} else {
+			// 如果没有向量数据库，但有倒排索引，尝试只优化倒排索引
+			if table.InvertedIndex != nil {
+				optErr := table.InvertedIndex.Optimize()
+				if optErr != nil {
+					errorMessage = fmt.Sprintf("优化倒排索引失败: %v", optErr)
+					break
+				}
+				success = true
+				resultData, _ = json.Marshal(map[string]interface{}{
+					"message": fmt.Sprintf("表 %s 倒排索引优化成功", tableName),
+				})
+				break
+			} else {
+				errorMessage = "表没有向量数据库和倒排索引实例"
 				break
 			}
 		}
@@ -352,6 +409,12 @@ func (s *SlaveService) ExecuteTask(ctx context.Context, request *TaskRequest) (*
 			break
 		}
 
+		// 检查表实例是否为空
+		if table == nil {
+			errorMessage = fmt.Sprintf("表 %s 不存在", tableName)
+			break
+		}
+
 		// 优化索引
 		if table.InvertedIndex != nil {
 			err = table.InvertedIndex.Optimize()
@@ -359,6 +422,9 @@ func (s *SlaveService) ExecuteTask(ctx context.Context, request *TaskRequest) (*
 				errorMessage = fmt.Sprintf("优化索引失败: %v", err)
 				break
 			}
+		} else {
+			errorMessage = "表没有倒排索引实例"
+			break
 		}
 
 		success = true
@@ -387,13 +453,31 @@ func (s *SlaveService) ExecuteTask(ctx context.Context, request *TaskRequest) (*
 			break
 		}
 
+		// 检查表实例是否为空
+		if table == nil {
+			errorMessage = fmt.Sprintf("表 %s 不存在", tableName)
+			break
+		}
+
 		// 备份数据
 		if table.VectorDB != nil {
+			// 设置备份路径
+			originalPath := table.VectorDB.GetFilePath()
+			table.VectorDB.SetFilePath(backupPath)
+
+			// 执行备份
 			err = table.VectorDB.SaveToFile()
+
+			// 恢复原始路径
+			table.VectorDB.SetFilePath(originalPath)
+
 			if err != nil {
 				errorMessage = fmt.Sprintf("备份数据失败: %v", err)
 				break
 			}
+		} else {
+			errorMessage = "表没有向量数据库实例"
+			break
 		}
 
 		success = true

@@ -12,13 +12,6 @@ import (
 	"time"
 )
 
-type ServerInterface interface {
-	DelDoc(id *DocId) int
-	AddDoc(document *messages.Document) (int, error)
-	Search(query *messages.TermQuery, onFlag, offFlag uint64, orFlags []uint64) (error, []*messages.Document)
-	Count() int
-}
-
 var _ IndexServiceServer = (*IndexServer)(nil)
 
 type IndexServer struct {
@@ -27,6 +20,41 @@ type IndexServer struct {
 	stop        bool
 	localhost   string
 	serviceName string
+}
+
+func (w *IndexServer) ExecuteTask(ctx context.Context, request *TaskRequest) (*TaskResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (w *IndexServer) ReportTaskResult(ctx context.Context, response *TaskResponse) (*ResCount, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (w *IndexServer) CreateTable(ctx context.Context, request *CreateTableRequest) (*ResCount, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (w *IndexServer) DeleteTable(ctx context.Context, request *TableRequest) (*ResCount, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (w *IndexServer) AddDocumentToTable(ctx context.Context, request *AddDocumentRequest) (*ResCount, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (w *IndexServer) DeleteDocumentFromTable(ctx context.Context, request *DeleteDocumentRequest) (*ResCount, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (w *IndexServer) SearchTable(ctx context.Context, request *SearchRequest) (*SearchResult, error) {
+	//TODO implement me
+	panic("implement me")
 }
 
 func (w *IndexServer) Init(docNumEstimate int, dbType int, DataDir string) error {
@@ -83,17 +111,17 @@ func (w *IndexServer) LoadFromIndexFile() (int, error) {
 	return data, nil
 }
 
-func (w *IndexServer) DelDoc(ctx context.Context, docId *DocId) (*ReqCount, error) {
+func (w *IndexServer) DelDoc(ctx context.Context, docId *DocId) (*ResCount, error) {
 	// 调用Indexer的DeleteDoc方法删除文档，并返回影响的文档数量
-	return &ReqCount{
+	return &ResCount{
 		Count: int32(w.Index.DelDoc(docId.Id)),
 	}, nil
 }
 
-func (w *IndexServer) AddDoc(ctx context.Context, doc *messages.Document) (*ReqCount, error) {
+func (w *IndexServer) AddDoc(ctx context.Context, doc *messages.Document) (*ResCount, error) {
 	// 调用Indexer的AddDoc方法添加文档，并返回影响的文档数量
 	n, err := w.Index.AddDoc(*doc)
-	return &ReqCount{
+	return &ResCount{
 		Count: int32(n),
 	}, err
 }
@@ -111,9 +139,9 @@ func (w *IndexServer) Search(ctx context.Context, request *Request) (*Result, er
 	}, nil
 }
 
-func (w *IndexServer) Count(ctx context.Context, request *CountRequest) (*ReqCount, error) {
+func (w *IndexServer) Count(ctx context.Context, request *CountRequest) (*ResCount, error) {
 	// 调用Indexer的Count方法获取文档数量，并返回结果
-	return &ReqCount{
+	return &ResCount{
 		Count: int32(w.Index.Total()),
 	}, nil
 }

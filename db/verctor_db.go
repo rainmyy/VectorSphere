@@ -483,6 +483,60 @@ func (db *VectorDB) AddDocument(id string, doc string, vectorizedType int) error
 	return nil
 }
 
+// RebuildIndex 重建向量数据库索引
+func (db *VectorDB) RebuildIndex() error {
+	// 记录开始时间，用于性能统计
+	start := time.Now()
+
+	// 清除旧索引
+	db.mu.Lock()
+	db.indexed = false
+	db.clusters = make([]Cluster, 0)
+	db.mu.Unlock()
+
+	// 清除查询缓存
+	db.cacheMu.Lock()
+	db.queryCache = make(map[string]queryCache)
+	db.cacheMu.Unlock()
+
+	// 设置索引状态为未索引
+	db.indexed = false
+	// 使用默认参数重建索引
+	// 最大迭代次数设为100，收敛容差设为0.001
+	err := db.BuildIndex(100, 0.001)
+
+	// 更新性能统计信息
+	if err != nil {
+		log.Error("索引重建失败: %v", err)
+	}
+	db.statsMu.Lock()
+	db.stats.IndexBuildTime = time.Since(start)
+	db.stats.LastReindexTime = time.Now()
+
+	// 更新内存使用情况
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	db.stats.MemoryUsage = m.Alloc
+	db.statsMu.Unlock()
+	log.Info("索引重建完成，耗时: %v", time.Since(start))
+
+	return err
+}
+
+// GetFilePath 获取数据库文件路径
+func (db *VectorDB) GetFilePath() string {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+	return db.filePath
+}
+
+// SetFilePath 设置数据库文件路径
+func (db *VectorDB) SetFilePath(path string) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	db.filePath = path
+}
+
 // GetVectorForText 将文本根据指定的向量化类型转换为向量
 func (db *VectorDB) GetVectorForText(text string, vectorizedType int) ([]float64, error) {
 	var vectorized DocumentVectorized

@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"seetaSearch/db"
 	"seetaSearch/library/entity"
+	"seetaSearch/library/log"
 	tree "seetaSearch/library/tree"
 	"seetaSearch/messages"
 	"sort"
@@ -106,6 +107,60 @@ func (idx *MVCCBPlusTreeInvertedIndex) GetStats() PerformanceStats {
 	idx.statsMu.RLock()
 	defer idx.statsMu.RUnlock()
 	return idx.stats
+}
+
+// Optimize 优化倒排索引，清理无效数据，重新平衡B+树，更新统计信息
+func (idx *MVCCBPlusTreeInvertedIndex) Optimize() error {
+	// 获取开始时间，用于计算优化耗时
+	startTime := time.Now()
+
+	// 加锁保护索引结构
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	// 清理查询缓存
+	idx.cacheMu.Lock()
+	idx.queryCache = make(map[string]queryCache)
+	idx.cacheMu.Unlock()
+
+	// 获取所有关键词
+	keywords := idx.getAllKeywords()
+
+	// 记录优化前的统计信息
+	beforeKeywordCount := len(keywords)
+
+	// 执行B+树的优化操作
+
+	if optimizer, ok := interface{}(idx.tree).(interface{ Optimize() error }); ok {
+		if err := optimizer.Optimize(); err != nil {
+			return fmt.Errorf("优化B+树失败: %v", err)
+		}
+	}
+
+	// 更新统计信息
+	idx.statsMu.Lock()
+	idx.stats.LastOptimizeTime = time.Now()
+
+	// 更新关键词数量
+	idx.stats.KeywordCount = int64(len(idx.getAllKeywords()))
+
+	// 更新内存使用情况
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	idx.stats.MemoryUsage = m.Alloc
+
+	// 记录优化结果
+	optimizeTime := time.Since(startTime)
+	idx.statsMu.Unlock()
+
+	// 自适应调整配置
+	idx.AdjustConfig()
+
+	// 输出优化结果
+	log.Info("倒排索引优化完成，耗时 %v，关键词数量: %d -> %d",
+		optimizeTime, beforeKeywordCount, idx.stats.KeywordCount)
+
+	return nil
 }
 
 // 更新统计信息的方法

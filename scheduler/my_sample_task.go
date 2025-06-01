@@ -25,7 +25,6 @@ func (t *MySampleTask) GetName() string {
 	return t.Name
 }
 
-// 可选的 Init 和 Stop
 func (t *MySampleTask) Init() error {
 	log.Info("任务 '%s' 正在初始化...", t.Name)
 	return nil

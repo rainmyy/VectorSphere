@@ -252,6 +252,159 @@ func (t *MVCCBPlusTree) Get(tx *Transaction, key Key) (Value, bool) {
 //	return nil
 //}
 
+// Optimize 优化B+树结构，包括重新平衡节点、合并稀疏节点、清理无效版本
+func (t *MVCCBPlusTree) Optimize() error {
+	// 获取树的写锁，确保优化过程中树结构不被修改
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// 记录开始时间
+	startTime := time.Now()
+
+	// 1. 验证树结构一致性
+	if err := t.validateTreeStructure(t.root); err != nil {
+		return fmt.Errorf("树结构验证失败: %w", err)
+	}
+
+	// 2. 获取所有叶子节点
+	leaves := t.getAllLeafNodes()
+	if len(leaves) == 0 {
+		// 空树，无需优化
+		return nil
+	}
+	log.Info("开始优化B+树，共有 %d 个叶子节点", len(leaves))
+
+	// 3. 清理每个叶子节点中的无效版本
+	cleanedNodes := 0
+	for _, leaf := range leaves {
+		for _, child := range leaf.children {
+			if mvccNode, ok := child.(*MVCCNode); ok {
+				mvccNode.mu.Lock()
+				// 创建一个模拟事务，用于清理版本
+				cleanTx := &Transaction{
+					txID:      t.versionTS,
+					startTS:   t.versionTS,
+					isolation: ReadCommitted,
+					status:    TxCommitted,
+				}
+				// 清理不可见的旧版本
+				oldVersion := mvccNode.versions
+				mvccNode.versions = t.cleanInvisibleVersions(mvccNode.versions, cleanTx)
+				// 如果版本链被清理了，增加计数
+				if oldVersion != mvccNode.versions {
+					cleanedNodes++
+				}
+				mvccNode.mu.Unlock()
+			}
+		}
+	}
+
+	// 4. 合并稀疏节点
+	mergedNodes := 0
+	// 从叶子节点开始，检查每个叶子节点是否过于稀疏（低于半满）
+	for i := 0; i < len(leaves); i++ {
+		leaf := leaves[i]
+		// 如果叶子节点的键数量少于阶数的一半（除了根节点），尝试与相邻节点合并
+		if leaf != t.root && len(leaf.keys) < t.order/2 {
+			// 如果有下一个节点，尝试与下一个节点合并
+			if leaf.next != nil && len(leaf.next.keys)+len(leaf.keys) <= t.order-1 {
+				// 合并到下一个节点
+				for j := 0; j < len(leaf.keys); j++ {
+					leaf.next.keys = append([]Key{leaf.keys[j]}, leaf.next.keys...)
+					leaf.next.children = append([]interface{}{leaf.children[j]}, leaf.next.children...)
+				}
+				// 更新前一个节点的next指针
+				prevLeaf := t.findPreviousLeaf(leaf)
+				if prevLeaf != nil {
+					prevLeaf.next = leaf.next
+				}
+				mergedNodes++
+			}
+		}
+	}
+
+	// 5. 重新平衡树结构
+	// 如果有合并操作，可能需要重新构建内部节点
+	if mergedNodes > 0 {
+		// 重新构建内部节点
+		t.root = t.rebuildInternalNodes(leaves, 0, len(leaves)-1)
+	}
+	optimizeTime := time.Since(startTime)
+	log.Info("B+树优化完成，耗时 %v, 清理了 %d 个节点的版本链，合并了 %d 个稀疏节点", optimizeTime, cleanedNodes, mergedNodes)
+	return nil
+}
+
+// findPreviousLeaf 查找指定叶子节点的前一个叶子节点
+func (t *MVCCBPlusTree) findPreviousLeaf(leaf *MVCCNode) *MVCCNode {
+	if leaf == nil || !leaf.isLeaf {
+		return nil
+	}
+
+	// 获取所有叶子节点
+	leaves := t.getAllLeafNodes()
+	for i := 1; i < len(leaves); i++ {
+		if leaves[i] == leaf {
+			return leaves[i-1]
+		}
+	}
+
+	return nil // 如果是第一个叶子节点或未找到，返回nil
+}
+
+// rebuildInternalNodes 重建内部节点，平衡树结构
+func (t *MVCCBPlusTree) rebuildInternalNodes(leaves []*MVCCNode, start, end int) *MVCCNode {
+	if start > end {
+		return nil
+	}
+
+	// 如果只有一个叶子节点，直接返回
+	if start == end {
+		return leaves[start]
+	}
+
+	// 创建新的内部节点
+	internalNode := &MVCCNode{
+		isLeaf:   false,
+		keys:     make([]Key, 0),
+		children: make([]interface{}, 0),
+	}
+
+	// 计算每个子树应包含的叶子节点数量
+	childCount := (end - start + 1 + t.order - 1) / t.order
+	if childCount < 2 {
+		childCount = 2 // 至少有两个子节点
+	}
+
+	// 计算每个子树的大小
+	childSize := (end - start + 1) / childCount
+	if childSize < 1 {
+		childSize = 1
+	}
+
+	// 递归构建子树
+	for i := 0; i < childCount && start <= end; i++ {
+		childEnd := start + childSize - 1
+		if i == childCount-1 || childEnd > end {
+			childEnd = end
+		}
+
+		// 递归构建子树
+		child := t.rebuildInternalNodes(leaves, start, childEnd)
+		internalNode.children = append(internalNode.children, child)
+
+		// 如果不是最后一个子节点，添加分隔键
+		if childEnd < end {
+			// 使用下一个子树的第一个叶子节点的第一个键作为分隔键
+			separatorKey := leaves[childEnd+1].keys[0]
+			internalNode.keys = append(internalNode.keys, separatorKey)
+		}
+
+		start = childEnd + 1
+	}
+
+	return internalNode
+}
+
 // Put 带事务的写入
 func (t *MVCCBPlusTree) Put(tx *Transaction, key Key, value Value) error {
 	// 1. 获取树结构的写锁
