@@ -2,8 +2,10 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 	"sync"
@@ -43,8 +45,6 @@ type TaskInfo struct {
 	ResultsLock sync.RWMutex
 }
 
-var _ IndexServiceServer = (*MasterService)(nil)
-
 // MasterService 主服务结构体
 type MasterService struct {
 	// etcd 相关
@@ -74,8 +74,334 @@ type MasterService struct {
 	// 任务管理相关
 	tasks      map[string]*TaskInfo
 	tasksMutex sync.RWMutex
+
+	// HTTP 服务器相关
+	httpServer     *http.Server
+	httpServerPort int
 }
 
+// startHTTPServer 启动 HTTP 服务器
+func (m *MasterService) startHTTPServer() error {
+	// 检查是否是主节点
+	m.masterMutex.RLock()
+	isMaster := m.isMaster
+	m.masterMutex.RUnlock()
+
+	if !isMaster {
+		return errors.New("当前节点不是主节点")
+	}
+
+	// 创建 HTTP 服务器
+	mux := http.NewServeMux()
+
+	// 注册路由
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("SeetaSearch Master Node"))
+	})
+
+	// 添加文档接口
+	mux.HandleFunc("/api/addDoc", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// 解析请求体
+		doc := &messages.Document{}
+		if err := json.NewDecoder(r.Body).Decode(doc); err != nil {
+			http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// 调用 gRPC 方法
+		resp, err := m.AddDoc(r.Context(), doc)
+		if err != nil {
+			http.Error(w, "Failed to add document: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// 返回结果
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"count":   resp.Count,
+		})
+	})
+
+	// 删除文档接口
+	mux.HandleFunc("/api/delDoc", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete && r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// 获取文档 ID
+		var docID string
+		if r.Method == http.MethodDelete {
+			docID = r.URL.Query().Get("id")
+		} else {
+			// 解析请求体
+			var reqBody struct {
+				ID string `json:"id"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+				http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			docID = reqBody.ID
+		}
+
+		if docID == "" {
+			http.Error(w, "Missing document ID", http.StatusBadRequest)
+			return
+		}
+
+		// 调用 gRPC 方法
+		resp, err := m.DelDoc(r.Context(), &DocId{Id: docID})
+		if err != nil {
+			http.Error(w, "Failed to delete document: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// 返回结果
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"count":   resp.Count,
+		})
+	})
+
+	// 搜索接口
+	mux.HandleFunc("/api/search", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// 解析请求体
+		var searchReq struct {
+			Query   messages.TermQuery `json:"query"`
+			OnFlag  uint64             `json:"onFlag"`
+			OffFlag uint64             `json:"offFlag"`
+			OrFlags []uint64           `json:"orFlags"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&searchReq); err != nil {
+			http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// 调用 gRPC 方法
+		resp, err := m.Search(r.Context(), &Request{
+			Query:   &searchReq.Query,
+			OnFlag:  searchReq.OnFlag,
+			OffFlag: searchReq.OffFlag,
+			OrFlags: searchReq.OrFlags,
+		})
+		if err != nil {
+			http.Error(w, "Failed to search: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// 返回结果
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"results": resp.Results,
+		})
+	})
+
+	// 计数接口
+	mux.HandleFunc("/api/count", func(w http.ResponseWriter, r *http.Request) {
+		// 调用 gRPC 方法
+		resp, err := m.Count(r.Context(), &CountRequest{})
+		if err != nil {
+			http.Error(w, "Failed to count: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// 返回结果
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"count":   resp.Count,
+		})
+	})
+
+	// 创建表接口
+	mux.HandleFunc("/api/createTable", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// 解析请求体
+		var req CreateTableRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// 调用 gRPC 方法
+		resp, err := m.CreateTable(r.Context(), &req)
+		if err != nil {
+			http.Error(w, "Failed to create table: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// 返回结果
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"count":   resp.Count,
+		})
+	})
+
+	// 删除表接口
+	mux.HandleFunc("/api/deleteTable", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete && r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// 获取表名
+		var tableName string
+		if r.Method == http.MethodDelete {
+			tableName = r.URL.Query().Get("name")
+		} else {
+			// 解析请求体
+			var reqBody struct {
+				Name string `json:"name"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+				http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			tableName = reqBody.Name
+		}
+
+		if tableName == "" {
+			http.Error(w, "Missing table name", http.StatusBadRequest)
+			return
+		}
+
+		// 调用 gRPC 方法
+		resp, err := m.DeleteTable(r.Context(), &TableRequest{TableName: tableName})
+		if err != nil {
+			http.Error(w, "Failed to delete table: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// 返回结果
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"count":   resp.Count,
+		})
+	})
+
+	// 添加文档到表接口
+	mux.HandleFunc("/api/addDocToTable", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// 解析请求体
+		var req AddDocumentRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// 调用 gRPC 方法
+		resp, err := m.AddDocumentToTable(r.Context(), &req)
+		if err != nil {
+			http.Error(w, "Failed to add document to table: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// 返回结果
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"count":   resp.Count,
+		})
+	})
+
+	// 从表中删除文档接口
+	mux.HandleFunc("/api/delDocFromTable", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete && r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// 解析请求体
+		var req DeleteDocumentRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// 调用 gRPC 方法
+		resp, err := m.DeleteDocumentFromTable(r.Context(), &req)
+		if err != nil {
+			http.Error(w, "Failed to delete document from table: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// 返回结果
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"count":   resp.Count,
+		})
+	})
+
+	// 表搜索接口
+	mux.HandleFunc("/api/searchTable", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		// 解析请求体
+		var req SearchRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// 调用 gRPC 方法
+		resp, err := m.SearchTable(r.Context(), &req)
+		if err != nil {
+			http.Error(w, "Failed to search table: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		// 返回结果
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"results": resp.DocIds,
+		})
+	})
+
+	// 启动 HTTP 服务器
+	addr := fmt.Sprintf(":%d", m.httpServerPort)
+	m.httpServer = &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	log.Info("HTTP 服务器启动，监听端口: %d", m.httpServerPort)
+	go func() {
+		if err := m.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error("HTTP 服务器启动失败: %v", err)
+		}
+	}()
+
+	return nil
+}
 func (m *MasterService) CreateTable(ctx context.Context, request *CreateTableRequest) (*ResCount, error) {
 	//TODO implement me
 	panic("implement me")
@@ -102,7 +428,7 @@ func (m *MasterService) SearchTable(ctx context.Context, request *SearchRequest)
 }
 
 // NewMasterService 创建主服务实例
-func NewMasterService(endpoints []EndPoint, serviceName string, localhost string) (*MasterService, error) {
+func NewMasterService(endpoints []EndPoint, serviceName string, localhost string, httpPort int) (*MasterService, error) {
 	// 创建 etcd 客户端
 	var endpointUrls []string
 	for _, ep := range endpoints {
@@ -139,6 +465,7 @@ func NewMasterService(endpoints []EndPoint, serviceName string, localhost string
 		taskScheduler:       taskScheduler,
 		healthCheckInterval: 5 * time.Second,
 		tasks:               make(map[string]*TaskInfo),
+		httpServerPort:      httpPort,
 	}, nil
 }
 
@@ -160,10 +487,10 @@ func (m *MasterService) ScheduleTask(task scheduler.ScheduledTask) error {
 	}
 
 	// 创建任务信息
-	taskID := fmt.Sprintf("%s-%d", task.Name(), time.Now().UnixNano())
+	taskID := fmt.Sprintf("%s-%d", task.GetName(), time.Now().UnixNano())
 	taskInfo := &TaskInfo{
 		TaskID:    taskID,
-		Name:      task.Name(),
+		Name:      task.GetName(),
 		Params:    task.Params(),
 		StartTime: time.Now(),
 		Timeout:   task.Timeout(),
@@ -214,7 +541,36 @@ func (m *MasterService) Start() error {
 
 	// 启动任务结果清理
 	go m.cleanupTaskResults()
+	// 启动 HTTP 服务器（只有主节点才会启动）
+	go func() {
+		for !m.stop {
+			// 检查是否是主节点
+			m.masterMutex.RLock()
+			isMaster := m.isMaster
+			m.masterMutex.RUnlock()
 
+			if isMaster {
+				// 如果是主节点且 HTTP 服务器未启动，则启动 HTTP 服务器
+				if m.httpServer == nil {
+					err := m.startHTTPServer()
+					if err != nil {
+						log.Error("启动 HTTP 服务器失败: %v", err)
+					}
+				}
+			} else {
+				// 如果不是主节点但 HTTP 服务器已启动，则关闭 HTTP 服务器
+				if m.httpServer != nil {
+					ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					m.httpServer.Shutdown(ctx)
+					cancel()
+					m.httpServer = nil
+				}
+			}
+
+			// 每隔一段时间检查一次
+			time.Sleep(5 * time.Second)
+		}
+	}()
 	return nil
 }
 
@@ -471,7 +827,12 @@ func (m *MasterService) cleanupTaskResults() {
 // Stop 停止服务
 func (m *MasterService) Stop() {
 	m.stop = true
-
+	// 关闭 HTTP 服务器
+	if m.httpServer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		m.httpServer.Shutdown(ctx)
+		cancel()
+	}
 	// 撤销租约
 	_, err := m.client.Revoke(context.Background(), m.leaseID)
 	if err != nil {

@@ -2,13 +2,15 @@ package scheduler
 
 import (
 	"fmt"
-	"github.com/robfig/cron/v3"
 	"seetaSearch/db"
 	"seetaSearch/library/log"
 	"seetaSearch/library/util"
+	"sync"
+	"time"
 )
 
 type PQTrainingConfig struct {
+	taskName                      string  `json:"task_name" yaml:"task_name"`
 	Enable                        bool    `json:"enable" yaml:"enable"`
 	CronSpec                      string  `json:"cron_spec" yaml:"cron_spec"`
 	NumSubvectors                 int     `json:"num_subvectors" yaml:"num_subvectors"`
@@ -18,98 +20,218 @@ type PQTrainingConfig struct {
 	SampleRateForSubspaceTraining float64 `json:"sample_rate_for_subspace_training" yaml:"sample_rate_for_subspace_training"`
 	MaxVectorsForTraining         int     `json:"max_vectors_for_training" yaml:"max_vectors_for_training"`
 	CodebookFilePath              string  `json:"codebook_file_path" yaml:"codebook_file_path"`
+
+	VersionControl bool `json:"version_control" yaml:"version_control"`
+	MaxVersions    int  `json:"max_versions" yaml:"max_versions"`
 }
 
 // PQTrainingScheduler 结构体用于管理PQ训练任务
 type PQTrainingScheduler struct {
-	cronScheduler *cron.Cron
-	vectorDB      *db.VectorDB // 或者是一个能获取 VectorDB 实例的接口/方法
-	// 可以添加其他依赖，如配置对象
+	vectorDB         *db.VectorDB // 或者是一个能获取 VectorDB 实例的接口/方法
+	lastTrainingTime time.Time
+	trainingStatus   string
+	trainingErrors   []string
+	mutex            sync.Mutex
+	config           PQTrainingConfig
+	taskName         string
+	taskID           string
+	taskTarget       string
 }
 
 // NewPQTrainingScheduler 创建一个新的 PQTrainingScheduler
-// vectorDBProvider 是一个函数，用于获取 VectorDB 实例。您需要根据您的架构调整此部分。
 func NewPQTrainingScheduler(vectorDB *db.VectorDB) (*PQTrainingScheduler, error) {
 	if vectorDB == nil {
 		return nil, fmt.Errorf("VectorDB 实例不能为空")
 	}
+
+	// 创建任务配置
+	config := PQTrainingConfig{
+		taskName:                      "PQTrainingTask",
+		Enable:                        true,
+		CronSpec:                      "0 0 2 * * *", // 每天凌晨2点执行
+		NumSubvectors:                 8,
+		NumCentroidsPerSubvector:      256,
+		MaxKMeansIterations:           100,
+		KMeansTolerance:               0.001,
+		SampleRateForSubspaceTraining: 0.1,
+		MaxVectorsForTraining:         10000,
+		CodebookFilePath:              "./data/codebook.bin",
+		VersionControl:                true,
+		MaxVersions:                   5,
+	}
 	s := &PQTrainingScheduler{
-		cronScheduler: cron.New(cron.WithSeconds()), // 支持秒级精度，如果不需要可以去掉 WithSeconds()
-		vectorDB:      vectorDB,
+		vectorDB: vectorDB,
+		config:   config,
+		taskName: "PQTrainingTask",
 	}
 	return s, nil
 }
 
-// Start 启动定时训练任务
-func (s *PQTrainingScheduler) Start() error {
-	// 从配置加载PQ训练参数 (示例，请根据您的配置系统调整)
-	pqConfig := PQTrainingConfig{}
-	if !pqConfig.Enable {
-		log.Info("PQ 定时训练未启用，跳过启动调度器。")
-		return nil
+// GetTrainingStatus 获取训练状态
+func (s *PQTrainingScheduler) GetTrainingStatus() map[string]interface{} {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	return map[string]interface{}{
+		"lastTrainingTime": s.lastTrainingTime,
+		"status":           s.trainingStatus,
+		"errors":           s.trainingErrors,
 	}
+}
 
-	if pqConfig.CronSpec == "" {
-		return fmt.Errorf("PQ训练的cron表达式 (pq.train.cron_spec) 未配置")
-	}
-	if pqConfig.CodebookFilePath == "" {
-		return fmt.Errorf("PQ训练的码本保存路径 (pq.train.codebook_file_path) 未配置")
-	}
+// Run 实现 ScheduledTask 接口的 Run 方法，执行 PQ 训练任务
+func (s *PQTrainingScheduler) Run() error {
+	log.Info("开始执行PQ码本定时训练任务...")
 
-	log.Info("准备启动PQ码本定时训练任务，Cron表达式: '%s'", pqConfig.CronSpec)
+	s.mutex.Lock()
+	s.trainingStatus = "running"
+	s.mutex.Unlock()
 
-	entryID, err := s.cronScheduler.AddFunc(pqConfig.CronSpec, func() { // 保存 entryID 以便将来可能移除或管理任务
-		log.Info("开始执行PQ码本定时训练任务...")
+	// 确保 VectorDB 实例是有效的 TrainingDataSource
+	var dataSource util.TrainingDataSource = s.vectorDB
 
-		// 确保 VectorDB 实例是有效的 TrainingDataSource
-		var dataSource util.TrainingDataSource = s.vectorDB
+	trainingErr := util.TrainPQCodebook(
+		dataSource,
+		s.config.NumSubvectors,
+		s.config.NumCentroidsPerSubvector,
+		s.config.MaxKMeansIterations,
+		s.config.KMeansTolerance,
+		s.config.SampleRateForSubspaceTraining,
+		s.config.MaxVectorsForTraining,
+		s.config.CodebookFilePath,
+	)
 
-		trainingErr := util.TrainPQCodebook(
-			dataSource,
-			pqConfig.NumSubvectors,
-			pqConfig.NumCentroidsPerSubvector,
-			pqConfig.MaxKMeansIterations,
-			pqConfig.KMeansTolerance,
-			pqConfig.SampleRateForSubspaceTraining,
-			pqConfig.MaxVectorsForTraining,
-			pqConfig.CodebookFilePath,
-		)
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
 
-		if trainingErr != nil {
-			log.Error("PQ码本训练失败: %v", trainingErr)
-			return // 训练失败，不尝试热加载
+	s.lastTrainingTime = time.Now()
+
+	if trainingErr != nil {
+		log.Error("PQ码本训练失败: %v", trainingErr)
+		s.trainingStatus = "failed"
+		s.trainingErrors = append(s.trainingErrors, trainingErr.Error())
+		// 保持错误记录在合理范围内
+		if len(s.trainingErrors) > 10 {
+			s.trainingErrors = s.trainingErrors[len(s.trainingErrors)-10:]
 		}
-		log.Info("PQ码本训练成功完成。")
+		return trainingErr // 训练失败，返回错误
+	}
 
-		// 码本热加载/更新机制
-		// 假设 VectorDB 实例中已有 IsPQCompressionEnabled 和 LoadPQCodebookFromFile 方法
-		if s.vectorDB.IsPQCompressionEnabled() {
-			log.Info("尝试热加载新的PQ码本: %s", pqConfig.CodebookFilePath)
-			if loadErr := s.vectorDB.LoadPQCodebookFromFile(pqConfig.CodebookFilePath); loadErr != nil {
-				log.Error("热加载新码本失败: %v", loadErr)
-			} else {
-				log.Info("新码本热加载成功。")
-			}
+	log.Info("PQ码本训练成功完成。")
+	s.trainingStatus = "completed"
+
+	// 码本热加载/更新机制
+	if s.vectorDB.IsPQCompressionEnabled() {
+		log.Info("尝试热加载新的PQ码本: %s", s.config.CodebookFilePath)
+		if loadErr := s.vectorDB.LoadPQCodebookFromFile(s.config.CodebookFilePath); loadErr != nil {
+			log.Error("热加载新码本失败: %v", loadErr)
+			s.trainingErrors = append(s.trainingErrors, fmt.Sprintf("热加载失败: %v", loadErr))
+			return loadErr
 		} else {
-			log.Info("PQ压缩未在VectorDB中启用，跳过热加载码本。")
+			log.Info("新码本热加载成功。")
 		}
-	})
-
-	if err != nil {
-		return fmt.Errorf("添加PQ训练定时任务失败: %w", err)
+	} else {
+		log.Info("PQ压缩未在VectorDB中启用，跳过热加载码本。")
 	}
-	log.Info("PQ训练定时任务已添加，EntryID: %d", entryID) // 记录一下任务ID
 
-	s.cronScheduler.Start()
-	log.Info("PQ训练定时任务调度器已启动。")
 	return nil
 }
 
-// Stop 停止定时训练任务
-func (s *PQTrainingScheduler) Stop() {
-	if s.cronScheduler != nil {
-		log.Info("正在停止PQ训练定时任务调度器...")
-		s.cronScheduler.Stop() // Stop会等待已在执行的任务完成
-		log.Info("PQ训练定时任务调度器已停止。")
+// GetCronSpec 实现 ScheduledTask 接口的 GetCronSpec 方法
+func (s *PQTrainingScheduler) GetCronSpec() string {
+	return s.config.CronSpec
+}
+
+// GetName 实现 ScheduledTask 接口的 GetName 方法
+func (s *PQTrainingScheduler) GetName() string {
+	return s.taskName
+}
+
+// Init 实现 ScheduledTask 接口的 Init 方法
+func (s *PQTrainingScheduler) Init() error {
+	log.Info("初始化 PQ 训练任务: %s", s.taskName)
+
+	// 验证配置
+	if !s.config.Enable {
+		log.Info("PQ 定时训练未启用，任务将不会执行。")
+		return nil
 	}
+
+	if s.config.CronSpec == "" {
+		return fmt.Errorf("PQ训练的cron表达式未配置")
+	}
+
+	if s.config.CodebookFilePath == "" {
+		return fmt.Errorf("PQ训练的码本保存路径未配置")
+	}
+
+	log.Info("PQ训练任务初始化成功，Cron表达式: '%s'", s.config.CronSpec)
+	return nil
+}
+
+// Stop 实现 ScheduledTask 接口的 Stop 方法
+func (s *PQTrainingScheduler) Stop() error {
+	log.Info("停止 PQ 训练任务: %s", s.taskName)
+	return nil
+}
+
+// Name 实现 ScheduledTask 接口的 Name 方法
+func (s *PQTrainingScheduler) Name() string {
+	return s.taskName
+}
+
+// Params 实现 ScheduledTask 接口的 Params 方法
+func (s *PQTrainingScheduler) Params() map[string]interface{} {
+	return map[string]interface{}{
+		"enable":                            s.config.Enable,
+		"cron_spec":                         s.config.CronSpec,
+		"num_subvectors":                    s.config.NumSubvectors,
+		"num_centroids_per_subvector":       s.config.NumCentroidsPerSubvector,
+		"max_k_means_iterations":            s.config.MaxKMeansIterations,
+		"k_means_tolerance":                 s.config.KMeansTolerance,
+		"sample_rate_for_subspace_training": s.config.SampleRateForSubspaceTraining,
+		"max_vectors_for_training":          s.config.MaxVectorsForTraining,
+		"codebook_file_path":                s.config.CodebookFilePath,
+		"version_control":                   s.config.VersionControl,
+		"max_versions":                      s.config.MaxVersions,
+	}
+}
+
+// Timeout 实现 ScheduledTask 接口的 Timeout 方法
+func (s *PQTrainingScheduler) Timeout() time.Duration {
+	// 设置任务超时时间，根据实际情况调整
+	return 30 * time.Minute
+}
+
+// Clone 实现 ScheduledTask 接口的 Clone 方法
+func (s *PQTrainingScheduler) Clone() ScheduledTask {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	cloned := &PQTrainingScheduler{
+		vectorDB:       s.vectorDB,
+		config:         s.config,
+		taskName:       s.taskName,
+		taskID:         s.taskID,
+		taskTarget:     s.taskTarget,
+		trainingStatus: s.trainingStatus,
+	}
+
+	// 复制错误列表
+	if len(s.trainingErrors) > 0 {
+		cloned.trainingErrors = make([]string, len(s.trainingErrors))
+		copy(cloned.trainingErrors, s.trainingErrors)
+	}
+
+	return cloned
+}
+
+// SetID 实现 ScheduledTask 接口的 SetID 方法
+func (s *PQTrainingScheduler) SetID(id string) {
+	s.taskID = id
+}
+
+// SetTarget 实现 ScheduledTask 接口的 SetTarget 方法
+func (s *PQTrainingScheduler) SetTarget(target string) {
+	s.taskTarget = target
 }

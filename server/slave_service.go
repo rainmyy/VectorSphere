@@ -45,6 +45,31 @@ type SlaveService struct {
 	multiTableService *search.MultiTableSearchService
 }
 
+func (s *SlaveService) CreateTable(ctx context.Context, request *CreateTableRequest) (*ResCount, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s *SlaveService) DeleteTable(ctx context.Context, request *TableRequest) (*ResCount, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s *SlaveService) AddDocumentToTable(ctx context.Context, request *AddDocumentRequest) (*ResCount, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s *SlaveService) DeleteDocumentFromTable(ctx context.Context, request *DeleteDocumentRequest) (*ResCount, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s *SlaveService) SearchTable(ctx context.Context, request *SearchRequest) (*SearchResult, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
 // NewSlaveService 创建从服务实例
 func NewSlaveService(endpoints []EndPoint, serviceName string, port int) (*SlaveService, error) {
 	// 获取本地 IP
@@ -80,7 +105,14 @@ func NewSlaveService(endpoints []EndPoint, serviceName string, port int) (*Slave
 }
 
 // Init 初始化索引服务
-func (s *SlaveService) Init(docNumEstimate int, dbType int, DataDir string, txMgr *tree.TransactionManager, lockMgr *tree.LockManager, wal *tree.WALManager) error {
+func (s *SlaveService) Init(
+	docNumEstimate int,
+	dbType int,
+	DataDir string,
+	txMgr *tree.TransactionManager,
+	lockMgr *tree.LockManager,
+	wal *tree.WALManager,
+) error {
 	// 初始化索引
 	s.Index = &index.Index{}
 	err := s.Index.NewIndexServer(docNumEstimate, dbType, "", DataDir)

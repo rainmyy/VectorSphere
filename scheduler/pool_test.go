@@ -12,9 +12,9 @@ func test() {
 	// 创建任务实例
 	task1 := &MySampleTask{Name: "ReportGenerator"}
 	task2 := &MySampleTask{Name: "DataCleanup"}
-
+	task3, _ := NewPQTrainingScheduler(nil)
 	// 注册任务
-	if err := manager.RegisterTasks(task1, task2); err != nil {
+	if err := manager.RegisterTasks(task1, task2, task3); err != nil {
 		log.Fatal("注册任务失败: %v", err)
 	}
 

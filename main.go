@@ -6,6 +6,7 @@ import (
 	"google.golang.org/grpc"
 	"net"
 	"seetaSearch/library/log"
+	"seetaSearch/library/tree"
 	"seetaSearch/server"
 	"strings"
 )
@@ -28,12 +29,20 @@ func main() {
 		endpoints = append(endpoints, server.EndPoint{Ip: ep})
 	}
 
+	// 创建事务管理器、锁管理器和WAL管理器
+	txMgr := tree.NewTransactionManager()
+	lockMgr := tree.NewLockManager()
+	wal, err := tree.NewWALManager(fmt.Sprintf("%s/wal.log", *dataDir))
+	if err != nil {
+		log.Fatal("创建WAL管理器失败: %v", err)
+	}
+
 	// 根据运行模式启动不同的服务
 	switch *mode {
 	case "master":
 		// 启动主服务
 		localhost := fmt.Sprintf("localhost:%d", *port)
-		master, err := server.NewMasterService(endpoints, *serviceName, localhost)
+		master, err := server.NewMasterService(endpoints, "seetaSearch", "localhost:50051", 8080)
 		if err != nil {
 			log.Fatal("创建主服务失败: %v", err)
 		}
@@ -65,8 +74,8 @@ func main() {
 			log.Fatal("创建从服务失败: %v", err)
 		}
 
-		// 初始化索引服务
-		err = slave.Init(*docNumEstimate, *dbType, *dataDir)
+		// 初始化索引服务，添加缺少的参数
+		err = slave.Init(*docNumEstimate, *dbType, *dataDir, txMgr, lockMgr, wal)
 		if err != nil {
 			log.Fatal("初始化索引服务失败: %v", err)
 		}
@@ -93,7 +102,35 @@ func main() {
 
 	case "standalone":
 		// 启动独立服务
-		// ... 原有的独立服务启动代码 ...
+		indexServer := &server.IndexServer{}
+
+		// 初始化索引服务
+		err := indexServer.Init(*docNumEstimate, *dbType, *dataDir)
+		if err != nil {
+			log.Fatal("初始化索引服务失败: %v", err)
+		}
+
+		// 注册服务（如果需要）
+		if len(endpoints) > 0 {
+			err = indexServer.RegisterService(endpoints, *port, *serviceName)
+			if err != nil {
+				log.Warning("注册服务失败，将以本地模式运行: %v", err)
+			}
+		}
+
+		// 启动 gRPC 服务器
+		lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
+		if err != nil {
+			log.Fatal("监听端口失败: %v", err)
+		}
+
+		s := grpc.NewServer()
+		server.RegisterIndexServiceServer(s, indexServer)
+
+		log.Info("独立服务启动，监听端口: %d", *port)
+		if err := s.Serve(lis); err != nil {
+			log.Fatal("启动 gRPC 服务器失败: %v", err)
+		}
 
 	default:
 		log.Fatal("未知的运行模式: %s", *mode)

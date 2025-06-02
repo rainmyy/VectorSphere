@@ -17,8 +17,7 @@ type ScheduledTask interface {
 	GetName() string     // 获取任务的名称，用于日志和管理
 	Init() error         // 可选：任务初始化逻辑
 	Stop() error         // 可选：任务停止前的清理逻辑
-
-	Name() string                   // 获取任务名称
+	
 	Params() map[string]interface{} // 获取任务参数
 	Timeout() time.Duration         // 获取任务超时时间
 	Clone() ScheduledTask           // 克隆任务
