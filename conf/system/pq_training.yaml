@@ -1,0 +1,12 @@
+task_name: PQTrainingTask
+enable: true
+cron_spec: 0 0 2 * * *
+num_sub_vectors: 8
+num_centroids_per_sub_vector: 256
+max_k_means_iterations: 100
+k_means_tolerance: 0.001
+sample_rate_for_subspace_training: 0.1
+max_vectors_for_training: 10000
+codebook_file_path: ./data/codebook.bin
+version_control: true
+max_versions: 5

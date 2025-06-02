@@ -3,6 +3,7 @@ package scheduler
 import (
 	"fmt"
 	"seetaSearch/db"
+	"seetaSearch/library/conf"
 	"seetaSearch/library/log"
 	"seetaSearch/library/util"
 	"sync"
@@ -10,11 +11,11 @@ import (
 )
 
 type PQTrainingConfig struct {
-	taskName                      string  `json:"task_name" yaml:"task_name"`
+	TaskName                      string  `json:"task_name" yaml:"task_name"`
 	Enable                        bool    `json:"enable" yaml:"enable"`
 	CronSpec                      string  `json:"cron_spec" yaml:"cron_spec"`
-	NumSubvectors                 int     `json:"num_subvectors" yaml:"num_subvectors"`
-	NumCentroidsPerSubvector      int     `json:"num_centroids_per_subvector" yaml:"num_centroids_per_subvector"`
+	NumSubVectors                 int     `json:"num_sub_vector" yaml:"num_sub_vector"`
+	NumbCentroidsPerSubVector     int     `json:"num_centroids_per_sub_vector" yaml:"num_centroids_per_sub_vector"`
 	MaxKMeansIterations           int     `json:"max_k_means_iterations" yaml:"max_k_means_iterations"`
 	KMeansTolerance               float64 `json:"k_means_tolerance" yaml:"k_means_tolerance"`
 	SampleRateForSubspaceTraining float64 `json:"sample_rate_for_subspace_training" yaml:"sample_rate_for_subspace_training"`
@@ -32,25 +33,23 @@ type PQTrainingScheduler struct {
 	trainingStatus   string
 	trainingErrors   []string
 	mutex            sync.Mutex
-	config           PQTrainingConfig
+	config           *PQTrainingConfig
 	taskName         string
 	taskID           string
 	taskTarget       string
 }
 
-// NewPQTrainingScheduler 创建一个新的 PQTrainingScheduler
-func NewPQTrainingScheduler(vectorDB *db.VectorDB) (*PQTrainingScheduler, error) {
-	if vectorDB == nil {
-		return nil, fmt.Errorf("VectorDB 实例不能为空")
-	}
+// LoadPQTrainingConfig 从YAML文件加载PQ训练配置
+func LoadPQTrainingConfig(configPath string) (*PQTrainingConfig, error) {
+	var config PQTrainingConfig
 
-	// 创建任务配置
-	config := PQTrainingConfig{
-		taskName:                      "PQTrainingTask",
+	// 设置默认值
+	config = PQTrainingConfig{
+		TaskName:                      "PQTrainingTask",
 		Enable:                        true,
 		CronSpec:                      "0 0 2 * * *", // 每天凌晨2点执行
-		NumSubvectors:                 8,
-		NumCentroidsPerSubvector:      256,
+		NumSubVectors:                 8,
+		NumbCentroidsPerSubVector:     256,
 		MaxKMeansIterations:           100,
 		KMeansTolerance:               0.001,
 		SampleRateForSubspaceTraining: 0.1,
@@ -59,10 +58,39 @@ func NewPQTrainingScheduler(vectorDB *db.VectorDB) (*PQTrainingScheduler, error)
 		VersionControl:                true,
 		MaxVersions:                   5,
 	}
+
+	// 如果配置路径为空，使用默认配置
+	if configPath == "" {
+		log.Warning("未指定PQ训练配置文件路径，使用默认配置")
+		return &config, nil
+	}
+
+	// 从YAML文件读取配置
+	err := conf.ReadYAML(configPath, &config)
+	if err != nil {
+		log.Error("读取PQ训练配置文件失败: %v，将使用默认配置", err)
+		return &config, err
+	}
+
+	log.Info("成功从 %s 加载PQ训练配置", configPath)
+	return &config, nil
+}
+
+// NewPQTrainingScheduler 创建一个新的 PQTrainingScheduler
+func NewPQTrainingScheduler(vectorDB *db.VectorDB) (*PQTrainingScheduler, error) {
+	if vectorDB == nil {
+		return nil, fmt.Errorf("VectorDB 实例不能为空")
+	}
+
+	// 加载配置
+	config, err := LoadPQTrainingConfig("")
+	if err != nil {
+		log.Warning("加载PQ训练配置文件失败: %v，将使用默认配置", err)
+	}
 	s := &PQTrainingScheduler{
 		vectorDB: vectorDB,
 		config:   config,
-		taskName: "PQTrainingTask",
+		taskName: config.TaskName,
 	}
 	return s, nil
 }
@@ -92,8 +120,8 @@ func (s *PQTrainingScheduler) Run() error {
 
 	trainingErr := util.TrainPQCodebook(
 		dataSource,
-		s.config.NumSubvectors,
-		s.config.NumCentroidsPerSubvector,
+		s.config.NumSubVectors,
+		s.config.NumbCentroidsPerSubVector,
 		s.config.MaxKMeansIterations,
 		s.config.KMeansTolerance,
 		s.config.SampleRateForSubspaceTraining,
@@ -185,8 +213,8 @@ func (s *PQTrainingScheduler) Params() map[string]interface{} {
 	return map[string]interface{}{
 		"enable":                            s.config.Enable,
 		"cron_spec":                         s.config.CronSpec,
-		"num_subvectors":                    s.config.NumSubvectors,
-		"num_centroids_per_subvector":       s.config.NumCentroidsPerSubvector,
+		"num_subvectors":                    s.config.NumSubVectors,
+		"num_centroids_per_subvector":       s.config.NumbCentroidsPerSubVector,
 		"max_k_means_iterations":            s.config.MaxKMeansIterations,
 		"k_means_tolerance":                 s.config.KMeansTolerance,
 		"sample_rate_for_subspace_training": s.config.SampleRateForSubspaceTraining,
