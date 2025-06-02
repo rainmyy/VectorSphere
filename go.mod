@@ -9,6 +9,7 @@ require (
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/mock v1.6.0
 	github.com/huichen/sego v0.0.0-20210824061530-c87651ea5c76
+	github.com/klauspost/cpuid v1.3.1
 	github.com/leemcloughlin/gofarmhash v0.0.0-20160919192320-0a055c5b87a8
 	github.com/lib/pq v1.10.9
 	github.com/mattn/go-sqlite3 v1.14.28

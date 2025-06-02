@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"seetaSearch/library/algorithm"
 	"seetaSearch/library/entity"
+	"seetaSearch/library/graph"
 	"seetaSearch/library/log"
 	"seetaSearch/library/tree"
 	"seetaSearch/library/util"
@@ -77,7 +78,13 @@ type VectorDB struct {
 	numCentroidsPerSubvector int                 // 每个子向量空间的质心数量
 	usePQCompression         bool                // 标志是否启用 PQ 压缩
 
-	stopCh chan struct{}
+	stopCh           chan struct{}
+	useNormalization bool
+	hnsw             *graph.HNSWGraph // HNSW 图结构索引
+	useHNSWIndex     bool             // 是否使用 HNSW 索引
+	maxConnections   int              // HNSW 最大连接数
+	efConstruction   float64          // HNSW 构建时的扩展因子
+	efSearch         float64          // HNSW 搜索时的扩展因子
 }
 
 const (
@@ -110,7 +117,7 @@ func (db *VectorDB) Close() {
 	// 尝试保存数据到文件
 	if db.backupPath != "" {
 		log.Info("Attempting to save VectorDB data to %s before closing...", db.filePath)
-		if err := db.SaveToFile(); err != nil {
+		if err := db.SaveToFile(db.backupPath); err != nil {
 			log.Error("Error saving VectorDB data to %s: %v", db.filePath, err)
 		}
 	}
@@ -165,9 +172,14 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 		numCentroidsPerSubvector: 0, // 默认为0
 		usePQCompression:         false,
 		stopCh:                   make(chan struct{}), // 初始化stopCh
+
+		useHNSWIndex:   false,
+		maxConnections: 16,    // 默认值
+		efConstruction: 100.0, // 默认值
+		efSearch:       50.0,  // 默认值
 	}
 	if filePath != "" {
-		if err := db.LoadFromFile(); err != nil {
+		if err := db.LoadFromFile(filePath); err != nil {
 			log.Warning("警告: 从 %s 加载向量数据库时出错: %v。将使用空数据库启动。\n", filePath, err)
 			db.vectors = make(map[string][]float64)
 			db.clusters = make([]Cluster, 0)
@@ -178,6 +190,68 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 		db.backupPath = filePath + ".bat"
 	}
 	return db
+}
+
+// EnableHNSWIndex 启用 HNSW 索引并设置相关参数
+func (db *VectorDB) EnableHNSWIndex(maxConnections int, efConstruction, efSearch float64) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	db.useHNSWIndex = true
+	db.maxConnections = maxConnections
+	db.efConstruction = efConstruction
+	db.efSearch = efSearch
+
+	// 如果已有向量数据，立即构建索引
+	if len(db.vectors) > 0 {
+		db.indexed = false
+		log.Info("启用 HNSW 索引，需要重建索引。请调用 BuildIndex() 方法。")
+	}
+}
+
+// BuildHNSWIndex 构建 HNSW 图结构索引
+func (db *VectorDB) BuildHNSWIndex() error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	startTime := time.Now()
+	log.Info("开始构建 HNSW 索引...")
+
+	// 重置索引状态
+	db.indexed = false
+
+	// 创建新的 HNSW 图
+	db.hnsw = graph.NewHNSWGraph(db.maxConnections, db.efConstruction, db.efSearch)
+
+	// 设置距离函数
+	db.hnsw.SetDistanceFunc(func(a, b []float64) (float64, error) {
+		// 使用余弦距离（1 - 余弦相似度）
+		sim := util.CosineSimilarity(a, b)
+		return 1.0 - sim, nil
+	})
+
+	// 添加所有向量到图中
+	for id, vec := range db.vectors {
+		// 如果启用了向量归一化，使用归一化后的向量
+		vector := vec
+		if db.useNormalization {
+			if normalizedVec, exists := db.normalizedVectors[id]; exists {
+				vector = normalizedVec
+			}
+		}
+
+		err := db.hnsw.AddNode(id, vector)
+		if err != nil {
+			return fmt.Errorf("添加向量 %s 到 HNSW 图失败: %w", id, err)
+		}
+	}
+
+	db.indexed = true
+	db.stats.IndexBuildTime = time.Since(startTime)
+	db.stats.LastReindexTime = time.Now()
+
+	log.Info("HNSW 索引构建完成，耗时 %v，包含 %d 个向量。", db.stats.IndexBuildTime, len(db.vectors))
+	return nil
 }
 
 // GetVectorDimension 返回数据库中向量的维度
@@ -367,7 +441,10 @@ func (db *VectorDB) EnablePQCompression(codebookPath string, numSubvectors int, 
 
 		// 提示用户可能需要压缩现有向量
 		if len(db.vectors) > 0 && len(db.compressedVectors) < len(db.vectors) {
-			log.Info("VectorDB 中存在未压缩的向量。您可能需要调用 CompressExistingVectors 来压缩它们。")
+			err := db.CompressExistingVectors()
+			if err != nil {
+				return err
+			}
 		}
 	} else {
 		db.usePQCompression = false
@@ -388,19 +465,57 @@ func (db *VectorDB) CompressExistingVectors() error {
 	}
 
 	log.Info("开始压缩现有向量...")
-	compressedCount := 0
+	// 收集需要压缩的向量
+	vectorsToCompress := make([][]float64, 0)
+	idsToCompress := make([]string, 0)
+
 	for id, vec := range db.vectors {
 		if _, exists := db.compressedVectors[id]; !exists {
-			compressedVec, err := util.CompressByPQ(vec, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector)
-			if err != nil {
-				log.Error("压缩向量 %s 失败: %v", id, err)
-				continue // 跳过压缩失败的向量
-			}
-			db.compressedVectors[id] = compressedVec
-			compressedCount++
+			vectorsToCompress = append(vectorsToCompress, vec)
+			idsToCompress = append(idsToCompress, id)
 		}
 	}
-	log.Info("现有向量压缩完成，共压缩了 %d 个向量。", compressedCount)
+
+	totalVectors := len(vectorsToCompress)
+	if totalVectors == 0 {
+		log.Info("没有需要压缩的向量。")
+		return nil
+	}
+
+	log.Info("发现 %d 个未压缩向量，开始批量压缩处理...", totalVectors)
+
+	// 使用批量压缩函数
+	numWorkers := runtime.NumCPU() // 使用所有可用CPU核心
+	log.Info("使用 %d 个工作协程进行并行压缩", numWorkers)
+
+	startTime := time.Now()
+	compressedVectors, err := util.BatchCompressByPQ(
+		vectorsToCompress,
+		db.pqCodebook,
+		db.numSubvectors,
+		db.numCentroidsPerSubvector,
+		numWorkers,
+	)
+
+	if err != nil {
+		log.Error("批量压缩向量失败: %v", err)
+		return fmt.Errorf("批量压缩向量失败: %w", err)
+	}
+
+	// 将压缩结果存储到数据库
+	for i, id := range idsToCompress {
+		db.compressedVectors[id] = compressedVectors[i]
+	}
+
+	elapsedTime := time.Since(startTime)
+	log.Info("现有向量批量压缩完成，共压缩了 %d 个向量，耗时 %v，平均每个向量 %.2f 毫秒。",
+		totalVectors,
+		elapsedTime,
+		float64(elapsedTime.Milliseconds())/float64(totalVectors))
+
+	// 更新压缩状态
+	db.useCompression = true
+
 	return nil
 }
 
@@ -487,7 +602,10 @@ func (db *VectorDB) AddDocument(id string, doc string, vectorizedType int) error
 func (db *VectorDB) RebuildIndex() error {
 	// 记录开始时间，用于性能统计
 	start := time.Now()
-
+	// 如果启用了 HNSW 索引，使用 HNSW 构建方法
+	if db.useHNSWIndex {
+		return db.BuildHNSWIndex()
+	}
 	// 清除旧索引
 	db.mu.Lock()
 	db.indexed = false
@@ -609,6 +727,25 @@ func (db *VectorDB) Add(id string, vector []float64) {
 	db.cacheMu.Unlock()
 
 	if db.indexed {
+		db.indexed = false // 索引失效，需要重建
+		log.Info("提示: 添加新向量后，索引已失效，请重新调用 BuildIndex()。")
+	}
+
+	// 如果启用了 HNSW 索引，增量更新 HNSW 图
+	if db.useHNSWIndex && db.indexed && db.hnsw != nil {
+		// 使用归一化后的向量（如果启用了归一化）
+		vectorToAdd := vector
+		if db.useNormalization {
+			if normalizedVec, exists := db.normalizedVectors[id]; exists {
+				vectorToAdd = normalizedVec
+			}
+		}
+
+		err := db.hnsw.AddNode(id, vectorToAdd)
+		if err != nil {
+			log.Warning("增量添加向量 %s 到 HNSW 图失败: %v，索引可能不一致。", id, err)
+		}
+	} else if db.indexed {
 		db.indexed = false // 索引失效，需要重建
 		log.Info("提示: 添加新向量后，索引已失效，请重新调用 BuildIndex()。")
 	}
@@ -849,7 +986,7 @@ func (db *VectorDB) Update(id string, vector []float64) error {
 		if err != nil {
 			log.Error("为向量 %s 更新时压缩向量失败: %v", id, err)
 			// 即使压缩失败，原始向量也已更新
-			delete(db.compressedVectors, id) // 删除旧的压缩向量，因为它不再有效
+			delete(db.compressedVectors, id) // 删除旧地压缩向量，因为它不再有效
 		} else {
 			db.compressedVectors[id] = compressedVec
 		}
@@ -903,6 +1040,18 @@ func (db *VectorDB) Delete(id string) error {
 		db.indexed = false // 索引失效，需要重建
 		log.Info("提示: 删除向量后，索引已失效，请重新调用 BuildIndex()。")
 	}
+
+	// 如果启用了 HNSW 索引，从 HNSW 图中删除节点
+	if db.useHNSWIndex && db.indexed && db.hnsw != nil {
+		err := db.hnsw.DeleteNode(id)
+		if err != nil {
+			log.Warning("从 HNSW 图中删除向量 %s 失败: %v，索引可能不一致。", id, err)
+		}
+	} else if db.indexed {
+		db.indexed = false // 索引失效，需要重建
+		log.Info("提示: 删除向量后，索引已失效，请重新调用 BuildIndex()。")
+	}
+
 	return nil
 }
 
@@ -1113,7 +1262,7 @@ type dataToSave struct {
 }
 
 // SaveToFile 将当前数据库状态（包括索引）保存到其配置的文件中。
-func (db *VectorDB) SaveToFile() error {
+func (db *VectorDB) SaveToFile(filePath string) error {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
@@ -1149,6 +1298,10 @@ func (db *VectorDB) SaveToFile() error {
 		UsePQCompression         bool
 		MultiIndex               *MultiLevelIndex // 如果 MultiLevelIndex 可序列化
 		Config                   AdaptiveConfig   // 如果 AdaptiveConfig 可序列化
+		UseHNSWIndex             bool
+		MaxConnections           int
+		EfConstruction           float64
+		EfSearch                 float64
 	}{
 		Vectors:                  db.vectors,
 		Clusters:                 db.clusters,
@@ -1166,18 +1319,30 @@ func (db *VectorDB) SaveToFile() error {
 		UsePQCompression:         db.usePQCompression,
 		MultiIndex:               db.multiIndex,
 		Config:                   db.config,
+		UseHNSWIndex:             db.useHNSWIndex,
+		MaxConnections:           db.maxConnections,
+		EfConstruction:           db.efConstruction,
+		EfSearch:                 db.efSearch,
 	}
 
 	if err := encoder.Encode(data); err != nil {
 		return fmt.Errorf("序列化数据库到 %s 失败: %v", db.filePath, err)
 	}
-
+	// 如果启用了 HNSW 索引，保存 HNSW 图结构
+	if db.useHNSWIndex && db.hnsw != nil {
+		hnswFilePath := filePath + ".hnsw"
+		err := db.hnsw.SaveToFile(hnswFilePath)
+		if err != nil {
+			return fmt.Errorf("保存 HNSW 图结构失败: %w", err)
+		}
+	}
 	log.Info("VectorDB 数据成功保存到 %s", db.filePath)
+
 	return nil
 }
 
 // LoadFromFile 从其配置的文件中加载数据库状态（包括索引）。
-func (db *VectorDB) LoadFromFile() error {
+func (db *VectorDB) LoadFromFile(filePath string) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
@@ -1221,6 +1386,11 @@ func (db *VectorDB) LoadFromFile() error {
 		NumSubvectors            int
 		NumCentroidsPerSubvector int
 		UsePQCompression         bool
+
+		UseHNSWIndex   bool
+		MaxConnections int
+		EfConstruction float64
+		EfSearch       float64
 	}{}
 
 	if err := decoder.Decode(&data); err != nil {
@@ -1253,6 +1423,11 @@ func (db *VectorDB) LoadFromFile() error {
 	db.numSubvectors = data.NumSubvectors
 	db.numCentroidsPerSubvector = data.NumCentroidsPerSubvector
 	db.usePQCompression = data.UsePQCompression
+	// 从加载的数据中恢复 HNSW 相关字段
+	db.useHNSWIndex = data.UseHNSWIndex
+	db.maxConnections = data.MaxConnections
+	db.efConstruction = data.EfConstruction
+	db.efSearch = data.EfSearch
 
 	// 确保 map 在 nil 的情况下被初始化
 	if db.vectors == nil {
@@ -1305,7 +1480,25 @@ func (db *VectorDB) LoadFromFile() error {
 		db.usePQCompression = false
 		db.pqCodebook = nil
 	}
+	// 如果启用了 HNSW 索引，加载 HNSW 图结构
+	if db.useHNSWIndex {
+		hnswFilePath := filePath + ".hnsw"
+		db.hnsw = graph.NewHNSWGraph(db.maxConnections, db.efConstruction, db.efSearch)
 
+		// 设置距离函数
+		db.hnsw.SetDistanceFunc(func(a, b []float64) (float64, error) {
+			// 使用余弦距离（1 - 余弦相似度）
+			sim := util.CosineSimilarity(a, b)
+			return 1.0 - sim, nil
+		})
+
+		// 尝试加载 HNSW 图结构
+		err := db.hnsw.LoadFromFile(hnswFilePath)
+		if err != nil {
+			log.Warning("加载 HNSW 图结构失败: %v，将重新构建索引。", err)
+			db.indexed = false
+		}
+	}
 	log.Info("VectorDB 数据成功从 %s 加载。向量数: %d, 是否已索引: %t, PQ压缩: %t", db.filePath, len(db.vectors), db.indexed, db.usePQCompression)
 	return nil
 }
@@ -1320,7 +1513,7 @@ func (db *VectorDB) CalculateApproximateDistancePQ(queryVector []float64, compre
 		return 0, fmt.Errorf("查询向量维度 %d 与数据库向量维度 %d 不匹配", len(queryVector), db.vectorDim)
 	}
 
-	// 调用 util 中的 PQ 近似距离计算函数 (假设已实现)
+	// 调用 util 中的 PQ 近似距离计算函数
 	dist, err := util.ApproximateDistanceADC(queryVector, compressedDBVector, db.pqCodebook, db.numSubvectors)
 	if err != nil {
 		return 0, fmt.Errorf("计算 PQ 近似距离失败: %w", err)
@@ -1332,6 +1525,65 @@ func (db *VectorDB) CalculateAvgQueryTime(startTime time.Time) time.Duration {
 	avgTimeMicroSeconds := db.stats.AvgQueryTime.Microseconds()
 	startTimeMicroSeconds := time.Since(startTime).Microseconds()
 	return time.Duration(((avgTimeMicroSeconds * (db.stats.TotalQueries - 1)) + startTimeMicroSeconds) / db.stats.TotalQueries)
+}
+
+// UpdateHNSWIndexIncrementally 增量更新 HNSW 索引
+func (db *VectorDB) UpdateHNSWIndexIncrementally(id string, vector []float64) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	if !db.useHNSWIndex || db.hnsw == nil {
+		return fmt.Errorf("HNSW 索引未启用或未初始化")
+	}
+
+	// 检查节点是否已存在
+	if _, exists := db.hnsw.GetNode(id); exists {
+		// 如果节点已存在，先删除
+		if err := db.hnsw.DeleteNode(id); err != nil {
+			return fmt.Errorf("删除现有节点失败: %w", err)
+		}
+	}
+
+	// 添加新节点
+	if err := db.hnsw.AddNode(id, vector); err != nil {
+		return fmt.Errorf("添加节点到 HNSW 图失败: %w", err)
+	}
+
+	return nil
+}
+
+// OptimizeHNSWParameters 根据数据集大小自适应调整 HNSW 参数
+func (db *VectorDB) OptimizeHNSWParameters() {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	dataSize := len(db.vectors)
+
+	// 根据数据集大小调整参数
+	if dataSize < 1000 {
+		db.maxConnections = 16
+		db.efConstruction = 100
+		db.efSearch = 50
+	} else if dataSize < 10000 {
+		db.maxConnections = 32
+		db.efConstruction = 200
+		db.efSearch = 100
+	} else if dataSize < 100000 {
+		db.maxConnections = 64
+		db.efConstruction = 400
+		db.efSearch = 200
+	} else {
+		db.maxConnections = 96
+		db.efConstruction = 600
+		db.efSearch = 300
+	}
+
+	// 如果 HNSW 索引已启用，更新参数
+	if db.useHNSWIndex && db.hnsw != nil {
+		// 注意：这里只能更新 efSearch，其他参数需要重建索引
+		// 可以考虑添加一个标志，在下次重建索引时使用新参数
+		db.hnsw.EfSearch = db.efSearch
+	}
 }
 
 // FindNearest 优化后的FindNearest方法
@@ -1367,6 +1619,27 @@ func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]string, e
 	}
 	var results []entity.Result
 	var err error
+	// 如果启用了 HNSW 索引，使用 HNSW 搜索
+	if db.useHNSWIndex && db.indexed && db.hnsw != nil {
+		log.Trace("使用 HNSW 索引进行搜索。")
+
+		// 预处理查询向量
+		normalizedQuery := util.NormalizeVector(query)
+
+		// 使用 HNSW 搜索
+		results, err := db.hnsw.Search(normalizedQuery, k)
+		if err != nil {
+			return nil, fmt.Errorf("HNSW 搜索失败: %w", err)
+		}
+
+		// 提取 ID
+		ids := make([]string, len(results))
+		for i, result := range results {
+			ids[i] = result.Id
+		}
+
+		return ids, nil
+	}
 	if !db.indexed {
 		// 如果未索引，执行暴力搜索
 		log.Warning("VectorDB is not indexed. Performing brute-force search.")

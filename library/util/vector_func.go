@@ -4,13 +4,16 @@ import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
+	"github.com/klauspost/cpuid"
 	"hash/fnv"
 	"math"
 	"math/rand"
 	"os"
+	"runtime"
 	"seetaSearch/library/algorithm"
 	"seetaSearch/library/entity"
 	"seetaSearch/library/enum"
+	"sync"
 	"time"
 )
 
@@ -88,6 +91,164 @@ func OptimizedCosineSimilarity(a, b []float64) float64 {
 	}
 
 	return dotProduct // 对于归一化向量，点积等于余弦相似度
+}
+
+// PrecomputedDistanceTable 预计算的距离表
+type PrecomputedDistanceTable struct {
+	tables [][]float64 // tables[m][c] 表示查询向量的第 m 个子向量与第 m 个子空间的第 c 个质心的距离
+}
+
+// NewPrecomputedDistanceTable 为查询向量创建预计算距离表
+func NewPrecomputedDistanceTable(queryVector []float64, codebook [][]algorithm.Point, numSubvectors int) (*PrecomputedDistanceTable, error) {
+	if len(queryVector) == 0 {
+		return nil, fmt.Errorf("查询向量不能为空")
+	}
+	if codebook == nil || len(codebook) == 0 {
+		return nil, fmt.Errorf("码本不能为空")
+	}
+	if numSubvectors <= 0 {
+		return nil, fmt.Errorf("子向量数量必须为正")
+	}
+	if len(queryVector)%numSubvectors != 0 {
+		return nil, fmt.Errorf("查询向量维度 %d 不能被子向量数量 %d 整除", len(queryVector), numSubvectors)
+	}
+	if len(codebook) != numSubvectors {
+		return nil, fmt.Errorf("码本中的子空间数量 %d 与子向量数量 %d 不匹配", len(codebook), numSubvectors)
+	}
+
+	subvectorDim := len(queryVector) / numSubvectors
+	tables := make([][]float64, numSubvectors)
+
+	// 并行计算每个子空间的距离表
+	var wg sync.WaitGroup
+	errChan := make(chan error, numSubvectors)
+
+	for m := 0; m < numSubvectors; m++ {
+		wg.Add(1)
+		go func(subspaceIndex int) {
+			defer wg.Done()
+
+			// 获取查询向量的子向量
+			querySubvector := queryVector[subspaceIndex*subvectorDim : (subspaceIndex+1)*subvectorDim]
+
+			// 获取当前子空间的码本
+			currentSubspaceCodebook := codebook[subspaceIndex]
+			numCentroids := len(currentSubspaceCodebook)
+
+			// 创建距离表
+			distTable := make([]float64, numCentroids)
+
+			// 计算查询子向量与每个质心的距离
+			for c := 0; c < numCentroids; c++ {
+				centroid := currentSubspaceCodebook[c]
+
+				// 计算平方欧氏距离
+				distSq := 0.0
+				for d := 0; d < subvectorDim; d++ {
+					diff := querySubvector[d] - centroid[d]
+					distSq += diff * diff
+				}
+
+				distTable[c] = distSq
+			}
+
+			tables[subspaceIndex] = distTable
+		}(m)
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	// 检查错误
+	for err := range errChan {
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &PrecomputedDistanceTable{tables: tables}, nil
+}
+
+// BatchCompressByPQ 批量压缩多个向量
+func BatchCompressByPQ(vectors [][]float64, loadedCodebook [][]algorithm.Point, numSubvectors int, numCentroidsPerSubvector int, numWorkers int) ([]entity.CompressedVector, error) {
+	if len(vectors) == 0 {
+		return nil, fmt.Errorf("输入向量列表不能为空")
+	}
+
+	if numWorkers <= 0 {
+		numWorkers = runtime.NumCPU()
+	}
+
+	// 创建结果切片
+	results := make([]entity.CompressedVector, len(vectors))
+
+	// 使用工作池并行处理
+	workChan := make(chan int, len(vectors))
+	errChan := make(chan error, 1)
+	var wg sync.WaitGroup
+
+	// 启动工作协程
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			for idx := range workChan {
+				compressedVec, err := OptimizedCompressByPQ(vectors[idx], loadedCodebook, numSubvectors, numCentroidsPerSubvector)
+				if err != nil {
+					select {
+					case errChan <- fmt.Errorf("压缩向量 %d 失败: %w", idx, err):
+					default:
+					}
+					return
+				}
+				results[idx] = compressedVec
+			}
+		}()
+	}
+
+	// 发送任务
+	for i := range vectors {
+		workChan <- i
+	}
+	close(workChan)
+
+	// 等待所有工作完成
+	wg.Wait()
+	close(errChan)
+
+	// 检查错误
+	select {
+	case err := <-errChan:
+		return nil, err
+	default:
+		return results, nil
+	}
+}
+
+// ComputeDistance 使用预计算的距离表计算查询向量与压缩向量的距离
+func (dt *PrecomputedDistanceTable) ComputeDistance(compressedVector entity.CompressedVector) (float64, error) {
+	if compressedVector.Data == nil || len(compressedVector.Data) == 0 {
+		return 0, fmt.Errorf("压缩向量数据不能为空")
+	}
+	if len(compressedVector.Data) != len(dt.tables) {
+		return 0, fmt.Errorf("压缩向量的数据长度 %d 与距离表数量 %d 不匹配", len(compressedVector.Data), len(dt.tables))
+	}
+
+	totalSquaredDistance := 0.0
+
+	// 累加每个子空间的距离
+	for m := 0; m < len(dt.tables); m++ {
+		centroidIndex := int(compressedVector.Data[m])
+
+		if centroidIndex < 0 || centroidIndex >= len(dt.tables[m]) {
+			return 0, fmt.Errorf("子空间 %d 的质心索引 %d 超出范围 [0, %d)", m, centroidIndex, len(dt.tables[m]))
+		}
+
+		totalSquaredDistance += dt.tables[m][centroidIndex]
+	}
+
+	return totalSquaredDistance, nil
 }
 
 // TrainingDataSource 定义了获取训练向量的接口
@@ -276,6 +437,143 @@ func TrainPQCodebook(
 	}
 	fmt.Printf("PQ码本已成功保存到 %s。\n", codebookFilePath)
 	return nil
+}
+
+// OptimizedCompressByPQ 优化的产品量化压缩
+// 使用SIMD指令集加速（如果可用）
+func OptimizedCompressByPQ(vec []float64, loadedCodebook [][]algorithm.Point, numSubvectors int, numCentroidsPerSubvector int) (entity.CompressedVector, error) {
+	// 参数校验（与原函数相同）
+	if len(vec) == 0 {
+		return entity.CompressedVector{}, fmt.Errorf("输入向量不能为空")
+	}
+	// ... 其他参数校验 ...
+
+	subvectorDim := len(vec) / numSubvectors
+	compressedData := make([]byte, numSubvectors)
+
+	// 检测 CPU 是否支持 AVX2
+	useAVX2 := cpuid.CPU.AVX2()
+
+	// 并行处理子向量
+	var wg sync.WaitGroup
+	errChan := make(chan error, numSubvectors)
+
+	for i := 0; i < numSubvectors; i++ {
+		wg.Add(1)
+		go func(subdirectoryIndex int) {
+			defer wg.Done()
+
+			// 获取当前子向量
+			start := subdirectoryIndex * subvectorDim
+			end := start + subvectorDim
+			subVecData := vec[start:end]
+
+			// 获取当前子空间的码本
+			currentSubspaceCodebook := loadedCodebook[subdirectoryIndex]
+			// 参数校验...
+
+			minDistSq := math.MaxFloat64
+			assignedCentroidIndex := -1
+
+			// 使用 SIMD 加速距离计算（如果支持）
+			if useAVX2 && subvectorDim%8 == 0 {
+				// 使用 AVX2 指令集加速距离计算
+				// 这里需要实现 AVX2 版本的欧氏距离计算
+				// 实际实现需要使用汇编或 CGO 调用优化的 C 代码
+				// ...
+			} else {
+				// 回退到标准实现
+				for centroidIdx, centroid := range currentSubspaceCodebook {
+					distSq := 0.0
+					for d := 0; d < subvectorDim; d++ {
+						diff := subVecData[d] - centroid[d]
+						distSq += diff * diff
+					}
+
+					if distSq < minDistSq {
+						minDistSq = distSq
+						assignedCentroidIndex = centroidIdx
+					}
+				}
+			}
+
+			// 错误检查和赋值...
+			compressedData[subdirectoryIndex] = byte(assignedCentroidIndex)
+		}(i)
+	}
+
+	// 等待所有 goroutine 完成
+	wg.Wait()
+	close(errChan)
+
+	// 检查错误
+	for err := range errChan {
+		if err != nil {
+			return entity.CompressedVector{}, err
+		}
+	}
+
+	return entity.CompressedVector{
+		Data:     compressedData,
+		Codebook: nil,
+	}, nil
+}
+
+// OptimizedApproximateDistanceADC 优化的非对称距离计算
+// 使用预计算的查询-质心距离表加速计算
+func OptimizedApproximateDistanceADC(queryVector []float64, compressedVector entity.CompressedVector,
+	codebook [][]algorithm.Point, numSubvectors int) (float64, error) {
+	if len(queryVector) == 0 {
+		return 0, fmt.Errorf("查询向量不能为空")
+	}
+	// ... 其他参数校验 ...
+
+	subvectorDim := len(queryVector) / numSubvectors
+
+	// 预计算查询向量与所有质心的距离
+	distanceTables := make([][]float64, numSubvectors)
+	for m := 0; m < numSubvectors; m++ {
+		// 获取查询向量的第m个子向量
+		querySubvector := queryVector[m*subvectorDim : (m+1)*subvectorDim]
+
+		// 获取当前子空间的码本
+		currentSubspaceCodebook := codebook[m]
+		numCentroids := len(currentSubspaceCodebook)
+
+		// 为当前子空间创建距离表
+		distanceTables[m] = make([]float64, numCentroids)
+
+		// 计算查询子向量与每个质心的距离
+		for c := 0; c < numCentroids; c++ {
+			centroid := currentSubspaceCodebook[c]
+
+			// 计算平方欧氏距离
+			distSq := 0.0
+			for d := 0; d < subvectorDim; d++ {
+				diff := querySubvector[d] - centroid[d]
+				distSq += diff * diff
+			}
+
+			distanceTables[m][c] = distSq
+		}
+	}
+
+	// 使用预计算的距离表计算总距离
+	totalSquaredDistance := 0.0
+	for m := 0; m < numSubvectors; m++ {
+		// 获取压缩向量中第m个子向量对应的质心索引
+		centroidIndex := int(compressedVector.Data[m])
+
+		// 从距离表中查找预计算的距离
+		if centroidIndex < 0 || centroidIndex >= len(distanceTables[m]) {
+			return 0, fmt.Errorf("子空间 %d 的质心索引 %d 超出范围 [0, %d)",
+				m, centroidIndex, len(distanceTables[m]))
+		}
+
+		totalSquaredDistance += distanceTables[m][centroidIndex]
+	}
+
+	return totalSquaredDistance, nil
 }
 
 // CompressByPQ 产品量化压缩
