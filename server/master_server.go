@@ -611,6 +611,84 @@ func (m *MasterService) Start(ctx context.Context) error {
 	return nil
 }
 
+// performHealthChecks 执行健康检查
+func (m *MasterService) performHealthChecks() {
+	// 获取从节点列表
+	slaves := m.getSlavesFromEtcd() // 假设有一个方法从 etcd 获取从节点列表
+
+	for _, slaveIP := range slaves {
+		go func(ip string) {
+			conn, err := m.getOrCreateGRPCConn(ip) // 获取或创建 gRPC 连接
+			if err != nil {
+				log.Warning("Failed to connect to slave %s for health check: %v", ip, err)
+				m.slaveStatus.Store(ip, "unhealthy")
+				return
+			}
+
+			client := NewIndexServiceClient(conn) // 假设 SlaveService 定义了 gRPC 服务
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			healthStatus, err := client.HealthCheck(ctx, &HealthCheckRequest{}) // 假设 HealthCheckRequest 是空的
+			if err != nil {
+				log.Warning("Health check failed for slave %s: %v", ip, err)
+				m.slaveStatus.Store(ip, "unhealthy")
+				// 考虑关闭不健康的连接
+				conn.Close()
+				m.connPool.Delete(ip)
+				return
+			}
+
+			if healthStatus.Status == "SERVING" { // 假设 HealthCheckResponse 有 Status 字段
+				m.slaveStatus.Store(ip, "healthy")
+				// 更新从节点负载信息，假设 HealthCheckResponse 包含 LoadInfo
+				// m.slaveLoad.Store(ip, healthStatus.LoadInfo)
+			} else {
+				m.slaveStatus.Store(ip, "unhealthy")
+			}
+			log.Trace("Health check for slave %s: %s", ip, healthStatus.Status)
+		}(slaveIP)
+	}
+}
+
+// getSlavesFromEtcd 从 etcd 获取从节点列表 (示例实现)
+func (m *MasterService) getSlavesFromEtcd() []string {
+	// 在实际应用中，这里会从 etcd 查询已注册的从节点
+	// 为了示例，我们返回一个硬编码的列表或者从 m.connPool 的键中提取
+	var slaves []string
+	m.connPool.Range(func(key, value interface{}) bool {
+		slaves = append(slaves, key.(string))
+		return true
+	})
+	if len(slaves) == 0 {
+		// 如果 connPool 为空，可以尝试从 etcd 获取初始列表
+		// 例如: m.discoverSlaves()
+	}
+	return slaves
+}
+
+// getOrCreateGRPCConn 获取或创建到从节点的 gRPC 连接
+func (m *MasterService) getOrCreateGRPCConn(slaveIP string) (*grpc.ClientConn, error) {
+	if conn, ok := m.connPool.Load(slaveIP); ok {
+		clientConn := conn.(*grpc.ClientConn)
+		// 检查连接状态
+		if clientConn.GetState() == connectivity.Ready || clientConn.GetState() == connectivity.Idle {
+			return clientConn, nil
+		}
+		// 如果连接不是 Ready 或 Idle，则关闭并重新创建
+		clientConn.Close()
+		m.connPool.Delete(slaveIP)
+	}
+
+	// 创建新连接
+	conn, err := grpc.Dial(slaveIP, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	if err != nil {
+		return nil, err
+	}
+	m.connPool.Store(slaveIP, conn)
+	return conn, nil
+}
+
 // startHealthChecks 启动健康检查
 func (m *MasterService) startHealthChecks(ctx context.Context) {
 	// ... (健康检查逻辑保持不变或根据需要调整，确保使用 ctx 进行取消)
@@ -874,23 +952,29 @@ func (m *MasterService) IsMaster() bool {
 
 // healthCheck 健康检查
 func (m *MasterService) healthCheck() {
-	for !m.stop {
-		// 检查是否是主节点
-		m.masterMutex.RLock()
-		isMaster := m.isMaster
-		m.masterMutex.RUnlock()
+	for {
+		select {
+		case <-m.stopCh:
+			log.Info("healthCheck: Stop signal received, exiting health check loop.")
+			return
+		default:
+			// 检查是否是主节点
+			m.masterMutex.RLock()
+			isMaster := m.isMaster
+			m.masterMutex.RUnlock()
 
-		if isMaster {
-			// 获取所有从节点
-			slaves := m.getSlaveEndpoints()
+			if isMaster {
+				// 获取所有从节点
+				slaves := m.getSlaveEndpoints()
 
-			// 检查每个从节点的健康状态
-			for _, slave := range slaves {
-				go m.checkSlaveHealth(slave)
+				// 检查每个从节点的健康状态
+				for _, slave := range slaves {
+					go m.checkSlaveHealth(slave)
+				}
 			}
-		}
 
-		time.Sleep(m.healthCheckInterval)
+			time.Sleep(m.healthCheckInterval)
+		}
 	}
 }
 
@@ -1037,18 +1121,22 @@ func (m *MasterService) getBestSlave() (EndPoint, error) {
 // cleanupTaskResults 定期清理过期的任务结果
 func (m *MasterService) cleanupTaskResults() {
 	cleanupInterval := 5 * time.Minute
-	for !m.stop {
-		time.Sleep(cleanupInterval)
-
-		// 清理超过 1 小时的任务结果
-		expireTime := time.Now().Add(-1 * time.Hour)
-		m.taskResults.Range(func(key, value interface{}) bool {
-			result := value.(TaskResult)
-			if result.Timestamp.Before(expireTime) {
-				m.taskResults.Delete(key)
-			}
-			return true
-		})
+	for {
+		select {
+		case <-m.stopCh:
+			return
+		default:
+			time.Sleep(cleanupInterval)
+			// 清理超过 1 小时的任务结果
+			expireTime := time.Now().Add(-1 * time.Hour)
+			m.taskResults.Range(func(key, value interface{}) bool {
+				result := value.(TaskResult)
+				if result.Timestamp.Before(expireTime) {
+					m.taskResults.Delete(key)
+				}
+				return true
+			})
+		}
 	}
 }
 

@@ -138,12 +138,15 @@ func (s *SlaveService) Init(
 // Start 启动 SlaveService
 func (s *SlaveService) Start(ctx context.Context) error {
 	log.Info("Starting SlaveService on %s...", s.localhost)
-
+	var etcdEndpoints []string
+	for _, v := range s.etcdEndpoints {
+		etcdEndpoints = append(etcdEndpoints, v.Ip+":"+strconv.Itoa(v.Port))
+	}
 	// 如果 etcd client 未初始化，尝试重新初始化
 	if s.client == nil {
 		log.Info("etcd client not initialized, attempting to connect...")
 		client, err := clientv3.New(clientv3.Config{
-			Endpoints:   s.etcdEndpoints,
+			Endpoints:   etcdEndpoints,
 			DialTimeout: 5 * time.Second,
 		})
 		if err != nil {
@@ -228,9 +231,14 @@ func (s *SlaveService) registerService() error {
 	}
 
 	go func() {
-		for !s.stop {
-			<-ch
-			// 租约保持成功
+		for {
+			select {
+			case <-s.stopCh:
+				return
+			default:
+				<-ch
+				// 租约保持成功
+			}
 		}
 	}()
 
