@@ -498,7 +498,7 @@ func (s *SlaveService) ExecuteTask(ctx context.Context, request *TaskRequest) (*
 			table.VectorDB.SetFilePath(backupPath)
 
 			// 执行备份
-			err = table.VectorDB.SaveToFile()
+			err = table.VectorDB.SaveToFile(table.VectorDB.GetBackupPath())
 
 			// 恢复原始路径
 			table.VectorDB.SetFilePath(originalPath)

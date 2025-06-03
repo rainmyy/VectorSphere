@@ -100,7 +100,9 @@ func (db *VectorDB) GetStats() PerformanceStats {
 	defer db.statsMu.RUnlock()
 	return db.stats
 }
-
+func (db *VectorDB) GetBackupPath() string {
+	return db.backupPath
+}
 func (db *VectorDB) IsPQCompressionEnabled() bool {
 	return db.useCompression
 }
