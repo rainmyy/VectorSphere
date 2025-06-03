@@ -604,7 +604,7 @@ func (m *AddDocumentRequest) GetVectorizedType() int32 {
 type DeleteDocumentRequest struct {
 	TableName string     `protobuf:"bytes,1,opt,name=table_name,json=tableName,proto3" json:"table_name,omitempty"`
 	DocId     string     `protobuf:"bytes,2,opt,name=doc_id,json=docId,proto3" json:"doc_id,omitempty"`
-	Keywords  []*KeyWord `protobuf:"bytes,3,rep,name=keywords,proto3" json:"keywords,omitempty"`
+	Keywords  []*messages.KeyWord `protobuf:"bytes,3,rep,name=keywords,proto3" json:"keywords,omitempty"`
 }
 
 func (m *DeleteDocumentRequest) Reset()         { *m = DeleteDocumentRequest{} }
@@ -654,7 +654,7 @@ func (m *DeleteDocumentRequest) GetDocId() string {
 	return ""
 }
 
-func (m *DeleteDocumentRequest) GetKeywords() []*KeyWord {
+func (m *DeleteDocumentRequest) GetKeywords() []*messages.KeyWord {
 	if m != nil {
 		return m.Keywords
 	}
@@ -3613,7 +3613,7 @@ func (m *DeleteDocumentRequest) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Keywords = append(m.Keywords, &KeyWord{})
+			m.Keywords = append(m.Keywords, &messages.KeyWord{})
 			if err := m.Keywords[len(m.Keywords)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}

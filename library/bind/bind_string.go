@@ -72,9 +72,7 @@ func BindString(treeList []*TreeStruct, buffer *Buffer) int {
 	return childrenNum
 }
 
-/**
-* unbind string,parser the string to tree data
- */
+// UnBind /**
 func (s *String) UnBind() []*TreeStruct {
 
 	return nil

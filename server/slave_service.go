@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	PoolLib "seetaSearch/library/pool"
 	"seetaSearch/library/tree"
 	"time"
 
@@ -31,7 +32,7 @@ type SlaveService struct {
 	Index       *index.Index
 	serviceName string
 	localhost   string
-	stop        bool
+	stopCh      chan struct{} // 修改 stop 为 stopCh
 
 	// 主节点相关
 	masterEndpoint string
@@ -43,6 +44,10 @@ type SlaveService struct {
 
 	// 多表搜索服务
 	multiTableService *search.MultiTableSearchService
+
+	appCtx        context.Context // 用于传递应用的全局上下文
+	etcdEndpoints []EndPoint      // etcd 端点
+	port          int             // 服务端口
 }
 
 func (s *SlaveService) CreateTable(ctx context.Context, request *CreateTableRequest) (*ResCount, error) {
@@ -71,7 +76,7 @@ func (s *SlaveService) SearchTable(ctx context.Context, request *SearchRequest) 
 }
 
 // NewSlaveService 创建从服务实例
-func NewSlaveService(endpoints []EndPoint, serviceName string, port int) (*SlaveService, error) {
+func NewSlaveService(appCtx context.Context, endpoints []EndPoint, serviceName string, port int) (*SlaveService, error) {
 	// 获取本地 IP
 	localIp, err := common.GetLocalHost()
 	if err != nil {
@@ -97,10 +102,14 @@ func NewSlaveService(endpoints []EndPoint, serviceName string, port int) (*Slave
 	taskExecutor := scheduler.NewTaskPoolManager() // 设置合适的工作线程数
 
 	return &SlaveService{
-		client:       client,
-		serviceName:  serviceName,
-		localhost:    localhost,
-		taskExecutor: taskExecutor,
+		client:        client,
+		serviceName:   serviceName,
+		localhost:     localhost,
+		stopCh:        make(chan struct{}),
+		appCtx:        appCtx,
+		taskExecutor:  taskExecutor,
+		etcdEndpoints: endpoints, // 保存 etcdEndpoints
+		port:          port,      // 保存 port
 	}, nil
 }
 
@@ -126,16 +135,72 @@ func (s *SlaveService) Init(
 	return nil
 }
 
-// Start 启动从服务
-func (s *SlaveService) Start() error {
-	// 注册服务
-	err := s.registerService()
-	if err != nil {
-		return err
+// Start 启动 SlaveService
+func (s *SlaveService) Start(ctx context.Context) error {
+	log.Info("Starting SlaveService on %s...", s.localhost)
+
+	// 如果 etcd client 未初始化，尝试重新初始化
+	if s.client == nil {
+		log.Info("etcd client not initialized, attempting to connect...")
+		client, err := clientv3.New(clientv3.Config{
+			Endpoints:   s.etcdEndpoints,
+			DialTimeout: 5 * time.Second,
+		})
+		if err != nil {
+			log.Warning("Failed to connect to etcd during SlaveService start: %v. Proceeding without etcd.", err)
+		} else {
+			s.client = client
+			log.Info("Successfully connected to etcd.")
+		}
 	}
 
-	// 监听主节点
-	go s.watchMaster()
+	// 注册服务 (如果 etcd client 存在)
+	if s.client != nil {
+		if err := s.registerService(); err != nil {
+			// 非致命错误，服务可以尝试无etcd运行或依赖master拉取
+			log.Warning("Failed to register slave service with etcd: %v. Continuing without registration.", err)
+		} else {
+			log.Info("Slave service registered with etcd successfully.")
+		}
+	} else {
+		log.Info("Slave service running without etcd registration.")
+	}
+
+	// 监听主节点 (如果 etcd client 存在)
+	if s.client != nil {
+		go s.watchMaster(ctx) // 使用传递的上下文
+	} else {
+		log.Info("Cannot watch master as etcd client is not available.")
+		// 这里可以考虑实现一个备用机制来发现 master，例如通过配置或广播
+	}
+
+	// 初始化索引等（如果尚未初始化）
+	if s.Index == nil {
+		// 这里的参数需要从配置中获取或传递
+		// 例如: docNumEstimate, dbType, DataDir 等
+		// 此处仅为示例，您需要根据实际情况调整
+		if err := s.Init(100000, 0, "./data/slave_"+s.localhost, nil, nil, nil); err != nil {
+			log.Error("Failed to initialize slave service components: %v", err)
+			return err // 初始化失败是致命的
+		}
+		log.Info("Slave service components initialized.")
+	}
+
+	log.Info("SlaveService %s started.", s.localhost)
+
+	// 监听停止信号
+	go func() {
+		select {
+		case <-s.stopCh:
+			log.Info("SlaveService %s received stop signal.", s.localhost)
+		case <-ctx.Done():
+			log.Info("SlaveService %s context cancelled.", s.localhost)
+			s.Stop(context.Background())
+		case <-s.appCtx.Done():
+			log.Info("Application context cancelled, stopping SlaveService %s.", s.localhost)
+			s.Stop(context.Background())
+		}
+	}()
 
 	return nil
 }
@@ -172,58 +237,19 @@ func (s *SlaveService) registerService() error {
 	return nil
 }
 
-// watchMaster 监听主节点
-func (s *SlaveService) watchMaster() {
-	for !s.stop {
-		// 获取主节点
-		resp, err := s.client.Get(context.Background(), "/election/"+s.serviceName, clientv3.WithPrefix())
-		if err != nil {
-			log.Error("获取主节点失败: %v", err)
-			time.Sleep(3 * time.Second)
-			continue
-		}
+// GetName 返回服务名称
+func (s *SlaveService) GetName() string {
+	return "slave_service_" + s.localhost // 保证每个 slave 实例的任务名唯一
+}
 
-		if len(resp.Kvs) == 0 {
-			log.Warning("没有主节点")
-			time.Sleep(3 * time.Second)
-			continue
-		}
-
-		// 获取主节点地址
-		masterEndpoint := string(resp.Kvs[0].Value)
-
-		s.masterMutex.Lock()
-		if masterEndpoint != s.masterEndpoint {
-			// 主节点变更
-			log.Info("主节点变更为: %s", masterEndpoint)
-			s.masterEndpoint = masterEndpoint
-
-			// 连接主节点
-			s.connectMaster()
-		}
-		s.masterMutex.Unlock()
-
-		// 监听主节点变化
-		watchChan := s.client.Watch(context.Background(), "/election/"+s.serviceName, clientv3.WithPrefix())
-		for resp := range watchChan {
-			for _, ev := range resp.Events {
-				if ev.Type == clientv3.EventTypePut {
-					// 主节点变更
-					masterEndpoint := string(ev.Kv.Value)
-
-					s.masterMutex.Lock()
-					if masterEndpoint != s.masterEndpoint {
-						log.Info("主节点变更为: %s", masterEndpoint)
-						s.masterEndpoint = masterEndpoint
-
-						// 连接主节点
-						s.connectMaster()
-					}
-					s.masterMutex.Unlock()
-				}
-			}
-		}
+// GetDependencies 返回服务依赖的任务名称列表
+func (s *SlaveService) GetDependencies() []string {
+	// 依赖 etcd (如果 etcdClient 初始化成功) 和 master 服务发现
+	deps := []string{"master_service_discovery_ready"}
+	if s.client != nil { // 仅当 etcd client 初始化时才添加 etcd_ready 依赖
+		deps = append(deps, "etcd_ready")
 	}
+	return deps
 }
 
 // connectMaster 连接主节点
@@ -248,17 +274,19 @@ func (s *SlaveService) connectMaster() {
 	log.Info("连接主节点成功: %s", s.masterEndpoint)
 }
 
-// Stop 停止服务
-func (s *SlaveService) Stop() {
-	s.stop = true
+// Stop 停止 SlaveService
+func (s *SlaveService) Stop(ctx context.Context) error {
+	log.Info("Stopping SlaveService %s...", s.localhost)
+	close(s.stopCh)
 
-	// 撤销租约
-	_, err := s.client.Revoke(context.Background(), s.leaseID)
-	if err != nil {
-		log.Error("撤销租约失败: %v", err)
+	// 从 etcd 取消注册
+	if s.client != nil && s.leaseID != 0 {
+		if _, err := s.client.Revoke(context.Background(), s.leaseID); err != nil {
+			log.Warning("Failed to revoke etcd lease for slave %s: %v", s.localhost, err)
+		}
 	}
 
-	// 关闭主节点连接
+	// 关闭到主节点的连接
 	s.masterMutex.Lock()
 	if s.masterConn != nil {
 		s.masterConn.Close()
@@ -266,30 +294,143 @@ func (s *SlaveService) Stop() {
 	}
 	s.masterMutex.Unlock()
 
-	// 关闭客户端
+	// 关闭 etcd 客户端
 	if s.client != nil {
-		s.client.Close()
+		if err := s.client.Close(); err != nil {
+			log.Warning("Failed to close etcd client for slave %s: %v", s.localhost, err)
+		}
 	}
 
-	// 停止任务执行器
-	if s.taskExecutor != nil {
-		s.taskExecutor.Stop()
-	}
-
-	// 关闭索引
+	// 关闭索引等资源
 	if s.Index != nil {
-		s.Index.Close()
+		// s.Index.Close() // 假设 Index 有 Close 方法
 	}
 
-	// 关闭多表搜索服务
-	if s.multiTableService != nil {
-		// 遍历所有表并关闭
-		tables, err := s.multiTableService.ListTables()
-		if err == nil {
-			for _, tableName := range tables {
-				s.multiTableService.CloseTable(tableName)
+	log.Info("SlaveService %s stopped.", s.localhost)
+	return nil
+}
+
+// GetTaskSpec 返回任务规格
+func (s *SlaveService) GetTaskSpec() *scheduler.TaskSpec {
+	return &scheduler.TaskSpec{
+		RetryCount: 5, // 示例：重试5次
+		// Timeout:    60 * time.Second, // 示例：超时60秒
+	}
+}
+
+// ToPoolTask 将 SlaveService 转换为 PoolLib.Task
+func (s *SlaveService) ToPoolTask() *PoolLib.Queue {
+	startWrapper := func() error {
+		log.Info("ServiceTask for SlaveService: %s is about to run Start()", s.GetName())
+		// 注意：s.Start 需要一个 context.Context。
+		// 在 bootstrap/base.go 中，任务池执行任务时会传递上下文。
+		// 但 PoolLib.Queue 的执行不直接接受上下文参数给 ExcelFunc。
+		// 因此，我们在这里使用 s.appCtx，或者需要一种机制将任务池的上下文传递给 Start。
+		// 假设 s.Start 内部可以处理 s.appCtx，或者 bootstrap 层面在调用此 Task 的 Execute 时传递正确的上下文。
+		// 为了与 PoolLib.Queue 兼容，包装器不接受参数。
+		err := s.Start(s.appCtx)
+		if err != nil {
+			log.Error("ServiceTask for SlaveService: %s failed to Start: %v", s.GetName(), err)
+		}
+		return err
+	}
+
+	return PoolLib.QueryInit(s.GetName(), startWrapper)
+}
+
+// SetTaskPoolManager 设置任务池管理器
+func (s *SlaveService) SetTaskPoolManager(manager *scheduler.TaskPoolManager) {
+	s.taskExecutor = manager
+}
+
+// watchMaster 监听主节点变化
+func (s *SlaveService) watchMaster(ctx context.Context) {
+	if s.client == nil {
+		log.Warning("Cannot watch master: etcd client is nil.")
+		return
+	}
+	masterKeyPrefix := "/seetasearch/master_election/"
+	log.Info("Slave %s watching for master changes at prefix: %s", s.localhost, masterKeyPrefix)
+
+	// 初始获取一次 Master 地址
+	s.updateMasterConnectionFromEtcd(ctx, masterKeyPrefix)
+
+	rch := s.client.Watch(ctx, masterKeyPrefix, clientv3.WithPrefix())
+	for {
+		select {
+		case <-ctx.Done():
+			log.Info("Watch master process for slave %s cancelled by context.", s.localhost)
+			return
+		case <-s.stopCh:
+			log.Info("Watch master process for slave %s stopped by service stop signal.", s.localhost)
+			return
+		case wresp := <-rch:
+			if wresp.Canceled {
+				log.Warning("Watch for master on slave %s was canceled: %v", s.localhost, wresp.Err())
+				// 尝试重新 Watch
+				time.Sleep(5 * time.Second)
+				if s.client != nil {
+					rch = s.client.Watch(ctx, masterKeyPrefix, clientv3.WithPrefix())
+				}
+				continue
+			}
+			for _, ev := range wresp.Events {
+				log.Trace("Slave %s received etcd event: Type: %s, Key: %s, Value: %s", s.localhost, ev.Type, string(ev.Kv.Key), string(ev.Kv.Value))
+				// 当有 master 相关的事件时，重新获取并连接 master
+				s.updateMasterConnectionFromEtcd(ctx, masterKeyPrefix)
 			}
 		}
+	}
+}
+
+func (s *SlaveService) updateMasterConnectionFromEtcd(ctx context.Context, masterKeyPrefix string) {
+	if s.client == nil {
+		return
+	}
+	resp, err := s.client.Get(ctx, masterKeyPrefix, clientv3.WithPrefix(), clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend), clientv3.WithLimit(1))
+	if err != nil {
+		log.Warning("Slave %s failed to get master from etcd: %v", s.localhost, err)
+		return
+	}
+
+	var newMasterEndpoint string
+	if len(resp.Kvs) > 0 {
+		newMasterEndpoint = string(resp.Kvs[0].Value)
+		log.Info("Slave %s discovered master endpoint from etcd: %s", s.localhost, newMasterEndpoint)
+	} else {
+		log.Warning("Slave %s: No master found in etcd with prefix %s", s.localhost, masterKeyPrefix)
+		s.masterMutex.Lock()
+		if s.masterConn != nil {
+			s.masterConn.Close()
+			s.masterConn = nil
+			log.Info("Slave %s: Disconnected from previous master as no master is currently elected.", s.localhost)
+		}
+		s.masterEndpoint = ""
+		s.masterMutex.Unlock()
+		return
+	}
+
+	s.masterMutex.Lock()
+	defer s.masterMutex.Unlock()
+
+	if newMasterEndpoint != s.masterEndpoint || s.masterConn == nil {
+		if s.masterConn != nil {
+			s.masterConn.Close()
+			log.Info("Slave %s: Disconnecting from old master %s", s.localhost, s.masterEndpoint)
+		}
+		log.Info("Slave %s: Attempting to connect to new master %s", s.localhost, newMasterEndpoint)
+		conn, err := grpc.DialContext(ctx, newMasterEndpoint, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+		if err != nil {
+			log.Error("Slave %s: Failed to connect to master %s: %v", s.localhost, newMasterEndpoint, err)
+			s.masterConn = nil
+			s.masterEndpoint = "" // 连接失败，清除 endpoint
+			return
+		}
+		log.Info("Slave %s: Successfully connected to master %s", s.localhost, newMasterEndpoint)
+		s.masterConn = conn
+		s.masterEndpoint = newMasterEndpoint
+	} else {
+		log.Trace("Slave %s: Master endpoint %s unchanged.", s.localhost, s.masterEndpoint)
 	}
 }
 

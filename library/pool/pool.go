@@ -12,11 +12,13 @@ const (
 
 type Pool struct {
 	//mutex         sync.WaitGroup
-	runtimeNumber int
-	Total         int
-	taskQuery     chan *Queue
-	taskResult    chan map[string]*res.Response
-	taskResponse  map[string]*res.Response
+	runtimeNumber   int
+	Total           int
+	taskQuery       chan *Queue
+	taskResult      chan map[string]*res.Response
+	taskResponse    map[string]*res.Response
+	preAllocWorkers bool
+	blockOnSubmit   bool
 }
 
 /*
@@ -40,8 +42,20 @@ type CallBackFunc struct {
 	Params   []interface{}
 }
 
-func GetInstance() *Pool {
+func NewPool() *Pool {
 	return new(Pool)
+}
+
+// WithPreAllocWorkers 设置是否预分配工作线程
+func (p *Pool) WithPreAllocWorkers(preAlloc bool) *Pool {
+	p.preAllocWorkers = preAlloc
+	return p
+}
+
+// WithBlock 设置任务提交时是否阻塞
+func (p *Pool) WithBlock(block bool) *Pool {
+	p.blockOnSubmit = block
+	return p
 }
 func QueryInit(name string, function interface{}, params ...interface{}) *Queue {
 	excelFunc := &ExcelFunc{Function: function, Params: params}
@@ -66,7 +80,7 @@ func (p *Pool) Init(runtimeNumber, total int) *Pool {
 	p.taskResponse = make(map[string]*res.Response)
 	return p
 }
-func (p *Pool) Start() {
+func (p *Pool) Run() {
 	runtimeNumber := p.runtimeNumber
 	if len(p.taskQuery) != runtimeNumber {
 		runtimeNumber = len(p.taskQuery)
@@ -122,8 +136,19 @@ func (p *Pool) Stop() {
 	close(p.taskResult)
 }
 
-func (p *Pool) AddTask(task *Queue) {
-	p.taskQuery <- task
+func (p *Pool) Submit(task *Queue) {
+	if p.blockOnSubmit && len(p.taskQuery) >= cap(p.taskQuery) {
+		// 阻塞直到有空间
+		p.taskQuery <- task
+	} else {
+		p.taskQuery <- task
+	}
+}
+
+// Release 关闭任务池并释放资源
+func (p *Pool) Release() {
+	close(p.taskQuery)
+	close(p.taskResult)
 }
 
 /**

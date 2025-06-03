@@ -1,7 +1,29 @@
-serviceName: seeta
-serviceAddr: Beijing
-https: true
-nginx:
-    Port: 80
-    LogPath: "/var/log/nginx/nginx.log"
-    Path: "/opt/nginx/"
+serviceName: "seetaSearchApp"
+timeOut: 30
+defaultPort: 8080
+heartbeat: 10
+schedulerWorkerCount: 5 # TaskPoolManager 的 worker 数量
+httpPort: 8000          # Master HTTP 服务的端口
+taskTimeout: 60         # Master 任务超时（秒）
+healthCheckInterval: 15 # Master 健康检查间隔（秒）
+
+etcd:
+    endpoints:
+        - "localhost:2379"
+        # - "etcd2:2379"
+        # - "etcd3:2379"
+
+master:
+    enabled: true
+    # port: 8080 # 如果 master 端口不是 defaultPort
+
+slaves:
+    - enabled: true
+      port: 9001 # 第一个 slave 的端口
+      dataDir: "./data/slave1"
+    - enabled: true
+      port: 9002 # 第二个 slave 的端口
+      dataDir: "./data/slave2"
+    # - enabled: false # 这个 slave 将不会启动
+    #   port: 9003
+    #   dataDir: "./data/slave3"
