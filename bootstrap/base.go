@@ -380,7 +380,10 @@ func (app *AppServer) Setup() error {
 	if err := app.taskPool.Submit(etcdTask); err != nil {
 		return fmt.Errorf("failed to submit etcd_ready task: %w", err)
 	}
-
+	var endpoints []server.EndPoint
+	for _, endpoint := range cfg.Endpoints {
+		endpoints = append(endpoints, endpoint)
+	}
 	// 2. 初始化并添加 Master 服务任务 (如果配置了 Master)
 	if cfg.Master != nil && cfg.Master.Enabled {
 		masterHost, _ := common.GetLocalHost() // 假设 Master 运行在当前节点
@@ -389,10 +392,10 @@ func (app *AppServer) Setup() error {
 
 		mService, err := server.NewMasterService(
 			app.Ctx, // 传递应用上下文
-			cfg.Etcd.Endpoints,
+			endpoints,
 			cfg.ServiceName+"_master",
 			masterBindAddress,
-			cfg.HttpPort, // 从配置中读取 HTTP 端口
+			cfg.HttpPort,                                       // 从配置中读取 HTTP 端口
 			time.Duration(cfg.TaskTimeout)*time.Second,         // 从配置中读取任务超时
 			time.Duration(cfg.HealthCheckInterval)*time.Second, // 从配置中读取健康检查间隔
 		)
@@ -428,7 +431,7 @@ func (app *AppServer) Setup() error {
 
 			sService, err := server.NewSlaveService(
 				app.Ctx, // 传递应用上下文
-				cfg.Endpoints,
+				endpoints,
 				cfg.ServiceName+"_slave",
 				slavePort,
 			)

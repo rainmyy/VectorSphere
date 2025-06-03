@@ -639,7 +639,7 @@ func (m *MasterService) performHealthChecks() {
 				return
 			}
 
-			if healthStatus.Status == "SERVING" { // 假设 HealthCheckResponse 有 Status 字段
+			if healthStatus.Status == HealthCheckResponse_SERVING { // 假设 HealthCheckResponse 有 Status 字段
 				m.slaveStatus.Store(ip, "healthy")
 				// 更新从节点负载信息，假设 HealthCheckResponse 包含 LoadInfo
 				// m.slaveLoad.Store(ip, healthStatus.LoadInfo)
