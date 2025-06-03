@@ -41,12 +41,12 @@ func (f *File) fileInfo() (*File, error) {
 	return f, nil
 }
 
-func (f *File) getFilePath(fullname string) {
-	fileAbs, err := filepath.Abs(fullname)
+func (f *File) getFilePath(fullName string) {
+	fileAbs, err := filepath.Abs(fullName)
 	if err != nil {
 		return
 	}
-	fileName := path.Base(fullname)
+	fileName := path.Base(fullName)
 	f.name = fileName
 	f.fileAbs = fileAbs
 }

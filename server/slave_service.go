@@ -311,7 +311,7 @@ func (s *SlaveService) Stop(ctx context.Context) error {
 
 	// 关闭索引等资源
 	if s.Index != nil {
-		// s.Index.Close() // 假设 Index 有 Close 方法
+		s.Index.Close()
 	}
 
 	log.Info("SlaveService %s stopped.", s.localhost)

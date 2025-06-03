@@ -90,7 +90,20 @@ message SearchRequest {
 message SearchResult {
   repeated string doc_ids = 1;
 }
-
+// Health Check Messages
+message HealthCheckRequest {
+  // 可以根据需要添加字段，例如服务版本等
+}
+message HealthCheckResponse {
+  enum ServingStatus {
+    UNKNOWN = 0;
+    SERVING = 1;
+    NOT_SERVING = 2;
+    SERVICE_UNKNOWN = 3; // The service is not known
+  }
+  ServingStatus status = 1;
+  float load = 2; // 例如：CPU负载或任务队列长度
+}
 service IndexService {
   rpc DelDoc(DocId) returns (ResCount);
   rpc AddDoc(messages.Document) returns (ResCount);
@@ -107,6 +120,9 @@ service IndexService {
   rpc AddDocumentToTable(AddDocumentRequest) returns (ResCount);
   rpc DeleteDocumentFromTable(DeleteDocumentRequest) returns (ResCount);
   rpc SearchTable(SearchRequest) returns (SearchResult);
+
+  // Health Check RPC
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
 }
 
 // protoc -I=D:/code/seetaSearch/messages/proto --gogofaster_opt=Mdoc.proto=seetaSearch/messages --gogofaster_opt=Mterm_query.proto=seetaSearch/messages --gogofaster_out=plugins=grpc:./server --proto_path=./server/proto request.proto
