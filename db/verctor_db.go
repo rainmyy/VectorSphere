@@ -85,6 +85,7 @@ type VectorDB struct {
 	maxConnections   int              // HNSW 最大连接数
 	efConstruction   float64          // HNSW 构建时的扩展因子
 	efSearch         float64          // HNSW 搜索时的扩展因子
+	metadata         map[string]map[string]interface{}
 }
 
 const (
@@ -99,6 +100,9 @@ func (db *VectorDB) GetStats() PerformanceStats {
 	db.statsMu.RLock()
 	defer db.statsMu.RUnlock()
 	return db.stats
+}
+func (db *VectorDB) IsHNSWEnabled() bool {
+	return db.useHNSWIndex
 }
 func (db *VectorDB) GetBackupPath() string {
 	return db.backupPath
@@ -230,6 +234,19 @@ func (db *VectorDB) BatchAddToHNSWIndex(ids []string, vectors [][]float64, numWo
 
 	log.Info("成功批量添加 %d 个向量到 HNSW 索引，耗时 %v", len(ids), time.Since(startTime))
 	return nil
+}
+
+// GetAllIDs 返回数据库中所有向量的ID列表
+func (db *VectorDB) GetAllIDs() []string {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	ids := make([]string, 0, len(db.vectors))
+	for id := range db.vectors {
+		ids = append(ids, id)
+	}
+
+	return ids
 }
 
 // BuildHNSWIndexParallel 并行构建 HNSW 图结构索引
@@ -696,10 +713,132 @@ func (db *VectorDB) LoadPQCodebookFromFile(filePath string) error {
 	return nil
 }
 
+// 在VectorDB结构体中添加元数据支持
+func (db *VectorDB) AddMetadata(id string, metadata map[string]interface{}) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	if db.metadata == nil {
+		db.metadata = make(map[string]map[string]interface{})
+	}
+
+	db.metadata[id] = metadata
+}
+
+// GetMetadata 获取文档元数据
+func (db *VectorDB) GetMetadata(id string) (map[string]interface{}, bool) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	if db.metadata == nil {
+		return nil, false
+	}
+
+	metadata, exists := db.metadata[id]
+	return metadata, exists
+}
+
+// SearchWithFilter 带过滤条件的向量搜索
+func (db *VectorDB) SearchWithFilter(query string, topK int, filter func(map[string]interface{}) bool) ([]SearchResult, error) {
+	// 将查询文本向量化
+	queryVector, err := db.GetVectorForText(query, db.vectorizedType)
+	if err != nil {
+		return nil, fmt.Errorf("查询文本向量化失败: %v", err)
+	}
+
+	// 查找最近的向量
+	results, err := db.FindNearest(queryVector, topK*2, 10) // 获取更多结果用于过滤
+	if err != nil {
+		return nil, fmt.Errorf("搜索失败: %v", err)
+	}
+
+	// 应用过滤器并计算相似度
+	var filteredResults []SearchResult
+	for _, id := range results {
+		// 获取元数据
+		metadata, exists := db.GetMetadata(id)
+		if !exists {
+			metadata = make(map[string]interface{})
+		}
+
+		// 应用过滤器
+		if filter == nil || filter(metadata) {
+			// 计算相似度
+			similarity, err := db.CalculateCosineSimilarity(id, queryVector)
+			if err != nil {
+				continue
+			}
+
+			filteredResults = append(filteredResults, SearchResult{
+				ID:         id,
+				Similarity: similarity,
+				Metadata:   metadata,
+			})
+		}
+
+		// 如果已经有足够的结果，停止处理
+		if len(filteredResults) >= topK {
+			break
+		}
+	}
+
+	// 按相似度排序
+	sort.Slice(filteredResults, func(i, j int) bool {
+		return filteredResults[i].Similarity > filteredResults[j].Similarity
+	})
+
+	// 限制结果数量
+	if len(filteredResults) > topK {
+		filteredResults = filteredResults[:topK]
+	}
+
+	return filteredResults, nil
+}
+
+// CalculateCosineSimilarity 计算指定ID的向量与查询向量之间的余弦相似度
+func (db *VectorDB) CalculateCosineSimilarity(id string, queryVector []float64) (float64, error) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	// 获取指定ID的向量
+	vector, exists := db.vectors[id]
+	if !exists {
+		return 0, fmt.Errorf("向量ID %s 不存在", id)
+	}
+
+	// 如果启用了向量归一化，优先使用归一化后的向量
+	if db.useNormalization {
+		if normalizedVec, exists := db.normalizedVectors[id]; exists {
+			vector = normalizedVec
+		}
+	}
+
+	// 归一化查询向量
+	normalizedQuery := queryVector
+	if db.useNormalization {
+		normalizedQuery = util.NormalizeVector(queryVector)
+	}
+
+	// 计算余弦相似度
+	similarity := util.CosineSimilarity(normalizedQuery, vector)
+	if similarity < 0 {
+		return 0, fmt.Errorf("计算余弦相似度失败：向量维度不匹配")
+	}
+
+	return similarity, nil
+}
+
+// SearchResult 搜索结果结构体
+type SearchResult struct {
+	ID         string
+	Similarity float64
+	Metadata   map[string]interface{}
+}
+
 // EnablePQCompression 启用 PQ 压缩并设置相关参数
 // codebookPath: 码本文件路径。如果为空，则尝试使用之前配置的路径加载，或禁用PQ。
-// numSubvectors, numCentroidsPerSubvector: 这些参数现在主要用于信息展示和潜在的校验，实际值会从加载的码本中推断。
-func (db *VectorDB) EnablePQCompression(codebookPath string, numSubvectors int, numCentroidsPerSubvector int) error {
+// numSubVectors, numCentroidsPerSubVector: 这些参数现在主要用于信息展示和潜在的校验，实际值会从加载的码本中推断。
+func (db *VectorDB) EnablePQCompression(codebookPath string, numSubVectors int, numCentroidsPerSubVector int) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
@@ -720,10 +859,10 @@ func (db *VectorDB) EnablePQCompression(codebookPath string, numSubvectors int, 
 		db.mu.Unlock()
 		return nil // 不是错误，只是禁用
 	}
-	if numSubvectors <= 0 {
+	if numSubVectors <= 0 {
 		return fmt.Errorf("子向量数量必须为正")
 	}
-	if numCentroidsPerSubvector <= 0 {
+	if numCentroidsPerSubVector <= 0 {
 		return fmt.Errorf("每个子向量的质心数量必须为正")
 	}
 
@@ -741,7 +880,7 @@ func (db *VectorDB) EnablePQCompression(codebookPath string, numSubvectors int, 
 	// 只有当码本成功加载且非空时，才真正启用PQ
 	if db.pqCodebook != nil && len(db.pqCodebook) > 0 {
 		db.usePQCompression = true
-		// 更新 numSubvectors 和 numCentroidsPerSubvector 以匹配加载的码本
+		// 更新 numSubVectors 和 numCentroidsPerSubVector 以匹配加载的码本
 		db.numSubvectors = len(db.pqCodebook)
 		if len(db.pqCodebook[0]) > 0 {
 			db.numCentroidsPerSubvector = len(db.pqCodebook[0])
@@ -1585,7 +1724,12 @@ func (db *VectorDB) SaveToFile(filePath string) error {
 	if err != nil {
 		return fmt.Errorf("创建数据库文件 %s 失败: %v", db.backupPath, err)
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+			log.Error("close file failed: %v", err)
+		}
+	}(file)
 
 	encoder := gob.NewEncoder(file)
 

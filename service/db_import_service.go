@@ -1,4 +1,4 @@
-package search
+package service
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"runtime"
 	"seetaSearch/library/log"
+	"seetaSearch/search"
 	"strings"
 	"sync"
 	"time"
@@ -73,7 +74,7 @@ type DBImportConfig struct {
 // DBImportService 数据库导入服务
 type DBImportService struct {
 	config           *DBImportConfig
-	searchService    *MultiTableSearchService
+	searchService    *search.MultiTableSearchService
 	importStats      *ImportStats
 	ctx              context.Context
 	cancelFunc       context.CancelFunc
@@ -316,7 +317,7 @@ type ImportStats struct {
 }
 
 // NewDBImportService 创建新的数据库导入服务
-func NewDBImportService(searchService *MultiTableSearchService, config *DBImportConfig) *DBImportService {
+func NewDBImportService(searchService *search.MultiTableSearchService, config *DBImportConfig) *DBImportService {
 	// 设置默认值
 	if config.BatchSize <= 0 {
 		// 根据可用内存动态调整批处理大小

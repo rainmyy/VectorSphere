@@ -7,12 +7,13 @@ import (
 	"seetaSearch/library/tree"
 	"seetaSearch/messages"
 	"seetaSearch/search"
+	"seetaSearch/service"
 	"time"
 )
 
 func test_2() {
 	// 创建导入配置
-	config := &search.DBImportConfig{
+	config := &service.DBImportConfig{
 		DriverName:     "mysql",
 		DataSource:     "user:password@tcp(localhost:3306)/dbname",
 		BatchSize:      100,
@@ -42,10 +43,10 @@ func test_2() {
 	// 创建多表搜索服务
 	searchService := search.NewMultiTableSearchService(txMgr, lockMgr, walMgr)
 	// 创建导入服务
-	service := search.NewDBImportService(searchService, config)
+	service := service.NewDBImportService(searchService, config)
 
 	// 创建导入调度器
-	scheduler := search.NewImportScheduler(service)
+	scheduler, _ := service.GetChangedRecords(service)
 
 	// 添加导入计划
 	scheduler.AddSchedule("products", "SELECT * FROM products", 1*time.Hour, true)
@@ -89,7 +90,7 @@ func test_1() {
 	}
 
 	// 配置数据库导入
-	importConfig := search.DBImportConfig{
+	importConfig := service.DBImportConfig{
 		DriverName:     "mysql",
 		DataSource:     "user:password@tcp(localhost:3306)/mydatabase",
 		BatchSize:      100,
@@ -107,7 +108,7 @@ func test_1() {
 	}
 
 	// 创建导入服务
-	importService := search.NewDBImportService(searchService, &importConfig)
+	importService := service.NewDBImportService(searchService, &importConfig)
 
 	// 定义SQL查询
 	sqlQuery := `SELECT product_id, product_name, product_description, product_category, product_tags, product_features

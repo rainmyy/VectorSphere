@@ -1,8 +1,11 @@
 module seetaSearch
 
-go 1.24.0
+go 1.24.1
+
+toolchain go1.24.3
 
 require (
+	github.com/PuerkitoBio/goquery v1.10.3
 	github.com/dgraph-io/badger/v4 v4.7.0
 	github.com/go-ego/gse v0.80.3
 	github.com/go-sql-driver/mysql v1.9.2
@@ -10,11 +13,13 @@ require (
 	github.com/golang/mock v1.6.0
 	github.com/huichen/sego v0.0.0-20210824061530-c87651ea5c76
 	github.com/klauspost/cpuid v1.3.1
+	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/leemcloughlin/gofarmhash v0.0.0-20160919192320-0a055c5b87a8
 	github.com/lib/pq v1.10.9
 	github.com/mattn/go-sqlite3 v1.14.28
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/shirou/gopsutil/v3 v3.24.5
+	github.com/unidoc/unioffice v1.39.0
 	github.com/wangbin/jiebago v0.3.2
 	go.etcd.io/bbolt v1.4.0
 	go.etcd.io/etcd/api/v3 v3.6.0
@@ -28,6 +33,7 @@ require (
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/adamzy/cedar-go v0.0.0-20170805034717-80a9c64b256d // indirect
+	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
@@ -42,6 +48,7 @@ require (
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
+	github.com/richardlehane/msoleps v1.0.3 // indirect
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
