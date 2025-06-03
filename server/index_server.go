@@ -22,6 +22,11 @@ type IndexServer struct {
 	serviceName string
 }
 
+func (w *IndexServer) HealthCheck(ctx context.Context, request *HealthCheckRequest) (*HealthCheckResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (w *IndexServer) ExecuteTask(ctx context.Context, request *TaskRequest) (*TaskResponse, error) {
 	//TODO implement me
 	panic("implement me")

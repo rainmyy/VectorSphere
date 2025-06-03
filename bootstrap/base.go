@@ -110,6 +110,10 @@ func (app *AppServer) ReadServiceConf() (error, *ServiceConfig) {
 	return nil, &cfg
 }
 
+func (t *EtcdReadyTask) ToPoolTask() *PoolLib.Queue {
+	return PoolLib.QueryInit(t.GetName(), t.Execute, context.Background())
+}
+
 func (t *EtcdReadyTask) Execute(ctx context.Context) error {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
@@ -156,6 +160,9 @@ type MasterServiceDiscoveryReadyTask struct {
 
 func NewMasterServiceDiscoveryReadyTask(app *AppServer) *MasterServiceDiscoveryReadyTask {
 	return &MasterServiceDiscoveryReadyTask{appServer: app}
+}
+func (t *MasterServiceDiscoveryReadyTask) ToPoolTask() *PoolLib.Queue {
+	return PoolLib.QueryInit(t.GetName(), t.Execute, context.Background())
 }
 
 func (t *MasterServiceDiscoveryReadyTask) Execute(ctx context.Context) error {
@@ -206,8 +213,8 @@ func (t *MasterServiceDiscoveryReadyTask) GetRetries() int {
 // NewAppServer 创建 AppServer 实例
 func NewAppServer() *AppServer {
 	ctx, cancel := context.WithCancel(context.Background())
-	// 初始化 PoolLib.Pool，例如设置并发数为10
-	p := PoolLib.NewPool(10, PoolLib.WithPreAllocWorkers(false), PoolLib.WithBlock(false))
+	// 初始化 PoolLib.Pool，使用链式调用设置配置
+	p := PoolLib.NewPool().Init(10, 10).WithPreAllocWorkers(false).WithBlock(false)
 	return &AppServer{
 		Ctx:      ctx,
 		Cancel:   cancel,
@@ -372,11 +379,11 @@ func (app *AppServer) Setup() error {
 	// 否则，它们可以在各自的 New 函数中创建自己的 manager。
 	sharedTaskManager := scheduler.NewTaskPoolManager() // 假设默认 worker 数量
 	if cfg.SchedulerWorkerCount > 0 {
-		sharedTaskManager = scheduler.NewTaskPoolManager(scheduler.WithWorkerCount(cfg.SchedulerWorkerCount))
+		sharedTaskManager = scheduler.NewTaskPoolManager()
 	}
 
 	// 1. 添加 Etcd 连接任务
-	etcdTask := NewEtcdReadyTask(app)
+	etcdTask := NewEtcdReadyTask(app).ToPoolTask()
 	if err := app.taskPool.Submit(etcdTask); err != nil {
 		return fmt.Errorf("failed to submit etcd_ready task: %w", err)
 	}
@@ -404,12 +411,13 @@ func (app *AppServer) Setup() error {
 		}
 		mService.SetTaskPoolManager(sharedTaskManager) // 设置共享的 manager
 		app.masterService = mService                   // 保存实例
-		if err := app.taskPool.Submit(mService.ToPoolTask()); err != nil {
+		queue := mService.ToPoolTask()
+		if err := app.taskPool.Submit(queue); err != nil {
 			return fmt.Errorf("failed to submit master_service task: %w", err)
 		}
 
 		// 添加 Master 服务发现就绪任务
-		masterDiscoveryTask := NewMasterServiceDiscoveryReadyTask(app)
+		masterDiscoveryTask := NewMasterServiceDiscoveryReadyTask(app).ToPoolTask()
 		if err := app.taskPool.Submit(masterDiscoveryTask); err != nil {
 			return fmt.Errorf("failed to submit master_service_discovery_ready task: %w", err)
 		}
@@ -483,7 +491,7 @@ func (app *AppServer) ListenAPI() {
 			if port == 0 {
 				port = config.DefaultPort
 			}
-			address := fmt.Sprintf(":%d", 8080)
+			address := fmt.Sprintf(":%d", port)
 			serviceName = name
 			serviceAddr = address
 		}

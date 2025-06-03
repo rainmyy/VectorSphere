@@ -15,7 +15,7 @@ type RunnableService interface {
 	Start(ctx context.Context) error                       // 启动服务
 	Stop(ctx context.Context) error                        // 停止服务
 	GetTaskSpec() *scheduler.TaskSpec                      // 获取任务规格，用于高级调度（如重试、超时）
-	ToPoolTask() PoolLib.Task                              // 转换为与 PoolLib.Task 兼容的任务
+	ToPoolTask() *PoolLib.Queue                            // 转换为与 PoolLib.Task 兼容的任务
 	SetTaskPoolManager(manager *scheduler.TaskPoolManager) // 设置任务池管理器
 }
 
@@ -70,4 +70,22 @@ func (st *ServiceTask) GetTimeout() time.Duration {
 func (st *ServiceTask) OnError(err error) {
 	log.Error("Task %s failed: %v", st.GetName(), err)
 	// 这里可以添加更复杂的错误处理逻辑，例如通知、回滚等
+}
+
+// ToPoolTask 将 ServiceTask 转换为 PoolLib.Queue
+func (st *ServiceTask) ToPoolTask() *PoolLib.Queue {
+	startWrapper := func() error {
+		log.Info("ServiceTask for %s is about to run Execute()", st.GetName())
+		// 创建一个新的上下文，或者使用背景上下文
+		ctx := context.Background()
+		err := st.Execute(ctx)
+		if err != nil {
+			log.Error("ServiceTask for %s failed to Execute: %v", st.GetName(), err)
+			// 调用错误处理方法
+			st.OnError(err)
+		}
+		return err
+	}
+
+	return PoolLib.QueryInit(st.GetName(), startWrapper)
 }

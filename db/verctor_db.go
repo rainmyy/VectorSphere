@@ -194,6 +194,315 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 	return db
 }
 
+// BatchAddToHNSWIndex 批量添加向量到 HNSW 索引
+// 当需要添加大量向量时，使用此方法比单个添加更高效
+// numWorkers: 并行工作的协程数量，如果 <= 0，则使用 CPU 核心数
+func (db *VectorDB) BatchAddToHNSWIndex(ids []string, vectors [][]float64, numWorkers int) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	if !db.useHNSWIndex || db.hnsw == nil {
+		return fmt.Errorf("HNSW 索引未启用或未初始化")
+	}
+
+	if len(ids) != len(vectors) {
+		return fmt.Errorf("ID数量与向量数量不匹配: %d != %d", len(ids), len(vectors))
+	}
+
+	// 如果启用了向量归一化，预处理向量
+	processedVectors := make([][]float64, len(vectors))
+	for i, vec := range vectors {
+		if db.useNormalization {
+			processedVectors[i] = util.NormalizeVector(vec)
+		} else {
+			processedVectors[i] = vec
+		}
+	}
+
+	// 使用 HNSW 图的并行添加节点方法
+	startTime := time.Now()
+	log.Info("开始批量添加 %d 个向量到 HNSW 索引...", len(ids))
+
+	err := db.hnsw.ParallelAddNodes(ids, processedVectors, numWorkers)
+	if err != nil {
+		return fmt.Errorf("批量添加节点失败: %w", err)
+	}
+
+	log.Info("成功批量添加 %d 个向量到 HNSW 索引，耗时 %v", len(ids), time.Since(startTime))
+	return nil
+}
+
+// BuildHNSWIndexParallel 并行构建 HNSW 图结构索引
+// 这是 BuildHNSWIndex 的并行版本，适用于大规模数据集
+func (db *VectorDB) BuildHNSWIndexParallel(numWorkers int) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	startTime := time.Now()
+	log.Info("开始并行构建 HNSW 索引...")
+
+	// 重置索引状态
+	db.indexed = false
+
+	// 创建新的 HNSW 图
+	db.hnsw = graph.NewHNSWGraph(db.maxConnections, db.efConstruction, db.efSearch)
+
+	// 设置距离函数
+	db.hnsw.SetDistanceFunc(func(a, b []float64) (float64, error) {
+		// 使用余弦距离（1 - 余弦相似度）
+		sim := util.CosineSimilarity(a, b)
+		return 1.0 - sim, nil
+	})
+
+	// 准备批量添加的数据
+	ids := make([]string, 0, len(db.vectors))
+	vectors := make([][]float64, 0, len(db.vectors))
+
+	for id, vec := range db.vectors {
+		// 如果启用了向量归一化，使用归一化后的向量
+		vector := vec
+		if db.useNormalization {
+			if normalizedVec, exists := db.normalizedVectors[id]; exists {
+				vector = normalizedVec
+			}
+		}
+
+		ids = append(ids, id)
+		vectors = append(vectors, vector)
+	}
+
+	// 使用并行方法添加所有节点
+	err := db.hnsw.ParallelAddNodes(ids, vectors, numWorkers)
+	if err != nil {
+		return fmt.Errorf("并行添加节点到 HNSW 图失败: %w", err)
+	}
+
+	db.indexed = true
+	db.stats.IndexBuildTime = time.Since(startTime)
+	db.stats.LastReindexTime = time.Now()
+
+	log.Info("HNSW 索引并行构建完成，耗时 %v，包含 %d 个向量。", db.stats.IndexBuildTime, len(db.vectors))
+	return nil
+}
+
+// BatchFindNearest 批量查找多个查询向量的最近邻
+// queryVectors: 查询向量数组
+// k: 每个查询返回的最近邻数量
+// numWorkers: 并行工作的协程数量，如果 <= 0，则使用 CPU 核心数
+// 返回: 每个查询向量对应的最近邻ID数组，以及可能的错误
+func (db *VectorDB) BatchFindNearest(queryVectors [][]float64, k int, numWorkers int) ([][]string, error) {
+	startTime := time.Now()
+
+	// 更新查询计数
+	db.statsMu.Lock()
+	db.stats.TotalQueries += int64(len(queryVectors))
+	db.statsMu.Unlock()
+
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	if k <= 0 {
+		return nil, fmt.Errorf("k 必须是正整数")
+	}
+
+	if len(db.vectors) == 0 {
+		// 如果数据库为空，返回空结果
+		emptyResults := make([][]string, len(queryVectors))
+		for i := range emptyResults {
+			emptyResults[i] = []string{}
+		}
+		return emptyResults, nil
+	}
+
+	// 如果启用了 HNSW 索引，使用 HNSW 批量搜索
+	if db.useHNSWIndex && db.indexed && db.hnsw != nil {
+		log.Trace("使用 HNSW 索引进行批量搜索，查询数量: %d", len(queryVectors))
+
+		// 预处理查询向量（归一化）
+		normalizedQueries := make([][]float64, len(queryVectors))
+		for i, query := range queryVectors {
+			normalizedQueries[i] = util.NormalizeVector(query)
+		}
+
+		// 使用 HNSW 批量搜索
+		batchResults, err := db.hnsw.BatchSearch(normalizedQueries, k, numWorkers)
+		if err != nil {
+			return nil, fmt.Errorf("HNSW 批量搜索失败: %w", err)
+		}
+
+		// 提取 ID
+		results := make([][]string, len(batchResults))
+		for i, queryResult := range batchResults {
+			ids := make([]string, len(queryResult))
+			for j, result := range queryResult {
+				ids[j] = result.Id
+			}
+			results[i] = ids
+		}
+
+		// 更新平均查询时间统计
+		queryTime := time.Since(startTime)
+		db.statsMu.Lock()
+		avgTime := time.Duration(queryTime.Nanoseconds() / int64(len(queryVectors)))
+		db.stats.AvgQueryTime = time.Duration((db.stats.AvgQueryTime.Nanoseconds()*9 + avgTime.Nanoseconds()) / 10) // 使用加权平均
+		db.statsMu.Unlock()
+
+		return results, nil
+	}
+
+	// 如果未启用 HNSW 索引，使用并行的暴力搜索或其他索引方法
+	results := make([][]string, len(queryVectors))
+	errChan := make(chan error, len(queryVectors))
+
+	// 使用信号量限制并发数
+	if numWorkers <= 0 {
+		numWorkers = runtime.NumCPU()
+	}
+	sem := make(chan struct{}, numWorkers)
+	var wg sync.WaitGroup
+
+	for i, query := range queryVectors {
+		wg.Add(1)
+		go func(idx int, q []float64) {
+			defer wg.Done()
+
+			// 获取信号量
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			// 使用单个查询方法
+			ids, err := db.FindNearest(q, k, db.numClusters/10) // 使用默认的 nprobe 值
+			if err != nil {
+				errChan <- fmt.Errorf("查询向量 %d 搜索失败: %w", idx, err)
+				return
+			}
+			results[idx] = ids
+		}(i, query)
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	// 检查是否有错误
+	select {
+	case err := <-errChan:
+		return nil, err
+	default:
+		// 更新平均查询时间统计
+		queryTime := time.Since(startTime)
+		db.statsMu.Lock()
+		avgTime := time.Duration(queryTime.Nanoseconds() / int64(len(queryVectors)))
+		db.stats.AvgQueryTime = time.Duration((db.stats.AvgQueryTime.Nanoseconds()*9 + avgTime.Nanoseconds()) / 10) // 使用加权平均
+		db.statsMu.Unlock()
+
+		return results, nil
+	}
+}
+
+// BatchFindNearestWithScores 批量查找多个查询向量的最近邻，并返回相似度分数
+// queryVectors: 查询向量数组
+// k: 每个查询返回的最近邻数量
+// numWorkers: 并行工作的协程数量，如果 <= 0，则使用 CPU 核心数
+// 返回: 每个查询向量对应的最近邻结果（包含ID和相似度分数），以及可能的错误
+func (db *VectorDB) BatchFindNearestWithScores(queryVectors [][]float64, k int, numWorkers int) ([][]entity.Result, error) {
+	startTime := time.Now()
+
+	// 更新查询计数
+	db.statsMu.Lock()
+	db.stats.TotalQueries += int64(len(queryVectors))
+	db.statsMu.Unlock()
+
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	if k <= 0 {
+		return nil, fmt.Errorf("k 必须是正整数")
+	}
+
+	if len(db.vectors) == 0 {
+		// 如果数据库为空，返回空结果
+		emptyResults := make([][]entity.Result, len(queryVectors))
+		for i := range emptyResults {
+			emptyResults[i] = []entity.Result{}
+		}
+		return emptyResults, nil
+	}
+
+	// 如果启用了 HNSW 索引，使用 HNSW 批量搜索
+	if db.useHNSWIndex && db.indexed && db.hnsw != nil {
+		log.Trace("使用 HNSW 索引进行批量搜索（带分数），查询数量: %d", len(queryVectors))
+
+		// 预处理查询向量（归一化）
+		normalizedQueries := make([][]float64, len(queryVectors))
+		for i, query := range queryVectors {
+			normalizedQueries[i] = util.NormalizeVector(query)
+		}
+
+		// 使用 HNSW 批量搜索
+		results, err := db.hnsw.BatchSearch(normalizedQueries, k, numWorkers)
+		if err != nil {
+			return nil, fmt.Errorf("HNSW 批量搜索失败: %w", err)
+		}
+
+		// 更新平均查询时间统计
+		queryTime := time.Since(startTime)
+		db.statsMu.Lock()
+		avgTime := time.Duration(queryTime.Nanoseconds() / int64(len(queryVectors)))
+		db.stats.AvgQueryTime = time.Duration((db.stats.AvgQueryTime.Nanoseconds()*9 + avgTime.Nanoseconds()) / 10) // 使用加权平均
+		db.statsMu.Unlock()
+
+		return results, nil
+	}
+
+	// 如果未启用 HNSW 索引，使用并行的暴力搜索或其他索引方法
+	results := make([][]entity.Result, len(queryVectors))
+	errChan := make(chan error, len(queryVectors))
+
+	// 使用信号量限制并发数
+	if numWorkers <= 0 {
+		numWorkers = runtime.NumCPU()
+	}
+	sem := make(chan struct{}, numWorkers)
+	var wg sync.WaitGroup
+
+	for i, query := range queryVectors {
+		wg.Add(1)
+		go func(idx int, q []float64) {
+			defer wg.Done()
+
+			// 获取信号量
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			// 使用单个查询方法
+			resultsWithScores, err := db.FindNearestWithScores(q, k, db.numClusters/10) // 使用默认的 nprobe 值
+			if err != nil {
+				errChan <- fmt.Errorf("查询向量 %d 搜索失败: %w", idx, err)
+				return
+			}
+			results[idx] = resultsWithScores
+		}(i, query)
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	// 检查是否有错误
+	select {
+	case err := <-errChan:
+		return nil, err
+	default:
+		// 更新平均查询时间统计
+		queryTime := time.Since(startTime)
+		db.statsMu.Lock()
+		avgTime := time.Duration(queryTime.Nanoseconds() / int64(len(queryVectors)))
+		db.stats.AvgQueryTime = time.Duration((db.stats.AvgQueryTime.Nanoseconds()*9 + avgTime.Nanoseconds()) / 10) // 使用加权平均
+		db.statsMu.Unlock()
+
+		return results, nil
+	}
+}
+
 // EnableHNSWIndex 启用 HNSW 索引并设置相关参数
 func (db *VectorDB) EnableHNSWIndex(maxConnections int, efConstruction, efSearch float64) {
 	db.mu.Lock()
@@ -559,7 +868,7 @@ func (db *VectorDB) AddDocument(id string, doc string, vectorizedType int) error
 	db.normalizedVectors[id] = util.NormalizeVector(vector)
 	// 如果启用了 PQ 压缩，则压缩向量
 	if db.usePQCompression && db.pqCodebook != nil {
-		compressedVec, err := util.CompressByPQ(vector, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector)
+		compressedVec, err := util.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector)
 		if err != nil {
 			// 即使压缩失败，原始向量也已添加，这里只记录错误
 			log.Error("为文档 %s 添加时压缩向量失败: %v", id, err)
@@ -710,7 +1019,7 @@ func (db *VectorDB) Add(id string, vector []float64) {
 	db.normalizedVectors[id] = util.NormalizeVector(vector)
 	// 如果启用了 PQ 压缩，则压缩向量
 	if db.usePQCompression && db.pqCodebook != nil {
-		compressedVec, err := util.CompressByPQ(vector, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector)
+		compressedVec, err := util.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector)
 		if err != nil {
 			log.Error("向量 %s 压缩失败: %v。该向量将只以原始形式存储。", id, err)
 			// 根据策略，可以选择是否回滚添加操作或仅记录错误
@@ -984,7 +1293,7 @@ func (db *VectorDB) Update(id string, vector []float64) error {
 	db.normalizedVectors[id] = util.NormalizeVector(vector)
 	// 如果启用了 PQ 压缩，则更新压缩向量
 	if db.usePQCompression && db.pqCodebook != nil {
-		compressedVec, err := util.CompressByPQ(vector, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector)
+		compressedVec, err := util.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector)
 		if err != nil {
 			log.Error("为向量 %s 更新时压缩向量失败: %v", id, err)
 			// 即使压缩失败，原始向量也已更新
@@ -1486,21 +1795,23 @@ func (db *VectorDB) LoadFromFile(filePath string) error {
 	if db.useHNSWIndex {
 		hnswFilePath := filePath + ".hnsw"
 		db.hnsw = graph.NewHNSWGraph(db.maxConnections, db.efConstruction, db.efSearch)
+		// 尝试加载 HNSW 图结构
+		err := db.hnsw.LoadFromFile(hnswFilePath)
 
-		// 设置距离函数
+		// 设置距离函数,。在加载后，需要使用 SetDistanceFunc 方法重新设置距离函数
 		db.hnsw.SetDistanceFunc(func(a, b []float64) (float64, error) {
 			// 使用余弦距离（1 - 余弦相似度）
 			sim := util.CosineSimilarity(a, b)
 			return 1.0 - sim, nil
 		})
 
-		// 尝试加载 HNSW 图结构
-		err := db.hnsw.LoadFromFile(hnswFilePath)
 		if err != nil {
 			log.Warning("加载 HNSW 图结构失败: %v，将重新构建索引。", err)
 			db.indexed = false
 		}
 	}
+	// 设置备份路径
+	db.backupPath = filePath + ".bat"
 	log.Info("VectorDB 数据成功从 %s 加载。向量数: %d, 是否已索引: %t, PQ压缩: %t", db.filePath, len(db.vectors), db.indexed, db.usePQCompression)
 	return nil
 }

@@ -83,6 +83,11 @@ type MasterService struct {
 	appCtx context.Context // 用于传递应用的全局上下文
 }
 
+func (m *MasterService) HealthCheck(ctx context.Context, request *HealthCheckRequest) (*HealthCheckResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
 // startHTTPServer 启动 HTTP 服务器
 func (m *MasterService) startHTTPServer() error {
 	// 检查是否是主节点

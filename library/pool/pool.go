@@ -1,6 +1,7 @@
 package pool
 
 import (
+	"errors"
 	"seetaSearch/library/res"
 	"sync"
 )
@@ -136,13 +137,24 @@ func (p *Pool) Stop() {
 	close(p.taskResult)
 }
 
-func (p *Pool) Submit(task *Queue) {
-	if p.blockOnSubmit && len(p.taskQuery) >= cap(p.taskQuery) {
-		// 阻塞直到有空间
+func (p *Pool) Submit(task *Queue) error {
+	if len(p.taskQuery) >= cap(p.taskQuery) {
+		// 队列已满，阻塞等待直到有空间
+		p.taskQuery <- task
+	} else if p.blockOnSubmit {
+		// 设置了阻塞提交，即使队列未满也阻塞
 		p.taskQuery <- task
 	} else {
-		p.taskQuery <- task
+		// 非阻塞模式且队列未满，直接添加任务
+		select {
+		case p.taskQuery <- task:
+			return nil
+		default:
+			// 无法立即添加任务，返回错误
+			return errors.New("任务队列已满")
+		}
 	}
+	return nil
 }
 
 // Release 关闭任务池并释放资源

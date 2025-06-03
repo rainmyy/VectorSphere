@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"google.golang.org/grpc"
@@ -9,6 +10,7 @@ import (
 	"seetaSearch/library/tree"
 	"seetaSearch/server"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -42,13 +44,13 @@ func main() {
 	case "master":
 		// 启动主服务
 		localhost := fmt.Sprintf("localhost:%d", *port)
-		master, err := server.NewMasterService(endpoints, "seetaSearch", "localhost:50051", 8080)
+		master, err := server.NewMasterService(context.Background(), endpoints, "seetaSearch", "localhost:50051", 8080, 5*time.Minute, 30*time.Second)
 		if err != nil {
 			log.Fatal("创建主服务失败: %v", err)
 		}
 
 		// 启动主服务
-		err = master.Start()
+		err = master.Start(context.Background())
 		if err != nil {
 			log.Fatal("启动主服务失败: %v", err)
 		}
@@ -69,7 +71,7 @@ func main() {
 
 	case "slave":
 		// 启动从服务
-		slave, err := server.NewSlaveService(endpoints, *serviceName, *port)
+		slave, err := server.NewSlaveService(context.Background(), endpoints, *serviceName, *port)
 		if err != nil {
 			log.Fatal("创建从服务失败: %v", err)
 		}
@@ -81,7 +83,7 @@ func main() {
 		}
 
 		// 启动从服务
-		err = slave.Start()
+		err = slave.Start(context.Background())
 		if err != nil {
 			log.Fatal("启动从服务失败: %v", err)
 		}

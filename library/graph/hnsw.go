@@ -2,9 +2,11 @@ package graph
 
 import (
 	"container/heap"
+	"encoding/gob"
 	"fmt"
 	"math"
 	"math/rand"
+	"os"
 	"runtime"
 	"seetaSearch/library/algorithm"
 	"seetaSearch/library/entity"
@@ -728,14 +730,121 @@ func (g *HNSWGraph) Size() int {
 
 // SaveToFile 将图结构保存到文件
 func (g *HNSWGraph) SaveToFile(filePath string) error {
-	// 实现图结构的序列化和保存
-	// 这里需要根据实际需求实现
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	// 创建文件
+	file, err := os.Create(filePath)
+	if err != nil {
+		return fmt.Errorf("创建文件 %s 失败: %v", filePath, err)
+	}
+	defer file.Close()
+
+	// 创建 gob 编码器
+	encoder := gob.NewEncoder(file)
+
+	// 创建一个可序列化的结构体，包含图的所有必要信息
+	type nodeData struct {
+		ID        string
+		Vector    []float64
+		Neighbors [][]string
+	}
+
+	// 收集所有节点数据
+	nodes := make(map[string]nodeData)
+	for id, node := range g.nodes {
+		node.mu.RLock()
+		nodes[id] = nodeData{
+			ID:        node.ID,
+			Vector:    node.Vector,
+			Neighbors: node.Neighbors,
+		}
+		node.mu.RUnlock()
+	}
+
+	// 创建要序列化的数据结构
+	data := struct {
+		Nodes          map[string]nodeData
+		MaxLevel       int
+		MaxConnections int
+		EfConstruction float64
+		EfSearch       float64
+		EntryPointID   string
+		LevelMult      float64
+	}{
+		Nodes:          nodes,
+		MaxLevel:       g.maxLevel,
+		MaxConnections: g.maxConnections,
+		EfConstruction: g.efConstruction,
+		EfSearch:       g.EfSearch,
+		EntryPointID:   g.entryPointID,
+		LevelMult:      g.levelMult,
+	}
+
+	// 序列化数据
+	if err := encoder.Encode(data); err != nil {
+		return fmt.Errorf("序列化图结构到 %s 失败: %v", filePath, err)
+	}
+
 	return nil
 }
 
 // LoadFromFile 从文件加载图结构
 func (g *HNSWGraph) LoadFromFile(filePath string) error {
-	// 实现从文件加载和反序列化图结构
-	// 这里需要根据实际需求实现
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	// 打开文件
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("打开文件 %s 失败: %v", filePath, err)
+	}
+	defer file.Close()
+
+	// 创建 gob 解码器
+	decoder := gob.NewDecoder(file)
+
+	// 定义与 SaveToFile 中相同的节点数据结构
+	type nodeData struct {
+		ID        string
+		Vector    []float64
+		Neighbors [][]string
+	}
+
+	// 定义要解码的数据结构
+	data := struct {
+		Nodes          map[string]nodeData
+		MaxLevel       int
+		MaxConnections int
+		EfConstruction float64
+		EfSearch       float64
+		EntryPointID   string
+		LevelMult      float64
+	}{}
+
+	// 解码数据
+	if err := decoder.Decode(&data); err != nil {
+		return fmt.Errorf("从 %s 反序列化图结构失败: %v", filePath, err)
+	}
+
+	// 重置图结构
+	g.nodes = make(map[string]*HNSWNode)
+	g.maxLevel = data.MaxLevel
+	g.maxConnections = data.MaxConnections
+	g.efConstruction = data.EfConstruction
+	g.EfSearch = data.EfSearch
+	g.entryPointID = data.EntryPointID
+	g.levelMult = data.LevelMult
+
+	// 重建节点
+	for id, nodeData := range data.Nodes {
+		node := &HNSWNode{
+			ID:        nodeData.ID,
+			Vector:    nodeData.Vector,
+			Neighbors: nodeData.Neighbors,
+		}
+		g.nodes[id] = node
+	}
+
 	return nil
 }
