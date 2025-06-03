@@ -652,7 +652,6 @@ func (idx *MVCCBPlusTreeInvertedIndex) getMinMaxKeywords() (messages.KeyWord, me
 	// 可以遍历 B+ 树的叶子节点链表
 	// 以下是一个简单示例，实际需要根据 B+ 树的实现调整
 	var minKey, maxKey messages.KeyWord
-	// 假设存在一个获取第一个和最后一个叶子节点的方法
 	firstLeaf := idx.getFirstLeaf()
 	lastLeaf := idx.getLastLeaf()
 	if firstLeaf != nil && len(firstLeaf.GetKeys()) > 0 {

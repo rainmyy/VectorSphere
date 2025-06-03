@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/shirou/gopsutil/v3/cpu"
+	"github.com/shirou/gopsutil/v3/mem"
 	PoolLib "seetaSearch/library/pool"
 	"seetaSearch/library/tree"
 	"time"
@@ -468,6 +470,108 @@ func (s *SlaveService) Search(ctx context.Context, request *Request) (*Result, e
 
 	return &Result{
 		Results: result,
+	}, nil
+}
+
+// HealthCheck 实现 IndexServiceServer 接口的 HealthCheck 方法
+func (s *SlaveService) HealthCheck(ctx context.Context, req *HealthCheckRequest) (*HealthCheckResponse, error) {
+	// 1. 检查核心依赖服务是否可用
+	if s.client == nil {
+		log.Warning("HealthCheck: etcd client is nil")
+		return &HealthCheckResponse{
+			Status: HealthCheckResponse_NOT_SERVING,
+			Load:   0, // 或者一个表示错误/不可用的特定负值
+		}, nil
+	}
+	if s.Index == nil {
+		log.Warning("HealthCheck: Index service is nil")
+		return &HealthCheckResponse{
+			Status: HealthCheckResponse_NOT_SERVING,
+			Load:   0,
+		}, nil
+	}
+	if s.taskExecutor == nil {
+		log.Warning("HealthCheck: TaskExecutor is nil")
+		return &HealthCheckResponse{
+			Status: HealthCheckResponse_NOT_SERVING,
+			Load:   0,
+		}, nil
+	}
+
+	// 2. 计算当前负载
+	var currentLoad float32
+	var cpuUsage float32
+	var memUsage float32
+	var taskQueueLength int32
+
+	// 获取 CPU 使用率 (需要 github.com/shirou/gopsutil/cpu)
+	cpuPercentages, err := cpu.Percent(time.Second, false) // false 表示获取总体 CPU 使用率
+	if err == nil && len(cpuPercentages) > 0 {
+		cpuUsage = float32(cpuPercentages[0])
+	} else {
+		log.Warning("HealthCheck: Failed to get CPU usage: %v", err)
+		// 可以选择在此处返回 NOT_SERVING 或 UNKNOWN，或者继续计算其他指标
+	}
+
+	// 获取内存使用率
+	vmStat, err := mem.VirtualMemory()
+	if err == nil {
+		memUsage = float32(vmStat.UsedPercent)
+	} else {
+		log.Warning("HealthCheck: Failed to get memory usage: %v", err)
+	}
+
+	// 获取任务队列长度/当前运行任务数
+	taskQueueLength = s.taskExecutor.GetRunningTaskCount() // 使用您实现的 GetRunningTaskCount
+
+	// 获取当前处理的请求数 (这是一个示例，您需要根据您的服务逻辑来实现)
+	// currentRequests := s.getCurrentActiveRequests() // 假设有这样一个方法
+
+	// 综合计算负载：这是一个简单的加权平均示例，您可以根据实际情况调整权重和计算方式
+	// 权重可以根据哪个指标对您的服务健康更重要来设定
+	// 例如：CPU 40%, 内存 30%, 任务队列 30%
+	// 注意：这里的负载值是一个 0-100 的百分比值，您可以根据需要调整其范围和含义
+	cpuWeight := float32(0.4)
+	memWeight := float32(0.3)
+	taskWeight := float32(0.3)
+
+	// 将任务队列长度归一化到一个可比较的范围，例如 0-100
+	// 假设任务队列长度超过 200 就认为是满负荷
+	maxExpectedTasks := float32(200)
+	normalizedTaskLoad := (float32(taskQueueLength) / maxExpectedTasks) * 100
+	if normalizedTaskLoad > 100 {
+		normalizedTaskLoad = 100
+	}
+	if normalizedTaskLoad < 0 {
+		normalizedTaskLoad = 0
+	}
+
+	currentLoad = (cpuUsage * cpuWeight) + (memUsage * memWeight) + (normalizedTaskLoad * taskWeight)
+	if currentLoad > 100 {
+		currentLoad = 100
+	}
+	if currentLoad < 0 {
+		currentLoad = 0
+	}
+
+	log.Trace("HealthCheck: CPU: %.2f%%, Mem: %.2f%%, Tasks: %d (Normalized: %.2f%%), Calculated Load: %.2f%%", cpuUsage, memUsage, taskQueueLength, normalizedTaskLoad, currentLoad)
+
+	// 3. 判断健康状态
+	// 示例：如果综合负载超过某个阈值，则认为服务过载，状态为 UNKNOWN 或自定义状态
+	loadThreshold := float32(85.0) // 假设综合负载超过 85% 就认为过载
+
+	if currentLoad > loadThreshold {
+		log.Warning("HealthCheck: Load (%.2f%%) exceeds threshold (%.2f%%)", currentLoad, loadThreshold)
+		return &HealthCheckResponse{
+			Status: HealthCheckResponse_UNKNOWN, // 或者一个表示高负载的状态
+			Load:   float32(currentLoad),        // protobuf 的 load 是 int32，进行转换
+		}, nil
+	}
+
+	// 如果所有检查通过，并且负载在可接受范围内，则返回 SERVING 状态
+	return &HealthCheckResponse{
+		Status: HealthCheckResponse_SERVING,
+		Load:   float32(currentLoad),
 	}, nil
 }
 

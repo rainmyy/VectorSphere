@@ -17,7 +17,7 @@ type ScheduledTask interface {
 	GetName() string     // 获取任务的名称，用于日志和管理
 	Init() error         // 可选：任务初始化逻辑
 	Stop() error         // 可选：任务停止前的清理逻辑
-	
+
 	Params() map[string]interface{} // 获取任务参数
 	Timeout() time.Duration         // 获取任务超时时间
 	Clone() ScheduledTask           // 克隆任务
@@ -27,11 +27,13 @@ type ScheduledTask interface {
 
 // TaskPoolManager 管理一组定时任务
 type TaskPoolManager struct {
-	tasks     map[string]ScheduledTask // 存储已注册的任务，key为任务名称
-	cron      *cron.Cron               // Cron调度器实例
-	mu        sync.RWMutex
-	stopCh    chan struct{} // 用于优雅停止所有任务的信号
-	IsRunning bool
+	tasks        map[string]ScheduledTask // 存储已注册的任务，key为任务名称
+	cron         *cron.Cron               // Cron调度器实例
+	mu           sync.RWMutex
+	stopCh       chan struct{} // 用于优雅停止所有任务的信号
+	runningTasks int32         // 用于追踪正在运行的任务数量
+	mutex        sync.Mutex    // 用于保护 runningTasks
+	IsRunning    bool
 }
 
 // NewTaskPoolManager 创建一个新的任务池管理器
@@ -60,6 +62,14 @@ func (pm *TaskPoolManager) Submit(task ScheduledTask) error {
 	}()
 
 	return nil
+}
+
+// GetRunningTaskCount 返回当前正在运行的任务数量
+// 请确保这个方法是线程安全的
+func (tpm *TaskPoolManager) GetRunningTaskCount() int32 {
+	tpm.mutex.Lock() // 如果有并发访问，需要加锁
+	defer tpm.mutex.Unlock()
+	return tpm.runningTasks
 }
 
 // RegisterTasks 批量注册一个或多个定时任务
@@ -142,6 +152,7 @@ func (pm *TaskPoolManager) Start() error {
 			pm.cron.Stop() // 停止已经部分启动的cron
 			return fmt.Errorf("添加任务 '%s' 到调度器失败: %w", currentName, err)
 		}
+		pm.runningTasks++
 		log.Info("任务 '%s' (EntryID: %d) 已成功添加到调度器，Cron: %s", currentName, entryID, currentTask.GetCronSpec())
 	}
 
@@ -185,14 +196,14 @@ func (pm *TaskPoolManager) Stop() {
 		return
 	}
 	// 避免重复关闭stopCh
-	// select {
-	// case <-pm.stopCh:
-	// 	// 已经关闭或正在关闭
-	// 	pm.mu.Unlock()
-	// 	return
-	// default:
-	// }
-	pm.mu.Unlock() // Unlock before closing channel to avoid deadlock with the goroutine listening on stopCh
+	select {
+	case <-pm.stopCh:
+		// 已经关闭或正在关闭
+		pm.mu.Unlock()
+		return
+	default:
+	}
+	pm.mu.Unlock() // Unlock before a closing channel to avoid deadlock with the goroutine listening on stopCh
 
 	log.Info("正在发送停止信号给任务池...")
 	close(pm.stopCh) // 发送停止信号
