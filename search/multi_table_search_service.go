@@ -9,7 +9,7 @@ import (
 	"seetaSearch/index"
 	"seetaSearch/library/entity"
 	"seetaSearch/library/log"
-	tree "seetaSearch/library/tree"
+	"seetaSearch/library/tree"
 	"seetaSearch/library/util"
 	"seetaSearch/messages"
 	"strconv"
@@ -48,7 +48,7 @@ type queryCacheEntry struct {
 
 // NewMultiTableSearchService 中初始化配置
 func NewMultiTableSearchService(txMgr *tree.TransactionManager, lockMgr *tree.LockManager, wal *tree.WALManager) *MultiTableSearchService {
-	return &MultiTableSearchService{
+	mts := &MultiTableSearchService{
 		tables:     make(map[string]*TableInstance),
 		TxMgr:      txMgr,
 		LockMgr:    lockMgr,
@@ -65,6 +65,8 @@ func NewMultiTableSearchService(txMgr *tree.TransactionManager, lockMgr *tree.Lo
 			IndexRebuildThreshold: 0.1, // 10%的数据变化触发重建索引
 		},
 	}
+
+	return mts
 }
 
 // ListTables 返回所有表的名称列表
@@ -97,6 +99,7 @@ func (mts *MultiTableSearchService) getCachedResults(cacheKey string) ([]string,
 
 	return entry.results, true
 }
+
 func (mts *MultiTableSearchService) cacheResults(cacheKey string, results []string, vectorHash uint64) {
 	mts.queryCacheMu.Lock()
 	defer mts.queryCacheMu.Unlock()

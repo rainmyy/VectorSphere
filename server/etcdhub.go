@@ -2,12 +2,12 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	etcdv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/concurrency"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -19,6 +19,7 @@ type ServiceHub interface {
 	GetServiceEndpoints(serviceName string) []EndPoint
 	GetServiceEndpoint(serviceName string) EndPoint
 	Close()
+	RefreshEndpoints(serviceName string)
 }
 
 type EtcdServiceHub struct {
@@ -97,7 +98,8 @@ func (etcd *EtcdServiceHub) RegisterService(service string, endpoint *EndPoint, 
 			return 0, err
 		}
 		key := ServiceRootPath + "/" + service + "/" + endpoint.Ip
-		_, err = etcd.client.Put(context.Background(), key, endpoint.Ip, etcdv3.WithLease(leaseResp.ID))
+		val, _ := json.Marshal(endpoint)
+		_, err = etcd.client.Put(context.Background(), key, string(val), etcdv3.WithLease(leaseResp.ID))
 		if err != nil {
 			return 0, err
 		}
@@ -129,13 +131,13 @@ func (etcd *EtcdServiceHub) GetServiceEndpoints(serviceName string) []EndPoint {
 	if err != nil {
 		return nil
 	}
-	endpoints := make([]EndPoint, len(resp.Kvs))
+	endpoints := make([]EndPoint, 0, len(resp.Kvs))
 	for _, kv := range resp.Kvs {
-		path := strings.Split(string(kv.Key), "/")
-		endpoint := EndPoint{Ip: path[len(path)-1]}
-		endpoints = append(endpoints, endpoint)
+		var ep EndPoint
+		if err := json.Unmarshal(kv.Value, &ep); err == nil {
+			endpoints = append(endpoints, ep)
+		}
 	}
-
 	return endpoints
 }
 
@@ -147,4 +149,8 @@ func (etcd *EtcdServiceHub) GetServiceEndpoint(serviceName string) EndPoint {
 
 func (etcd *EtcdServiceHub) Close() {
 	etcd.client.Close()
+}
+
+func (etcd *EtcdServiceHub) RefreshEndpoints(serviceName string) {
+	// Implementation of RefreshEndpoints method
 }

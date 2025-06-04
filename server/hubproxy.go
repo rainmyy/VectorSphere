@@ -13,6 +13,7 @@ type HubProxy struct {
 	*EtcdServiceHub
 	endpointCache sync.Map
 	limiter       *rate.Limiter
+	Balancer      Balancer
 }
 
 var (
@@ -33,6 +34,7 @@ func GetHubProxy(endPoints []EndPoint, heartBeat int64, qps int, serviceName str
 			EtcdServiceHub: hub,
 			endpointCache:  sync.Map{},
 			limiter:        rate.NewLimiter(rate.Every(time.Duration(1e9/qps)*time.Nanosecond), qps),
+			Balancer:       &RoundRobinBalancer{},
 		}
 	})
 	return hubProxy
@@ -65,22 +67,32 @@ func (h *HubProxy) WatchEndpoints(serviceName string) {
 		return
 	}
 	prefix := ServiceRootPath + "/" + serviceName + "/"
-	watchChan := h.client.Watch(context.Background(), prefix, etcdv3.WithPrefix())
 	go func() {
-		for response := range watchChan {
-			for _, event := range response.Events {
-				path := strings.Split(string(event.Kv.Key), "/")
-				if len(path) <= 2 {
-					continue
-				}
-				serviceName := path[len(path)-2]
-				endpoints := h.EtcdServiceHub.GetServiceEndpoints(serviceName)
-				if len(path) > 0 {
-					h.endpointCache.Store(serviceName, endpoints)
-				} else {
-					h.endpointCache.Delete(serviceName)
+		for {
+			watchChan := h.client.Watch(context.Background(), prefix, etcdv3.WithPrefix())
+			for response := range watchChan {
+				for _, event := range response.Events {
+					path := strings.Split(string(event.Kv.Key), "/")
+					if len(path) <= 2 {
+						continue
+					}
+					serviceName := path[len(path)-2]
+					endpoints := h.EtcdServiceHub.GetServiceEndpoints(serviceName)
+					if len(endpoints) > 0 {
+						h.endpointCache.Store(serviceName, endpoints)
+					} else {
+						h.endpointCache.Delete(serviceName)
+					}
 				}
 			}
+			time.Sleep(time.Second) // 断线重连
 		}
 	}()
+}
+
+func (h *HubProxy) RefreshEndpoints(serviceName string) {
+	endpoints := h.EtcdServiceHub.GetServiceEndpoints(serviceName)
+	if len(endpoints) > 0 {
+		h.endpointCache.Store(serviceName, endpoints)
+	}
 }

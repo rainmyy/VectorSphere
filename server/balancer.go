@@ -58,18 +58,67 @@ type WeightRandomBalance struct {
 	totals []int
 	max    int
 }
+type WeightedBalancer struct {
+	endpoints []EndPoint
+	weights   []int
+}
 
+func (b *WeightedBalancer) Set(eps []EndPoint) {
+	b.endpoints = eps
+	b.weights = make([]int, len(eps))
+	for i, ep := range eps {
+		b.weights[i] = ep.Weight
+	}
+}
+
+func (b *WeightedBalancer) Take() EndPoint {
+	total := 0
+	for _, w := range b.weights {
+		total += w
+	}
+	r := rand.Intn(total)
+	for i, w := range b.weights {
+		if r < w {
+			return b.endpoints[i]
+		}
+		r -= w
+	}
+	return b.endpoints[0]
+}
+
+type LeastConnBalancer struct {
+	endpoints []EndPoint
+	conns     []int32
+}
+
+func (b *LeastConnBalancer) Set(eps []EndPoint) {
+	b.endpoints = eps
+	b.conns = make([]int32, len(eps))
+}
+
+func (b *LeastConnBalancer) Take() EndPoint {
+	minIdx := 0
+	minVal := b.conns[0]
+	for i, c := range b.conns {
+		if c < minVal {
+			minVal = c
+			minIdx = i
+		}
+	}
+	atomic.AddInt32(&b.conns[minIdx], 1)
+	return b.endpoints[minIdx]
+}
 func (w *WeightRandomBalance) Set(endpoints ...EndPoint) bool {
 	if w == nil {
 		return false
 	}
 	sort.Slice(endpoints, func(i, j int) bool {
-		return endpoints[i].weight < endpoints[j].weight
+		return endpoints[i].Weight < endpoints[j].Weight
 	})
 	totals := make([]int, len(endpoints))
 	runningTotal := 0
 	for i, e := range endpoints {
-		runningTotal += int(e.weight)
+		runningTotal += int(e.Weight)
 		totals[i] = runningTotal
 	}
 	w.adders = endpoints
