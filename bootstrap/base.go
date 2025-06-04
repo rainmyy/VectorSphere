@@ -402,7 +402,7 @@ func (app *AppServer) Setup() error {
 			endpoints,
 			cfg.ServiceName+"_master",
 			masterBindAddress,
-			cfg.HttpPort, // 从配置中读取 HTTP 端口
+			cfg.HttpPort,                                       // 从配置中读取 HTTP 端口
 			time.Duration(cfg.TaskTimeout)*time.Second,         // 从配置中读取任务超时
 			time.Duration(cfg.HealthCheckInterval)*time.Second, // 从配置中读取健康检查间隔
 		)
@@ -623,3 +623,22 @@ func GenInstance() *AppServer {
 	app.Register()
 	return app
 }
+
+//func main() {
+//	role := flag.String("role", "master", "Role: master or slave")
+//	port := flag.Int("port", 8080, "HTTP port")
+//	lb := flag.String("lb", "roundrobin", "Load balancer: roundrobin/weighted/leastconn")
+//	token := flag.String("token", "your_token", "API token")
+//	gray := flag.String("gray", "", "Gray tag for routing")
+//	flag.Parse()
+//	// ...根据参数初始化服务
+//	// 例如：
+//	if *role == "master" {
+//		os.Setenv("MASTER_WEBHOOK", "http://your-webhook-url")
+//		// ... 启动 MasterService，传递端口、token、lb 策略等
+//	} else {
+//		os.Setenv("SLAVE_ENV", *gray)
+//		os.Setenv("SLAVE_MASTER_WEBHOOK", "http://your-webhook-url")
+//		// ... 启动 SlaveService，传递端口、token、lb 策略等
+//	}
+//}

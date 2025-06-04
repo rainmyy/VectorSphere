@@ -1,11 +1,14 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net/http"
+	"os"
 	"seetaSearch/library/pool"
 	"sort"
 	"strings"
@@ -88,331 +91,75 @@ func (m *MasterService) HealthCheck(ctx context.Context, request *HealthCheckReq
 	panic("implement me")
 }
 
-// startHTTPServer 启动 HTTP 服务器
+// --- 认证中间件 ---
+func (m *MasterService) authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := r.Header.Get("Authorization")
+		if token != "Bearer your_token" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// --- 限流中间件 ---
+var rateLimiter = make(chan struct{}, 100) // 100 QPS
+func (m *MasterService) rateLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case rateLimiter <- struct{}{}:
+			defer func() { <-rateLimiter }()
+			next.ServeHTTP(w, r)
+		default:
+			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+		}
+	})
+}
+
+// --- 主从切换通知Webhook ---
+func (m *MasterService) sendMasterNotify(msg string) {
+	log.Info("Master notify: %s", msg)
+	go func() {
+		webhookUrl := os.Getenv("MASTER_WEBHOOK")
+		if webhookUrl == "" {
+			return
+		}
+		body := map[string]string{"msg": msg, "time": time.Now().Format(time.RFC3339)}
+		jsonBody, _ := json.Marshal(body)
+		http.Post(webhookUrl, "application/json", bytes.NewReader(jsonBody))
+	}()
+}
+
+// --- HTTP接口注册（丰富化） ---
 func (m *MasterService) startHTTPServer() error {
-	// 检查是否是主节点
-	m.masterMutex.RLock()
-	isMaster := m.isMaster
-	m.masterMutex.RUnlock()
-
-	if !isMaster {
-		return errors.New("当前节点不是主节点")
-	}
-	if m.httpServer != nil {
-		log.Info("HTTP server already running.")
-		return nil
-	}
-	// 创建 HTTP 服务器
 	mux := http.NewServeMux()
-
-	// 注册路由
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("SeetaSearch Master Node"))
-	})
-
-	// 添加文档接口
-	mux.HandleFunc("/api/addDoc", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		// 解析请求体
-		doc := &messages.Document{}
-		if err := json.NewDecoder(r.Body).Decode(doc); err != nil {
-			http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		// 调用 gRPC 方法
-		resp, err := m.AddDoc(r.Context(), doc)
-		if err != nil {
-			http.Error(w, "Failed to add document: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// 返回结果
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": true,
-			"count":   resp.Count,
-		})
-	})
-
-	// 删除文档接口
-	mux.HandleFunc("/api/delDoc", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodDelete && r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		// 获取文档 ID
-		var docID string
-		if r.Method == http.MethodDelete {
-			docID = r.URL.Query().Get("id")
-		} else {
-			// 解析请求体
-			var reqBody struct {
-				ID string `json:"id"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-				http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
-				return
-			}
-			docID = reqBody.ID
-		}
-
-		if docID == "" {
-			http.Error(w, "Missing document ID", http.StatusBadRequest)
-			return
-		}
-
-		// 调用 gRPC 方法
-		resp, err := m.DelDoc(r.Context(), &DocId{Id: docID})
-		if err != nil {
-			http.Error(w, "Failed to delete document: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// 返回结果
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": true,
-			"count":   resp.Count,
-		})
-	})
-
-	// 搜索接口
-	mux.HandleFunc("/api/search", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		// 解析请求体
-		var searchReq struct {
-			Query   messages.TermQuery `json:"query"`
-			OnFlag  uint64             `json:"onFlag"`
-			OffFlag uint64             `json:"offFlag"`
-			OrFlags []uint64           `json:"orFlags"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&searchReq); err != nil {
-			http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		// 调用 gRPC 方法
-		resp, err := m.Search(r.Context(), &Request{
-			Query:   &searchReq.Query,
-			OnFlag:  searchReq.OnFlag,
-			OffFlag: searchReq.OffFlag,
-			OrFlags: searchReq.OrFlags,
-		})
-		if err != nil {
-			http.Error(w, "Failed to search: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// 返回结果
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": true,
-			"results": resp.Results,
-		})
-	})
-
-	// 计数接口
-	mux.HandleFunc("/api/count", func(w http.ResponseWriter, r *http.Request) {
-		// 调用 gRPC 方法
-		resp, err := m.Count(r.Context(), &CountRequest{})
-		if err != nil {
-			http.Error(w, "Failed to count: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// 返回结果
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": true,
-			"count":   resp.Count,
-		})
-	})
-
-	// 创建表接口
-	mux.HandleFunc("/api/createTable", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		// 解析请求体
-		var req CreateTableRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		// 调用 gRPC 方法
-		resp, err := m.CreateTable(r.Context(), &req)
-		if err != nil {
-			http.Error(w, "Failed to create table: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// 返回结果
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": true,
-			"count":   resp.Count,
-		})
-	})
-
-	// 删除表接口
-	mux.HandleFunc("/api/deleteTable", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodDelete && r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		// 获取表名
-		var tableName string
-		if r.Method == http.MethodDelete {
-			tableName = r.URL.Query().Get("name")
-		} else {
-			// 解析请求体
-			var reqBody struct {
-				Name string `json:"name"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-				http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
-				return
-			}
-			tableName = reqBody.Name
-		}
-
-		if tableName == "" {
-			http.Error(w, "Missing table name", http.StatusBadRequest)
-			return
-		}
-
-		// 调用 gRPC 方法
-		resp, err := m.DeleteTable(r.Context(), &TableRequest{TableName: tableName})
-		if err != nil {
-			http.Error(w, "Failed to delete table: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// 返回结果
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": true,
-			"count":   resp.Count,
-		})
-	})
-
-	// 添加文档到表接口
-	mux.HandleFunc("/api/addDocToTable", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		// 解析请求体
-		var req AddDocumentRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		// 调用 gRPC 方法
-		resp, err := m.AddDocumentToTable(r.Context(), &req)
-		if err != nil {
-			http.Error(w, "Failed to add document to table: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// 返回结果
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": true,
-			"count":   resp.Count,
-		})
-	})
-
-	// 从表中删除文档接口
-	mux.HandleFunc("/api/delDocFromTable", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodDelete && r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		// 解析请求体
-		var req DeleteDocumentRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		// 调用 gRPC 方法
-		resp, err := m.DeleteDocumentFromTable(r.Context(), &req)
-		if err != nil {
-			http.Error(w, "Failed to delete document from table: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// 返回结果
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": true,
-			"count":   resp.Count,
-		})
-	})
-
-	// 表搜索接口
-	mux.HandleFunc("/api/searchTable", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-
-		// 解析请求体
-		var req SearchRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request payload: "+err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		// 调用 gRPC 方法
-		resp, err := m.SearchTable(r.Context(), &req)
-		if err != nil {
-			http.Error(w, "Failed to search table: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// 返回结果
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": true,
-			"results": resp.DocIds,
-		})
-	})
-
-	// 启动 HTTP 服务器
-	addr := fmt.Sprintf(":%d", m.httpServerPort)
+	mux.Handle("/api/addDoc", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleAddDoc))))
+	mux.Handle("/api/delDoc", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleDelDoc))))
+	mux.Handle("/api/search", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleSearch))))
+	mux.Handle("/api/count", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleCount))))
+	mux.Handle("/api/createTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleCreateTable))))
+	mux.Handle("/api/deleteTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleDeleteTable))))
+	mux.Handle("/api/addDocToTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleAddDocToTable))))
+	mux.Handle("/api/delDocFromTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleDelDocFromTable))))
+	mux.Handle("/api/searchTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleSearchTable))))
+	mux.Handle("/api/lb_switch", m.authMiddleware(http.HandlerFunc(m.handleLBSwitch)))
+	mux.Handle("/api/gray_route", m.authMiddleware(http.HandlerFunc(m.handleGrayRoute)))
+	mux.Handle("/api/health", http.HandlerFunc(m.handleHealth))
+	// ... 其他接口
 	m.httpServer = &http.Server{
-		Addr:    addr,
+		Addr:    fmt.Sprintf(":%d", m.httpServerPort),
 		Handler: mux,
 	}
-
 	log.Info("HTTP 服务器启动，监听端口: %d", m.httpServerPort)
 	go func() {
 		if err := m.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Error("HTTP 服务器启动失败: %v", err)
 		}
 	}()
-
 	return nil
 }
+
 func (m *MasterService) CreateTable(ctx context.Context, request *CreateTableRequest) (*ResCount, error) {
 	//TODO implement me
 	panic("implement me")
@@ -752,7 +499,7 @@ func (m *MasterService) SetTaskPoolManager(manager *scheduler.TaskPoolManager) {
 func (m *MasterService) runElection(ctx context.Context) {
 	// ... (选举逻辑保持不变或根据需要调整，确保使用 ctx 进行取消)
 	// 在选举成功后，设置 m.isMaster = true，并可以启动主节点特定的服务
-	// 例如: go m.startHTTPServer()
+	// 例如: go m.startHTTPServer() // 确保这个方法是幂等的或者在之前没有启动
 	//       go m.startHealthChecks()
 	// 在失去 master 身份或服务停止时，设置 m.isMaster = false 并停止相关服务
 	log.Info("Attempting to become master...")

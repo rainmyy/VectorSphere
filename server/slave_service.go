@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"net/http"
+	"os"
 	"seetaSearch/index"
 	"seetaSearch/library/common"
 	"seetaSearch/library/log"
@@ -220,26 +223,27 @@ func (s *SlaveService) Start(ctx context.Context) error {
 
 // registerService 注册服务
 func (s *SlaveService) registerService() error {
-	// 创建租约
 	resp, err := s.client.Grant(context.Background(), 10)
 	if err != nil {
 		return fmt.Errorf("创建租约失败: %v", err)
 	}
 	s.leaseID = resp.ID
-
-	// 注册服务
+	// 注册服务时带权重和标签
+	meta := map[string]interface{}{
+		"ip":     s.localhost,
+		"weight": 1,
+		"tags":   map[string]string{"env": os.Getenv("SLAVE_ENV")},
+	}
+	val, _ := json.Marshal(meta)
 	key := fmt.Sprintf("%s/%s/%s", ServiceRootPath, s.serviceName, s.localhost)
-	_, err = s.client.Put(context.Background(), key, s.localhost, clientv3.WithLease(s.leaseID))
+	_, err = s.client.Put(context.Background(), key, string(val), clientv3.WithLease(s.leaseID))
 	if err != nil {
 		return fmt.Errorf("注册服务失败: %v", err)
 	}
-
-	// 保持租约
 	ch, err := s.client.KeepAlive(context.Background(), s.leaseID)
 	if err != nil {
 		return fmt.Errorf("保持租约失败: %v", err)
 	}
-
 	go func() {
 		for {
 			select {
@@ -247,11 +251,9 @@ func (s *SlaveService) registerService() error {
 				return
 			default:
 				<-ch
-				// 租约保持成功
 			}
 		}
 	}()
-
 	return nil
 }
 
@@ -462,6 +464,16 @@ func (s *SlaveService) updateMasterConnectionFromEtcd(ctx context.Context, maste
 		log.Info("Slave %s: Successfully connected to master %s", s.localhost, newMasterEndpoint)
 		s.masterConn = conn
 		s.masterEndpoint = newMasterEndpoint
+		// --- 主节点变更通知 ---
+		go func() {
+			webhookUrl := os.Getenv("SLAVE_MASTER_WEBHOOK")
+			if webhookUrl == "" {
+				return
+			}
+			body := map[string]string{"msg": "Slave connected to new master: " + newMasterEndpoint, "time": time.Now().Format(time.RFC3339)}
+			jsonBody, _ := json.Marshal(body)
+			http.Post(webhookUrl, "application/json", bytes.NewReader(jsonBody))
+		}()
 	} else {
 		log.Trace("Slave %s: Master endpoint %s unchanged.", s.localhost, s.masterEndpoint)
 	}

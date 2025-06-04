@@ -58,24 +58,17 @@ type WeightRandomBalance struct {
 	totals []int
 	max    int
 }
-type WeightedBalancer struct {
-	endpoints []EndPoint
-	weights   []int
-}
-
-func (b *WeightedBalancer) Set(eps ...EndPoint) bool {
-	b.endpoints = eps
-	b.weights = make([]int, len(eps))
-	for i, ep := range eps {
-		b.weights[i] = int(ep.weight)
-	}
-	return true
-}
 
 func (b *WeightedBalancer) Take() EndPoint {
+	if len(b.endpoints) == 0 {
+		return EndPoint{}
+	}
 	total := 0
 	for _, w := range b.weights {
 		total += w
+	}
+	if total == 0 {
+		return b.endpoints[0]
 	}
 	r := rand.Intn(total)
 	for i, w := range b.weights {
@@ -87,29 +80,51 @@ func (b *WeightedBalancer) Take() EndPoint {
 	return b.endpoints[0]
 }
 
+type WeightedBalancer struct {
+	endpoints []EndPoint
+	weights   []int
+}
+
+func (b *WeightedBalancer) Set(eps []EndPoint) {
+	b.endpoints = eps
+	b.weights = make([]int, len(eps))
+	for i, ep := range eps {
+		if ep.weight > 0 {
+			b.weights[i] = int(ep.weight)
+		} else {
+			b.weights[i] = 1
+		}
+	}
+}
+
 type LeastConnBalancer struct {
 	endpoints []EndPoint
-	conns     []int32
+	connMap   map[string]int
 }
 
-func (b *LeastConnBalancer) Set(eps ...EndPoint) bool {
+func (b *LeastConnBalancer) Set(eps []EndPoint) bool {
 	b.endpoints = eps
-	b.conns = make([]int32, len(eps))
+	if b.connMap == nil {
+		b.connMap = make(map[string]int)
+	}
 	return true
 }
-
 func (b *LeastConnBalancer) Take() EndPoint {
+	if len(b.endpoints) == 0 {
+		return EndPoint{}
+	}
 	minIdx := 0
-	minVal := b.conns[0]
-	for i, c := range b.conns {
-		if c < minVal {
-			minVal = c
+	minConn := b.connMap[b.endpoints[0].Ip]
+	for i, ep := range b.endpoints {
+		if b.connMap[ep.Ip] < minConn {
+			minConn = b.connMap[ep.Ip]
 			minIdx = i
 		}
 	}
-	atomic.AddInt32(&b.conns[minIdx], 1)
+	b.connMap[b.endpoints[minIdx].Ip]++
 	return b.endpoints[minIdx]
 }
+
 func (w *WeightRandomBalance) Set(endpoints ...EndPoint) bool {
 	if w == nil {
 		return false
