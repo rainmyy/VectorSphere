@@ -133,18 +133,18 @@ func (m *MasterService) sendMasterNotify(msg string) {
 // --- HTTP接口注册（丰富化） ---
 func (m *MasterService) startHTTPServer() error {
 	mux := http.NewServeMux()
-	mux.Handle("/api/addDoc", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleAddDoc))))
-	mux.Handle("/api/delDoc", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleDelDoc))))
-	mux.Handle("/api/search", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleSearch))))
-	mux.Handle("/api/count", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleCount))))
-	mux.Handle("/api/createTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.CreateTable))))
-	mux.Handle("/api/deleteTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.DeleteTable))))
-	mux.Handle("/api/addDocToTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleAddDocToTable))))
-	mux.Handle("/api/delDocFromTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleDelDocFromTable))))
-	mux.Handle("/api/searchTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleSearchTable))))
-	mux.Handle("/api/lb_switch", m.authMiddleware(http.HandlerFunc(m.handleLBSwitch)))
-	mux.Handle("/api/gray_route", m.authMiddleware(http.HandlerFunc(m.handleGrayRoute)))
-	mux.Handle("/api/health", http.HandlerFunc(m.handleHealth))
+	//mux.Handle("/api/addDoc", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.AddDoc))))
+	//mux.Handle("/api/delDoc", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.DelDoc))))
+	//mux.Handle("/api/search", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.Search))))
+	//mux.Handle("/api/count", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.Count))))
+	//mux.Handle("/api/createTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.CreateTable))))
+	//mux.Handle("/api/deleteTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.DeleteTable))))
+	//mux.Handle("/api/addDocToTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.AddDocumentToTable))))
+	//mux.Handle("/api/delDocFromTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.DeleteDocumentFromTable))))
+	//mux.Handle("/api/searchTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.SearchTable))))
+	//mux.Handle("/api/lb_switch", m.authMiddleware(http.HandlerFunc(m.handleLBSwitch)))
+	//mux.Handle("/api/gray_route", m.authMiddleware(http.HandlerFunc(m.handleGrayRoute)))
+	//mux.Handle("/api/health", http.HandlerFunc(m.handleHealth))
 	// ... 其他接口
 	m.httpServer = &http.Server{
 		Addr:    fmt.Sprintf(":%d", m.httpServerPort),
@@ -152,14 +152,14 @@ func (m *MasterService) startHTTPServer() error {
 	}
 	log.Info("HTTP 服务器启动，监听端口: %d", m.httpServerPort)
 	go func() {
-		if err := m.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := m.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Error("HTTP 服务器启动失败: %v", err)
 		}
 	}()
 	return nil
 }
 
-func (m *MasterService) CreateTable(ctx context.Context, request *CreateTableRequest) (*ResCount, error) {
+func (m *MasterService) CreateTable(ctx context.Context, request *CreateTableRequest) {
 	//TODO implement me
 	panic("implement me")
 }

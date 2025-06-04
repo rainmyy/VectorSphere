@@ -2,15 +2,12 @@ package bootstrap
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"net/http"
 	"seetaSearch/library/common"
 	"seetaSearch/library/log"
-	"seetaSearch/messages"
 	"seetaSearch/scheduler"
 	"seetaSearch/server"
 	"sync"
@@ -281,7 +278,7 @@ func (app *AppServer) RegisterService() {
 	}
 
 	if len(sentinelEndpoint) > 0 {
-		sentinel := server.NewSentinel(sentinelEndpoint, int64(config.Heartbeat), 100, config.ServiceName)
+		sentinel := server.NewSentinel(sentinelEndpoint, int64(config.Heartbeat), 100, config.ServiceName, server.Slave)
 		err := sentinel.RegisterSentinel(int64(config.Heartbeat))
 		if err != nil {
 			log.Error("Sentinel注册失败:", err)
@@ -349,7 +346,7 @@ func (app *AppServer) DiscoverService() {
 
 	if len(sentinelEndpoint) > 0 {
 		if app.sentinel == nil {
-			sentinel := server.NewSentinel(sentinelEndpoint, int64(config.Heartbeat), 100, config.ServiceName)
+			sentinel := server.NewSentinel(sentinelEndpoint, int64(config.Heartbeat), 100, config.ServiceName, server.Slave)
 			app.sentinel = sentinel
 		}
 
@@ -402,7 +399,7 @@ func (app *AppServer) Setup() error {
 			endpoints,
 			cfg.ServiceName+"_master",
 			masterBindAddress,
-			cfg.HttpPort,                                       // 从配置中读取 HTTP 端口
+			cfg.HttpPort, // 从配置中读取 HTTP 端口
 			time.Duration(cfg.TaskTimeout)*time.Second,         // 从配置中读取任务超时
 			time.Duration(cfg.HealthCheckInterval)*time.Second, // 从配置中读取健康检查间隔
 		)
@@ -473,103 +470,102 @@ func (app *AppServer) Register() {
 	app.funcRegister["register_etcd"] = app.RegisterService
 	//注册发现方法
 	app.funcRegister["discover_etcd"] = app.DiscoverService
-	app.funcRegister["listen_api"] = app.ListenAPI
 }
 
-func (app *AppServer) ListenAPI() {
-	err, config := app.ReadServiceConf()
-	if err != nil {
-		log.Error("read service conf failed, err:%v", err)
-		return
-	}
-
-	var serviceName string
-	var serviceAddr string
-	for name, ep := range config.Endpoints {
-		if ep.IsMaster {
-			port := ep.Port
-			if port == 0 {
-				port = config.DefaultPort
-			}
-			address := fmt.Sprintf(":%d", port)
-			serviceName = name
-			serviceAddr = address
-		}
-	}
-
-	log.Info("Master节点 %s 开始监听 API 请求: %s\n", serviceName, serviceAddr)
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/", func(rw http.ResponseWriter, req *http.Request) {
-		rw.Write([]byte("hello world"))
-	})
-
-	mux.HandleFunc("/addDoc", func(w http.ResponseWriter, r *http.Request) {
-		doc := &messages.Document{}
-		if err := json.NewDecoder(r.Body).Decode(doc); err != nil {
-			http.Error(w, "Invalid request payload", http.StatusBadRequest)
-			return
-		}
-		s := app.sentinel
-		affected, err := s.AddDoc(doc)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		log.Info("添加文档成功，影响文档数量: %d", affected)
-		w.WriteHeader(http.StatusOK)
-		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte("ok"))
-	})
-
-	mux.HandleFunc("/count", func(w http.ResponseWriter, r *http.Request) {
-		s := app.sentinel
-		total := s.Count()
-		log.Info("更新文档成功,total:%d", total)
-		w.WriteHeader(http.StatusOK)
-	})
-
-	mux.HandleFunc("/deleteDoc", func(w http.ResponseWriter, r *http.Request) {
-		docID := r.URL.Query().Get("id")
-		if docID == "" {
-			http.Error(w, "Missing document ID", http.StatusBadRequest)
-			return
-		}
-		s := app.sentinel
-		doc := &server.DocId{Id: docID}
-		count := s.DelDoc(doc)
-		if count == 0 {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		log.Info("删除文档成功，文档ID: %s", docID)
-		w.WriteHeader(http.StatusOK)
-	})
-	mux.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
-		query := &messages.TermQuery{}
-		if err := json.NewDecoder(r.Body).Decode(query); err != nil {
-			http.Error(w, "Invalid request payload", http.StatusBadRequest)
-			return
-		}
-		onFlag := uint64(0)
-		offFlag := uint64(0)
-		var orFlags []uint64
-		s := app.sentinel
-		err, result := s.Search(query, onFlag, offFlag, orFlags)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		if err := json.NewEncoder(w).Encode(result); err != nil {
-			log.Error("encode json failed, err:%v\n", err)
-		}
-	})
-
-	if err := http.ListenAndServe(serviceAddr, mux); err != nil {
-		log.Info("Master节点 %s 监听 API 请求失败: %v\n", serviceName, err)
-	}
-}
+//func (app *AppServer) ListenAPI() {
+//	err, config := app.ReadServiceConf()
+//	if err != nil {
+//		log.Error("read service conf failed, err:%v", err)
+//		return
+//	}
+//
+//	var serviceName string
+//	var serviceAddr string
+//	for name, ep := range config.Endpoints {
+//		if ep.IsMaster {
+//			port := ep.Port
+//			if port == 0 {
+//				port = config.DefaultPort
+//			}
+//			address := fmt.Sprintf(":%d", port)
+//			serviceName = name
+//			serviceAddr = address
+//		}
+//	}
+//
+//	log.Info("Master节点 %s 开始监听 API 请求: %s\n", serviceName, serviceAddr)
+//	mux := http.NewServeMux()
+//
+//	mux.HandleFunc("/", func(rw http.ResponseWriter, req *http.Request) {
+//		rw.Write([]byte("hello world"))
+//	})
+//
+//	mux.HandleFunc("/addDoc", func(w http.ResponseWriter, r *http.Request) {
+//		doc := &messages.Document{}
+//		if err := json.NewDecoder(r.Body).Decode(doc); err != nil {
+//			http.Error(w, "Invalid request payload", http.StatusBadRequest)
+//			return
+//		}
+//		s := app.sentinel
+//		affected, err := s.AddDoc(doc)
+//		if err != nil {
+//			http.Error(w, err.Error(), http.StatusInternalServerError)
+//			return
+//		}
+//		log.Info("添加文档成功，影响文档数量: %d", affected)
+//		w.WriteHeader(http.StatusOK)
+//		w.Header().Set("Content-Type", "text/html")
+//		w.Write([]byte("ok"))
+//	})
+//
+//	mux.HandleFunc("/count", func(w http.ResponseWriter, r *http.Request) {
+//		s := app.sentinel
+//		total := s.Count()
+//		log.Info("更新文档成功,total:%d", total)
+//		w.WriteHeader(http.StatusOK)
+//	})
+//
+//	mux.HandleFunc("/deleteDoc", func(w http.ResponseWriter, r *http.Request) {
+//		docID := r.URL.Query().Get("id")
+//		if docID == "" {
+//			http.Error(w, "Missing document ID", http.StatusBadRequest)
+//			return
+//		}
+//		s := app.sentinel
+//		doc := &server.DocId{Id: docID}
+//		count := s.DelDoc(doc)
+//		if count == 0 {
+//			http.Error(w, err.Error(), http.StatusInternalServerError)
+//			return
+//		}
+//
+//		log.Info("删除文档成功，文档ID: %s", docID)
+//		w.WriteHeader(http.StatusOK)
+//	})
+//	mux.HandleFunc("/search", func(w http.ResponseWriter, r *http.Request) {
+//		query := &messages.TermQuery{}
+//		if err := json.NewDecoder(r.Body).Decode(query); err != nil {
+//			http.Error(w, "Invalid request payload", http.StatusBadRequest)
+//			return
+//		}
+//		onFlag := uint64(0)
+//		offFlag := uint64(0)
+//		var orFlags []uint64
+//		s := app.sentinel
+//		err, result := s.Search(query, onFlag, offFlag, orFlags)
+//		if err != nil {
+//			http.Error(w, err.Error(), http.StatusInternalServerError)
+//			return
+//		}
+//		if err := json.NewEncoder(w).Encode(result); err != nil {
+//			log.Error("encode json failed, err:%v\n", err)
+//		}
+//	})
+//
+//	if err := http.ListenAndServe(serviceAddr, mux); err != nil {
+//		log.Info("Master节点 %s 监听 API 请求失败: %v\n", serviceName, err)
+//	}
+//}
 
 // Start 启动应用，开始执行任务池中的任务
 func (app *AppServer) Start() {

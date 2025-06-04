@@ -7,6 +7,7 @@ import (
 	"github.com/pkoukk/tiktoken-go"
 	"net/http"
 	"seetaSearch/db"
+	"seetaSearch/index"
 	"sync"
 	"time"
 )
@@ -56,13 +57,6 @@ func (s *SessionStore) Set(sessionID string, history []Message) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions[sessionID] = history
-}
-
-type LLMAnalysisService struct {
-	VectorDB     *db.VectorDB
-	DeepSeek     *DeepSeekClient
-	SessionStore *DistributedSessionStore
-	Tokenizer    TokenCounter // 支持多模型
 }
 
 type Message struct {
@@ -170,6 +164,44 @@ func buildPrompt(contextText string, history []Message, userQuery string, system
 	return prompt
 }
 
+type LLMAnalysisService struct {
+	VectorDB     *db.VectorDB
+	DeepSeek     *DeepSeekClient
+	SessionStore *DistributedSessionStore
+	Tokenizer    TokenCounter // 支持多模型
+}
+
+func NewLLMAnalysisService(vectorDBPath string, numClusters int, deepSeekConfig DeepSeekConfig, badgerDBPath string, skipListIndex *index.SkipListInvertedIndex) *LLMAnalysisService {
+	// 初始化向量数据库
+	vectorDB := db.NewVectorDB(vectorDBPath, numClusters)
+
+	// 初始化DeepSeek客户端
+	deepSeek := NewDeepSeekClient(deepSeekConfig)
+
+	// 初始化BadgerDB作为会话存储
+	badgerDB := new(db.BadgerDB).NewInstance(badgerDBPath, 1, db.ERROR, 0.5)
+	err := badgerDB.Open()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to open BadgerDB: %v", err))
+	}
+
+	// 创建BadgerKV适配器
+	badgerKV := NewBadgerKV(badgerDB)
+
+	// 创建分布式会话存储
+	sessionStore := NewDistributedSessionStore(badgerKV, skipListIndex)
+
+	// 初始化分词器（使用默认的简单分词器）
+	tokenizer := &SimpleTokenizer{}
+
+	return &LLMAnalysisService{
+		VectorDB:     vectorDB,
+		DeepSeek:     deepSeek,
+		SessionStore: sessionStore,
+		Tokenizer:    tokenizer,
+	}
+}
+
 func (s *LLMAnalysisService) HandleAnalyzeWithSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.Header.Get("X-Session-Id")
 	if sessionID == "" {
@@ -180,19 +212,54 @@ func (s *LLMAnalysisService) HandleAnalyzeWithSession(w http.ResponseWriter, r *
 		Query             string `json:"query"`
 		SystemInstruction string `json:"system_instruction,omitempty"`
 		TopK              int    `json:"top_k,omitempty"`
+		MaxTokens         int    `json:"max_tokens,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", 400)
 		return
 	}
+
+	// 获取历史对话
 	history := s.SessionStore.Get(sessionID)
-	// ...裁剪、分析、追加历史...
-	// 更新session
-	s.SessionStore.Set(sessionID, history)
-	// 返回
+
+	// 设置默认值
+	if req.TopK == 0 {
+		req.TopK = 5
+	}
+	if req.MaxTokens == 0 {
+		req.MaxTokens = 2048
+	}
+
+	// 裁剪历史对话
+	history = trimHistoryByToken(history, s.Tokenizer, req.MaxTokens)
+
+	// 分析并获取结果
+	result, newHistory, err := s.AnalyzeWithHistory(req.Query, req.TopK, history, req.SystemInstruction, req.MaxTokens)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	// 创建会话元数据
+	meta := SessionMeta{
+		SessionID: sessionID,
+		// 可以从请求中获取其他元数据
+		UserID:   r.Header.Get("X-User-Id"),
+		DeviceID: r.Header.Get("X-Device-Id"),
+		Tags:     []string{},
+	}
+
+	// 更新会话
+	err = s.SessionStore.Set(meta, newHistory)
+	if err != nil {
+		// 记录错误但不中断响应
+		fmt.Printf("Failed to update session: %v\n", err)
+	}
+
+	// 返回结果
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"result":  nil,
-		"history": history,
+		"result":  result,
+		"history": newHistory,
 	})
 }
 
@@ -280,7 +347,18 @@ func (s *LLMAnalysisService) HandleAnalyzeWS(w http.ResponseWriter, r *http.Requ
 		now := time.Now().Unix()
 		history = append(history, Message{Role: "user", Content: req.Query, Time: now})
 		history = append(history, Message{Role: "assistant", Content: answer, Time: now + 1})
-		s.SessionStore.Set(req.SessionID, history)
+		// 创建会话元数据
+		meta := SessionMeta{
+			SessionID: req.SessionID,
+			// 可以从请求中获取其他元数据
+			UserID:   r.Header.Get("X-User-Id"),
+			DeviceID: r.Header.Get("X-Device-Id"),
+			Tags:     []string{},
+		}
+		err = s.SessionStore.Set(meta, history)
+		if err != nil {
+			return
+		}
 		conn.WriteJSON(map[string]interface{}{
 			"result":  answer,
 			"history": history,

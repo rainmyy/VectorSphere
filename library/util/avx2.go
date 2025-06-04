@@ -1,6 +1,9 @@
 package util
 
-// #cgo CFLAGS: -mavx2 -mfma
+// #cgo CFLAGS: -mavx2 -march=native
+// #if defined(__FMA__) || defined(__AVX2__)
+// #define USE_FMA 1
+// #endif
 // #include <immintrin.h>
 // #include <stdint.h>
 //

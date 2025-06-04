@@ -62,8 +62,6 @@ func main() {
 		}
 
 		s := grpc.NewServer()
-		server.RegisterIndexServiceServer(s, master)
-
 		log.Info("主服务启动，监听端口: %d", *port)
 		if err := s.Serve(lis); err != nil {
 			log.Fatal("启动 gRPC 服务器失败: %v", err)

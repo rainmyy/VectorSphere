@@ -41,7 +41,180 @@ type Sentinel struct {
 	Token      string
 }
 
-var _ ServerInterface = (*Sentinel)(nil)
+func (s *Sentinel) DelDoc(ctx context.Context, docId *DocId) (*ResCount, error) {
+	endpoints := s.Hub.GetServiceEndpoints(s.ServiceKey)
+	if len(endpoints) == 0 {
+		return nil, errors.New("no endpoints")
+	}
+	var n int32
+	wg := sync.WaitGroup{}
+	wg.Add(len(endpoints))
+	for _, endpoint := range endpoints {
+		go func(endpoint EndPoint) {
+			defer wg.Done()
+			conn := s.GetGrpcConn(endpoint)
+			if conn == nil {
+				return
+			}
+			client := NewIndexServiceClient(conn)
+			affected, err := client.DelDoc(context.Background(), &DocId{Id: docId.Id})
+			if err != nil {
+				return
+			}
+			if affected.Count > 0 {
+				atomic.AddInt32(&n, affected.Count)
+			}
+		}(endpoint)
+	}
+	wg.Wait()
+
+	return &ResCount{Count: n}, nil
+}
+
+func (s *Sentinel) AddDoc(ctx context.Context, document *messages.Document) (*ResCount, error) {
+	endPoint := s.Hub.GetServiceEndpoint(s.ServiceKey)
+	if len(endPoint.Ip) == 0 {
+		return nil, errors.New("服务节点不存在")
+	}
+	conn := s.GetGrpcConn(endPoint)
+	if conn == nil {
+		return nil, errors.New("无法连接到" + endPoint.Ip)
+	}
+	client := NewIndexServiceClient(conn)
+	affected, err := client.AddDoc(context.Background(), document)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ResCount{Count: affected.Count}, nil
+}
+
+func (s *Sentinel) Search(ctx context.Context, request *Request) (*Result, error) {
+	endpoints := s.Hub.GetServiceEndpoints(s.ServiceKey)
+	if len(endpoints) == 0 {
+		return nil, errors.New("no endpoints")
+	}
+
+	docs := make([]*messages.Document, 0, 1000)
+	resultChan := make(chan *messages.Document, 1000)
+	query := request.Query
+	onFlag := request.OnFlag
+	offFlag := request.OffFlag
+	var orFlags = request.OrFlags
+	var wg sync.WaitGroup
+	wg.Add(len(endpoints))
+
+	for _, endpoint := range endpoints {
+		go func(endpoint EndPoint) {
+			defer wg.Done()
+			conn := s.GetGrpcConn(endpoint)
+			if conn == nil {
+				return
+			}
+			client := NewIndexServiceClient(conn)
+			searchRequest := Request{Query: query, OnFlag: onFlag, OffFlag: offFlag, OrFlags: orFlags}
+			searchResult, err := client.Search(context.Background(), &searchRequest)
+			if err != nil {
+				return
+			}
+			if len(searchResult.Results) > 0 {
+				for _, doc := range searchResult.Results {
+					resultChan <- doc
+				}
+			}
+		}(endpoint)
+	}
+
+	signalChan := make(chan bool)
+	go func() {
+		for doc := range resultChan {
+			docs = append(docs, doc)
+		}
+
+		signalChan <- true
+	}()
+
+	wg.Wait()         // 等待所有goroutine完成
+	close(resultChan) // 关闭结果通道 当resultChan关闭时，上面协程range循环结束
+	<-signalChan      // 等待结果处理完成
+
+	return &Result{Results: docs}, nil
+}
+
+func (s *Sentinel) Count(ctx context.Context, request *CountRequest) (*ResCount, error) {
+	endpoints := s.Hub.GetServiceEndpoints(s.ServiceKey)
+	if len(endpoints) == 0 {
+		return nil, errors.New("no endpoints")
+	}
+
+	var count int32
+	var wg sync.WaitGroup
+	wg.Add(len(endpoints))
+
+	for _, endpoint := range endpoints {
+		go func(endpoint EndPoint) {
+			defer wg.Done()
+			conn := s.GetGrpcConn(endpoint)
+			if conn == nil {
+
+				return
+			}
+			client := NewIndexServiceClient(conn)
+			countResult, err := client.Count(context.Background(), &CountRequest{})
+			if err != nil {
+				return
+			}
+			if countResult.Count > 0 {
+				atomic.AddInt32(&count, countResult.Count)
+			}
+		}(endpoint)
+	}
+	wg.Wait()
+
+	return &ResCount{Count: count}, nil
+}
+
+func (s *Sentinel) ExecuteTask(ctx context.Context, request *TaskRequest) (*TaskResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s *Sentinel) ReportTaskResult(ctx context.Context, response *TaskResponse) (*ResCount, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s *Sentinel) CreateTable(ctx context.Context, request *CreateTableRequest) (*ResCount, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s *Sentinel) DeleteTable(ctx context.Context, request *TableRequest) (*ResCount, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s *Sentinel) AddDocumentToTable(ctx context.Context, request *AddDocumentRequest) (*ResCount, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s *Sentinel) DeleteDocumentFromTable(ctx context.Context, request *DeleteDocumentRequest) (*ResCount, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s *Sentinel) SearchTable(ctx context.Context, request *SearchRequest) (*SearchResult, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s *Sentinel) HealthCheck(ctx context.Context, request *HealthCheckRequest) (*HealthCheckResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+var _ IndexServiceServer = (*Sentinel)(nil)
 
 func NewSentinel(endPoints []EndPoint, heartBeat int64, qps int, serviceName string, role SentinelRole) *Sentinel {
 	sentinel := &Sentinel{
@@ -124,132 +297,6 @@ func (s *Sentinel) GetGrpcConn(point EndPoint) *grpc.ClientConn {
 	}
 	s.connPool.Store(point.Ip, grpcConn)
 	return grpcConn
-}
-
-func (s *Sentinel) AddDoc(doc *messages.Document) (int, error) {
-	endPoint := s.Hub.GetServiceEndpoint(s.ServiceKey)
-	if len(endPoint.Ip) == 0 {
-		return -1, errors.New("服务节点不存在")
-	}
-	conn := s.GetGrpcConn(endPoint)
-	if conn == nil {
-		return -1, errors.New("无法连接到" + endPoint.Ip)
-	}
-	client := NewIndexServiceClient(conn)
-	affected, err := client.AddDoc(context.Background(), doc)
-	if err != nil {
-		return -1, err
-	}
-	return int(affected.Count), nil
-}
-
-func (s *Sentinel) DelDoc(docId *DocId) int {
-	endpoints := s.Hub.GetServiceEndpoints(s.ServiceKey)
-	if len(endpoints) == 0 {
-		return 0
-	}
-	var n int32
-	wg := sync.WaitGroup{}
-	wg.Add(len(endpoints))
-	for _, endpoint := range endpoints {
-		go func(endpoint EndPoint) {
-			defer wg.Done()
-			conn := s.GetGrpcConn(endpoint)
-			if conn == nil {
-				return
-			}
-			client := NewIndexServiceClient(conn)
-			affected, err := client.DelDoc(context.Background(), &DocId{Id: docId.Id})
-			if err != nil {
-				return
-			}
-			if affected.Count > 0 {
-				atomic.AddInt32(&n, affected.Count)
-			}
-		}(endpoint)
-	}
-	wg.Wait()
-	return int(atomic.LoadInt32(&n))
-}
-
-func (s *Sentinel) Search(query *messages.TermQuery, onFlag, offFlag uint64, orFlags []uint64) (error, []*messages.Document) {
-	endpoints := s.Hub.GetServiceEndpoints(s.ServiceKey)
-	if len(endpoints) == 0 {
-		return errors.New(""), nil
-	}
-
-	docs := make([]*messages.Document, 0, 1000)
-	resultChan := make(chan *messages.Document, 1000)
-
-	var wg sync.WaitGroup
-	wg.Add(len(endpoints))
-
-	for _, endpoint := range endpoints {
-		go func(endpoint EndPoint) {
-			defer wg.Done()
-			conn := s.GetGrpcConn(endpoint)
-			if conn == nil {
-				return
-			}
-			client := NewIndexServiceClient(conn)
-			searchRequest := Request{Query: query, OnFlag: onFlag, OffFlag: offFlag, OrFlags: orFlags}
-			searchResult, err := client.Search(context.Background(), &searchRequest)
-			if err != nil {
-				return
-			}
-			if len(searchResult.Results) > 0 {
-				for _, doc := range searchResult.Results {
-					resultChan <- doc
-				}
-			}
-		}(endpoint)
-	}
-
-	signalChan := make(chan bool)
-	go func() {
-		for doc := range resultChan {
-			docs = append(docs, doc)
-		}
-
-		signalChan <- true
-	}()
-
-	wg.Wait()         // 等待所有goroutine完成
-	close(resultChan) // 关闭结果通道 当resultChan关闭时，上面协程range循环结束
-	<-signalChan      // 等待结果处理完成
-	return nil, docs
-}
-
-func (s *Sentinel) Count() int {
-	endpoints := s.Hub.GetServiceEndpoints(s.ServiceKey)
-	if len(endpoints) == 0 {
-		return 0
-	}
-
-	var count int32
-	var wg sync.WaitGroup
-	wg.Add(len(endpoints))
-
-	for _, endpoint := range endpoints {
-		go func(endpoint EndPoint) {
-			defer wg.Done()
-			conn := s.GetGrpcConn(endpoint)
-			if conn == nil {
-
-				return
-			}
-			client := NewIndexServiceClient(conn)
-			countResult, err := client.Count(context.Background(), &CountRequest{})
-			if err != nil {
-				return
-			}
-			if countResult.Count > 0 {
-				atomic.AddInt32(&count, countResult.Count)
-			}
-		}(endpoint)
-	}
-	wg.Wait()
-	return int(atomic.LoadInt32(&count))
 }
 
 func (s *Sentinel) Close() (err error) {
@@ -518,7 +565,7 @@ func RunCLI() {
 func StartGRPCServer(port int) {
 	lis, _ := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	grpcServer := grpc.NewServer()
-	RegisterIndexServiceServer(grpcServer, &IndexServiceServerImpl{})
+	RegisterIndexServiceServer(grpcServer, &Sentinel{})
 	log.Info("gRPC server started on :%d", port)
 	grpcServer.Serve(lis)
 }
