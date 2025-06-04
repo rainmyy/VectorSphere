@@ -45,7 +45,7 @@ func NewHNSWGraph(maxConnections int, efConstruction, efSearch float64) *HNSWGra
 		EfSearch:       efSearch,
 		levelMult:      1.0 / math.Log(1.0*float64(maxConnections)),
 		distanceFunc: func(v1, v2 []float64) (float64, error) {
-			return algorithm.EuclideanDistanceSquared(algorithm.Point(v1), algorithm.Point(v2))
+			return algorithm.EuclideanDistanceSquared(entity.Point(v1), algorithm.Point(v2))
 		},
 	}
 }

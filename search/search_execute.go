@@ -200,10 +200,12 @@ func (se *SearchExecutor) ExecuteSearchPlan(parsedQuery *ParsedQuery) ([]SearchR
 		// TODO: 获取文档的实际数据
 		// 这里需要实现从存储中获取文档详细信息的逻辑
 		// 可以添加一个 GetDocumentDetails 方法到 MultiTableSearchService
-		// docData, err := se.service.GetDocumentDetails(tableName, id, selectFields, isSelectAll)
-		// if err != nil { continue }
-		// item.Fields = docData.Fields
-		// item.Score = docData.Score
+		docData, err := se.service.GetDocumentDetails(tableName, id, selectFields, isSelectAll)
+		if err != nil {
+			continue
+		}
+		item.Fields = docData.Fields
+		item.Score = docData.Score
 
 		// 示例：填充假数据
 		if isSelectAll {

@@ -4,15 +4,13 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"seetaSearch/library/entity"
 	"time"
 )
 
-// Point 代表一个数据点（向量）
-type Point []float64
-
 // EuclideanDistanceSquared 计算两个点之间的欧几里得距离的平方
 // 返回平方距离可以避免开方运算，在比较大小时效果相同
-func EuclideanDistanceSquared(p1, p2 Point) (float64, error) {
+func EuclideanDistanceSquared(p1, p2 entity.Point) (float64, error) {
 	if len(p1) != len(p2) {
 		return 0, fmt.Errorf("向量维度不匹配: %d != %d", len(p1), len(p2))
 	}
@@ -25,12 +23,12 @@ func EuclideanDistanceSquared(p1, p2 Point) (float64, error) {
 }
 
 // calculateMean 计算一组点的均值（新的簇中心）
-func calculateMean(points []Point) (Point, error) {
+func calculateMean(points []entity.Point) (entity.Point, error) {
 	if len(points) == 0 {
 		return nil, fmt.Errorf("不能从空点集计算均值")
 	}
 	dim := len(points[0])
-	mean := make(Point, dim)
+	mean := make(entity.Point, dim)
 
 	for _, p := range points {
 		if len(p) != dim {
@@ -53,7 +51,7 @@ func calculateMean(points []Point) (Point, error) {
 // maxIterations: 最大迭代次数
 // tolerance: 簇中心变化的容忍度（欧几里得距离），用于提前停止迭代
 // 返回值: 簇中心点列表, 每个数据点所属的簇索引列表, 错误
-func KMeans(data []Point, k int, maxIterations int, tolerance float64) ([]Point, []int, error) {
+func KMeans(data []entity.Point, k int, maxIterations int, tolerance float64) ([]entity.Point, []int, error) {
 	if k <= 0 {
 		return nil, nil, fmt.Errorf("k 必须是正整数")
 	}
@@ -68,11 +66,11 @@ func KMeans(data []Point, k int, maxIterations int, tolerance float64) ([]Point,
 
 	// 使用 K-Means++ 初始化质心（避免初始质心过于集中）
 	rand.Seed(time.Now().UnixNano())
-	centroids := make([]Point, 0, k)
+	centroids := make([]entity.Point, 0, k)
 
 	// 1.1 随机选择第一个质心
 	firstIdx := rand.Intn(len(data))
-	centroids = append(centroids, make(Point, dim))
+	centroids = append(centroids, make(entity.Point, dim))
 	copy(centroids[0], data[firstIdx])
 
 	// 1.2 选择后续质心（基于距离概率分布）
@@ -99,7 +97,7 @@ func KMeans(data []Point, k int, maxIterations int, tolerance float64) ([]Point,
 		for pIdx, distSq := range distSqList {
 			accumulator += distSq
 			if accumulator >= r {
-				newCentroid := make(Point, dim)
+				newCentroid := make(entity.Point, dim)
 				copy(newCentroid, data[pIdx])
 				centroids = append(centroids, newCentroid)
 				break
@@ -129,9 +127,9 @@ func KMeans(data []Point, k int, maxIterations int, tolerance float64) ([]Point,
 		}
 
 		// 3. 更新步骤：重新计算簇中心
-		clusterPoints := make([][]Point, k)
+		clusterPoints := make([][]entity.Point, k)
 		for i := 0; i < k; i++ {
-			clusterPoints[i] = make([]Point, 0)
+			clusterPoints[i] = make([]entity.Point, 0)
 		}
 
 		for i, point := range data {
@@ -139,13 +137,13 @@ func KMeans(data []Point, k int, maxIterations int, tolerance float64) ([]Point,
 			clusterPoints[clusterIndex] = append(clusterPoints[clusterIndex], point)
 		}
 
-		newCentroids := make([]Point, k)
+		newCentroids := make([]entity.Point, k)
 		for j := 0; j < k; j++ {
 			if len(clusterPoints[j]) == 0 {
 				// 优化3：空簇处理（随机选择一个数据点作为新质心）
 				fmt.Printf("警告: 簇 %d 为空，随机选择新质心。\n", j)
 				randomIdx := rand.Intn(len(data))
-				newCentroid := make(Point, dim)
+				newCentroid := make(entity.Point, dim)
 				copy(newCentroid, data[randomIdx])
 				newCentroids[j] = newCentroid
 				continue
@@ -186,17 +184,17 @@ func KMeans(data []Point, k int, maxIterations int, tolerance float64) ([]Point,
 }
 
 // 优化的K-Means++初始化
-func kMeansPlusPlusInit(data []Point, k int) ([]Point, error) {
+func kMeansPlusPlusInit(data []entity.Point, k int) ([]entity.Point, error) {
 	if len(data) < k {
 		return nil, fmt.Errorf("数据点数量少于簇数量")
 	}
 
 	dim := len(data[0])
-	centroids := make([]Point, 0, k)
+	centroids := make([]entity.Point, 0, k)
 
 	// 随机选择第一个质心
 	firstIdx := rand.Intn(len(data))
-	firstCentroid := make(Point, dim)
+	firstCentroid := make(entity.Point, dim)
 	copy(firstCentroid, data[firstIdx])
 	centroids = append(centroids, firstCentroid)
 
@@ -233,7 +231,7 @@ func kMeansPlusPlusInit(data []Point, k int) ([]Point, error) {
 			accumulator += distSq
 			if accumulator >= r {
 				idx := sampledIndices[j]
-				newCentroid := make(Point, dim)
+				newCentroid := make(entity.Point, dim)
 				copy(newCentroid, data[idx])
 				centroids = append(centroids, newCentroid)
 				break

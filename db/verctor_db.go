@@ -23,8 +23,8 @@ import (
 
 // Cluster 代表一个向量簇
 type Cluster struct {
-	Centroid  algorithm.Point // 簇的中心点
-	VectorIDs []string        // 属于该簇的向量ID列表
+	Centroid  entity.Point // 簇的中心点
+	VectorIDs []string     // 属于该簇的向量ID列表
 }
 
 // 添加查询缓存结构
@@ -72,11 +72,11 @@ type VectorDB struct {
 	config            AdaptiveConfig
 
 	// 新增 PQ 相关字段
-	pqCodebook               [][]algorithm.Point // 从文件加载的 PQ 码本
-	pqCodebookFilePath       string              // PQ 码本文件路径，用于热加载
-	numSubvectors            int                 // PQ 的子向量数量
-	numCentroidsPerSubvector int                 // 每个子向量空间的质心数量
-	usePQCompression         bool                // 标志是否启用 PQ 压缩
+	pqCodebook               [][]entity.Point // 从文件加载的 PQ 码本
+	pqCodebookFilePath       string           // PQ 码本文件路径，用于热加载
+	numSubvectors            int              // PQ 的子向量数量
+	numCentroidsPerSubvector int              // 每个子向量空间的质心数量
+	usePQCompression         bool             // 标志是否启用 PQ 压缩
 
 	stopCh           chan struct{}
 	useNormalization bool
@@ -687,7 +687,7 @@ func (db *VectorDB) LoadPQCodebookFromFile(filePath string) error {
 	defer file.Close()
 
 	decoder := gob.NewDecoder(file)
-	var codebook [][]algorithm.Point
+	var codebook [][]entity.Point
 	if err := decoder.Decode(&codebook); err != nil {
 		return fmt.Errorf("解码 PQ 码本文件 %s 失败: %v", filePath, err)
 	}
@@ -713,7 +713,7 @@ func (db *VectorDB) LoadPQCodebookFromFile(filePath string) error {
 	return nil
 }
 
-// 在VectorDB结构体中添加元数据支持
+// AddMetadata 在VectorDB结构体中添加元数据支持
 func (db *VectorDB) AddMetadata(id string, metadata map[string]interface{}) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
@@ -1325,7 +1325,7 @@ func (db *VectorDB) recalculateClusterCentroid(clusterIndex int) error {
 			return fmt.Errorf("向量维度为0，无法计算中心点")
 		}
 	}
-	newCentroid := make(algorithm.Point, db.vectorDim)
+	newCentroid := make(entity.Point, db.vectorDim)
 	validVectorsCount := 0
 	for _, vecID := range cluster.VectorIDs {
 		var vecData []float64
@@ -1535,7 +1535,7 @@ func (db *VectorDB) BuildMultiLevelIndex(maxIterations int, tolerance float64) e
 	startTime := time.Now()
 
 	// 1. 收集所有向量及其ID
-	var allVectorsData []algorithm.Point
+	var allVectorsData []entity.Point
 	var vectorIDs []string // 保持与allVectorsData顺序一致的ID
 	for id, vec := range db.vectors {
 		allVectorsData = append(allVectorsData, vec)
@@ -1655,7 +1655,7 @@ func (db *VectorDB) BuildIndex(maxIterations int, tolerance float64) error {
 
 	log.Info("开始构建索引...")
 	// 1. 收集所有向量及其ID
-	var allVectorsData []algorithm.Point
+	var allVectorsData []entity.Point
 	var vectorIDs []string // 保持与allVectorsData顺序一致的ID
 	for id, vec := range db.vectors {
 		allVectorsData = append(allVectorsData, vec)

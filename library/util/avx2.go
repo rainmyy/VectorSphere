@@ -44,7 +44,7 @@ package util
 import "C"
 
 import (
-	"seetaSearch/library/algorithm"
+	"seetaSearch/library/entity"
 	"unsafe"
 )
 
@@ -66,7 +66,7 @@ func euclideanDistanceSquaredAVX2(a, b []float64) float64 {
 }
 
 // findNearestCentroidAVX2 使用 AVX2 指令集查找最近的质心
-func findNearestCentroidAVX2(vec []float64, centroids []algorithm.Point) (int, float64) {
+func findNearestCentroidAVX2(vec []float64, centroids []entity.Point) (int, float64) {
 	if len(centroids) == 0 {
 		return -1, -1
 	}

@@ -100,7 +100,7 @@ type PrecomputedDistanceTable struct {
 }
 
 // NewPrecomputedDistanceTable 为查询向量创建预计算距离表
-func NewPrecomputedDistanceTable(queryVector []float64, codebook [][]algorithm.Point, numSubvectors int) (*PrecomputedDistanceTable, error) {
+func NewPrecomputedDistanceTable(queryVector []float64, codebook [][]entity.Point, numSubvectors int) (*PrecomputedDistanceTable, error) {
 	if len(queryVector) == 0 {
 		return nil, fmt.Errorf("查询向量不能为空")
 	}
@@ -171,7 +171,7 @@ func NewPrecomputedDistanceTable(queryVector []float64, codebook [][]algorithm.P
 }
 
 // BatchCompressByPQ 批量压缩多个向量
-func BatchCompressByPQ(vectors [][]float64, loadedCodebook [][]algorithm.Point, numSubVectors int, numCentroidsPerSubVector int, numWorkers int) ([]entity.CompressedVector, error) {
+func BatchCompressByPQ(vectors [][]float64, loadedCodebook [][]entity.Point, numSubVectors int, numCentroidsPerSubVector int, numWorkers int) ([]entity.CompressedVector, error) {
 	if len(vectors) == 0 {
 		return nil, fmt.Errorf("输入向量列表不能为空")
 	}
@@ -259,7 +259,7 @@ type TrainingDataSource interface {
 }
 
 // SavePQCodebookToFile 将 PQ 码本保存到文件
-func SavePQCodebookToFile(codebook [][]algorithm.Point, filePath string) error {
+func SavePQCodebookToFile(codebook [][]entity.Point, filePath string) error {
 	file, err := os.Create(filePath)
 	if err != nil {
 		return fmt.Errorf("创建码本文件失败 %s: %w", filePath, err)
@@ -284,7 +284,7 @@ func SavePQCodebookToFile(codebook [][]algorithm.Point, filePath string) error {
 }
 
 // LoadPQCodebookFromFile 从文件加载 PQ 码本
-func LoadPQCodebookFromFile(filePath string) ([][]algorithm.Point, error) {
+func LoadPQCodebookFromFile(filePath string) ([][]entity.Point, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("打开码本文件失败 %s: %w", filePath, err)
@@ -303,7 +303,7 @@ func LoadPQCodebookFromFile(filePath string) ([][]algorithm.Point, error) {
 		return nil, fmt.Errorf("无效的码本大小: %d", size)
 	}
 
-	codebook := make([][]algorithm.Point, size)
+	codebook := make([][]entity.Point, size)
 	// 读取每个 float64 值
 	for i := 0; i < int(size); i++ {
 		if err := binary.Read(reader, binary.LittleEndian, &codebook[i]); err != nil {
@@ -375,7 +375,7 @@ func TrainPQCodebook(
 	fmt.Printf("从数据源获取了 %d 个向量用于PQ码本训练。\n", len(trainingVectors))
 
 	subVectorDim := firstVectorDim / numSubvectors
-	allSubspaceCodebooks := make([][]algorithm.Point, numSubvectors)
+	allSubspaceCodebooks := make([][]entity.Point, numSubvectors)
 
 	rand.Seed(time.Now().UnixNano())
 
@@ -383,7 +383,7 @@ func TrainPQCodebook(
 
 	for i := 0; i < numSubvectors; i++ {
 		fmt.Printf("  训练子空间 %d/%d 的码本...\n", i+1, numSubvectors)
-		subspaceTrainingPoints := make([]algorithm.Point, 0)
+		subspaceTrainingPoints := make([]entity.Point, 0)
 
 		// 对从数据源获取的 trainingVectors 进行采样，用于当前子空间的训练
 		numSamplesForSubspace := int(float64(len(trainingVectors)) * sampleRateForSubspaceTraining)
@@ -412,7 +412,7 @@ func TrainPQCodebook(
 			if len(originalVec) != firstVectorDim {
 				return fmt.Errorf("训练集中向量维度不一致: 期望 %d, 实际 %d (向量索引 %d)", firstVectorDim, len(originalVec), originalVecIdx)
 			}
-			subVec := make(algorithm.Point, subVectorDim)
+			subVec := make(entity.Point, subVectorDim)
 			copy(subVec, originalVec[i*subVectorDim:(i+1)*subVectorDim])
 			subspaceTrainingPoints = append(subspaceTrainingPoints, subVec)
 		}
@@ -442,10 +442,10 @@ func TrainPQCodebook(
 
 // CompressByPQ 产品量化压缩
 // vec: 原始向量 []float64
-// loadedCodebook: 从文件预加载的码本 [][]algorithm.Point
+// loadedCodebook: 从文件预加载的码本 [][]entity.Point
 // numSubvectors: 子向量的数量 (M) - 应与加载的码本结构一致
 // numCentroidsPerSubvector: 每个子向量空间的质心数量 (K*) - 应与加载的码本结构一致
-func CompressByPQ(vec []float64, loadedCodebook [][]algorithm.Point, numSubvectors int, numCentroidsPerSubvector int) (entity.CompressedVector, error) {
+func CompressByPQ(vec []float64, loadedCodebook [][]entity.Point, numSubvectors int, numCentroidsPerSubvector int) (entity.CompressedVector, error) {
 	// 1. 参数校验
 	if len(vec) == 0 {
 		return entity.CompressedVector{}, fmt.Errorf("输入向量不能为空")
@@ -469,7 +469,7 @@ func CompressByPQ(vec []float64, loadedCodebook [][]algorithm.Point, numSubvecto
 	for i := 0; i < numSubvectors; i++ {
 		// 获取当前子向量
 		subVecData := vec[i*subvectorDim : (i+1)*subvectorDim]
-		subVecPoint := algorithm.Point(subVecData)
+		subVecPoint := entity.Point(subVecData)
 
 		// 获取当前子空间的码本
 		currentSubspaceCodebook := loadedCodebook[i]
@@ -518,11 +518,11 @@ func CompressByPQ(vec []float64, loadedCodebook [][]algorithm.Point, numSubvecto
 
 // OptimizedCompressByPQ 优化的产品量化压缩
 // vec: 原始向量 []float64
-// loadedCodebook: 从文件预加载的码本 [][]algorithm.Point
+// loadedCodebook: 从文件预加载的码本 [][]entity.Point
 // numSubVectors: 子向量的数量 (M) - 应与加载的码本结构一致
 // numCentroidsPerSubVector: 每个子向量空间的质心数量 (K*) - 应与加载的码本结构一致
 // 使用SIMD指令集加速（如果可用）
-func OptimizedCompressByPQ(vec []float64, loadedCodebook [][]algorithm.Point, numSubVectors int, numCentroidsPerSubVector int) (entity.CompressedVector, error) {
+func OptimizedCompressByPQ(vec []float64, loadedCodebook [][]entity.Point, numSubVectors int, numCentroidsPerSubVector int) (entity.CompressedVector, error) {
 	// 1. 参数校验
 	if len(vec) == 0 {
 		return entity.CompressedVector{}, fmt.Errorf("输入向量不能为空")
@@ -633,7 +633,7 @@ func OptimizedCompressByPQ(vec []float64, loadedCodebook [][]algorithm.Point, nu
 // OptimizedApproximateDistanceADC 优化的非对称距离计算
 // 使用预计算的查询-质心距离表加速计算
 func OptimizedApproximateDistanceADC(queryVector []float64, compressedVector entity.CompressedVector,
-	codebook [][]algorithm.Point, numSubVectors int) (float64, error) {
+	codebook [][]entity.Point, numSubVectors int) (float64, error) {
 	if len(queryVector) == 0 {
 		return 0, fmt.Errorf("查询向量不能为空")
 	}
@@ -688,7 +688,7 @@ func OptimizedApproximateDistanceADC(queryVector []float64, compressedVector ent
 }
 
 // flattenPoints 将 Point 列表展平成 float64 切片
-func flattenPoints(points []algorithm.Point) []float64 {
+func flattenPoints(points []entity.Point) []float64 {
 	if len(points) == 0 {
 		return nil
 	}
@@ -752,7 +752,7 @@ func CalculateDistance(a, b []float64, method int) (float64, error) {
 // codebook: 预加载的完整PQ码本 [][]algorithm.Point, 其中 codebook[m] 是第m个子空间的码本
 // numSubvectors: 子向量的数量 (M)
 // 返回近似的平方欧氏距离
-func ApproximateDistanceADC(queryVector []float64, compressedVector entity.CompressedVector, codebook [][]algorithm.Point, numSubVectors int) (float64, error) {
+func ApproximateDistanceADC(queryVector []float64, compressedVector entity.CompressedVector, codebook [][]entity.Point, numSubVectors int) (float64, error) {
 	if len(queryVector) == 0 {
 		return 0, fmt.Errorf("查询向量不能为空")
 	}
@@ -780,7 +780,7 @@ func ApproximateDistanceADC(queryVector []float64, compressedVector entity.Compr
 
 	for m := 0; m < numSubVectors; m++ {
 		// 1. 获取查询向量的第 m 个子向量
-		querySubvector := algorithm.Point(queryVector[m*subvectorDim : (m+1)*subvectorDim])
+		querySubvector := entity.Point(queryVector[m*subvectorDim : (m+1)*subvectorDim])
 
 		// 2. 获取压缩向量中第 m 个子向量对应的码字 (质心索引)
 		centroidIndex := int(compressedVector.Data[m])

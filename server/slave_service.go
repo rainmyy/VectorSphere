@@ -24,6 +24,8 @@ import (
 	"sync"
 )
 
+var _ IndexServiceServer = (*SlaveService)(nil)
+
 // SlaveService 从服务结构体
 type SlaveService struct {
 	// etcd 相关
@@ -200,10 +202,16 @@ func (s *SlaveService) Start(ctx context.Context) error {
 			log.Info("SlaveService %s received stop signal.", s.localhost)
 		case <-ctx.Done():
 			log.Info("SlaveService %s context cancelled.", s.localhost)
-			s.Stop(context.Background())
+			err := s.Stop(context.Background())
+			if err != nil {
+				return
+			}
 		case <-s.appCtx.Done():
 			log.Info("Application context cancelled, stopping SlaveService %s.", s.localhost)
-			s.Stop(context.Background())
+			err := s.Stop(context.Background())
+			if err != nil {
+				return
+			}
 		}
 	}()
 
@@ -266,7 +274,10 @@ func (s *SlaveService) GetDependencies() []string {
 func (s *SlaveService) connectMaster() {
 	// 关闭旧连接
 	if s.masterConn != nil {
-		s.masterConn.Close()
+		err := s.masterConn.Close()
+		if err != nil {
+			return
+		}
 		s.masterConn = nil
 	}
 
@@ -299,7 +310,10 @@ func (s *SlaveService) Stop(ctx context.Context) error {
 	// 关闭到主节点的连接
 	s.masterMutex.Lock()
 	if s.masterConn != nil {
-		s.masterConn.Close()
+		err := s.masterConn.Close()
+		if err != nil {
+			return err
+		}
 		s.masterConn = nil
 	}
 	s.masterMutex.Unlock()
@@ -313,7 +327,10 @@ func (s *SlaveService) Stop(ctx context.Context) error {
 
 	// 关闭索引等资源
 	if s.Index != nil {
-		s.Index.Close()
+		err := s.Index.Close()
+		if err != nil {
+			return err
+		}
 	}
 
 	log.Info("SlaveService %s stopped.", s.localhost)
@@ -411,7 +428,10 @@ func (s *SlaveService) updateMasterConnectionFromEtcd(ctx context.Context, maste
 		log.Warning("Slave %s: No master found in etcd with prefix %s", s.localhost, masterKeyPrefix)
 		s.masterMutex.Lock()
 		if s.masterConn != nil {
-			s.masterConn.Close()
+			err := s.masterConn.Close()
+			if err != nil {
+				return
+			}
 			s.masterConn = nil
 			log.Info("Slave %s: Disconnected from previous master as no master is currently elected.", s.localhost)
 		}
@@ -425,7 +445,10 @@ func (s *SlaveService) updateMasterConnectionFromEtcd(ctx context.Context, maste
 
 	if newMasterEndpoint != s.masterEndpoint || s.masterConn == nil {
 		if s.masterConn != nil {
-			s.masterConn.Close()
+			err := s.masterConn.Close()
+			if err != nil {
+				return
+			}
 			log.Info("Slave %s: Disconnecting from old master %s", s.localhost, s.masterEndpoint)
 		}
 		log.Info("Slave %s: Attempting to connect to new master %s", s.localhost, newMasterEndpoint)
