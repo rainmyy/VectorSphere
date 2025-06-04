@@ -85,7 +85,7 @@ type WeightedBalancer struct {
 	weights   []int
 }
 
-func (b *WeightedBalancer) Set(eps []EndPoint) {
+func (b *WeightedBalancer) Set(eps ...EndPoint) bool {
 	b.endpoints = eps
 	b.weights = make([]int, len(eps))
 	for i, ep := range eps {
@@ -95,6 +95,7 @@ func (b *WeightedBalancer) Set(eps []EndPoint) {
 			b.weights[i] = 1
 		}
 	}
+	return true
 }
 
 type LeastConnBalancer struct {
@@ -102,7 +103,7 @@ type LeastConnBalancer struct {
 	connMap   map[string]int
 }
 
-func (b *LeastConnBalancer) Set(eps []EndPoint) bool {
+func (b *LeastConnBalancer) Set(eps ...EndPoint) bool {
 	b.endpoints = eps
 	if b.connMap == nil {
 		b.connMap = make(map[string]int)

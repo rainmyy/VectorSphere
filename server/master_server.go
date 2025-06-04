@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/rand"
 	"net/http"
 	"os"
 	"seetaSearch/library/pool"
@@ -49,6 +48,8 @@ type TaskInfo struct {
 	ResultsLock sync.RWMutex
 }
 
+// --- 限流中间件 ---
+var rateLimiter = make(chan struct{}, 100) // 100 QPS
 // MasterService 主服务结构体
 type MasterService struct {
 	// etcd 相关
@@ -103,8 +104,6 @@ func (m *MasterService) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// --- 限流中间件 ---
-var rateLimiter = make(chan struct{}, 100) // 100 QPS
 func (m *MasterService) rateLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
@@ -138,8 +137,8 @@ func (m *MasterService) startHTTPServer() error {
 	mux.Handle("/api/delDoc", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleDelDoc))))
 	mux.Handle("/api/search", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleSearch))))
 	mux.Handle("/api/count", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleCount))))
-	mux.Handle("/api/createTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleCreateTable))))
-	mux.Handle("/api/deleteTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleDeleteTable))))
+	mux.Handle("/api/createTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.CreateTable))))
+	mux.Handle("/api/deleteTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.DeleteTable))))
 	mux.Handle("/api/addDocToTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleAddDocToTable))))
 	mux.Handle("/api/delDocFromTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleDelDocFromTable))))
 	mux.Handle("/api/searchTable", m.authMiddleware(m.rateLimitMiddleware(http.HandlerFunc(m.handleSearchTable))))

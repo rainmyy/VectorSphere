@@ -295,9 +295,6 @@ func (s *Sentinel) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-// 限流中间件（简单令牌桶）
-var rateLimiter = make(chan struct{}, 100) // 100 QPS
-
 func (s *Sentinel) rateLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
