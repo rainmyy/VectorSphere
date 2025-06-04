@@ -3,9 +3,9 @@ package scheduler
 import (
 	"fmt"
 	"seetaSearch/db"
+	"seetaSearch/library/algorithm"
 	"seetaSearch/library/conf"
 	"seetaSearch/library/log"
-	"seetaSearch/library/util"
 	"sync"
 	"time"
 )
@@ -116,9 +116,9 @@ func (s *PQTrainingScheduler) Run() error {
 	s.mutex.Unlock()
 
 	// 确保 VectorDB 实例是有效的 TrainingDataSource
-	var dataSource util.TrainingDataSource = s.vectorDB
+	var dataSource algorithm.TrainingDataSource = s.vectorDB
 
-	trainingErr := util.TrainPQCodebook(
+	trainingErr := algorithm.TrainPQCodebook(
 		dataSource,
 		s.config.NumSubVectors,
 		s.config.NumbCentroidsPerSubVector,

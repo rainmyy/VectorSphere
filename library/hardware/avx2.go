@@ -1,4 +1,4 @@
-package util
+package hardware
 
 // #cgo CFLAGS: -mavx2 -march=native
 // #if defined(__FMA__) || defined(__AVX2__)
@@ -68,8 +68,8 @@ func euclideanDistanceSquaredAVX2(a, b []float64) float64 {
 	return float64(C.euclidean_distance_squared_avx2(aPtr, bPtr, C.int(len(a))))
 }
 
-// findNearestCentroidAVX2 使用 AVX2 指令集查找最近的质心
-func findNearestCentroidAVX2(vec []float64, centroids []entity.Point) (int, float64) {
+// FindNearestCentroidAVX2 使用 AVX2 指令集查找最近的质心
+func FindNearestCentroidAVX2(vec []float64, centroids []entity.Point) (int, float64) {
 	if len(centroids) == 0 {
 		return -1, -1
 	}

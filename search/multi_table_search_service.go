@@ -7,10 +7,10 @@ import (
 	"runtime"
 	"seetaSearch/db"
 	"seetaSearch/index"
+	"seetaSearch/library/algorithm"
 	"seetaSearch/library/entity"
 	"seetaSearch/library/log"
 	"seetaSearch/library/tree"
-	"seetaSearch/library/util"
 	"seetaSearch/messages"
 	"strconv"
 	"strings"
@@ -423,7 +423,7 @@ func (mts *MultiTableSearchService) Search(tableName string, query *messages.Ter
 		}
 
 		// 计算向量哈希用于缓存
-		vectorHash = util.ComputeVectorHash(queryVector)
+		vectorHash = algorithm.ComputeVectorHash(queryVector)
 
 		// 根据数据规模和用户设置决定使用哪种搜索方法
 		dataSize := table.VectorDB.GetDataSize()

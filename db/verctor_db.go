@@ -2,6 +2,7 @@ package db
 
 import (
 	"container/heap"
+	"encoding/binary"
 	"encoding/gob"
 	"fmt"
 	"hash/fnv"
@@ -12,9 +13,9 @@ import (
 	"seetaSearch/library/algorithm"
 	"seetaSearch/library/entity"
 	"seetaSearch/library/graph"
+	"seetaSearch/library/hardware"
 	"seetaSearch/library/log"
 	"seetaSearch/library/tree"
-	"seetaSearch/library/util"
 	"sort"
 	"strings"
 	"sync"
@@ -86,6 +87,9 @@ type VectorDB struct {
 	efConstruction   float64          // HNSW 构建时的扩展因子
 	efSearch         float64          // HNSW 搜索时的扩展因子
 	metadata         map[string]map[string]interface{}
+
+	multiCache     *MultiLevelCache        // 多级缓存
+	gpuAccelerator hardware.GPUAccelerator // GPU 加速器
 }
 
 const (
@@ -217,7 +221,7 @@ func (db *VectorDB) BatchAddToHNSWIndex(ids []string, vectors [][]float64, numWo
 	processedVectors := make([][]float64, len(vectors))
 	for i, vec := range vectors {
 		if db.useNormalization {
-			processedVectors[i] = util.NormalizeVector(vec)
+			processedVectors[i] = algorithm.NormalizeVector(vec)
 		} else {
 			processedVectors[i] = vec
 		}
@@ -267,7 +271,7 @@ func (db *VectorDB) BuildHNSWIndexParallel(numWorkers int) error {
 	// 设置距离函数
 	db.hnsw.SetDistanceFunc(func(a, b []float64) (float64, error) {
 		// 使用余弦距离（1 - 余弦相似度）
-		sim := util.CosineSimilarity(a, b)
+		sim := algorithm.CosineSimilarity(a, b)
 		return 1.0 - sim, nil
 	})
 
@@ -338,7 +342,7 @@ func (db *VectorDB) BatchFindNearest(queryVectors [][]float64, k int, numWorkers
 		// 预处理查询向量（归一化）
 		normalizedQueries := make([][]float64, len(queryVectors))
 		for i, query := range queryVectors {
-			normalizedQueries[i] = util.NormalizeVector(query)
+			normalizedQueries[i] = algorithm.NormalizeVector(query)
 		}
 
 		// 使用 HNSW 批量搜索
@@ -452,7 +456,7 @@ func (db *VectorDB) BatchFindNearestWithScores(queryVectors [][]float64, k int, 
 		// 预处理查询向量（归一化）
 		normalizedQueries := make([][]float64, len(queryVectors))
 		for i, query := range queryVectors {
-			normalizedQueries[i] = util.NormalizeVector(query)
+			normalizedQueries[i] = algorithm.NormalizeVector(query)
 		}
 
 		// 使用 HNSW 批量搜索
@@ -554,7 +558,7 @@ func (db *VectorDB) BuildHNSWIndex() error {
 	// 设置距离函数
 	db.hnsw.SetDistanceFunc(func(a, b []float64) (float64, error) {
 		// 使用余弦距离（1 - 余弦相似度）
-		sim := util.CosineSimilarity(a, b)
+		sim := algorithm.CosineSimilarity(a, b)
 		return 1.0 - sim, nil
 	})
 
@@ -816,11 +820,11 @@ func (db *VectorDB) CalculateCosineSimilarity(id string, queryVector []float64) 
 	// 归一化查询向量
 	normalizedQuery := queryVector
 	if db.useNormalization {
-		normalizedQuery = util.NormalizeVector(queryVector)
+		normalizedQuery = algorithm.NormalizeVector(queryVector)
 	}
 
 	// 计算余弦相似度
-	similarity := util.CosineSimilarity(normalizedQuery, vector)
+	similarity := algorithm.CosineSimilarity(normalizedQuery, vector)
 	if similarity < 0 {
 		return 0, fmt.Errorf("计算余弦相似度失败：向量维度不匹配")
 	}
@@ -939,7 +943,7 @@ func (db *VectorDB) CompressExistingVectors() error {
 	log.Info("使用 %d 个工作协程进行并行压缩", numWorkers)
 
 	startTime := time.Now()
-	compressedVectors, err := util.BatchCompressByPQ(
+	compressedVectors, err := algorithm.BatchCompressByPQ(
 		vectorsToCompress,
 		db.pqCodebook,
 		db.numSubvectors,
@@ -981,7 +985,7 @@ func (db *VectorDB) preprocessVector(id string, vector []float64) {
 	}
 
 	// 预计算并存储归一化向量
-	db.normalizedVectors[id] = util.NormalizeVector(vector)
+	db.normalizedVectors[id] = algorithm.NormalizeVector(vector)
 }
 
 // AddDocument 添加文档并将其转换为向量后存入数据库
@@ -1004,10 +1008,10 @@ func (db *VectorDB) AddDocument(id string, doc string, vectorizedType int) error
 	// 将向量添加到数据库
 	db.vectors[id] = vector
 	// 预计算并存储归一化向量
-	db.normalizedVectors[id] = util.NormalizeVector(vector)
+	db.normalizedVectors[id] = algorithm.NormalizeVector(vector)
 	// 如果启用了 PQ 压缩，则压缩向量
 	if db.usePQCompression && db.pqCodebook != nil {
-		compressedVec, err := util.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector)
+		compressedVec, err := algorithm.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector)
 		if err != nil {
 			// 即使压缩失败，原始向量也已添加，这里只记录错误
 			log.Error("为文档 %s 添加时压缩向量失败: %v", id, err)
@@ -1155,10 +1159,10 @@ func (db *VectorDB) Add(id string, vector []float64) {
 
 	db.vectors[id] = vector
 	// 预计算并存储归一化向量
-	db.normalizedVectors[id] = util.NormalizeVector(vector)
+	db.normalizedVectors[id] = algorithm.NormalizeVector(vector)
 	// 如果启用了 PQ 压缩，则压缩向量
 	if db.usePQCompression && db.pqCodebook != nil {
-		compressedVec, err := util.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector)
+		compressedVec, err := algorithm.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector)
 		if err != nil {
 			log.Error("向量 %s 压缩失败: %v。该向量将只以原始形式存储。", id, err)
 			// 根据策略，可以选择是否回滚添加操作或仅记录错误
@@ -1255,7 +1259,7 @@ func (db *VectorDB) UpdateIndexIncrementally(id string, vector []float64) error 
 	if db.normalizedVectors[id] != nil {
 		queryVecForDist = db.normalizedVectors[id]
 	} else {
-		queryVecForDist = util.NormalizeVector(vector) // 如果没有预计算，则动态计算
+		queryVecForDist = algorithm.NormalizeVector(vector) // 如果没有预计算，则动态计算
 	}
 
 	for i, cluster := range db.clusters {
@@ -1429,10 +1433,10 @@ func (db *VectorDB) Update(id string, vector []float64) error {
 
 	db.vectors[id] = vector
 	// 更新归一化向量
-	db.normalizedVectors[id] = util.NormalizeVector(vector)
+	db.normalizedVectors[id] = algorithm.NormalizeVector(vector)
 	// 如果启用了 PQ 压缩，则更新压缩向量
 	if db.usePQCompression && db.pqCodebook != nil {
-		compressedVec, err := util.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector)
+		compressedVec, err := algorithm.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector)
 		if err != nil {
 			log.Error("为向量 %s 更新时压缩向量失败: %v", id, err)
 			// 即使压缩失败，原始向量也已更新
@@ -1796,6 +1800,20 @@ func (db *VectorDB) SaveToFile(filePath string) error {
 	return nil
 }
 
+// 自适应 nprobe 设置
+func (db *VectorDB) getAdaptiveNprobe() int {
+	vectorCount := len(db.vectors)
+
+	// 根据数据规模动态调整 nprobe
+	if vectorCount > 1000000 {
+		return db.numClusters / 10 // 大数据集，搜索更多簇
+	} else if vectorCount > 100000 {
+		return db.numClusters / 20 // 中等数据集
+	} else {
+		return max(1, db.numClusters/50) // 小数据集
+	}
+}
+
 // LoadFromFile 从其配置的文件中加载数据库状态（包括索引）。
 func (db *VectorDB) LoadFromFile(filePath string) error {
 	db.mu.Lock()
@@ -1945,7 +1963,7 @@ func (db *VectorDB) LoadFromFile(filePath string) error {
 		// 设置距离函数,。在加载后，需要使用 SetDistanceFunc 方法重新设置距离函数
 		db.hnsw.SetDistanceFunc(func(a, b []float64) (float64, error) {
 			// 使用余弦距离（1 - 余弦相似度）
-			sim := util.CosineSimilarity(a, b)
+			sim := algorithm.CosineSimilarity(a, b)
 			return 1.0 - sim, nil
 		})
 
@@ -1971,7 +1989,7 @@ func (db *VectorDB) CalculateApproximateDistancePQ(queryVector []float64, compre
 	}
 
 	// 调用 util 中的 PQ 近似距离计算函数
-	dist, err := util.ApproximateDistanceADC(queryVector, compressedDBVector, db.pqCodebook, db.numSubvectors)
+	dist, err := algorithm.ApproximateDistanceADC(queryVector, compressedDBVector, db.pqCodebook, db.numSubvectors)
 	if err != nil {
 		return 0, fmt.Errorf("计算 PQ 近似距离失败: %w", err)
 	}
@@ -2023,16 +2041,20 @@ func (db *VectorDB) OptimizeHNSWParameters() {
 		db.efSearch = 50
 	} else if dataSize < 10000 {
 		db.maxConnections = 32
-		db.efConstruction = 200
+		db.efConstruction = 200 // 增加构建质量
 		db.efSearch = 100
 	} else if dataSize < 100000 {
 		db.maxConnections = 64
 		db.efConstruction = 400
 		db.efSearch = 200
-	} else {
+	} else if dataSize < 1000000 {
 		db.maxConnections = 96
 		db.efConstruction = 600
 		db.efSearch = 300
+	} else {
+		db.maxConnections = 128
+		db.efConstruction = 800 // 大数据集需要更高质量的图
+		db.efSearch = 400
 	}
 
 	// 如果 HNSW 索引已启用，更新参数
@@ -2043,6 +2065,553 @@ func (db *VectorDB) OptimizeHNSWParameters() {
 	}
 }
 
+// BatchNormalizeVectors 批量归一化向量
+func (db *VectorDB) BatchNormalizeVectors() error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	if !db.useNormalization {
+		return fmt.Errorf("归一化未启用")
+	}
+
+	// 并行归一化
+	numWorkers := runtime.NumCPU()
+	vectorChan := make(chan struct {
+		id  string
+		vec []float64
+	}, len(db.vectors))
+	resultChan := make(chan struct {
+		id         string
+		normalized []float64
+	}, len(db.vectors))
+
+	// 启动工作协程
+	var wg sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for item := range vectorChan {
+				normalized := algorithm.NormalizeVector(item.vec)
+				resultChan <- struct {
+					id         string
+					normalized []float64
+				}{
+					id: item.id, normalized: normalized,
+				}
+			}
+		}()
+	}
+
+	// 发送任务
+	go func() {
+		for id, vec := range db.vectors {
+			vectorChan <- struct {
+				id  string
+				vec []float64
+			}{id: id, vec: vec}
+		}
+		close(vectorChan)
+	}()
+
+	// 收集结果
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	// 更新归一化向量
+	for result := range resultChan {
+		db.normalizedVectors[result.id] = result.normalized
+	}
+
+	log.Info("批量归一化完成，处理了 %d 个向量", len(db.vectors))
+	return nil
+}
+
+// PCAConfig PCA 配置
+type PCAConfig struct {
+	TargetDimension int         // 目标维度
+	VarianceRatio   float64     // 保留的方差比例
+	Components      [][]float64 // PCA 主成分
+	Mean            []float64   // 均值向量
+}
+
+// ApplyPCA 应用 PCA 降维
+func (db *VectorDB) ApplyPCA(targetDim int, varianceRatio float64) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	if len(db.vectors) == 0 {
+		return fmt.Errorf("数据库为空，无法进行 PCA")
+	}
+
+	// 收集所有向量
+	vectors := make([][]float64, 0, len(db.vectors))
+	ids := make([]string, 0, len(db.vectors))
+
+	for id, vec := range db.vectors {
+		vectors = append(vectors, vec)
+		ids = append(ids, id)
+	}
+
+	// 计算均值
+	dim := len(vectors[0])
+	mean := make([]float64, dim)
+	for _, vec := range vectors {
+		for i, val := range vec {
+			mean[i] += val
+		}
+	}
+	for i := range mean {
+		mean[i] /= float64(len(vectors))
+	}
+
+	// 中心化数据
+	centeredVectors := make([][]float64, len(vectors))
+	for i, vec := range vectors {
+		centeredVectors[i] = make([]float64, dim)
+		for j, val := range vec {
+			centeredVectors[i][j] = val - mean[j]
+		}
+	}
+
+	// 计算协方差矩阵
+	covariance := make([][]float64, dim)
+	for i := range covariance {
+		covariance[i] = make([]float64, dim)
+		for j := range covariance[i] {
+			for _, vec := range centeredVectors {
+				covariance[i][j] += vec[i] * vec[j]
+			}
+			covariance[i][j] /= float64(len(vectors) - 1)
+		}
+	}
+
+	// 这里需要实现特征值分解，简化示例
+	// 实际应用中建议使用 gonum 等数学库
+
+	// 应用降维变换
+	reducedVectors := make(map[string][]float64)
+	for i, id := range ids {
+		// 简化的降维实现，实际需要使用主成分
+		reduced := make([]float64, targetDim)
+		for j := 0; j < targetDim && j < len(vectors[i]); j++ {
+			reduced[j] = vectors[i][j]
+		}
+		reducedVectors[id] = reduced
+	}
+
+	// 更新向量数据库
+	db.vectors = reducedVectors
+	db.vectorDim = targetDim
+	db.indexed = false // 需要重建索引
+
+	log.Info("PCA 降维完成：%d -> %d 维", dim, targetDim)
+	return nil
+}
+
+// EnableGPUAcceleration 为 VectorDB 启用 GPU 加速
+func (db *VectorDB) EnableGPUAcceleration(gpuID int, indexType string) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	// 创建 GPU 加速器
+	db.gpuAccelerator = hardware.NewFAISSGPUAccelerator(gpuID, indexType)
+
+	// 初始化 GPU 加速器
+	err := db.gpuAccelerator.Initialize()
+	if err != nil {
+		return fmt.Errorf("初始化 GPU 加速器失败: %w", err)
+	}
+
+	log.Info("GPU 加速已启用，GPU ID: %d, 索引类型: %s", gpuID, indexType)
+	return nil
+}
+
+// TwoStageSearch 两阶段搜索实现
+func (db *VectorDB) TwoStageSearch(query []float64, config TwoStageSearchConfig) ([]entity.Result, error) {
+	startTime := time.Now()
+
+	// 第一阶段：粗筛
+	coarseCandidates, err := db.coarseSearch(query, config.CoarseK, config.CoarseNprobe)
+	if err != nil {
+		return nil, fmt.Errorf("粗筛阶段失败: %w", err)
+	}
+
+	log.Trace("粗筛阶段完成，获得 %d 个候选", len(coarseCandidates))
+
+	// 第二阶段：精排
+	finalResults, err := db.fineRanking(query, coarseCandidates, config)
+	if err != nil {
+		return nil, fmt.Errorf("精排阶段失败: %w", err)
+	}
+
+	// 更新统计信息
+	db.statsMu.Lock()
+	db.stats.TotalQueries++
+	queryTime := time.Since(startTime)
+	db.stats.AvgQueryTime = time.Duration((db.stats.AvgQueryTime.Nanoseconds()*9 + queryTime.Nanoseconds()) / 10)
+	db.statsMu.Unlock()
+
+	log.Trace("两阶段搜索完成，耗时 %v", queryTime)
+	return finalResults, nil
+}
+
+// coarseSearch 粗筛阶段：快速筛选候选集
+func (db *VectorDB) coarseSearch(query []float64, k int, nprobe int) ([]string, error) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	if !db.indexed {
+		// 如果没有索引，使用简化的距离计算
+		return db.approximateSearch(query, k)
+	}
+
+	// 使用 IVF 索引进行粗筛
+	normalizedQuery := algorithm.NormalizeVector(query)
+
+	// 找到最近的 nprobe 个簇
+	nearestClusters := make([]int, 0, nprobe)
+	clusterDists := make([]float64, len(db.clusters))
+
+	for i, cluster := range db.clusters {
+		dist, _ := algorithm.EuclideanDistanceSquared(normalizedQuery, cluster.Centroid)
+		clusterDists[i] = dist
+	}
+
+	// 选择距离最小的 nprobe 个簇
+	for i := 0; i < nprobe && i < len(db.clusters); i++ {
+		minIdx := 0
+		minDist := clusterDists[0]
+		for j, dist := range clusterDists {
+			if dist < minDist {
+				minDist = dist
+				minIdx = j
+			}
+		}
+		nearestClusters = append(nearestClusters, minIdx)
+		clusterDists[minIdx] = math.MaxFloat64 // 标记已选择
+	}
+
+	// 收集候选向量 ID
+	candidates := make([]string, 0, k*2)
+	for _, clusterIdx := range nearestClusters {
+		candidates = append(candidates, db.clusters[clusterIdx].VectorIDs...)
+		if len(candidates) >= k*2 {
+			break
+		}
+	}
+
+	// 限制候选数量
+	if len(candidates) > k {
+		candidates = candidates[:k]
+	}
+
+	return candidates, nil
+}
+
+// fineRanking 精排阶段：精确计算相似度并排序
+func (db *VectorDB) fineRanking(query []float64, candidates []string, config TwoStageSearchConfig) ([]entity.Result, error) {
+	if len(candidates) == 0 {
+		return []entity.Result{}, nil
+	}
+
+	results := make([]entity.Result, 0, len(candidates))
+
+	if config.UseGPU {
+		// 使用 GPU 加速精排
+		return db.gpuFineRanking(query, candidates, config)
+	}
+
+	// CPU 并行精排
+	numWorkers := runtime.NumCPU()
+	candidateChan := make(chan string, len(candidates))
+	resultChan := make(chan entity.Result, len(candidates))
+
+	// 启动工作协程
+	var wg sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for id := range candidateChan {
+				vec, exists := db.vectors[id]
+				if !exists {
+					continue
+				}
+
+				// 使用优化的相似度计算
+				similarity := algorithm.OptimizedCosineSimilarity(query, vec)
+
+				// 应用阈值过滤
+				if similarity >= config.Threshold {
+					resultChan <- entity.Result{
+						Id:         id,
+						Similarity: similarity,
+					}
+				}
+			}
+		}()
+	}
+
+	// 发送候选
+	go func() {
+		for _, id := range candidates {
+			candidateChan <- id
+		}
+		close(candidateChan)
+	}()
+
+	// 收集结果
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	for result := range resultChan {
+		results = append(results, result)
+	}
+
+	// 按相似度降序排序
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Similarity > results[j].Similarity
+	})
+
+	// 限制返回数量
+	if len(results) > config.FineK {
+		results = results[:config.FineK]
+	}
+
+	return results, nil
+}
+
+// gpuFineRanking 使用 GPU 加速进行精排
+func (db *VectorDB) gpuFineRanking(query []float64, candidates []string, config TwoStageSearchConfig) ([]entity.Result, error) {
+	if db.gpuAccelerator == nil {
+		return nil, fmt.Errorf("GPU 加速器未初始化，请先调用 EnableGPUAcceleration")
+	}
+
+	if len(candidates) == 0 {
+		return []entity.Result{}, nil
+	}
+
+	// 准备候选向量数据
+	candidateVectors := make([][]float64, 0, len(candidates))
+	validCandidates := make([]string, 0, len(candidates))
+
+	for _, id := range candidates {
+		vec, exists := db.vectors[id]
+		if !exists {
+			continue
+		}
+		candidateVectors = append(candidateVectors, vec)
+		validCandidates = append(validCandidates, id)
+	}
+
+	if len(candidateVectors) == 0 {
+		return []entity.Result{}, nil
+	}
+
+	// 使用 GPU 批量计算余弦相似度
+	queries := [][]float64{query}
+	similarityMatrix, err := db.gpuAccelerator.BatchCosineSimilarity(queries, candidateVectors)
+	if err != nil {
+		// GPU 计算失败，回退到 CPU 计算
+		log.Warning("GPU 计算失败，回退到 CPU: %v", err)
+		return db.cpuFineRanking(query, candidates, config)
+	}
+
+	if len(similarityMatrix) == 0 || len(similarityMatrix[0]) != len(validCandidates) {
+		return nil, fmt.Errorf("GPU 计算结果维度不匹配")
+	}
+
+	// 构建结果并应用阈值过滤
+	results := make([]entity.Result, 0, len(validCandidates))
+	similarities := similarityMatrix[0] // 第一个查询的相似度结果
+
+	for i, similarity := range similarities {
+		// 应用阈值过滤
+		if similarity >= config.Threshold {
+			results = append(results, entity.Result{
+				Id:         validCandidates[i],
+				Similarity: similarity,
+			})
+		}
+	}
+
+	// 按相似度降序排序
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Similarity > results[j].Similarity
+	})
+
+	// 限制返回数量
+	if len(results) > config.FineK {
+		results = results[:config.FineK]
+	}
+
+	return results, nil
+}
+
+// cpuFineRanking CPU 精排的独立实现（从原 fineRanking 方法提取）
+func (db *VectorDB) cpuFineRanking(query []float64, candidates []string, config TwoStageSearchConfig) ([]entity.Result, error) {
+	results := make([]entity.Result, 0, len(candidates))
+
+	// CPU 并行精排
+	numWorkers := runtime.NumCPU()
+	candidateChan := make(chan string, len(candidates))
+	resultChan := make(chan entity.Result, len(candidates))
+
+	// 启动工作协程
+	var wg sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for id := range candidateChan {
+				vec, exists := db.vectors[id]
+				if !exists {
+					continue
+				}
+
+				// 使用优化的相似度计算
+				similarity := algorithm.OptimizedCosineSimilarity(query, vec)
+
+				// 应用阈值过滤
+				if similarity >= config.Threshold {
+					resultChan <- entity.Result{
+						Id:         id,
+						Similarity: similarity,
+					}
+				}
+			}
+		}()
+	}
+
+	// 发送候选
+	go func() {
+		for _, id := range candidates {
+			candidateChan <- id
+		}
+		close(candidateChan)
+	}()
+
+	// 收集结果
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	for result := range resultChan {
+		results = append(results, result)
+	}
+
+	// 按相似度降序排序
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Similarity > results[j].Similarity
+	})
+
+	// 限制返回数量
+	if len(results) > config.FineK {
+		results = results[:config.FineK]
+	}
+
+	return results, nil
+}
+
+// approximateSearch 使用简化的距离计算进行快速搜索
+func (db *VectorDB) approximateSearch(query []float64, k int) ([]string, error) {
+	if len(db.vectors) == 0 {
+		return []string{}, nil
+	}
+
+	// 归一化查询向量
+	normalizedQuery := algorithm.NormalizeVector(query)
+
+	// 使用简化的距离计算（只计算前几个维度的距离作为近似）
+	approxDim := int(math.Min(float64(len(normalizedQuery)), 32)) // 只使用前32个维度进行近似计算
+	if approxDim < 8 {
+		approxDim = len(normalizedQuery) // 如果维度太少，使用全部维度
+	}
+
+	type candidate struct {
+		id   string
+		dist float64
+	}
+
+	candidates := make([]candidate, 0, len(db.vectors))
+
+	// 并行计算简化距离
+	numWorkers := runtime.NumCPU()
+	vectorChan := make(chan struct {
+		id  string
+		vec []float64
+	}, len(db.vectors))
+	resultChan := make(chan candidate, len(db.vectors))
+
+	// 启动工作协程
+	var wg sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for item := range vectorChan {
+				// 使用简化的欧氏距离计算（只计算前几个维度）
+				dist := 0.0
+				for j := 0; j < approxDim; j++ {
+					if j < len(item.vec) {
+						diff := normalizedQuery[j] - item.vec[j]
+						dist += diff * diff
+					}
+				}
+
+				resultChan <- candidate{
+					id:   item.id,
+					dist: dist,
+				}
+			}
+		}()
+	}
+
+	// 发送向量数据
+	go func() {
+		for id, vec := range db.vectors {
+			vectorChan <- struct {
+				id  string
+				vec []float64
+			}{
+				id:  id,
+				vec: vec,
+			}
+		}
+		close(vectorChan)
+	}()
+
+	// 收集结果
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	for candidate := range resultChan {
+		candidates = append(candidates, candidate)
+	}
+
+	// 按距离升序排序（距离越小越相似）
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].dist < candidates[j].dist
+	})
+
+	// 返回前k个结果的ID
+	resultCount := int(math.Min(float64(k), float64(len(candidates))))
+	results := make([]string, resultCount)
+	for i := 0; i < resultCount; i++ {
+		results[i] = candidates[i].id
+	}
+
+	return results, nil
+}
+
 // FindNearest 优化后的FindNearest方法
 func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]string, error) {
 	startTime := time.Now()
@@ -2051,7 +2620,7 @@ func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]string, e
 	db.stats.TotalQueries++
 	db.statsMu.Unlock()
 	// 检查缓存
-	cacheKey := util.GenerateCacheKey(query, k, nprobe, 0)
+	cacheKey := algorithm.GenerateCacheKey(query, k, nprobe, 0)
 	db.cacheMu.RLock()
 	cached, found := db.queryCache[cacheKey]
 	if found && (time.Now().Unix()-cached.timestamp) < db.cacheTTL {
@@ -2081,7 +2650,7 @@ func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]string, e
 		log.Trace("使用 HNSW 索引进行搜索。")
 
 		// 预处理查询向量
-		normalizedQuery := util.NormalizeVector(query)
+		normalizedQuery := algorithm.NormalizeVector(query)
 
 		// 使用 HNSW 搜索
 		results, err := db.hnsw.Search(normalizedQuery, k)
@@ -2139,6 +2708,59 @@ func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]string, e
 	return finalResults, nil
 }
 
+// AdaptiveNprobeSearch 自适应 nprobe 搜索
+func (db *VectorDB) AdaptiveNprobeSearch(query []float64, k int) ([]entity.Result, error) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	dataSize := len(db.vectors)
+
+	// 根据数据规模自适应调整 nprobe
+	var nprobe int
+	switch {
+	case dataSize < 10000:
+		nprobe = max(1, db.numClusters/4)
+	case dataSize < 100000:
+		nprobe = max(2, db.numClusters/3)
+	case dataSize < 1000000:
+		nprobe = max(3, db.numClusters/2)
+	default:
+		nprobe = max(5, db.numClusters*2/3)
+	}
+
+	// 确保 nprobe 在合理范围内
+	if nprobe > db.numClusters {
+		nprobe = db.numClusters
+	}
+
+	return db.ivfSearch(query, k, nprobe)
+}
+
+// AdaptiveHNSWConfig HNSW 自适应配置
+func (db *VectorDB) AdaptiveHNSWConfig() {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	dataSize := len(db.vectors)
+
+	// 根据数据规模调整 efConstruction
+	switch {
+	case dataSize < 10000:
+		db.efConstruction = 100.0
+	case dataSize < 100000:
+		db.efConstruction = 200.0
+	case dataSize < 1000000:
+		db.efConstruction = 400.0
+	default:
+		db.efConstruction = 800.0
+	}
+
+	// 根据向量维度调整连接数
+	if db.vectorDim > 0 {
+		db.maxConnections = min(64, max(16, db.vectorDim/10))
+	}
+}
+
 // FindNearestWithScores 查找最近的k个向量，并返回它们的ID和相似度分数
 func (db *VectorDB) FindNearestWithScores(query []float64, k int, nprobe int) ([]entity.Result, error) {
 	startTime := time.Now()
@@ -2148,7 +2770,7 @@ func (db *VectorDB) FindNearestWithScores(query []float64, k int, nprobe int) ([
 	if len(db.vectors) == 0 {
 		return []entity.Result{}, nil
 	}
-	normalizedQuery := util.NormalizeVector(query)
+	normalizedQuery := algorithm.NormalizeVector(query)
 	var results []entity.Result
 	if db.indexed && len(db.clusters) > 0 && db.numClusters > 0 {
 		if nprobe <= 0 {
@@ -2190,7 +2812,7 @@ func (db *VectorDB) FindNearestWithScores(query []float64, k int, nprobe int) ([
 						if !exists {
 							return
 						}
-						sim := util.CosineSimilarity(normalizedQuery, vec)
+						sim := algorithm.CosineSimilarity(normalizedQuery, vec)
 						resultChan <- entity.Result{Id: vecID, Similarity: sim}
 					}(selectedCluster.VectorIDs[j])
 				}
@@ -2228,7 +2850,7 @@ func (db *VectorDB) FindNearestWithScores(query []float64, k int, nprobe int) ([
 				defer wg.Done()
 				for id := range workChan {
 					vec := db.vectors[id]
-					sim := util.CosineSimilarity(normalizedQuery, vec)
+					sim := algorithm.CosineSimilarity(normalizedQuery, vec)
 					innerResultChan <- entity.Result{Id: id, Similarity: sim}
 				}
 			}()
@@ -2281,6 +2903,16 @@ type AdaptiveConfig struct {
 	MaxWorkers         int  // 最大工作协程数
 	VectorCompression  bool // 是否启用向量压缩
 	UseMultiLevelIndex bool // 是否使用多级索引
+
+	// 自适应 nprobe 参数
+	MinNprobe    int     // 最小探测簇数
+	MaxNprobe    int     // 最大探测簇数
+	RecallTarget float64 // 目标召回率
+
+	// HNSW 自适应参数
+	MinEfConstruction float64 // 最小构建参数
+	MaxEfConstruction float64 // 最大构建参数
+	QualityThreshold  float64 // 质量阈值
 }
 
 // AdjustConfig 自适应配置调整
@@ -2350,7 +2982,7 @@ func (db *VectorDB) bruteForceSearch(query []float64, k int) ([]entity.Result, e
 	}
 
 	// 预处理查询向量 - 归一化可以提高相似度计算的准确性
-	normalizedQuery := util.NormalizeVector(query)
+	normalizedQuery := algorithm.NormalizeVector(query)
 
 	// 使用优先队列维护k个最近的向量
 	resultHeap := make(entity.ResultHeap, 0, k)
@@ -2370,7 +3002,7 @@ func (db *VectorDB) bruteForceSearch(query []float64, k int) ([]entity.Result, e
 			for id := range workChan {
 				vec := db.vectors[id]
 				// 使用余弦相似度计算
-				sim := util.CosineSimilarity(normalizedQuery, vec)
+				sim := algorithm.CosineSimilarity(normalizedQuery, vec)
 				resultChan <- entity.Result{Id: id, Similarity: sim}
 			}
 		}()
@@ -2439,7 +3071,7 @@ func (db *VectorDB) lshSearch(query []float64, k int, numTables int) ([]entity.R
 	}
 
 	// 预处理查询向量
-	normalizedQuery := util.NormalizeVector(query)
+	normalizedQuery := algorithm.NormalizeVector(query)
 
 	// 使用LSH索引进行搜索
 	candidateSet := make(map[string]struct{})
@@ -2473,7 +3105,7 @@ func (db *VectorDB) lshSearch(query []float64, k int, numTables int) ([]entity.R
 		}
 
 		// 计算余弦相似度
-		sim := util.CosineSimilarity(normalizedQuery, vec)
+		sim := algorithm.CosineSimilarity(normalizedQuery, vec)
 
 		if len(resultHeap) < k {
 			heap.Push(&resultHeap, entity.Result{Id: id, Similarity: sim})
@@ -2693,7 +3325,7 @@ func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]entity.Resu
 	}
 
 	// 预处理查询向量
-	normalizedQuery := util.NormalizeVector(query)
+	normalizedQuery := algorithm.NormalizeVector(query)
 
 	// 设置默认nprobe值
 	if nprobe <= 0 {
@@ -2751,7 +3383,7 @@ func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]entity.Resu
 						return
 					}
 					// 计算余弦相似度
-					sim := util.CosineSimilarity(normalizedQuery, vec)
+					sim := algorithm.CosineSimilarity(normalizedQuery, vec)
 					resultChan <- entity.Result{Id: vecID, Similarity: sim}
 				}(selectedCluster.VectorIDs[j])
 			}
@@ -2884,7 +3516,7 @@ func (db *VectorDB) FileSystemSearch(query string, vectorizedType int, k int, np
 				if !exists {
 					continue
 				}
-				sim := util.CosineSimilarity(queryVector, vec)
+				sim := algorithm.CosineSimilarity(queryVector, vec)
 				resultChan <- result{id: c.id, similarity: sim, wordCount: c.count}
 			}
 		}()
@@ -3018,7 +3650,7 @@ func (db *VectorDB) ParallelFindNearest(query []float64, k int) ([]string, error
 			for idx := startIdx; idx < endIdx; idx++ {
 				id := vectorIDs[idx]
 				vec := db.vectors[id]
-				sim := util.OptimizedCosineSimilarity(query, vec)
+				sim := algorithm.OptimizedCosineSimilarity(query, vec)
 				localResults = append(localResults, entity.Result{Id: id, Similarity: sim})
 			}
 
@@ -3078,4 +3710,222 @@ type SearchOptions struct {
 	NumHashTables int           // LSH哈希表数量
 	UseANN        bool          // 是否使用近似最近邻
 	SearchTimeout time.Duration // 搜索超时时间
+}
+
+// 多级缓存结构
+type MultiLevelCache struct {
+	// L1: 内存缓存 - 最快，容量小
+	l1Cache    map[string]queryCache
+	l1Capacity int
+	l1Mu       sync.RWMutex
+
+	// L2: 共享内存缓存 - 较快，容量中等
+	l2Cache    map[string]queryCache
+	l2Capacity int
+	l2Mu       sync.RWMutex
+
+	// L3: 磁盘缓存 - 较慢，容量大
+	l3CachePath string
+	l3Mu        sync.RWMutex
+
+	// 缓存统计
+	stats   CacheStats
+	statsMu sync.RWMutex
+}
+
+// CacheStats 缓存统计信息
+type CacheStats struct {
+	L1Hits       int64
+	L2Hits       int64
+	L3Hits       int64
+	TotalQueries int64
+}
+
+// NewMultiLevelCache 创建新的多级缓存
+func NewMultiLevelCache(l1Capacity, l2Capacity int, l3Path string) *MultiLevelCache {
+	return &MultiLevelCache{
+		l1Cache:     make(map[string]queryCache, l1Capacity),
+		l1Capacity:  l1Capacity,
+		l2Cache:     make(map[string]queryCache, l2Capacity),
+		l2Capacity:  l2Capacity,
+		l3CachePath: l3Path,
+		stats:       CacheStats{},
+	}
+}
+
+// Get 从多级缓存获取结果
+func (c *MultiLevelCache) Get(key string) ([]string, bool) {
+	// 更新查询计数
+	c.statsMu.Lock()
+	c.stats.TotalQueries++
+	c.statsMu.Unlock()
+
+	// 尝试从 L1 缓存获取
+	c.l1Mu.RLock()
+	if cache, found := c.l1Cache[key]; found && time.Now().Unix()-cache.timestamp < 300 {
+		c.l1Mu.RUnlock()
+		c.statsMu.Lock()
+		c.stats.L1Hits++
+		c.statsMu.Unlock()
+		return cache.results, true
+	}
+	c.l1Mu.RUnlock()
+
+	// 尝试从 L2 缓存获取
+	c.l2Mu.RLock()
+	if cache, found := c.l2Cache[key]; found && time.Now().Unix()-cache.timestamp < 1800 {
+		// 将结果提升到 L1 缓存
+		c.l1Mu.Lock()
+		c.l1Cache[key] = cache
+		// 如果 L1 缓存超出容量，移除最旧的项
+		if len(c.l1Cache) > c.l1Capacity {
+			var oldestKey string
+			var oldestTime int64 = math.MaxInt64
+			for k, v := range c.l1Cache {
+				if v.timestamp < oldestTime {
+					oldestTime = v.timestamp
+					oldestKey = k
+				}
+			}
+			delete(c.l1Cache, oldestKey)
+		}
+		c.l1Mu.Unlock()
+
+		c.l2Mu.RUnlock()
+		c.statsMu.Lock()
+		c.stats.L2Hits++
+		c.statsMu.Unlock()
+		return cache.results, true
+	}
+	c.l2Mu.RUnlock()
+
+	// 尝试从 L3 缓存获取
+	// 这里需要实现从磁盘读取缓存的逻辑
+	// ...
+
+	return nil, false
+}
+
+// Put 将结果存入多级缓存
+func (c *MultiLevelCache) Put(key string, results []string) {
+	cache := queryCache{
+		results:   results,
+		timestamp: time.Now().Unix(),
+	}
+
+	// 存入 L1 缓存
+	c.l1Mu.Lock()
+	c.l1Cache[key] = cache
+	// 如果 L1 缓存超出容量，移除最旧的项
+	if len(c.l1Cache) > c.l1Capacity {
+		var oldestKey string
+		var oldestTime int64 = math.MaxInt64
+		for k, v := range c.l1Cache {
+			if v.timestamp < oldestTime {
+				oldestTime = v.timestamp
+				oldestKey = k
+			}
+		}
+		delete(c.l1Cache, oldestKey)
+	}
+	c.l1Mu.Unlock()
+
+	// 异步存入 L2 和 L3 缓存
+	go func() {
+		// 存入 L2 缓存
+		c.l2Mu.Lock()
+		c.l2Cache[key] = cache
+		// 如果 L2 缓存超出容量，移除最旧的项
+		if len(c.l2Cache) > c.l2Capacity {
+			var oldestKey string
+			var oldestTime int64 = math.MaxInt64
+			for k, v := range c.l2Cache {
+				if v.timestamp < oldestTime {
+					oldestTime = v.timestamp
+					oldestKey = k
+				}
+			}
+			delete(c.l2Cache, oldestKey)
+		}
+		c.l2Mu.Unlock()
+
+		// 存入 L3 缓存
+		// 这里需要实现将缓存写入磁盘的逻辑
+		// ...
+	}()
+}
+
+// TwoStageSearchConfig 两阶段搜索配置
+type TwoStageSearchConfig struct {
+	CoarseK      int     // 粗筛阶段返回的候选数量
+	CoarseNprobe int     // 粗筛阶段的 nprobe
+	FineK        int     // 精排阶段最终返回数量
+	UseGPU       bool    // 是否在精排阶段使用 GPU
+	Threshold    float64 // 相似度阈值
+}
+
+// EnableMultiLevelCache 启用多级缓存
+func (db *VectorDB) EnableMultiLevelCache(l1Size, l2Size int, l3Path string) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	db.multiCache = NewMultiLevelCache(l1Size, l2Size, l3Path)
+	log.Info("多级缓存已启用：L1=%d, L2=%d, L3=%s", l1Size, l2Size, l3Path)
+}
+
+// CachedSearch 带缓存的搜索
+func (db *VectorDB) CachedSearch(query []float64, k int) ([]entity.Result, error) {
+	// 生成查询键
+	queryKey := db.generateQueryKey(query, k)
+
+	// 尝试从缓存获取
+	if db.multiCache != nil {
+		if cachedIDs, found := db.multiCache.Get(queryKey); found {
+			// 缓存命中，转换为 Result 格式
+			results := make([]entity.Result, len(cachedIDs))
+			for i, id := range cachedIDs {
+				// 重新计算相似度（或从缓存中获取）
+				similarity, _ := db.CalculateCosineSimilarity(id, query)
+				results[i] = entity.Result{
+					Id:         id,
+					Similarity: similarity,
+				}
+			}
+			return results, nil
+		}
+	}
+
+	// 缓存未命中，执行搜索
+	results, err := db.TwoStageSearch(query, TwoStageSearchConfig{
+		CoarseK:      k * 3,
+		CoarseNprobe: db.numClusters / 5,
+		FineK:        k,
+		UseGPU:       false,
+		Threshold:    0.1,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	// 将结果存入缓存
+	if db.multiCache != nil {
+		ids := make([]string, len(results))
+		for i, result := range results {
+			ids[i] = result.Id
+		}
+		db.multiCache.Put(queryKey, ids)
+	}
+
+	return results, nil
+}
+
+// generateQueryKey 生成查询键
+func (db *VectorDB) generateQueryKey(query []float64, k int) string {
+	h := fnv.New64a()
+	for _, val := range query {
+		binary.Write(h, binary.LittleEndian, val)
+	}
+	binary.Write(h, binary.LittleEndian, int64(k))
+	return fmt.Sprintf("%x", h.Sum64())
 }

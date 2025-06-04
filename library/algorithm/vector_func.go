@@ -1,4 +1,4 @@
-package util
+package algorithm
 
 import "C"
 import (
@@ -11,9 +11,9 @@ import (
 	"math/rand"
 	"os"
 	"runtime"
-	"seetaSearch/library/algorithm"
 	"seetaSearch/library/entity"
 	"seetaSearch/library/enum"
+	"seetaSearch/library/hardware"
 	"sync"
 	"time"
 )
@@ -422,7 +422,7 @@ func TrainPQCodebook(
 		}
 
 		fmt.Printf("    对 %d 个子向量进行K-Means聚类...\n", len(subspaceTrainingPoints))
-		centroids, _, err := algorithm.KMeans(subspaceTrainingPoints, numCentroidsPerSubvector, maxKMeansIterations, kMeansTolerance)
+		centroids, _, err := KMeans(subspaceTrainingPoints, numCentroidsPerSubvector, maxKMeansIterations, kMeansTolerance)
 		if err != nil {
 			return fmt.Errorf("子空间 %d K-Means 聚类失败: %w", i, err)
 		}
@@ -488,7 +488,7 @@ func CompressByPQ(vec []float64, loadedCodebook [][]entity.Point, numSubvectors 
 		assignedCentroidIndex := -1
 
 		for centroidIdx, centroid := range currentSubspaceCodebook {
-			distSq, err := algorithm.EuclideanDistanceSquared(subVecPoint, centroid)
+			distSq, err := EuclideanDistanceSquared(subVecPoint, centroid)
 			if err != nil {
 				return entity.CompressedVector{}, fmt.Errorf("计算到质心 %d (子空间 %d) 的距离失败: %w", centroidIdx, i, err)
 			}
@@ -576,7 +576,7 @@ func OptimizedCompressByPQ(vec []float64, loadedCodebook [][]entity.Point, numSu
 			// 使用 SIMD 加速距离计算（如果支持）
 			if useAVX2 && subVectorDim%8 == 0 {
 				// 使用 AVX2 指令集加速距离计算
-				nearest, dist := findNearestCentroidAVX2(subVecData, currentSubspaceCodebook)
+				nearest, dist := hardware.FindNearestCentroidAVX2(subVecData, currentSubspaceCodebook)
 				if nearest >= 0 && dist < minDistSq {
 					minDistSq = dist
 					assignedCentroidIndex = nearest
@@ -798,7 +798,7 @@ func ApproximateDistanceADC(queryVector []float64, compressedVector entity.Compr
 		}
 
 		// 5. 计算查询子向量与质心子向量之间的平方欧氏距离
-		distSq, err := algorithm.EuclideanDistanceSquared(querySubvector, centroidSubvector)
+		distSq, err := EuclideanDistanceSquared(querySubvector, centroidSubvector)
 		if err != nil {
 			return 0, fmt.Errorf("计算子空间 %d 的距离失败: %w", m, err)
 		}

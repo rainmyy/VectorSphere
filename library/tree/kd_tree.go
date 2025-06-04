@@ -3,8 +3,8 @@ package tree
 import (
 	"container/heap"
 	"math"
+	"seetaSearch/library/algorithm"
 	"seetaSearch/library/entity"
-	"seetaSearch/library/util"
 )
 
 // KDTreeNode KD树节点结构
@@ -102,7 +102,7 @@ func (tree *KDTree) searchNearest(node *KDTreeNode, query []float64, k int, resu
 	}
 
 	// 计算当前节点与查询点的相似度
-	sim := util.CosineSimilarity(query, node.Point)
+	sim := algorithm.CosineSimilarity(query, node.Point)
 
 	// 更新结果堆
 	if resultHeap.Len() < k {
