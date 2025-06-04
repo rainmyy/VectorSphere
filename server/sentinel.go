@@ -4,14 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
+	"fmt"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/concurrency"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
+	"net"
 	"net/http"
+	"os"
+	"os/signal"
 	"seetaSearch/library/log"
 	"seetaSearch/messages"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -32,6 +38,7 @@ type Sentinel struct {
 	ServiceKey string
 	Role       SentinelRole
 	Balancer   Balancer
+	Token      string
 }
 
 var _ ServerInterface = (*Sentinel)(nil)
@@ -255,17 +262,53 @@ func (s *Sentinel) Close() (err error) {
 	return
 }
 
-func (s *Sentinel) StartMasterServer() {
+func (s *Sentinel) StartMasterServer(port int) {
 	if s.Role != Master {
 		return
 	}
-	http.HandleFunc("/search", s.handleSearch)
-	http.HandleFunc("/add", s.handleAddDoc)
+	mux := http.NewServeMux()
+	mux.Handle("/search", s.authMiddleware(s.rateLimitMiddleware(http.HandlerFunc(s.handleSearch))))
+	mux.Handle("/add", s.authMiddleware(s.rateLimitMiddleware(http.HandlerFunc(s.handleAddDoc))))
+	mux.Handle("/delete", s.authMiddleware(s.rateLimitMiddleware(http.HandlerFunc(s.handleDeleteDoc))))
+	mux.Handle("/update", s.authMiddleware(s.rateLimitMiddleware(http.HandlerFunc(s.handleUpdateDoc))))
+	mux.Handle("/list", s.authMiddleware(s.rateLimitMiddleware(http.HandlerFunc(s.handleListDocs))))
+	mux.Handle("/health", http.HandlerFunc(s.handleHealth))
+	mux.Handle("/lb_switch", s.authMiddleware(http.HandlerFunc(s.handleLBSwitch)))
+	mux.Handle("/gray_route", s.authMiddleware(http.HandlerFunc(s.handleGrayRoute)))
 	go s.HealthCheckLoop()
-	log.Info("Master HTTP server started on :8080")
-	http.ListenAndServe(":8080", nil)
+	log.Info("Master HTTP server started on :%d", port)
+	err := http.ListenAndServe(fmt.Sprintf(":%d", port), mux)
+	if err != nil {
+		return
+	}
 }
 
+// Token认证中间件
+func (s *Sentinel) authMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		token := r.Header.Get("Authorization")
+		if token != "Bearer your_token" {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// 限流中间件（简单令牌桶）
+var rateLimiter = make(chan struct{}, 100) // 100 QPS
+
+func (s *Sentinel) rateLimitMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case rateLimiter <- struct{}{}:
+			defer func() { <-rateLimiter }()
+			next.ServeHTTP(w, r)
+		default:
+			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+		}
+	})
+}
 func (s *Sentinel) handleSearch(w http.ResponseWriter, r *http.Request) {
 	var req Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -294,6 +337,85 @@ func (s *Sentinel) handleAddDoc(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
+func (s *Sentinel) handleDeleteDoc(w http.ResponseWriter, r *http.Request) {
+	var req struct{ Id string }
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	resp, err := s.ForwardToSlaves("DeleteDoc", req.Id)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Sentinel) handleUpdateDoc(w http.ResponseWriter, r *http.Request) {
+	var doc messages.Document
+	if err := json.NewDecoder(r.Body).Decode(&doc); err != nil {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	resp, err := s.ForwardToSlaves("UpdateDoc", &doc)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Sentinel) handleListDocs(w http.ResponseWriter, r *http.Request) {
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
+	// 组装分页参数，转发到从节点
+	req := struct{ Page, Size int }{page, size}
+	resp, err := s.ForwardToSlaves("ListDocs", req)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Sentinel) handleHealth(w http.ResponseWriter, r *http.Request) {
+	w.Write([]byte("ok"))
+}
+
+func (s *Sentinel) handleLBSwitch(w http.ResponseWriter, r *http.Request) {
+	type req struct{ Strategy string }
+	var body req
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "Unknown strategy", 400)
+		return
+	}
+	switch body.Strategy {
+	case "roundrobin":
+		s.Balancer = &RoundRobinBalancer{}
+	case "weighted":
+		s.Balancer = &WeightedBalancer{}
+	case "leastconn":
+		s.Balancer = &LeastConnBalancer{}
+	default:
+		http.Error(w, "Unknown strategy", 400)
+		return
+	}
+	w.Write([]byte("ok"))
+}
+
+func (s *Sentinel) handleGrayRoute(w http.ResponseWriter, r *http.Request) {
+	tag := r.URL.Query().Get("tag")
+	endpoints := s.Hub.GetServiceEndpoints(s.ServiceKey)
+	var filtered []EndPoint
+	for _, ep := range endpoints {
+		if ep.Tags["env"] == tag {
+			filtered = append(filtered, ep)
+		}
+	}
+	s.Balancer.Set(filtered...)
+	w.Write([]byte(fmt.Sprintf("Switched to %d endpoints with tag=%s", len(filtered), tag)))
+}
+
 func (s *Sentinel) ForwardToSlaves(method string, req interface{}) (interface{}, error) {
 	endpoints := s.Hub.GetServiceEndpoints(s.ServiceKey)
 	if len(endpoints) == 0 {
@@ -313,6 +435,15 @@ func (s *Sentinel) ForwardToSlaves(method string, req interface{}) (interface{},
 	case "Search":
 		searchReq := req.(*Request)
 		return client.Search(context.Background(), searchReq)
+	case "DeleteDoc":
+		id := req.(string)
+		return client.DelDoc(context.Background(), &DocId{Id: id})
+	//case "UpdateDoc":
+	//	doc := req.(*messages.Document)
+	//	return client.UpdateDoc(context.Background(), doc)
+	//case "ListDocs":
+	//	p := req.(struct{ Page, Size int })
+	//	return client.ListDocs(context.Background(), &ListRequest{Page: int32(p.Page), Size: int32(p.Size)})
 	default:
 		return nil, errors.New("未知方法")
 	}
@@ -340,26 +471,57 @@ func (s *Sentinel) ElectMaster() {
 		for {
 			if err := election.Campaign(context.Background(), s.ServiceKey); err == nil {
 				s.Role = Master
-				s.StartMasterServer()
+				s.StartMasterServer(8080)
+				s.sendMasterNotify("I am the new master")
 			}
 			<-election.Observe(context.Background())
 		}
 	}()
 }
 
-// --- CLI入口伪代码 ---
-//func main() {
-//	role := os.Getenv("ROLE") // "master" or "slave"
-//	if role == "master" {
-//		sentinel := NewSentinel(nil, 0, 0, "", Master)
-//		sentinel.ElectMaster()
-//		signalChan := make(chan os.Signal, 1)
-//		signal.Notify(signalChan, os.Interrupt)
-//		<-signalChan
-//		log.Info("Master shutdown")
-//	} else {
-//		sentinel := NewSentinel(nil, 0, 0, "", Slave)
-//		// 启动gRPC服务
-//		select {}
-//	}
-//}
+func (s *Sentinel) sendMasterNotify(msg string) {
+	log.Info("Master notify: %s", msg)
+	// 可扩展为Webhook/邮件/钉钉等
+}
+
+func RunCLI() {
+	role := flag.String("role", "master", "Role: master or slave")
+	lb := flag.String("lb", "roundrobin", "Load balancer: roundrobin/weighted/leastconn")
+	token := flag.String("token", "your_token", "API token")
+	flag.Parse()
+	var balancer Balancer
+	switch *lb {
+	case "roundrobin":
+		balancer = &RoundRobinBalancer{}
+	case "weighted":
+		balancer = &WeightedBalancer{}
+	case "leastconn":
+		balancer = &LeastConnBalancer{}
+	default:
+		balancer = &RoundRobinBalancer{}
+	}
+	if *role == "master" {
+		sentinel := NewSentinel(nil, 0, 0, "service", Master)
+		sentinel.Balancer = balancer
+		sentinel.Token = *token
+		sentinel.ElectMaster()
+		signalChan := make(chan os.Signal, 1)
+		signal.Notify(signalChan, os.Interrupt)
+		<-signalChan
+		log.Info("Master shutdown")
+	} else {
+		sentinel := NewSentinel(nil, 0, 0, "service", Slave)
+		sentinel.Balancer = balancer
+		sentinel.Token = *token
+		StartGRPCServer(9090)
+		select {}
+	}
+}
+
+func StartGRPCServer(port int) {
+	lis, _ := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	grpcServer := grpc.NewServer()
+	RegisterIndexServiceServer(grpcServer, &IndexServiceServerImpl{})
+	log.Info("gRPC server started on :%d", port)
+	grpcServer.Serve(lis)
+}

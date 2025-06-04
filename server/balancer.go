@@ -63,12 +63,13 @@ type WeightedBalancer struct {
 	weights   []int
 }
 
-func (b *WeightedBalancer) Set(eps []EndPoint) {
+func (b *WeightedBalancer) Set(eps ...EndPoint) bool {
 	b.endpoints = eps
 	b.weights = make([]int, len(eps))
 	for i, ep := range eps {
-		b.weights[i] = ep.Weight
+		b.weights[i] = int(ep.weight)
 	}
+	return true
 }
 
 func (b *WeightedBalancer) Take() EndPoint {
@@ -91,9 +92,10 @@ type LeastConnBalancer struct {
 	conns     []int32
 }
 
-func (b *LeastConnBalancer) Set(eps []EndPoint) {
+func (b *LeastConnBalancer) Set(eps ...EndPoint) bool {
 	b.endpoints = eps
 	b.conns = make([]int32, len(eps))
+	return true
 }
 
 func (b *LeastConnBalancer) Take() EndPoint {
@@ -113,12 +115,12 @@ func (w *WeightRandomBalance) Set(endpoints ...EndPoint) bool {
 		return false
 	}
 	sort.Slice(endpoints, func(i, j int) bool {
-		return endpoints[i].Weight < endpoints[j].Weight
+		return endpoints[i].weight < endpoints[j].weight
 	})
 	totals := make([]int, len(endpoints))
 	runningTotal := 0
 	for i, e := range endpoints {
-		runningTotal += int(e.Weight)
+		runningTotal += int(e.weight)
 		totals[i] = runningTotal
 	}
 	w.adders = endpoints
