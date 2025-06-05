@@ -825,3 +825,193 @@ func ComputeVectorHash(vec []float64) uint64 {
 	}
 	return h.Sum64()
 }
+
+// HardwareCapabilities 硬件能力检测结果
+type HardwareCapabilities struct {
+	HasAVX2    bool
+	HasAVX512  bool
+	HasGPU     bool
+	CPUCores   int
+	GPUDevices int
+}
+
+// ComputeStrategy 计算策略枚举
+type ComputeStrategy int
+
+const (
+	StrategyStandard ComputeStrategy = iota
+	StrategyAVX2
+	StrategyAVX512
+	StrategyGPU
+	StrategyHybrid // GPU + CPU 混合
+)
+
+// HardwareDetector 硬件检测器
+type HardwareDetector struct {
+	capabilities HardwareCapabilities
+	once         sync.Once
+}
+
+// GetHardwareCapabilities 获取硬件能力（单例模式）
+func (hd *HardwareDetector) GetHardwareCapabilities() HardwareCapabilities {
+	hd.once.Do(func() {
+		hd.capabilities = HardwareCapabilities{
+			HasAVX2:    cpuid.CPU.AVX2(),
+			HasAVX512:  cpuid.CPU.AVX512F() && cpuid.CPU.AVX512DQ(),
+			HasGPU:     detectGPUSupport(),
+			CPUCores:   runtime.NumCPU(),
+			GPUDevices: getGPUDeviceCount(),
+		}
+	})
+	return hd.capabilities
+}
+
+// detectGPUSupport 检测GPU支持
+func detectGPUSupport() bool {
+	// 尝试初始化GPU加速器来检测GPU支持
+	gpuAccelerator := NewFAISSGPUAccelerator(0, "Flat")
+	if err := gpuAccelerator.Initialize(); err != nil {
+		return false
+	}
+	gpuAccelerator.Cleanup()
+	return true
+}
+
+// getGPUDeviceCount 获取GPU设备数量
+func getGPUDeviceCount() int {
+	// 这里需要调用CUDA API获取设备数量
+	// 简化实现，实际应该调用C.faiss_gpu_get_device_count()
+	return 1 // 默认假设有1个GPU设备
+}
+
+// ComputeStrategySelector 计算策略选择器
+type ComputeStrategySelector struct {
+	detector     *HardwareDetector
+	gpuThreshold int // 使用GPU的数据量阈值
+}
+
+// NewComputeStrategySelector 创建计算策略选择器
+func NewComputeStrategySelector() *ComputeStrategySelector {
+	return &ComputeStrategySelector{
+		detector:     &HardwareDetector{},
+		gpuThreshold: 10000, // 默认10000个向量以上使用GPU
+	}
+}
+
+func (css *ComputeStrategySelector) GetHardwareCapabilities() HardwareCapabilities {
+	return css.detector.GetHardwareCapabilities()
+}
+
+// SelectOptimalStrategy 选择最优计算策略
+func (css *ComputeStrategySelector) SelectOptimalStrategy(dataSize int, vectorDim int) ComputeStrategy {
+	caps := css.detector.GetHardwareCapabilities()
+
+	// 大数据量优先考虑GPU
+	if dataSize >= css.gpuThreshold && caps.HasGPU {
+		return StrategyGPU
+	}
+
+	// 中等数据量考虑AVX指令集
+	if vectorDim%8 == 0 && caps.HasAVX512 {
+		return StrategyAVX512
+	}
+
+	if vectorDim%8 == 0 && caps.HasAVX2 {
+		return StrategyAVX2
+	}
+
+	// 默认使用标准实现
+	return StrategyStandard
+}
+
+// AdaptiveCosineSimilarity 自适应余弦相似度计算
+func AdaptiveCosineSimilarity(a, b []float64, strategy ComputeStrategy) float64 {
+	switch strategy {
+	case StrategyAVX512:
+		if len(a)%8 == 0 {
+			return AVX512CosineSimilarity(a, b)
+		}
+		fallthrough
+	case StrategyAVX2:
+		if len(a)%8 == 0 {
+			// AVX2余弦相似度计算（需要实现）
+			return avx2CosineSimilarity(a, b)
+		}
+		fallthrough
+	default:
+		return CosineSimilarity(a, b)
+	}
+}
+
+// avx2CosineSimilarity AVX2余弦相似度计算
+func avx2CosineSimilarity(a, b []float64) float64 {
+	// 简化实现，实际需要AVX2汇编优化
+	if len(a) != len(b) {
+		return 0.0
+	}
+
+	n := len(a)
+	if n == 0 {
+		return 0.0
+	}
+
+	// 使用分块处理提高缓存效率
+	blockSize := 8
+	dotProduct := 0.0
+	normA := 0.0
+	normB := 0.0
+
+	for i := 0; i < n; i += blockSize {
+		end := i + blockSize
+		if end > n {
+			end = n
+		}
+
+		for j := i; j < end; j++ {
+			dotProduct += a[j] * b[j]
+			normA += a[j] * a[j]
+			normB += b[j] * b[j]
+		}
+	}
+
+	if normA == 0 || normB == 0 {
+		return 0.0
+	}
+
+	return dotProduct / (math.Sqrt(normA) * math.Sqrt(normB))
+}
+
+// AdaptiveFindNearestCentroid 自适应查找最近质心
+func AdaptiveFindNearestCentroid(vec []float64, centroids []entity.Point, strategy ComputeStrategy) (int, float64) {
+	switch strategy {
+	case StrategyAVX512:
+		if len(vec)%8 == 0 {
+			return findNearestCentroidAVX512(vec, centroids)
+		}
+		fallthrough
+	case StrategyAVX2:
+		if len(vec)%8 == 0 {
+			return FindNearestCentroidAVX2(vec, centroids)
+		}
+		fallthrough
+	default:
+		// 标准实现
+		minDist := math.MaxFloat64
+		nearestIdx := -1
+
+		for i, centroid := range centroids {
+			dist := 0.0
+			for j := 0; j < len(vec); j++ {
+				diff := vec[j] - centroid[j]
+				dist += diff * diff
+			}
+
+			if dist < minDist {
+				minDist = dist
+				nearestIdx = i
+			}
+		}
+
+		return nearestIdx, minDist
+	}
+}
