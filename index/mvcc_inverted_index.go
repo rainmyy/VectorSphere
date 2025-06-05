@@ -662,7 +662,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) getMinMaxKeywords() (messages.KeyWord, me
 		minKey = keys[0].(messages.KeyWord)
 	}
 	if lastLeaf != nil && len(lastLeaf.GetKeys()) > 0 {
-		keys := firstLeaf.GetKeys()
+		keys := lastLeaf.GetKeys()
 		if keys == nil {
 			return minKey, maxKey
 		}
