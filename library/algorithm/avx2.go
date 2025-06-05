@@ -1,4 +1,4 @@
-package hardware
+package algorithm
 
 // #cgo CFLAGS: -mavx2 -march=native
 // #if defined(__FMA__) || defined(__AVX2__)

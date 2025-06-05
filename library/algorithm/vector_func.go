@@ -13,7 +13,6 @@ import (
 	"runtime"
 	"seetaSearch/library/entity"
 	"seetaSearch/library/enum"
-	"seetaSearch/library/hardware"
 	"sync"
 	"time"
 )
@@ -576,7 +575,7 @@ func OptimizedCompressByPQ(vec []float64, loadedCodebook [][]entity.Point, numSu
 			// 使用 SIMD 加速距离计算（如果支持）
 			if useAVX2 && subVectorDim%8 == 0 {
 				// 使用 AVX2 指令集加速距离计算
-				nearest, dist := hardware.FindNearestCentroidAVX2(subVecData, currentSubspaceCodebook)
+				nearest, dist := FindNearestCentroidAVX2(subVecData, currentSubspaceCodebook)
 				if nearest >= 0 && dist < minDistSq {
 					minDistSq = dist
 					assignedCentroidIndex = nearest

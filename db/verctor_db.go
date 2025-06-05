@@ -13,7 +13,6 @@ import (
 	"seetaSearch/library/algorithm"
 	"seetaSearch/library/entity"
 	"seetaSearch/library/graph"
-	"seetaSearch/library/hardware"
 	"seetaSearch/library/log"
 	"seetaSearch/library/tree"
 	"sort"
@@ -88,8 +87,8 @@ type VectorDB struct {
 	efSearch         float64          // HNSW 搜索时的扩展因子
 	metadata         map[string]map[string]interface{}
 
-	multiCache     *MultiLevelCache        // 多级缓存
-	gpuAccelerator hardware.GPUAccelerator // GPU 加速器
+	multiCache     *MultiLevelCache         // 多级缓存
+	gpuAccelerator algorithm.GPUAccelerator // GPU 加速器
 }
 
 const (
@@ -2217,7 +2216,7 @@ func (db *VectorDB) EnableGPUAcceleration(gpuID int, indexType string) error {
 	defer db.mu.Unlock()
 
 	// 创建 GPU 加速器
-	db.gpuAccelerator = hardware.NewFAISSGPUAccelerator(gpuID, indexType)
+	db.gpuAccelerator = algorithm.NewFAISSGPUAccelerator(gpuID, indexType)
 
 	// 初始化 GPU 加速器
 	err := db.gpuAccelerator.Initialize()

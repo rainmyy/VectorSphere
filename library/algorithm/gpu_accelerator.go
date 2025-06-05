@@ -1,11 +1,96 @@
-package hardware
+package algorithm
 
+/*
+#cgo CFLAGS: -I/usr/local/cuda/include
+#cgo LDFLAGS: -L/usr/local/cuda/lib64 -lcudart -lcuda -lfaiss_gpu
+#include <cuda_runtime.h>
+#include <cuda.h>
+#include <faiss/gpu/StandardGpuResources.h>
+#include <faiss/gpu/GpuIndexFlat.h>
+#include <faiss/gpu/GpuIndexIVF.h>
+
+// CUDA error codes
+typedef enum {
+    cudaSuccess = 0,
+    cudaErrorInvalidValue = 1,
+    cudaErrorMemoryAllocation = 2
+} cudaError_t;
+
+// CUDA memory copy kinds
+typedef enum {
+    cudaMemcpyHostToHost = 0,
+    cudaMemcpyHostToDevice = 1,
+    cudaMemcpyDeviceToHost = 2,
+    cudaMemcpyDeviceToDevice = 3
+} cudaMemcpyKind;
+
+// CUDA memory allocation types
+typedef enum {
+    cudaMemAllocationTypePinned = 0x1
+} cudaMemAllocationType;
+
+// CUDA memory handle types
+typedef enum {
+    cudaMemHandleTypeNone = 0x0
+} cudaMemHandleType;
+
+// CUDA memory location types
+typedef enum {
+    cudaMemLocationTypeInvalid = 0,
+    cudaMemLocationTypeDevice = 1
+} cudaMemLocationType;
+
+// CUDA memory pool attributes
+typedef enum {
+    cudaMemPoolAttrReleaseThreshold = 1
+} cudaMemPoolAttr;
+
+// Forward declarations for types
+typedef struct CUctx_st *CUcontext;
+typedef int CUdevice;
+typedef struct cudaMemPoolProps {
+    cudaMemAllocationType allocType;
+    cudaMemHandleType handleTypes;
+    struct {
+        cudaMemLocationType type;
+        int id;
+    } location;
+} cudaMemPoolProps;
+typedef struct CUmemoryPool_st *cudaMemPool_t;
+typedef struct cudaDeviceProp {
+    int major;
+    int minor;
+    size_t totalGlobalMem;
+} cudaDeviceProp;
+
+// CUDA success codes
+#define CUDA_SUCCESS 0
+
+// Function declarations (these would normally come from CUDA headers)
+int cudaGetDeviceCount(int *count);
+int cudaGetDeviceProperties(cudaDeviceProp *prop, int device);
+int cudaSetDevice(int device);
+int cudaMemGetInfo(size_t *free, size_t *total);
+int cudaMalloc(void **devPtr, size_t size);
+int cudaFree(void *devPtr);
+int cudaMemcpy(void *dst, const void *src, size_t count, cudaMemcpyKind kind);
+int cudaMemPoolCreate(cudaMemPool_t *memPool, const cudaMemPoolProps *poolProps);
+int cudaMemPoolSetAttribute(cudaMemPool_t memPool, cudaMemPoolAttr attr, void *value);
+int cudaDeviceSetMemPool(int device, cudaMemPool_t memPool);
+int cuCtxCreate(CUcontext *pctx, unsigned int flags, CUdevice dev);
+int cuCtxSetCurrent(CUcontext ctx);
+
+// FAISS GPU function declarations
+void* faiss_StandardGpuResources_new();
+int faiss_StandardGpuResources_setDefaultDevice(void *res, int device);
+int faiss_StandardGpuResources_setMemoryFraction(void *res, float fraction);
+int faiss_StandardGpuResources_setTempMemory(void *res, size_t size);
+*/
+import "C"
 import "C"
 import (
 	"fmt"
-	"seetaSearch/library/algorithm"
 	"seetaSearch/library/log"
-	"seetaSearch/server"
 	"sync"
 	"unsafe"
 )
@@ -14,7 +99,7 @@ import (
 type GPUAccelerator interface {
 	Initialize() error
 	BatchCosineSimilarity(queries [][]float64, database [][]float64) ([][]float64, error)
-	BatchSearch(queries [][]float64, database [][]float64, k int) ([][]server.SearchResult, error)
+	BatchSearch(queries [][]float64, database [][]float64, k int) ([][]SearchResult, error)
 	Cleanup() error
 }
 
@@ -378,8 +463,12 @@ func (gpu *FAISSGPUAccelerator) SetMemoryFraction(fraction float64) error {
 	return nil
 }
 
+type SearchResult struct {
+	DocIds []string
+}
+
 // BatchSearch GPU 批量搜索
-func (gpu *FAISSGPUAccelerator) BatchSearch(queries [][]float64, database [][]float64, k int) ([][]server.SearchResult, error) {
+func (gpu *FAISSGPUAccelerator) BatchSearch(queries [][]float64, database [][]float64, k int) ([][]SearchResult, error) {
 	gpu.mu.RLock()
 	defer gpu.mu.RUnlock()
 
@@ -391,16 +480,16 @@ func (gpu *FAISSGPUAccelerator) BatchSearch(queries [][]float64, database [][]fl
 	// 执行批量搜索
 	// 传输结果回 CPU
 
-	results := make([][]server.SearchResult, len(queries))
+	results := make([][]SearchResult, len(queries))
 
 	// 简化实现，实际需要调用 FAISS GPU API
 	for i, query := range queries {
-		queryResults := make([]server.SearchResult, 0, k)
+		queryResults := make([]SearchResult, 0, k)
 
 		// GPU 并行计算相似度
 		similarities := make([]float64, len(database))
 		for j, dbVec := range database {
-			similarities[j] = algorithm.CosineSimilarity(query, dbVec)
+			similarities[j] = CosineSimilarity(query, dbVec)
 		}
 
 		// 找到 top-k 结果
@@ -429,7 +518,7 @@ func (gpu *FAISSGPUAccelerator) BatchCosineSimilarity(queries [][]float64, datab
 
 		// GPU 并行计算余弦相似度
 		for j, dbVec := range database {
-			similarities[j] = algorithm.CosineSimilarity(query, dbVec)
+			similarities[j] = CosineSimilarity(query, dbVec)
 		}
 
 		results[i] = similarities
