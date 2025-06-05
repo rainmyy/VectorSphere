@@ -5,7 +5,9 @@ import (
 	"VectorSphere/library/entity"
 	"VectorSphere/library/graph"
 	"VectorSphere/library/log"
+	"VectorSphere/library/strategy"
 	"VectorSphere/library/tree"
+	"bytes"
 	"container/heap"
 	"encoding/binary"
 	"encoding/gob"
@@ -111,8 +113,8 @@ type VectorDB struct {
 	// 新增 PQ 相关字段
 	pqCodebook               [][]entity.Point // 从文件加载的 PQ 码本
 	pqCodebookFilePath       string           // PQ 码本文件路径，用于热加载
-	numSubvectors            int              // PQ 的子向量数量
-	numCentroidsPerSubvector int              // 每个子向量空间的质心数量
+	numSubVectors            int              // PQ 的子向量数量
+	numCentroidsPerSubVector int              // 每个子向量空间的质心数量
 	usePQCompression         bool             // 标志是否启用 PQ 压缩
 
 	stopCh           chan struct{}
@@ -132,6 +134,11 @@ type VectorDB struct {
 	currentStrategy         algorithm.ComputeStrategy
 	hardwareCaps            algorithm.HardwareCapabilities
 	strategySelector        *StrategySelector
+
+	// 新增 mmap 相关字段
+	useMmap     bool           // 是否启用 mmap
+	mmapFile    *strategy.Mmap // mmap 文件映射
+	mmapEnabled bool           // mmap 是否可用
 }
 
 const (
@@ -230,15 +237,15 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOption
 		QualityLevel: 0.8, // 默认质量等级
 	}
 
-	strategy := db.SelectOptimalIndexStrategy(ctx)
+	indexStrategy := db.SelectOptimalIndexStrategy(ctx)
 
-	log.Trace("选择搜索策略: %v, 数据量: %d, 维度: %d", strategy, len(db.vectors), len(query))
+	log.Trace("选择搜索策略: %v, 数据量: %d, 维度: %d", indexStrategy, len(db.vectors), len(query))
 
 	startTime := time.Now()
 	var results []entity.Result
 	var err error
 
-	switch strategy {
+	switch indexStrategy {
 	case StrategyBruteForce:
 		results, err = db.bruteForceSearch(query, k)
 	case StrategyIVF:
@@ -255,7 +262,7 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOption
 
 	// 记录性能指标
 	latency := time.Since(startTime)
-	db.updatePerformanceMetrics(strategy, latency, len(results))
+	db.updatePerformanceMetrics(indexStrategy, latency, len(results))
 
 	return results, err
 }
@@ -412,13 +419,13 @@ func (db *VectorDB) hnswSearchWithScores(query []float64, k int) ([]entity.Resul
 	}
 
 	// 选择最优计算策略
-	strategy := db.GetSelectStrategy(query)
+	selectStrategy := db.GetSelectStrategy(query)
 
 	// 根据策略设置距离函数
-	switch strategy {
+	switch selectStrategy {
 	case algorithm.StrategyAVX512, algorithm.StrategyAVX2:
 		db.hnsw.SetDistanceFunc(func(a, b []float64) (float64, error) {
-			sim := algorithm.AdaptiveCosineSimilarity(a, b, strategy)
+			sim := algorithm.AdaptiveCosineSimilarity(a, b, selectStrategy)
 			return 1.0 - sim, nil
 		})
 	default:
@@ -498,8 +505,8 @@ func (db *VectorDB) hybridSearchWithScores(query []float64, k int, ctx SearchCon
 	}
 
 	// 使用CPU SIMD加速精排
-	strategy := db.strategyComputeSelector.SelectOptimalStrategy(len(candidateIDs), len(query))
-	finalResults, err := db.fineRankingWithScores(query, candidateIDs, k, strategy)
+	optimalStrategy := db.strategyComputeSelector.SelectOptimalStrategy(len(candidateIDs), len(query))
+	finalResults, err := db.fineRankingWithScores(query, candidateIDs, k, optimalStrategy)
 	if err != nil {
 		return nil, err
 	}
@@ -588,8 +595,8 @@ func (db *VectorDB) logPerformanceSummary() {
 	// 输出各策略的性能表现
 	if db.strategySelector != nil && db.strategySelector.performance != nil {
 		log.Info("各策略性能表现:")
-		for strategy, metrics := range db.strategySelector.performance {
-			strategyName := db.getStrategyName(strategy)
+		for indexStrategy, metrics := range db.strategySelector.performance {
+			strategyName := db.getStrategyName(indexStrategy)
 			log.Info("  %s: 延迟=%v, QPS=%.2f, 召回率=%.2f%%, 内存=%d bytes",
 				strategyName, metrics.AvgLatency, metrics.ThroughputQPS,
 				metrics.Recall*100, metrics.MemoryUsage)
@@ -651,7 +658,7 @@ func (db *VectorDB) GetBestPerformingStrategy() IndexStrategy {
 	var bestStrategy IndexStrategy
 	var bestScore float64 = -1
 
-	for strategy, metrics := range db.strategySelector.performance {
+	for indexStrategy, metrics := range db.strategySelector.performance {
 		// 综合评分：考虑延迟、QPS和召回率
 		// 分数 = (召回率 * QPS) / 延迟(秒)
 		latencySeconds := metrics.AvgLatency.Seconds()
@@ -659,7 +666,7 @@ func (db *VectorDB) GetBestPerformingStrategy() IndexStrategy {
 			score := (metrics.Recall * metrics.ThroughputQPS) / latencySeconds
 			if score > bestScore {
 				bestScore = score
-				bestStrategy = strategy
+				bestStrategy = indexStrategy
 			}
 		}
 	}
@@ -795,8 +802,8 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 
 		// 初始化 PQ 相关字段
 		pqCodebook:               nil,
-		numSubvectors:            0, // 默认为0，表示未配置或不使用
-		numCentroidsPerSubvector: 0, // 默认为0
+		numSubVectors:            0, // 默认为0，表示未配置或不使用
+		numCentroidsPerSubVector: 0, // 默认为0
 		usePQCompression:         false,
 		stopCh:                   make(chan struct{}), // 初始化stopCh
 
@@ -866,15 +873,15 @@ func (db *VectorDB) AdaptiveCosineSimilarityBatch(queries [][]float64, targets [
 	// 选择最优计算策略
 	dataSize := len(queries) * len(targets)
 	vectorDim := len(queries[0])
-	strategy := db.strategyComputeSelector.SelectOptimalStrategy(dataSize, vectorDim)
+	optimalStrategy := db.strategyComputeSelector.SelectOptimalStrategy(dataSize, vectorDim)
 
-	log.Trace("选择计算策略: %v, 数据量: %d, 向量维度: %d", strategy, dataSize, vectorDim)
+	log.Trace("选择计算策略: %v, 数据量: %d, 向量维度: %d", optimalStrategy, dataSize, vectorDim)
 
-	switch strategy {
+	switch optimalStrategy {
 	case algorithm.StrategyGPU:
 		return db.gpuBatchCosineSimilarity(queries, targets)
 	case algorithm.StrategyAVX512, algorithm.StrategyAVX2:
-		return db.simdBatchCosineSimilarity(queries, targets, strategy)
+		return db.simdBatchCosineSimilarity(queries, targets, optimalStrategy)
 	default:
 		return db.standardBatchCosineSimilarity(queries, targets)
 	}
@@ -992,17 +999,17 @@ func (db *VectorDB) AdaptiveFindNearest(query []float64, k int, nprobe int) ([]e
 	// 选择最优计算策略
 	dataSize := len(db.vectors)
 	vectorDim := len(query)
-	strategy := db.strategyComputeSelector.SelectOptimalStrategy(dataSize, vectorDim)
+	optimalStrategy := db.strategyComputeSelector.SelectOptimalStrategy(dataSize, vectorDim)
 
-	log.Trace("自适应搜索策略: %v", strategy)
+	log.Trace("自适应搜索策略: %v", optimalStrategy)
 
 	// 如果启用了HNSW索引，优先使用
 	if db.useHNSWIndex && db.indexed && db.hnsw != nil {
-		return db.hnswAdaptiveSearch(query, k, strategy)
+		return db.hnswAdaptiveSearch(query, k, optimalStrategy)
 	}
 
 	// 使用IVF索引进行自适应搜索
-	return db.ivfAdaptiveSearch(query, k, nprobe, strategy)
+	return db.ivfAdaptiveSearch(query, k, nprobe, optimalStrategy)
 }
 
 // hnswAdaptiveSearch HNSW自适应搜索
@@ -1207,6 +1214,8 @@ func (db *VectorDB) SetComputeStrategy(strategy algorithm.ComputeStrategy) error
 		if !db.hardwareCaps.HasGPU {
 			return fmt.Errorf("当前系统不支持GPU加速")
 		}
+	default:
+		return fmt.Errorf("unhandled default case")
 	}
 
 	db.currentStrategy = strategy
@@ -1710,7 +1719,12 @@ func (db *VectorDB) LoadPQCodebookFromFile(filePath string) error {
 		}
 		return fmt.Errorf("打开 PQ 码本文件 %s 失败: %v", filePath, err)
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+			log.Error("close file has error:%v", err.Error())
+		}
+	}(file)
 
 	decoder := gob.NewDecoder(file)
 	var codebook [][]entity.Point
@@ -1720,22 +1734,22 @@ func (db *VectorDB) LoadPQCodebookFromFile(filePath string) error {
 
 	db.pqCodebook = codebook
 	db.pqCodebookFilePath = filePath // 存储路径以备将来热更新检查
-	// 可以在这里根据码本结构验证 numSubvectors 和 numCentroidsPerSubvector
+	// 可以在这里根据码本结构验证 numSubVectors 和 numCentroidsPerSubVector
 	if len(codebook) > 0 {
-		db.numSubvectors = len(codebook)
+		db.numSubVectors = len(codebook)
 		if len(codebook[0]) > 0 {
-			db.numCentroidsPerSubvector = len(codebook[0])
+			db.numCentroidsPerSubVector = len(codebook[0])
 		} else {
 			log.Warning("加载的 PQ 码本子空间为空，PQ 参数可能不正确。")
-			db.numCentroidsPerSubvector = 0
+			db.numCentroidsPerSubVector = 0
 		}
 	} else {
 		log.Warning("加载的 PQ 码本为空，PQ 参数可能不正确。")
-		db.numSubvectors = 0
-		db.numCentroidsPerSubvector = 0
+		db.numSubVectors = 0
+		db.numCentroidsPerSubVector = 0
 	}
 
-	log.Info("成功从 %s 加载 PQ 码本。子空间数: %d, 每子空间质心数: %d", filePath, db.numSubvectors, db.numCentroidsPerSubvector)
+	log.Info("成功从 %s 加载 PQ 码本。子空间数: %d, 每子空间质心数: %d", filePath, db.numSubVectors, db.numCentroidsPerSubVector)
 	return nil
 }
 
@@ -1880,8 +1894,8 @@ func (db *VectorDB) EnablePQCompression(codebookPath string, numSubVectors int, 
 		log.Warning("未提供 PQ 码本文件路径，且之前未配置，PQ 压缩将禁用。")
 		db.usePQCompression = false
 		db.pqCodebook = nil
-		db.numSubvectors = 0
-		db.numCentroidsPerSubvector = 0
+		db.numSubVectors = 0
+		db.numCentroidsPerSubVector = 0
 		db.mu.Unlock()
 		return nil // 不是错误，只是禁用
 	}
@@ -1897,8 +1911,8 @@ func (db *VectorDB) EnablePQCompression(codebookPath string, numSubVectors int, 
 		db.mu.Lock()
 		db.usePQCompression = false // 加载失败，禁用PQ
 		db.pqCodebook = nil
-		db.numSubvectors = 0
-		db.numCentroidsPerSubvector = 0
+		db.numSubVectors = 0
+		db.numCentroidsPerSubVector = 0
 		db.mu.Unlock()
 		return fmt.Errorf("启用 PQ 压缩失败，加载码本时出错: %v", err)
 	}
@@ -1907,13 +1921,13 @@ func (db *VectorDB) EnablePQCompression(codebookPath string, numSubVectors int, 
 	if db.pqCodebook != nil && len(db.pqCodebook) > 0 {
 		db.usePQCompression = true
 		// 更新 numSubVectors 和 numCentroidsPerSubVector 以匹配加载的码本
-		db.numSubvectors = len(db.pqCodebook)
+		db.numSubVectors = len(db.pqCodebook)
 		if len(db.pqCodebook[0]) > 0 {
-			db.numCentroidsPerSubvector = len(db.pqCodebook[0])
+			db.numCentroidsPerSubVector = len(db.pqCodebook[0])
 		} else {
-			db.numCentroidsPerSubvector = 0 // 或者报错，取决于策略
+			db.numCentroidsPerSubVector = 0 // 或者报错，取决于策略
 		}
-		log.Info("PQ 压缩已启用。码本路径: %s, 子向量数: %d, 每子空间质心数: %d", db.pqCodebookFilePath, db.numSubvectors, db.numCentroidsPerSubvector)
+		log.Info("PQ 压缩已启用。码本路径: %s, 子向量数: %d, 每子空间质心数: %d", db.pqCodebookFilePath, db.numSubVectors, db.numCentroidsPerSubVector)
 
 		// 提示用户可能需要压缩现有向量
 		if len(db.vectors) > 0 && len(db.compressedVectors) < len(db.vectors) {
@@ -1968,8 +1982,8 @@ func (db *VectorDB) CompressExistingVectors() error {
 	compressedVectors, err := algorithm.BatchCompressByPQ(
 		vectorsToCompress,
 		db.pqCodebook,
-		db.numSubvectors,
-		db.numCentroidsPerSubvector,
+		db.numSubVectors,
+		db.numCentroidsPerSubVector,
 		numWorkers,
 	)
 
@@ -2033,7 +2047,7 @@ func (db *VectorDB) AddDocument(id string, doc string, vectorizedType int) error
 	db.normalizedVectors[id] = algorithm.NormalizeVector(vector)
 	// 如果启用了 PQ 压缩，则压缩向量
 	if db.usePQCompression && db.pqCodebook != nil {
-		compressedVec, err := algorithm.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector)
+		compressedVec, err := algorithm.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubVectors, db.numCentroidsPerSubVector)
 		if err != nil {
 			// 即使压缩失败，原始向量也已添加，这里只记录错误
 			log.Error("为文档 %s 添加时压缩向量失败: %v", id, err)
@@ -2184,7 +2198,7 @@ func (db *VectorDB) Add(id string, vector []float64) {
 	db.normalizedVectors[id] = algorithm.NormalizeVector(vector)
 	// 如果启用了 PQ 压缩，则压缩向量
 	if db.usePQCompression && db.pqCodebook != nil {
-		compressedVec, err := algorithm.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector)
+		compressedVec, err := algorithm.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubVectors, db.numCentroidsPerSubVector)
 		if err != nil {
 			log.Error("向量 %s 压缩失败: %v。该向量将只以原始形式存储。", id, err)
 			// 根据策略，可以选择是否回滚添加操作或仅记录错误
@@ -2458,7 +2472,7 @@ func (db *VectorDB) Update(id string, vector []float64) error {
 	db.normalizedVectors[id] = algorithm.NormalizeVector(vector)
 	// 如果启用了 PQ 压缩，则更新压缩向量
 	if db.usePQCompression && db.pqCodebook != nil {
-		compressedVec, err := algorithm.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector)
+		compressedVec, err := algorithm.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubVectors, db.numCentroidsPerSubVector)
 		if err != nil {
 			log.Error("为向量 %s 更新时压缩向量失败: %v", id, err)
 			// 即使压缩失败，原始向量也已更新
@@ -2732,13 +2746,124 @@ type dataToSave struct {
 	NormalizedVectors        map[string][]float64
 	CompressedVectors        map[string]entity.CompressedVector
 	PQCodebook               []float64
-	NumSubvectors            int
-	NumCentroidsPerSubvector int
+	NumSubVectors            int
+	NumCentroidsPerSubVector int
 	UsePQCompression         bool
 }
 
-// SaveToFile 将当前数据库状态（包括索引）保存到其配置的文件中。
+// SaveToFileWithMmap 使用 mmap 优化的保存方法
+func (db *VectorDB) SaveToFileWithMmap(filePath string) error {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	if db.backupPath == "" {
+		return fmt.Errorf("文件路径未设置，无法保存数据库")
+	}
+
+	// 创建 mmap 文件
+	mmapFile, err := strategy.NewMmap(db.backupPath, strategy.MODE_CREATE)
+	if err != nil {
+		log.Warning("mmap 创建失败，回退到标准方式: %v", err)
+		return db.SaveToFile(filePath) // 回退到原方法
+	}
+	defer func(mmapFile *strategy.Mmap) {
+		err := mmapFile.Unmap()
+		if err != nil {
+			log.Error("unmap file has error:%v", err.Error())
+		}
+	}(mmapFile)
+
+	// 序列化数据到内存缓冲区
+	var buf bytes.Buffer
+	encoder := gob.NewEncoder(&buf)
+
+	data := struct {
+		Vectors                  map[string][]float64
+		Clusters                 []Cluster
+		NumClusters              int
+		Indexed                  bool
+		InvertedIndex            map[string][]string
+		VectorDim                int
+		VectorizedType           int
+		NormalizedVectors        map[string][]float64
+		CompressedVectors        map[string]entity.CompressedVector
+		UseCompression           bool
+		PqCodebookFilePath       string
+		NumSubVectors            int
+		NumCentroidsPerSubVector int
+		UsePQCompression         bool
+		UseHNSWIndex             bool
+		MaxConnections           int
+		EfConstruction           float64
+		EfSearch                 float64
+	}{
+		Vectors:                  db.vectors,
+		Clusters:                 db.clusters,
+		NumClusters:              db.numClusters,
+		Indexed:                  db.indexed,
+		InvertedIndex:            db.invertedIndex,
+		VectorDim:                db.vectorDim,
+		VectorizedType:           db.vectorizedType,
+		NormalizedVectors:        db.normalizedVectors,
+		CompressedVectors:        db.compressedVectors,
+		UseCompression:           db.useCompression,
+		PqCodebookFilePath:       db.pqCodebookFilePath,
+		NumSubVectors:            db.numSubVectors,
+		NumCentroidsPerSubVector: db.numCentroidsPerSubVector,
+		UsePQCompression:         db.usePQCompression,
+		UseHNSWIndex:             db.useHNSWIndex,
+		MaxConnections:           db.maxConnections,
+		EfConstruction:           db.efConstruction,
+		EfSearch:                 db.efSearch,
+	}
+
+	if err := encoder.Encode(data); err != nil {
+		return fmt.Errorf("序列化数据失败: %v", err)
+	}
+
+	// 将序列化数据写入 mmap
+	serializedData := buf.Bytes()
+	if err := mmapFile.WriteBytes(0, serializedData); err != nil {
+		return fmt.Errorf("写入 mmap 失败: %v", err)
+	}
+
+	// 同步到磁盘
+	if err := mmapFile.Sync(); err != nil {
+		return fmt.Errorf("同步 mmap 到磁盘失败: %v", err)
+	}
+
+	// 保存 HNSW 索引
+	if db.useHNSWIndex && db.hnsw != nil {
+		hnswFilePath := filePath + ".hnsw"
+		err := db.hnsw.SaveToFile(hnswFilePath)
+		if err != nil {
+			return fmt.Errorf("保存 HNSW 图结构失败: %w", err)
+		}
+	}
+
+	log.Info("VectorDB 数据成功通过 mmap 保存到 %s", db.backupPath)
+	return nil
+}
+
+// SaveToFile 保存数据库到文件（智能选择是否使用 mmap）
 func (db *VectorDB) SaveToFile(filePath string) error {
+	// 根据数据大小决定是否使用 mmap
+	estimatedSize := db.estimateDataSize()
+
+	// 大于 10MB 的文件使用 mmap 优化
+	if estimatedSize > 10*1024*1024 {
+		if err := db.SaveToFileWithMmap(filePath); err != nil {
+			log.Warning("mmap 保存失败，回退到标准方式: %v", err)
+			return db.saveToFileStandard(filePath)
+		}
+		return nil
+	}
+
+	return db.saveToFileStandard(filePath)
+}
+
+// SaveToFile 将当前数据库状态（包括索引）保存到其配置的文件中。
+func (db *VectorDB) saveToFileStandard(filePath string) error {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
@@ -2795,8 +2920,8 @@ func (db *VectorDB) SaveToFile(filePath string) error {
 		CompressedVectors:        db.compressedVectors,
 		UseCompression:           db.useCompression,
 		PqCodebookFilePath:       db.pqCodebookFilePath, // 保存码本文件路径
-		NumSubvectors:            db.numSubvectors,
-		NumCentroidsPerSubvector: db.numCentroidsPerSubvector,
+		NumSubvectors:            db.numSubVectors,
+		NumCentroidsPerSubvector: db.numCentroidsPerSubVector,
 		UsePQCompression:         db.usePQCompression,
 		MultiIndex:               db.multiIndex,
 		Config:                   db.config,
@@ -2836,8 +2961,197 @@ func (db *VectorDB) getAdaptiveNprobe() int {
 	}
 }
 
-// LoadFromFile 从其配置的文件中加载数据库状态（包括索引）。
+// estimateDataSize 估算序列化数据大小
+func (db *VectorDB) estimateDataSize() int64 {
+	// 粗略估算：向量数量 * 向量维度 * 8字节 + 其他数据
+	vectorSize := int64(len(db.vectors)) * int64(db.vectorDim) * 8
+	otherDataSize := int64(1024 * 1024) // 1MB 用于其他数据
+	return vectorSize + otherDataSize
+}
+
+// initializeEmptyDB 初始化空数据库
+func (db *VectorDB) initializeEmptyDB() {
+	db.vectors = make(map[string][]float64)
+	db.clusters = make([]Cluster, 0)
+	db.indexed = false
+	db.invertedIndex = make(map[string][]string)
+	db.queryCache = make(map[string]queryCache)
+	db.normalizedVectors = make(map[string][]float64)
+	db.compressedVectors = make(map[string]entity.CompressedVector)
+	db.pqCodebook = nil
+}
+
+// restoreDataFromStruct 从结构体恢复数据
+func (db *VectorDB) restoreDataFromStruct(data struct {
+	Vectors                  map[string][]float64
+	Clusters                 []Cluster
+	NumClusters              int
+	Indexed                  bool
+	InvertedIndex            map[string][]string
+	VectorDim                int
+	VectorizedType           int
+	NormalizedVectors        map[string][]float64
+	CompressedVectors        map[string]entity.CompressedVector
+	UseCompression           bool
+	PqCodebookFilePath       string
+	NumSubVectors            int
+	NumCentroidsPerSubVector int
+	UsePQCompression         bool
+	UseHNSWIndex             bool
+	MaxConnections           int
+	EfConstruction           float64
+	EfSearch                 float64
+}) {
+	db.vectors = data.Vectors
+	db.clusters = data.Clusters
+	db.numClusters = data.NumClusters
+	db.indexed = data.Indexed
+	db.invertedIndex = data.InvertedIndex
+	db.vectorDim = data.VectorDim
+	db.vectorizedType = data.VectorizedType
+	db.normalizedVectors = data.NormalizedVectors
+	db.compressedVectors = data.CompressedVectors
+	db.useCompression = data.UseCompression
+	db.pqCodebookFilePath = data.PqCodebookFilePath
+	db.numSubVectors = data.NumSubVectors
+	db.numCentroidsPerSubVector = data.NumCentroidsPerSubVector
+	db.usePQCompression = data.UsePQCompression
+	db.useHNSWIndex = data.UseHNSWIndex
+	db.maxConnections = data.MaxConnections
+	db.efConstruction = data.EfConstruction
+	db.efSearch = data.EfSearch
+
+	// 确保 map 不为 nil
+	if db.vectors == nil {
+		db.vectors = make(map[string][]float64)
+	}
+	if db.invertedIndex == nil {
+		db.invertedIndex = make(map[string][]string)
+	}
+	if db.normalizedVectors == nil {
+		db.normalizedVectors = make(map[string][]float64)
+	}
+	if db.compressedVectors == nil {
+		db.compressedVectors = make(map[string]entity.CompressedVector)
+	}
+	if db.queryCache == nil {
+		db.queryCache = make(map[string]queryCache)
+	}
+}
+
+// LoadFromFileWithMmap 使用 mmap 优化的加载方法
+func (db *VectorDB) LoadFromFileWithMmap(filePath string) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	if db.filePath == "" {
+		return fmt.Errorf("文件路径未设置，无法加载数据库")
+	}
+
+	// 检查文件是否存在
+	if _, err := os.Stat(db.filePath); os.IsNotExist(err) {
+		log.Info("数据库文件 %s 不存在，将创建一个新的空数据库。", db.filePath)
+		db.initializeEmptyDB()
+		return nil
+	}
+
+	// 创建 mmap 文件映射
+	mmapFile, err := strategy.NewMmap(db.filePath, strategy.MODE_APPEND)
+	if err != nil {
+		log.Warning("mmap 打开失败，回退到标准方式: %v", err)
+		return db.LoadFromFile(filePath) // 回退到原方法
+	}
+	defer func(mmapFile *strategy.Mmap) {
+		err := mmapFile.Unmap()
+		if err != nil {
+			log.Error("unmap file has error:%v", err.Error())
+		}
+	}(mmapFile)
+
+	// 从 mmap 读取所有数据
+	fileSize := mmapFile.FileLen
+	if fileSize == 0 {
+		db.initializeEmptyDB()
+		return nil
+	}
+
+	serializedData := mmapFile.Read(0, fileSize)
+	if len(serializedData) == 0 {
+		return fmt.Errorf("从 mmap 读取数据为空")
+	}
+
+	// 反序列化数据
+	buf := bytes.NewReader(serializedData)
+	decoder := gob.NewDecoder(buf)
+
+	data := struct {
+		Vectors                  map[string][]float64
+		Clusters                 []Cluster
+		NumClusters              int
+		Indexed                  bool
+		InvertedIndex            map[string][]string
+		VectorDim                int
+		VectorizedType           int
+		NormalizedVectors        map[string][]float64
+		CompressedVectors        map[string]entity.CompressedVector
+		UseCompression           bool
+		PqCodebookFilePath       string
+		NumSubVectors            int
+		NumCentroidsPerSubVector int
+		UsePQCompression         bool
+		UseHNSWIndex             bool
+		MaxConnections           int
+		EfConstruction           float64
+		EfSearch                 float64
+	}{}
+
+	if err := decoder.Decode(&data); err != nil {
+		log.Error("从 mmap 反序列化数据库失败: %v。将使用空数据库启动。", err)
+		db.initializeEmptyDB()
+		return nil
+	}
+
+	// 恢复数据
+	db.restoreDataFromStruct(data)
+
+	// 加载 HNSW 索引
+	if db.useHNSWIndex {
+		hnswFilePath := filePath + ".hnsw"
+		if _, err := os.Stat(hnswFilePath); err == nil {
+			db.hnsw = graph.NewHNSWGraph(db.maxConnections, db.efConstruction, db.efSearch)
+			if err := db.hnsw.LoadFromFile(hnswFilePath); err != nil {
+				log.Warning("加载 HNSW 图结构失败: %v", err)
+				db.useHNSWIndex = false
+				db.hnsw = nil
+			}
+		}
+	}
+
+	log.Info("VectorDB 数据成功通过 mmap 从 %s 加载，向量数量: %d", db.filePath, len(db.vectors))
+	return nil
+}
+
+// LoadFromFile 从文件加载数据库（智能选择是否使用 mmap）
 func (db *VectorDB) LoadFromFile(filePath string) error {
+	// 检查文件大小
+	if fileInfo, err := os.Stat(db.filePath); err == nil {
+		fileSize := fileInfo.Size()
+
+		// 大于 10MB 的文件使用 mmap 优化
+		if fileSize > 10*1024*1024 {
+			if err := db.LoadFromFileWithMmap(filePath); err != nil {
+				log.Warning("mmap 加载失败，回退到标准方式: %v", err)
+				return db.loadFromFileStandard(filePath)
+			}
+			return nil
+		}
+	}
+
+	return db.loadFromFileStandard(filePath)
+}
+
+// LoadFromFile 从其配置的文件中加载数据库状态（包括索引）。
+func (db *VectorDB) loadFromFileStandard(filePath string) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
@@ -2862,7 +3176,12 @@ func (db *VectorDB) LoadFromFile(filePath string) error {
 		}
 		return fmt.Errorf("打开数据库文件 %s 失败: %v", db.filePath, err)
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+			log.Error("close file has error: %v", err.Error())
+		}
+	}(file)
 
 	decoder := gob.NewDecoder(file)
 
@@ -2915,8 +3234,8 @@ func (db *VectorDB) LoadFromFile(filePath string) error {
 	db.compressedVectors = data.CompressedVectors
 	db.useCompression = data.UseCompression
 	db.pqCodebookFilePath = data.PqCodebookFilePath
-	db.numSubvectors = data.NumSubvectors
-	db.numCentroidsPerSubvector = data.NumCentroidsPerSubvector
+	db.numSubVectors = data.NumSubvectors
+	db.numCentroidsPerSubVector = data.NumCentroidsPerSubvector
 	db.usePQCompression = data.UsePQCompression
 	// 从加载的数据中恢复 HNSW 相关字段
 	db.useHNSWIndex = data.UseHNSWIndex
@@ -2957,7 +3276,7 @@ func (db *VectorDB) LoadFromFile(filePath string) error {
 			db.usePQCompression = false
 			db.pqCodebook = nil
 		} else {
-			// LoadPQCodebookFromFile 会更新 db.pqCodebook, db.numSubvectors, db.numCentroidsPerSubvector
+			// LoadPQCodebookFromFile 会更新 db.pqCodebook, db.numSubVectors, db.numCentroidsPerSubVector
 			// 它也会在成功加载码本后设置 db.usePQCompression = true (如果码本非空)
 			// 所以这里我们只需要确保 db.usePQCompression 反映了加载结果
 			if db.pqCodebook == nil || len(db.pqCodebook) == 0 {
@@ -3011,7 +3330,7 @@ func (db *VectorDB) CalculateApproximateDistancePQ(queryVector []float64, compre
 	}
 
 	// 调用 util 中的 PQ 近似距离计算函数
-	dist, err := algorithm.ApproximateDistanceADC(queryVector, compressedDBVector, db.pqCodebook, db.numSubvectors)
+	dist, err := algorithm.ApproximateDistanceADC(queryVector, compressedDBVector, db.pqCodebook, db.numSubVectors)
 	if err != nil {
 		return 0, fmt.Errorf("计算 PQ 近似距离失败: %w", err)
 	}
@@ -3715,13 +4034,13 @@ func (db *VectorDB) FindNearestWithScores(query []float64, k int, nprobe int) ([
 	}
 
 	// 选择最优计算策略
-	strategy := db.GetSelectStrategy(query)
+	selectStrategy := db.GetSelectStrategy(query)
 
 	// 如果启用了HNSW索引，优先使用
 	if db.useHNSWIndex && db.indexed && db.hnsw != nil {
 		// 设置自适应距离函数
 		db.hnsw.SetDistanceFunc(func(a, b []float64) (float64, error) {
-			sim := algorithm.AdaptiveCosineSimilarity(a, b, strategy)
+			sim := algorithm.AdaptiveCosineSimilarity(a, b, selectStrategy)
 			return 1.0 - sim, nil
 		})
 
@@ -3735,7 +4054,7 @@ func (db *VectorDB) FindNearestWithScores(query []float64, k int, nprobe int) ([
 	}
 
 	// IVF搜索逻辑：粗排 + 精排
-	return db.ivfSearchWithScores(query, k, nprobe, strategy)
+	return db.ivfSearchWithScores(query, k, nprobe, selectStrategy)
 }
 
 // ivfSearchWithScores IVF搜索返回带分数的结果
@@ -3849,8 +4168,8 @@ func (db *VectorDB) fineRankingWithScores(query []float64, candidates []string, 
 	return results[:k], nil
 }
 
-// FindNearestWithScores_1 查找最近的k个向量，并返回它们的ID和相似度分数
-func (db *VectorDB) FindNearestWithScores_1(query []float64, k int, nprobe int) ([]entity.Result, error) {
+// Findnearestwithscores1 查找最近的k个向量，并返回它们的ID和相似度分数
+func (db *VectorDB) Findnearestwithscores1(query []float64, k int, nprobe int) ([]entity.Result, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
@@ -5001,9 +5320,15 @@ func (db *VectorDB) CachedSearch(query []float64, k int) ([]entity.Result, error
 func (db *VectorDB) generateQueryKey(query []float64, k int) string {
 	h := fnv.New64a()
 	for _, val := range query {
-		binary.Write(h, binary.LittleEndian, val)
+		err := binary.Write(h, binary.LittleEndian, val)
+		if err != nil {
+			return ""
+		}
 	}
-	binary.Write(h, binary.LittleEndian, int64(k))
+	err := binary.Write(h, binary.LittleEndian, int64(k))
+	if err != nil {
+		return ""
+	}
 	return fmt.Sprintf("%x", h.Sum64())
 }
 

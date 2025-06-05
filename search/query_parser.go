@@ -586,6 +586,8 @@ func (p *Parser) ParseStatement() Statement {
 		if strings.ToLower(p.curToken.Literal) == "select" {
 			return p.parseSelectStatement()
 		}
+	default:
+		panic("unhandled default case")
 	}
 	p.errorf(p.curToken.Pos, "no parsing function for statement starting with %s (%s)", p.curToken.Literal, p.curToken.Type)
 	return nil

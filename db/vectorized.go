@@ -1,6 +1,7 @@
 package db
 
 import (
+	"VectorSphere/library/log"
 	"bufio"
 	"fmt"
 	"github.com/go-ego/gse"
@@ -122,7 +123,12 @@ func LoadWordEmbeddings(filePath string) (map[string][]float64, error) {
 	if err != nil {
 		return nil, fmt.Errorf("无法打开文件: %w", err)
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+			log.Error("close file has error:%v", err.Error())
+		}
+	}(file)
 	var seg gse.Segmenter
 	err = seg.LoadDict()
 	if err != nil {

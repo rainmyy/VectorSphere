@@ -452,7 +452,12 @@ func (mts *MultiTableSearchService) Search(tableName string, query *messages.Ter
 
 	// 开启事务 (使用 MultiTableSearchService 的 TxMgr)
 	tx := mts.TxMgr.Begin(tree.Serializable)
-	defer mts.TxMgr.Commit(tx)
+	defer func(TxMgr *tree.TransactionManager, tx *tree.Transaction) {
+		err := TxMgr.Commit(tx)
+		if err != nil {
+			log.Error("tx commit has error:%v", err.Error())
+		}
+	}(mts.TxMgr, tx)
 
 	// 使用倒排索引进行表达式查询
 	indexResults, err := table.InvertedIndex.Search(tx, query, onFlag, offFlag, orFlags, query.Keyword.ToString(), k, useANN)

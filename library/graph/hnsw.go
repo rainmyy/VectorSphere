@@ -3,6 +3,7 @@ package graph
 import (
 	"VectorSphere/library/algorithm"
 	"VectorSphere/library/entity"
+	"VectorSphere/library/strategy"
 	"container/heap"
 	"encoding/gob"
 	"fmt"
@@ -728,8 +729,112 @@ func (g *HNSWGraph) Size() int {
 	return len(g.nodes)
 }
 
-// SaveToFile 将图结构保存到文件
+// SaveToFileWithMmap 使用mmap优化的保存方法
+func (g *HNSWGraph) SaveToFileWithMmap(filePath string) error {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	// 创建mmap文件
+	mmap, err := strategy.NewMmap(filePath, strategy.MODE_CREATE)
+	if err != nil {
+		return fmt.Errorf("创建mmap文件 %s 失败: %v", filePath, err)
+	}
+	defer mmap.Unmap()
+
+	// 写入图的基本信息
+	if err := mmap.AppendInt64(int64(g.maxLevel)); err != nil {
+		return fmt.Errorf("写入maxLevel失败: %v", err)
+	}
+	if err := mmap.AppendInt64(int64(g.maxConnections)); err != nil {
+		return fmt.Errorf("写入maxConnections失败: %v", err)
+	}
+	if err := mmap.AppendInt64(int64(math.Float64bits(g.efConstruction))); err != nil {
+		return fmt.Errorf("写入efConstruction失败: %v", err)
+	}
+	if err := mmap.AppendInt64(int64(math.Float64bits(g.EfSearch))); err != nil {
+		return fmt.Errorf("写入EfSearch失败: %v", err)
+	}
+	if err := mmap.AppendInt64(int64(math.Float64bits(g.levelMult))); err != nil {
+		return fmt.Errorf("写入levelMult失败: %v", err)
+	}
+	if err := mmap.AppendStringWithLen(g.entryPointID); err != nil {
+		return fmt.Errorf("写入entryPointID失败: %v", err)
+	}
+
+	// 写入节点数量
+	if err := mmap.AppendInt64(int64(len(g.nodes))); err != nil {
+		return fmt.Errorf("写入节点数量失败: %v", err)
+	}
+
+	// 写入每个节点的数据
+	for id, node := range g.nodes {
+		node.mu.RLock()
+
+		// 写入节点ID
+		if err := mmap.AppendStringWithLen(id); err != nil {
+			node.mu.RUnlock()
+			return fmt.Errorf("写入节点ID %s 失败: %v", id, err)
+		}
+
+		// 写入向量维度和数据
+		if err := mmap.AppendInt64(int64(len(node.Vector))); err != nil {
+			node.mu.RUnlock()
+			return fmt.Errorf("写入向量维度失败: %v", err)
+		}
+		for _, val := range node.Vector {
+			if err := mmap.AppendInt64(int64(math.Float64bits(val))); err != nil {
+				node.mu.RUnlock()
+				return fmt.Errorf("写入向量数据失败: %v", err)
+			}
+		}
+
+		// 写入邻居层数
+		if err := mmap.AppendInt64(int64(len(node.Neighbors))); err != nil {
+			node.mu.RUnlock()
+			return fmt.Errorf("写入邻居层数失败: %v", err)
+		}
+
+		// 写入每层的邻居
+		for _, neighbors := range node.Neighbors {
+			if err := mmap.AppendInt64(int64(len(neighbors))); err != nil {
+				node.mu.RUnlock()
+				return fmt.Errorf("写入邻居数量失败: %v", err)
+			}
+			for _, neighborID := range neighbors {
+				if err := mmap.AppendStringWithLen(neighborID); err != nil {
+					node.mu.RUnlock()
+					return fmt.Errorf("写入邻居ID失败: %v", err)
+				}
+			}
+		}
+
+		node.mu.RUnlock()
+	}
+
+	// 同步数据到磁盘
+	if err := mmap.Sync(); err != nil {
+		return fmt.Errorf("同步数据到磁盘失败: %v", err)
+	}
+
+	return nil
+}
+
+// SaveToFile 修改原有的SaveToFile方法，智能选择使用mmap或标准方法
 func (g *HNSWGraph) SaveToFile(filePath string) error {
+	// 估算数据大小，如果较大则使用mmap优化
+	estimatedSize := g.estimateDataSize()
+	if estimatedSize > 10*1024*1024 { // 大于10MB使用mmap
+		if err := g.SaveToFileWithMmap(filePath); err != nil {
+			// mmap失败时回退到标准方法
+			return g.saveToFileStandard(filePath)
+		}
+		return nil
+	}
+	return g.saveToFileStandard(filePath)
+}
+
+// SaveToFile 将图结构保存到文件
+func (g *HNSWGraph) saveToFileStandard(filePath string) error {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
@@ -789,8 +894,115 @@ func (g *HNSWGraph) SaveToFile(filePath string) error {
 	return nil
 }
 
-// LoadFromFile 从文件加载图结构
+// LoadFromFileWithMmap 使用mmap优化的加载方法
+func (g *HNSWGraph) LoadFromFileWithMmap(filePath string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	// 打开mmap文件
+	mmap, err := strategy.NewMmap(filePath, strategy.MODE_APPEND)
+	if err != nil {
+		return fmt.Errorf("打开mmap文件 %s 失败: %v", filePath, err)
+	}
+	defer mmap.Unmap()
+
+	pointer := int64(0)
+
+	// 读取图的基本信息
+	g.maxLevel = int(mmap.ReadInt64(pointer))
+	pointer += 8
+	g.maxConnections = int(mmap.ReadInt64(pointer))
+	pointer += 8
+	g.efConstruction = math.Float64frombits(uint64(mmap.ReadInt64(pointer)))
+	pointer += 8
+	g.EfSearch = math.Float64frombits(uint64(mmap.ReadInt64(pointer)))
+	pointer += 8
+	g.levelMult = math.Float64frombits(uint64(mmap.ReadInt64(pointer)))
+	pointer += 8
+
+	// 读取entryPointID
+	entryPointIDLen := mmap.ReadInt64(pointer)
+	pointer += 8
+	g.entryPointID = mmap.ReadString(pointer, entryPointIDLen)
+	pointer += entryPointIDLen
+
+	// 读取节点数量
+	nodeCount := int(mmap.ReadInt64(pointer))
+	pointer += 8
+
+	// 重置节点映射
+	g.nodes = make(map[string]*HNSWNode)
+
+	// 读取每个节点的数据
+	for i := 0; i < nodeCount; i++ {
+		// 读取节点ID
+		idLen := mmap.ReadInt64(pointer)
+		pointer += 8
+		id := mmap.ReadString(pointer, idLen)
+		pointer += idLen
+
+		// 读取向量维度
+		vectorDim := int(mmap.ReadInt64(pointer))
+		pointer += 8
+
+		// 读取向量数据
+		vector := make([]float64, vectorDim)
+		for j := 0; j < vectorDim; j++ {
+			vector[j] = math.Float64frombits(uint64(mmap.ReadInt64(pointer)))
+			pointer += 8
+		}
+
+		// 读取邻居层数
+		layerCount := int(mmap.ReadInt64(pointer))
+		pointer += 8
+
+		// 读取每层的邻居
+		neighbors := make([][]string, layerCount)
+		for layer := 0; layer < layerCount; layer++ {
+			neighborCount := int(mmap.ReadInt64(pointer))
+			pointer += 8
+
+			neighbors[layer] = make([]string, neighborCount)
+			for k := 0; k < neighborCount; k++ {
+				neighborIDLen := mmap.ReadInt64(pointer)
+				pointer += 8
+				neighbors[layer][k] = mmap.ReadString(pointer, neighborIDLen)
+				pointer += neighborIDLen
+			}
+		}
+
+		// 创建节点
+		node := &HNSWNode{
+			ID:        id,
+			Vector:    vector,
+			Neighbors: neighbors,
+		}
+		g.nodes[id] = node
+	}
+
+	return nil
+}
+
+// LoadFromFile 修改原有的LoadFromFile方法，智能选择使用mmap或标准方法
 func (g *HNSWGraph) LoadFromFile(filePath string) error {
+	// 检查文件大小
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		return fmt.Errorf("获取文件信息失败: %v", err)
+	}
+
+	if fileInfo.Size() > 10*1024*1024 { // 大于10MB使用mmap
+		if err := g.LoadFromFileWithMmap(filePath); err != nil {
+			// mmap失败时回退到标准方法
+			return g.loadFromFileStandard(filePath)
+		}
+		return nil
+	}
+	return g.loadFromFileStandard(filePath)
+}
+
+// LoadFromFile 从文件加载图结构
+func (g *HNSWGraph) loadFromFileStandard(filePath string) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
@@ -847,4 +1059,33 @@ func (g *HNSWGraph) LoadFromFile(filePath string) error {
 	}
 
 	return nil
+}
+
+// estimateDataSize 估算序列化后的数据大小
+func (g *HNSWGraph) estimateDataSize() int64 {
+	size := int64(0)
+
+	// 基本字段大小
+	size += 8 * 5                          // maxLevel, maxConnections, efConstruction, EfSearch, levelMult
+	size += int64(len(g.entryPointID)) + 8 // entryPointID with length
+	size += 8                              // node count
+
+	// 估算节点数据大小
+	for id, node := range g.nodes {
+		node.mu.RLock()
+		size += int64(len(id)) + 8            // node ID with length
+		size += int64(len(node.Vector))*8 + 8 // vector data + dimension
+		size += 8                             // layer count
+
+		// 估算邻居数据大小
+		for _, neighbors := range node.Neighbors {
+			size += 8 // neighbor count
+			for _, neighborID := range neighbors {
+				size += int64(len(neighborID)) + 8 // neighbor ID with length
+			}
+		}
+		node.mu.RUnlock()
+	}
+
+	return size
 }
