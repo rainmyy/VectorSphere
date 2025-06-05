@@ -1,93 +1,57 @@
 package algorithm
 
 /*
-#cgo CFLAGS: -I/usr/local/cuda/include
-#cgo LDFLAGS: -L/usr/local/cuda/lib64 -lcudart -lcuda -lfaiss_gpu
+集成FAISS-GPU 步骤:
+- 安装 FAISS-GPU 库和 CUDA 工具包
+- 配置 CGO 绑定和 C/C++ 头文件
+- 链接 CUDA 和 FAISS 库
+- 处理 C/C++ 与 Go 的数据类型转换
+*/
+
+/*
+#cgo windows CFLAGS: -IC:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.8/include -IC:/faiss/include
+#cgo windows LDFLAGS: -LC:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.8/lib/x64 -LC:/faiss/lib -lcudart -lcuda -lfaiss -lfaiss_gpu
+#cgo linux CFLAGS: -I/usr/local/cuda/include -I/usr/local/include/faiss
+#cgo linux LDFLAGS: -L/usr/local/cuda/lib64 -L/usr/local/lib -lcudart -lcuda -lfaiss -lfaiss_gpu
+
 #include <cuda_runtime.h>
 #include <cuda.h>
 #include <faiss/gpu/StandardGpuResources.h>
 #include <faiss/gpu/GpuIndexFlat.h>
 #include <faiss/gpu/GpuIndexIVF.h>
+#include <faiss/gpu/utils/DeviceUtils.h>
+#include <faiss/Index.h>
+#include <faiss/IndexFlat.h>
+#include <faiss/IndexIVF.h>
 
-// CUDA error codes
-typedef enum {
-    cudaSuccess = 0,
-    cudaErrorInvalidValue = 1,
-    cudaErrorMemoryAllocation = 2
-} cudaError_t;
+// CUDA 错误处理宏
+#define CUDA_CHECK(call) do { \
+    cudaError_t err = call; \
+    if (err != cudaSuccess) { \
+        return err; \
+    } \
+} while(0)
 
-// CUDA memory copy kinds
-typedef enum {
-    cudaMemcpyHostToHost = 0,
-    cudaMemcpyHostToDevice = 1,
-    cudaMemcpyDeviceToHost = 2,
-    cudaMemcpyDeviceToDevice = 3
-} cudaMemcpyKind;
+// FAISS GPU 资源包装器
+typedef struct {
+    faiss::gpu::StandardGpuResources* resources;
+    faiss::gpu::GpuIndexFlat* index_flat;
+    faiss::gpu::GpuIndexIVF* index_ivf;
+    int device_id;
+    bool initialized;
+} FaissGpuWrapper;
 
-// CUDA memory allocation types
-typedef enum {
-    cudaMemAllocationTypePinned = 0x1
-} cudaMemAllocationType;
-
-// CUDA memory handle types
-typedef enum {
-    cudaMemHandleTypeNone = 0x0
-} cudaMemHandleType;
-
-// CUDA memory location types
-typedef enum {
-    cudaMemLocationTypeInvalid = 0,
-    cudaMemLocationTypeDevice = 1
-} cudaMemLocationType;
-
-// CUDA memory pool attributes
-typedef enum {
-    cudaMemPoolAttrReleaseThreshold = 1
-} cudaMemPoolAttr;
-
-// Forward declarations for types
-typedef struct CUctx_st *CUcontext;
-typedef int CUdevice;
-typedef struct cudaMemPoolProps {
-    cudaMemAllocationType allocType;
-    cudaMemHandleType handleTypes;
-    struct {
-        cudaMemLocationType type;
-        int id;
-    } location;
-} cudaMemPoolProps;
-typedef struct CUmemoryPool_st *cudaMemPool_t;
-typedef struct cudaDeviceProp {
-    int major;
-    int minor;
-    size_t totalGlobalMem;
-} cudaDeviceProp;
-
-// CUDA success codes
-#define CUDA_SUCCESS 0
-
-// Function declarations (these would normally come from CUDA headers)
-int cudaGetDeviceCount(int *count);
-int cudaGetDeviceProperties(cudaDeviceProp *prop, int device);
-int cudaSetDevice(int device);
-int cudaMemGetInfo(size_t *free, size_t *total);
-int cudaMalloc(void **devPtr, size_t size);
-int cudaFree(void *devPtr);
-int cudaMemcpy(void *dst, const void *src, size_t count, cudaMemcpyKind kind);
-int cudaMemPoolCreate(cudaMemPool_t *memPool, const cudaMemPoolProps *poolProps);
-int cudaMemPoolSetAttribute(cudaMemPool_t memPool, cudaMemPoolAttr attr, void *value);
-int cudaDeviceSetMemPool(int device, cudaMemPool_t memPool);
-int cuCtxCreate(CUcontext *pctx, unsigned int flags, CUdevice dev);
-int cuCtxSetCurrent(CUcontext ctx);
-
-// FAISS GPU function declarations
-void* faiss_StandardGpuResources_new();
-int faiss_StandardGpuResources_setDefaultDevice(void *res, int device);
-int faiss_StandardGpuResources_setMemoryFraction(void *res, float fraction);
-int faiss_StandardGpuResources_setTempMemory(void *res, size_t size);
+// C 接口函数声明
+FaissGpuWrapper* faiss_gpu_wrapper_new(int device_id);
+int faiss_gpu_wrapper_init(FaissGpuWrapper* wrapper, int dimension, const char* index_type);
+int faiss_gpu_wrapper_add_vectors(FaissGpuWrapper* wrapper, int n, const float* vectors);
+int faiss_gpu_wrapper_search(FaissGpuWrapper* wrapper, int n_queries, const float* queries, int k, float* distances, long* labels);
+void faiss_gpu_wrapper_free(FaissGpuWrapper* wrapper);
+int faiss_gpu_get_device_count();
+int faiss_gpu_set_device(int device_id);
 */
 import "C"
-import "C"
+
 import (
 	"fmt"
 	"seetaSearch/library/log"
