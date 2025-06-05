@@ -117,10 +117,10 @@ func (ss *SearchService) Search(query *messages.TermQuery, vectorizedType int, k
 
 	// 合并结果
 	var finalResults []string
-	for _, id := range candidateIDs {
+	for _, candidateID := range candidateIDs {
 		for _, resultId := range indexResults {
-			if id == resultId {
-				finalResults = append(finalResults, id)
+			if candidateID.Id == resultId {
+				finalResults = append(finalResults, candidateID.Id)
 				break
 			}
 		}

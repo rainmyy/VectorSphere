@@ -336,7 +336,7 @@ func (mts *MultiTableSearchService) searchBa(tableName string, query *messages.T
 		return nil, err
 	}
 
-	var candidateIDs []string
+	var candidateIDs []entity.Result
 	// 使用向量搜索获取候选文件 ID
 	if table.VectorDB != nil && (useANN || table.VectorDB.GetDataSize() > 1000) { // 根据useANN或数据量决定是否使用ANN
 		// 使用 HybridSearch 或 FindNearestWithScores
@@ -387,8 +387,8 @@ func (mts *MultiTableSearchService) searchBa(tableName string, query *messages.T
 	}
 
 	for _, id := range candidateIDs {
-		if _, ok := indexResultSet[id]; ok {
-			finalResults = append(finalResults, id)
+		if _, ok := indexResultSet[id.Id]; ok {
+			finalResults = append(finalResults, id.Id)
 		}
 	}
 

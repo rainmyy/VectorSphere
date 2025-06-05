@@ -4,7 +4,7 @@ import (
 	"VectorSphere/db"
 	"VectorSphere/library/entity"
 	"VectorSphere/library/log"
-	tree "VectorSphere/library/tree"
+	"VectorSphere/library/tree"
 	"VectorSphere/messages"
 	"fmt"
 	"hash/fnv"

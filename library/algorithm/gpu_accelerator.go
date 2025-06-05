@@ -63,7 +63,7 @@ import (
 type GPUAccelerator interface {
 	Initialize() error
 	BatchCosineSimilarity(queries [][]float64, database [][]float64) ([][]float64, error)
-	BatchSearch(queries [][]float64, database [][]float64, k int) ([][]SearchResult, error)
+	BatchSearch(queries [][]float64, database [][]float64, k int) ([][]GPUResult, error)
 	Cleanup() error
 }
 
@@ -75,6 +75,14 @@ type FAISSGPUAccelerator struct {
 	indexType   string
 	gpuWrapper  unsafe.Pointer // C.FaissGpuWrapper*
 	dimension   int
+}
+
+// GPUResult 搜索结果结构体
+type GPUResult struct {
+	ID         string
+	Similarity float64
+	Metadata   map[string]interface{}
+	DocIds     []string
 }
 
 // NewFAISSGPUAccelerator 创建新的 FAISS GPU 加速器
@@ -115,6 +123,11 @@ func (gpu *FAISSGPUAccelerator) Initialize() error {
 		return nil
 	}
 
+	// 首先检查 GPU 可用性
+	if err := gpu.checkGPUAvailability(); err != nil {
+		return fmt.Errorf("GPU可用性检查失败: %w", err)
+	}
+
 	// 检查 GPU 设备数量
 	deviceCount := int(C.faiss_gpu_get_device_count())
 	if gpu.deviceID >= deviceCount {
@@ -146,48 +159,142 @@ func (gpu *FAISSGPUAccelerator) Initialize() error {
 	return nil
 }
 
+// CheckGPUAvailability 公共方法，供外部调用检查GPU可用性
+func (gpu *FAISSGPUAccelerator) CheckGPUAvailability() error {
+	return gpu.checkGPUAvailability()
+}
+
 // checkGPUAvailability 检查 GPU 可用性
 func (gpu *FAISSGPUAccelerator) checkGPUAvailability() error {
 	log.Info("检查 GPU 设备 %d 的可用性...", gpu.deviceID)
 
-	// 检查 CUDA 驱动是否可用
-	// 这里需要调用 CUDA Runtime API
-	// 示例：cudaGetDeviceCount, cudaGetDeviceProperties
+	// 1. 首先检查 CUDA 驱动是否可用
+	var driverVersion C.int
+	if C.cudaDriverGetVersion(&driverVersion) != C.cudaSuccess {
+		return fmt.Errorf("CUDA 驱动不可用或未正确安装")
+	}
+	log.Info("CUDA 驱动版本: %d", int(driverVersion))
 
-	// 实际的 CUDA API 调用示例（需要 CGO）
+	// 2. 检查 CUDA Runtime 版本
+	var runtimeVersion C.int
+	if C.cudaRuntimeGetVersion(&runtimeVersion) != C.cudaSuccess {
+		return fmt.Errorf("CUDA Runtime 不可用")
+	}
+	log.Info("CUDA Runtime 版本: %d", int(runtimeVersion))
+
+	// 3. 检查驱动和运行时版本兼容性
+	if driverVersion < runtimeVersion {
+		return fmt.Errorf("CUDA 驱动版本 (%d) 低于运行时版本 (%d)，请更新驱动",
+			int(driverVersion), int(runtimeVersion))
+	}
+
+	// 4. 获取 GPU 设备数量
 	var deviceCount C.int
 	if C.cudaGetDeviceCount(&deviceCount) != C.cudaSuccess {
-		return fmt.Errorf("无法获取 GPU 设备数量")
+		return fmt.Errorf("无法获取 GPU 设备数量，可能 CUDA 驱动未正确安装")
+	}
+
+	if deviceCount == 0 {
+		return fmt.Errorf("系统中未检测到 CUDA 兼容的 GPU 设备")
 	}
 
 	if gpu.deviceID >= int(deviceCount) {
 		return fmt.Errorf("GPU 设备 ID %d 超出范围，可用设备数量: %d", gpu.deviceID, deviceCount)
 	}
 
-	// 检查设备属性
+	// 5. 检查指定设备的详细属性
 	var props C.cudaDeviceProp
 	if C.cudaGetDeviceProperties(&props, C.int(gpu.deviceID)) != C.cudaSuccess {
 		return fmt.Errorf("无法获取 GPU 设备 %d 的属性", gpu.deviceID)
 	}
 
-	// 检查计算能力（需要 3.0 以上支持 FAISS）
+	// 6. 验证设备名称（确保设备存在且可访问）
+	deviceName := C.GoString(&props.name[0])
+	log.Info("GPU 设备 %d 名称: %s", gpu.deviceID, deviceName)
+
+	// 7. 检查计算能力（FAISS 需要 3.0 以上）
 	if props.major < 3 {
-		return fmt.Errorf("GPU 设备 %d 计算能力不足，需要 3.0 以上，当前: %d.%d",
-			gpu.deviceID, props.major, props.minor)
+		return fmt.Errorf("GPU 设备 %d (%s) 计算能力不足，需要 3.0 以上，当前: %d.%d",
+			gpu.deviceID, deviceName, props.major, props.minor)
 	}
 
-	// 检查内存大小（至少需要 1GB）
+	// 8. 检查内存大小（至少需要 1GB）
 	if props.totalGlobalMem < 1024*1024*1024 {
-		return fmt.Errorf("GPU 设备 %d 内存不足，需要至少 1GB，当前: %d MB",
-			gpu.deviceID, props.totalGlobalMem/(1024*1024))
+		return fmt.Errorf("GPU 设备 %d (%s) 内存不足，需要至少 1GB，当前: %d MB",
+			gpu.deviceID, deviceName, props.totalGlobalMem/(1024*1024))
 	}
 
-	// 模拟检查逻辑
-	if gpu.deviceID < 0 || gpu.deviceID > 7 {
-		return fmt.Errorf("GPU 设备 ID %d 超出有效范围 [0-7]", gpu.deviceID)
+	// 9. 检查设备是否支持统一内存
+	if props.unifiedAddressing == 0 {
+		log.Warning("GPU 设备 %d 不支持统一内存寻址，性能可能受影响", gpu.deviceID)
 	}
 
-	log.Info("GPU 设备 %d 可用性检查通过", gpu.deviceID)
+	// 10. 尝试在设备上分配少量内存进行可用性测试
+	if err := gpu.testDeviceMemoryAllocation(); err != nil {
+		return fmt.Errorf("GPU 设备 %d 内存分配测试失败: %w", gpu.deviceID, err)
+	}
+
+	// 11. 检查设备是否被其他进程占用
+	if err := gpu.checkDeviceExclusivity(); err != nil {
+		log.Warning("GPU 设备 %d 可能被其他进程使用: %v", gpu.deviceID, err)
+	}
+
+	log.Info("GPU 设备 %d (%s) 可用性检查通过 - 计算能力: %d.%d, 内存: %d MB",
+		gpu.deviceID, deviceName, props.major, props.minor, props.totalGlobalMem/(1024*1024))
+	return nil
+}
+
+// testDeviceMemoryAllocation 测试设备内存分配
+func (gpu *FAISSGPUAccelerator) testDeviceMemoryAllocation() error {
+	// 设置当前设备
+	if C.cudaSetDevice(C.int(gpu.deviceID)) != C.cudaSuccess {
+		return fmt.Errorf("无法设置 GPU 设备 %d", gpu.deviceID)
+	}
+
+	// 尝试分配 1MB 测试内存
+	var testPtr unsafe.Pointer
+	testSize := C.size_t(1024 * 1024) // 1MB
+	if C.cudaMalloc(&testPtr, testSize) != C.cudaSuccess {
+		return fmt.Errorf("内存分配失败")
+	}
+	defer C.cudaFree(testPtr)
+
+	// 测试内存读写
+	testData := make([]byte, 1024)
+	for i := range testData {
+		testData[i] = byte(i % 256)
+	}
+
+	// Host to Device
+	if C.cudaMemcpy(testPtr, unsafe.Pointer(&testData[0]), C.size_t(len(testData)), C.cudaMemcpyHostToDevice) != C.cudaSuccess {
+		return fmt.Errorf("Host到Device内存拷贝失败")
+	}
+
+	// Device to Host
+	readData := make([]byte, len(testData))
+	if C.cudaMemcpy(unsafe.Pointer(&readData[0]), testPtr, C.size_t(len(testData)), C.cudaMemcpyDeviceToHost) != C.cudaSuccess {
+		return fmt.Errorf("Device到Host内存拷贝失败")
+	}
+
+	// 验证数据一致性
+	for i := range testData {
+		if testData[i] != readData[i] {
+			return fmt.Errorf("内存读写验证失败")
+		}
+	}
+
+	return nil
+}
+
+// checkDeviceExclusivity 检查设备独占性
+func (gpu *FAISSGPUAccelerator) checkDeviceExclusivity() error {
+	// 尝试创建 CUDA 上下文来检查设备是否可用
+	var context C.CUcontext
+	if C.cuCtxCreate(&context, 0, C.CUdevice(gpu.deviceID)) != C.CUDA_SUCCESS {
+		return fmt.Errorf("无法创建 CUDA 上下文，设备可能被占用")
+	}
+	defer C.cuCtxDestroy(context)
+
 	return nil
 }
 
@@ -427,12 +534,8 @@ func (gpu *FAISSGPUAccelerator) SetMemoryFraction(fraction float64) error {
 	return nil
 }
 
-type SearchResult struct {
-	DocIds []string
-}
-
 // BatchSearch GPU 批量搜索
-func (gpu *FAISSGPUAccelerator) BatchSearch(queries [][]float64, database [][]float64, k int) ([][]SearchResult, error) {
+func (gpu *FAISSGPUAccelerator) BatchSearch(queries [][]float64, database [][]float64, k int) ([][]GPUResult, error) {
 	gpu.mu.RLock()
 	defer gpu.mu.RUnlock()
 
@@ -440,25 +543,96 @@ func (gpu *FAISSGPUAccelerator) BatchSearch(queries [][]float64, database [][]fl
 		return nil, fmt.Errorf("GPU 加速器未初始化")
 	}
 
-	// 将数据传输到 GPU
-	// 执行批量搜索
-	// 传输结果回 CPU
+	// 参数验证
+	if len(queries) == 0 {
+		return nil, fmt.Errorf("查询向量不能为空")
+	}
+	if len(database) == 0 {
+		return nil, fmt.Errorf("数据库向量不能为空")
+	}
+	if k <= 0 {
+		return nil, fmt.Errorf("k 必须大于 0")
+	}
+	if k > len(database) {
+		k = len(database)
+	}
 
-	results := make([][]SearchResult, len(queries))
+	// 检查向量维度一致性
+	queryDim := len(queries[0])
+	dbDim := len(database[0])
+	if queryDim != dbDim {
+		return nil, fmt.Errorf("查询向量维度 %d 与数据库向量维度 %d 不匹配", queryDim, dbDim)
+	}
 
-	// 简化实现，实际需要调用 FAISS GPU API
+	// 验证所有向量维度一致
 	for i, query := range queries {
-		queryResults := make([]SearchResult, 0, k)
-
-		// GPU 并行计算相似度
-		similarities := make([]float64, len(database))
-		for j, dbVec := range database {
-			similarities[j] = CosineSimilarity(query, dbVec)
+		if len(query) != queryDim {
+			return nil, fmt.Errorf("查询向量 %d 维度不一致: 期望 %d, 实际 %d", i, queryDim, len(query))
 		}
+	}
+	for i, dbVec := range database {
+		if len(dbVec) != dbDim {
+			return nil, fmt.Errorf("数据库向量 %d 维度不一致: 期望 %d, 实际 %d", i, dbDim, len(dbVec))
+		}
+	}
 
-		// 找到 top-k 结果
-		// 这里需要 GPU 实现的 top-k 算法
+	// 准备数据库向量 - 转换为 float32
+	dbSize := len(database)
+	querySize := len(queries)
+	dimension := dbDim
 
+	dbVectors := make([]float32, dbSize*dimension)
+	for i, vec := range database {
+		for j, val := range vec {
+			dbVectors[i*dimension+j] = float32(val)
+		}
+	}
+
+	// 准备查询向量 - 转换为 float32
+	queryVectors := make([]float32, querySize*dimension)
+	for i, vec := range queries {
+		for j, val := range vec {
+			queryVectors[i*dimension+j] = float32(val)
+		}
+	}
+
+	// 准备结果存储
+	distances := make([]float32, querySize*k)
+	labels := make([]int64, querySize*k)
+
+	// 调用 FAISS GPU 批量搜索
+	if C.faiss_gpu_wrapper_batch_search(
+		(*C.FaissGpuWrapper)(gpu.gpuWrapper),
+		C.int(dbSize),
+		(*C.float)(&dbVectors[0]),
+		C.int(querySize),
+		(*C.float)(&queryVectors[0]),
+		C.int(k),
+		(*C.float)(&distances[0]),
+		(*C.long)(&labels[0]),
+	) != 0 {
+		return nil, fmt.Errorf("GPU 批量搜索失败")
+	}
+
+	// 转换结果
+	results := make([][]GPUResult, querySize)
+	for i := 0; i < querySize; i++ {
+		queryResults := make([]GPUResult, k)
+		for j := 0; j < k; j++ {
+			idx := i*k + j
+			label := labels[idx]
+			distance := distances[idx]
+
+			// 将距离转换为相似度（余弦相似度）
+			// FAISS 返回的是平方欧氏距离，需要转换
+			similarity := 1.0 / (1.0 + float64(distance))
+
+			queryResults[j] = GPUResult{
+				ID:         fmt.Sprintf("%d", label),
+				Similarity: similarity,
+				Metadata:   make(map[string]interface{}),
+			}
+		}
 		results[i] = queryResults
 	}
 

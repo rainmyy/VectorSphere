@@ -21,7 +21,7 @@ func NewDeepSeekClient(cfg DeepSeekConfig) *DeepSeekClient {
 	return &DeepSeekClient{Config: cfg}
 }
 
-// 获取文本embedding
+// GetEmbedding 获取文本embedding
 func (c *DeepSeekClient) GetEmbedding(text string) ([]float64, error) {
 	reqBody, _ := json.Marshal(map[string]string{"input": text})
 	req, _ := http.NewRequest("POST", c.Config.EmbeddingURL, bytes.NewReader(reqBody))
@@ -41,7 +41,7 @@ func (c *DeepSeekClient) GetEmbedding(text string) ([]float64, error) {
 	return result.Embedding, nil
 }
 
-// 调用大模型
+// Chat 调用大模型
 func (c *DeepSeekClient) Chat(prompt string) (string, error) {
 	reqBody, _ := json.Marshal(map[string]string{"prompt": prompt})
 	req, _ := http.NewRequest("POST", c.Config.LLMURL, bytes.NewReader(reqBody))

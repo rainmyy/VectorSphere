@@ -16,6 +16,7 @@ import (
 	"os"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -159,7 +160,19 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 		return StrategyBruteForce
 	}
 
-	// 2. 维度判断
+	// 2. GPU加速判断 - 新增GPU优先策略
+	if db.hardwareCaps.HasGPU && db.gpuAccelerator != nil && vectorCount > 10000 {
+		// 对于大规模数据，GPU混合策略通常性能最佳
+		if vectorCount > 100000 {
+			return StrategyHybrid
+		}
+		// 中等规模数据，根据质量要求选择
+		if ctx.QualityLevel > 0.8 {
+			return StrategyHybrid
+		}
+	}
+
+	// 3. 维度判断
 	if vectorDim > 2048 {
 		// 高维数据优先考虑PQ压缩
 		if db.usePQCompression && db.pqCodebook != nil {
@@ -171,7 +184,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 		}
 	}
 
-	// 3. 质量要求判断
+	// 4. 质量要求判断
 	if ctx.QualityLevel > 0.9 {
 		// 高质量要求，优先精确搜索
 		if vectorCount < 100000 {
@@ -182,7 +195,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 		}
 	}
 
-	// 4. 性能要求判断
+	// 5. 性能要求判断
 	if ctx.Timeout > 0 && ctx.Timeout < 10*time.Millisecond {
 		// 低延迟要求，优先快速策略
 		if db.usePQCompression && db.pqCodebook != nil {
@@ -190,12 +203,12 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 		}
 	}
 
-	// 5. 硬件能力判断
+	// 6. 硬件能力判断
 	if db.hardwareCaps.HasGPU && vectorCount > 50000 {
 		return StrategyHybrid // GPU加速的混合策略
 	}
 
-	// 6. 默认策略选择
+	// 7. 默认策略选择
 	if db.useHNSWIndex && db.indexed && db.hnsw != nil {
 		return StrategyHNSW
 	}
@@ -245,6 +258,82 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOption
 	db.updatePerformanceMetrics(strategy, latency, len(results))
 
 	return results, err
+}
+
+// MonitorGPUHealth GPU健康状态监控
+func (db *VectorDB) MonitorGPUHealth() {
+	if !db.hardwareCaps.HasGPU || db.gpuAccelerator == nil {
+		return
+	}
+
+	ticker := time.NewTicker(30 * time.Second) // 每30秒检查一次
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if err := db.CheckGPUStatus(); err != nil {
+				log.Warning("GPU健康检查失败: %v", err)
+				// 可以在这里实现自动禁用GPU加速的逻辑
+				db.hardwareCaps.HasGPU = false
+			}
+		case <-db.stopCh:
+			return
+		}
+	}
+}
+
+// InitializeGPUAccelerator 初始化GPU加速器
+func (db *VectorDB) InitializeGPUAccelerator(deviceID int, indexType string) error {
+	if !db.hardwareCaps.HasGPU {
+		return fmt.Errorf("系统不支持GPU加速")
+	}
+
+	// 创建FAISS GPU加速器
+	gpuAccel := algorithm.NewFAISSGPUAccelerator(deviceID, indexType)
+	if err := gpuAccel.Initialize(); err != nil {
+		return fmt.Errorf("GPU加速器初始化失败: %w", err)
+	}
+
+	db.gpuAccelerator = gpuAccel
+	log.Info("GPU加速器初始化成功，设备ID: %d, 索引类型: %s", deviceID, indexType)
+
+	// 启动GPU健康监控
+	go db.MonitorGPUHealth()
+
+	return nil
+}
+
+// CheckGPUStatus 检查GPU状态和可用性
+func (db *VectorDB) CheckGPUStatus() error {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	if !db.hardwareCaps.HasGPU {
+		return fmt.Errorf("系统未检测到GPU支持")
+	}
+
+	if db.gpuAccelerator == nil {
+		return fmt.Errorf("GPU加速器未初始化")
+	}
+
+	// 如果是FAISS GPU加速器，进行详细检查
+	if gpuAccel, ok := db.gpuAccelerator.(*algorithm.FAISSGPUAccelerator); ok {
+		if err := gpuAccel.CheckGPUAvailability(); err != nil {
+			return fmt.Errorf("GPU可用性检查失败: %w", err)
+		}
+
+		// 获取GPU内存信息
+		free, total, err := gpuAccel.GetGPUMemoryInfo()
+		if err != nil {
+			return fmt.Errorf("获取GPU内存信息失败: %w", err)
+		}
+
+		log.Info("GPU状态检查通过 - 可用内存: %d MB, 总内存: %d MB",
+			free/(1024*1024), total/(1024*1024))
+	}
+
+	return nil
 }
 
 // pqSearchWithScores PQ压缩搜索
@@ -365,6 +454,9 @@ func (db *VectorDB) hnswSearchWithScores(query []float64, k int) ([]entity.Resul
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Similarity > results[j].Similarity
 	})
+	if len(results) > k {
+		results = results[:k]
+	}
 
 	return results, nil
 }
@@ -400,7 +492,12 @@ func (db *VectorDB) hybridSearchWithScores(query []float64, k int, ctx SearchCon
 		candidateIDs[i] = candidate.Id
 	}
 
-	// 使用GPU或SIMD加速精排
+	// 检查是否可以使用GPU加速精排
+	if db.shouldUseGPUBatchSearch(1, len(candidateIDs)) && len(candidateIDs) > 100 {
+		return db.gpuFineRanking(query, candidateIDs, k)
+	}
+
+	// 使用CPU SIMD加速精排
 	strategy := db.strategyComputeSelector.SelectOptimalStrategy(len(candidateIDs), len(query))
 	finalResults, err := db.fineRankingWithScores(query, candidateIDs, k, strategy)
 	if err != nil {
@@ -722,9 +819,28 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 	// 如果支持GPU，初始化GPU加速器
 	if db.hardwareCaps.HasGPU {
 		db.gpuAccelerator = algorithm.NewFAISSGPUAccelerator(0, "Flat")
-		if err := db.gpuAccelerator.Initialize(); err != nil {
-			log.Warning("GPU加速器初始化失败: %v", err)
-			db.hardwareCaps.HasGPU = false
+
+		// 先检查GPU可用性，再进行初始化
+		if gpuAccel, ok := db.gpuAccelerator.(*algorithm.FAISSGPUAccelerator); ok {
+			if err := gpuAccel.CheckGPUAvailability(); err != nil {
+				log.Warning("GPU可用性检查失败: %v", err)
+				db.hardwareCaps.HasGPU = false
+				db.gpuAccelerator = nil
+			} else {
+				// GPU可用性检查通过，进行初始化
+				if err := db.gpuAccelerator.Initialize(); err != nil {
+					log.Warning("GPU加速器初始化失败: %v", err)
+					db.hardwareCaps.HasGPU = false
+					db.gpuAccelerator = nil
+				}
+			}
+		} else {
+			// 如果类型断言失败，直接尝试初始化
+			if err := db.gpuAccelerator.Initialize(); err != nil {
+				log.Warning("GPU加速器初始化失败: %v", err)
+				db.hardwareCaps.HasGPU = false
+				db.gpuAccelerator = nil
+			}
 		}
 	}
 	if filePath != "" {
@@ -865,12 +981,12 @@ func (db *VectorDB) standardBatchCosineSimilarity(queries [][]float64, targets [
 }
 
 // AdaptiveFindNearest 自适应最近邻搜索
-func (db *VectorDB) AdaptiveFindNearest(query []float64, k int, nprobe int) ([]string, error) {
+func (db *VectorDB) AdaptiveFindNearest(query []float64, k int, nprobe int) ([]entity.Result, error) {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
 	if len(db.vectors) == 0 {
-		return []string{}, nil
+		return nil, fmt.Errorf("vectors is empty")
 	}
 
 	// 选择最优计算策略
@@ -890,7 +1006,7 @@ func (db *VectorDB) AdaptiveFindNearest(query []float64, k int, nprobe int) ([]s
 }
 
 // hnswAdaptiveSearch HNSW自适应搜索
-func (db *VectorDB) hnswAdaptiveSearch(query []float64, k int, strategy algorithm.ComputeStrategy) ([]string, error) {
+func (db *VectorDB) hnswAdaptiveSearch(query []float64, k int, strategy algorithm.ComputeStrategy) ([]entity.Result, error) {
 	// 根据策略设置距离函数
 	switch strategy {
 	case algorithm.StrategyAVX512, algorithm.StrategyAVX2:
@@ -912,17 +1028,11 @@ func (db *VectorDB) hnswAdaptiveSearch(query []float64, k int, strategy algorith
 		return nil, err
 	}
 
-	// 提取ID
-	ids := make([]string, len(results))
-	for i, result := range results {
-		ids[i] = result.Id
-	}
-
-	return ids, nil
+	return results, nil
 }
 
 // ivfAdaptiveSearch IVF自适应搜索
-func (db *VectorDB) ivfAdaptiveSearch(query []float64, k int, nprobe int, strategy algorithm.ComputeStrategy) ([]string, error) {
+func (db *VectorDB) ivfAdaptiveSearch(query []float64, k int, nprobe int, strategy algorithm.ComputeStrategy) ([]entity.Result, error) {
 	if !db.indexed {
 		return nil, fmt.Errorf("数据库尚未建立索引")
 	}
@@ -972,9 +1082,9 @@ func (db *VectorDB) ivfAdaptiveSearch(query []float64, k int, nprobe int, strate
 }
 
 // adaptiveFineRanking 自适应精排
-func (db *VectorDB) adaptiveFineRanking(query []float64, candidates []string, k int, strategy algorithm.ComputeStrategy) ([]string, error) {
+func (db *VectorDB) adaptiveFineRanking(query []float64, candidates []string, k int, strategy algorithm.ComputeStrategy) ([]entity.Result, error) {
 	if len(candidates) == 0 {
-		return []string{}, nil
+		return nil, fmt.Errorf("candidates is empty")
 	}
 
 	// 根据策略选择计算方法
@@ -987,14 +1097,10 @@ func (db *VectorDB) adaptiveFineRanking(query []float64, candidates []string, k 
 }
 
 // cpuFineRanking CPU精排（支持SIMD加速）
-func (db *VectorDB) cpuFineRanking(query []float64, candidates []string, k int, strategy algorithm.ComputeStrategy) ([]string, error) {
-	type result struct {
-		id         string
-		similarity float64
-	}
+func (db *VectorDB) cpuFineRanking(query []float64, candidates []string, k int, strategy algorithm.ComputeStrategy) ([]entity.Result, error) {
 
-	results := make([]result, 0, len(candidates))
-	resultsChan := make(chan result, len(candidates))
+	results := make([]entity.Result, 0, len(candidates))
+	resultsChan := make(chan entity.Result, len(candidates))
 
 	// 并行计算相似度
 	numWorkers := runtime.NumCPU()
@@ -1010,7 +1116,7 @@ func (db *VectorDB) cpuFineRanking(query []float64, candidates []string, k int, 
 				if vec, exists := db.vectors[candidateID]; exists {
 					// 使用自适应相似度计算
 					sim := algorithm.AdaptiveCosineSimilarity(query, vec, strategy)
-					resultsChan <- result{id: candidateID, similarity: sim}
+					resultsChan <- entity.Result{Id: candidateID, Similarity: sim}
 				}
 			}
 		}()
@@ -1032,80 +1138,54 @@ func (db *VectorDB) cpuFineRanking(query []float64, candidates []string, k int, 
 
 	// 排序并返回top-k
 	sort.Slice(results, func(i, j int) bool {
-		return results[i].similarity > results[j].similarity
+		return results[i].Similarity > results[j].Similarity
 	})
-
-	if k > len(results) {
-		k = len(results)
+	if len(results) > k {
+		results = results[:k]
 	}
-
-	topKIDs := make([]string, k)
-	for i := 0; i < k; i++ {
-		topKIDs[i] = results[i].id
-	}
-
-	return topKIDs, nil
+	return results, nil
 }
 
-// gpuFineRanking GPU精排
-func (db *VectorDB) gpuFineRanking(query []float64, candidates []string, k int) ([]string, error) {
-	if db.gpuAccelerator == nil {
-		return nil, fmt.Errorf("GPU加速器未初始化")
-	}
+// gpuFineRanking GPU加速的精排方法
+func (db *VectorDB) gpuFineRanking(query []float64, candidateIDs []string, k int) ([]entity.Result, error) {
+	// 构建候选向量数组
+	candidateVectors := make([][]float64, 0, len(candidateIDs))
+	validIDs := make([]string, 0, len(candidateIDs))
 
-	// 准备候选向量数据
-	candidateVectors := make([][]float64, 0, len(candidates))
-	validCandidates := make([]string, 0, len(candidates))
-
-	for _, candidateID := range candidates {
-		if vec, exists := db.vectors[candidateID]; exists {
+	for _, id := range candidateIDs {
+		if vec, exists := db.vectors[id]; exists {
 			candidateVectors = append(candidateVectors, vec)
-			validCandidates = append(validCandidates, candidateID)
+			validIDs = append(validIDs, id)
 		}
 	}
 
 	if len(candidateVectors) == 0 {
-		return []string{}, nil
+		return []entity.Result{}, nil
 	}
 
-	// 使用GPU计算相似度
+	// 使用GPU批量搜索进行精排
 	queries := [][]float64{query}
-	similarities, err := db.gpuAccelerator.BatchCosineSimilarity(queries, candidateVectors)
+	gpuResults, err := db.gpuAccelerator.BatchSearch(queries, candidateVectors, k)
 	if err != nil {
-		// GPU计算失败，回退到CPU
-		log.Warning("GPU精排失败，回退到CPU: %v", err)
-		return db.cpuFineRanking(query, candidates, k, algorithm.StrategyStandard)
+		return nil, fmt.Errorf("GPU精排失败: %w", err)
 	}
 
-	// 处理结果
-	type result struct {
-		id         string
-		similarity float64
+	if len(gpuResults) == 0 || len(gpuResults[0]) == 0 {
+		return []entity.Result{}, nil
 	}
 
-	results := make([]result, len(validCandidates))
-	for i, candidateID := range validCandidates {
-		results[i] = result{
-			id:         candidateID,
-			similarity: similarities[0][i],
+	// 转换结果
+	results := make([]entity.Result, 0, min(k, len(gpuResults[0])))
+	for _, gpuResult := range gpuResults[0] {
+		if idx, err := strconv.Atoi(gpuResult.ID); err == nil && idx < len(validIDs) {
+			results = append(results, entity.Result{
+				Id:         validIDs[idx],
+				Similarity: gpuResult.Similarity,
+			})
 		}
 	}
 
-	// 排序并返回top-k
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].similarity > results[j].similarity
-	})
-
-	if k > len(results) {
-		k = len(results)
-	}
-
-	topKIDs := make([]string, k)
-	for i := 0; i < k; i++ {
-		topKIDs[i] = results[i].id
-	}
-
-	return topKIDs, nil
+	return results, nil
 }
 
 // SetComputeStrategy 手动设置计算策略
@@ -1253,7 +1333,7 @@ func (db *VectorDB) BuildHNSWIndexParallel(numWorkers int) error {
 // k: 每个查询返回的最近邻数量
 // numWorkers: 并行工作的协程数量，如果 <= 0，则使用 CPU 核心数
 // 返回: 每个查询向量对应的最近邻ID数组，以及可能的错误
-func (db *VectorDB) BatchFindNearest(queryVectors [][]float64, k int, numWorkers int) ([][]string, error) {
+func (db *VectorDB) BatchFindNearest(queryVectors [][]float64, k int, numWorkers int) ([][]entity.Result, error) {
 	startTime := time.Now()
 
 	// 更新查询计数
@@ -1270,11 +1350,11 @@ func (db *VectorDB) BatchFindNearest(queryVectors [][]float64, k int, numWorkers
 
 	if len(db.vectors) == 0 {
 		// 如果数据库为空，返回空结果
-		emptyResults := make([][]string, len(queryVectors))
+		emptyResults := make([][]entity.Result, len(queryVectors))
 		for i := range emptyResults {
-			emptyResults[i] = []string{}
+			emptyResults[i] = []entity.Result{}
 		}
-		return emptyResults, nil
+		return emptyResults, fmt.Errorf("vector is empty")
 	}
 
 	// 如果启用了 HNSW 索引，使用 HNSW 批量搜索
@@ -1294,11 +1374,11 @@ func (db *VectorDB) BatchFindNearest(queryVectors [][]float64, k int, numWorkers
 		}
 
 		// 提取 ID
-		results := make([][]string, len(batchResults))
+		results := make([][]entity.Result, len(batchResults))
 		for i, queryResult := range batchResults {
-			ids := make([]string, len(queryResult))
+			ids := make([]entity.Result, min(k, len(queryResult)))
 			for j, result := range queryResult {
-				ids[j] = result.Id
+				ids[j] = result
 			}
 			results[i] = ids
 		}
@@ -1314,7 +1394,7 @@ func (db *VectorDB) BatchFindNearest(queryVectors [][]float64, k int, numWorkers
 	}
 
 	// 如果未启用 HNSW 索引，使用并行的暴力搜索或其他索引方法
-	results := make([][]string, len(queryVectors))
+	results := make([][]entity.Result, len(queryVectors))
 	errChan := make(chan error, len(queryVectors))
 
 	// 使用信号量限制并发数
@@ -1418,7 +1498,7 @@ func (db *VectorDB) BatchFindNearestWithScores(queryVectors [][]float64, k int, 
 	}
 
 	// 如果未启用 HNSW 索引，使用并行的暴力搜索或其他索引方法
-	results := make([][]entity.Result, len(queryVectors))
+	results := make([][]entity.Result, min(k, len(queryVectors)))
 	errChan := make(chan error, len(queryVectors))
 
 	// 使用信号量限制并发数
@@ -1700,9 +1780,9 @@ func (db *VectorDB) SearchWithFilter(query string, topK int, filter func(map[str
 
 	// 应用过滤器并计算相似度
 	var filteredResults []SearchResult
-	for _, id := range results {
+	for _, result := range results {
 		// 获取元数据
-		metadata, exists := db.GetMetadata(id)
+		metadata, exists := db.GetMetadata(result.Id)
 		if !exists {
 			metadata = make(map[string]interface{})
 		}
@@ -1710,13 +1790,13 @@ func (db *VectorDB) SearchWithFilter(query string, topK int, filter func(map[str
 		// 应用过滤器
 		if filter == nil || filter(metadata) {
 			// 计算相似度
-			similarity, err := db.CalculateCosineSimilarity(id, queryVector)
+			similarity, err := db.CalculateCosineSimilarity(result.Id, queryVector)
 			if err != nil {
 				continue
 			}
 
 			filteredResults = append(filteredResults, SearchResult{
-				ID:         id,
+				ID:         result.Id,
 				Similarity: similarity,
 				Metadata:   metadata,
 			})
@@ -3289,9 +3369,7 @@ func (db *VectorDB) fineRanking(query []float64, candidates []string, config Two
 				return nil, cpuErr
 			}
 
-			// 将 CPU 结果转换为 entity.Result 格式
-			db.appendResults(query, cpuResults, &results, config)
-			return results, nil
+			return cpuResults, nil
 		}
 
 		// 将 GPU 结果转换为 entity.Result 格式
@@ -3306,8 +3384,8 @@ func (db *VectorDB) fineRanking(query []float64, candidates []string, config Two
 		//		}
 		//	}
 		//}
-		db.appendResults(query, gpuResults, &results, config)
-		return results, nil
+
+		return gpuResults, nil
 	}
 
 	// CPU 并行精排
@@ -3466,7 +3544,7 @@ func (db *VectorDB) approximateSearch(query []float64, k int) ([]string, error) 
 }
 
 // FindNearest 查找最近邻（更新为使用自适应计算）
-func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]string, error) {
+func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]entity.Result, error) {
 	return db.AdaptiveFindNearest(query, k, nprobe)
 }
 
@@ -3899,7 +3977,11 @@ func (db *VectorDB) FindNearestWithScores_1(query []float64, k int, nprobe int) 
 	alpha := 0.1
 	db.stats.AvgQueryTime = time.Duration(float64(db.stats.AvgQueryTime)*(1-alpha) + float64(queryTime)*alpha)
 	db.statsMu.Unlock()
-	return results, nil
+	if k > len(results) {
+		k = len(results)
+	}
+
+	return results[:k], nil
 }
 
 // AdaptiveConfig 自适应配置结构
@@ -4046,7 +4128,7 @@ func (db *VectorDB) bruteForceSearch(query []float64, k int) ([]entity.Result, e
 	}
 
 	// 从堆中提取结果，按相似度降序排列
-	ids := make([]entity.Result, 0, len(resultHeap))
+	ids := make([]entity.Result, 0, min(k, len(resultHeap)))
 	for resultHeap.Len() > 0 {
 		ids = append([]entity.Result{heap.Pop(&resultHeap).(entity.Result)}, ids...)
 	}
@@ -4129,7 +4211,7 @@ func (db *VectorDB) lshSearch(query []float64, k int, numTables int) ([]entity.R
 	}
 
 	// 从堆中提取结果，按相似度降序排列
-	ids := make([]entity.Result, 0, len(resultHeap))
+	ids := make([]entity.Result, 0, min(k, len(resultHeap)))
 	for resultHeap.Len() > 0 {
 		ids = append([]entity.Result{heap.Pop(&resultHeap).(entity.Result)}, ids...)
 	}
@@ -4307,7 +4389,7 @@ func (db *VectorDB) multiIndexSearch(query []float64, k int, nprobe int) ([]enti
 	}
 
 	// 从堆中提取结果，按相似度降序排列
-	ids := make([]entity.Result, 0, len(resultHeap))
+	ids := make([]entity.Result, 0, min(k, len(resultHeap)))
 	for resultHeap.Len() > 0 {
 		ids = append([]entity.Result{heap.Pop(&resultHeap).(entity.Result)}, ids...)
 	}
@@ -4420,7 +4502,7 @@ func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]entity.Resu
 	}
 
 	// 从堆中提取结果，按相似度降序排列
-	ids := make([]entity.Result, 0, len(resultHeap))
+	ids := make([]entity.Result, 0, min(k, len(resultHeap)))
 	for resultHeap.Len() > 0 {
 		ids = append([]entity.Result{heap.Pop(&resultHeap).(entity.Result)}, ids...)
 	}
@@ -4429,7 +4511,7 @@ func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]entity.Resu
 }
 
 // FileSystemSearch 优化后的FileSystemSearch方法
-func (db *VectorDB) FileSystemSearch(query string, vectorizedType int, k int, nprobe int) ([]string, error) {
+func (db *VectorDB) FileSystemSearch(query string, vectorizedType int, k int, nprobe int) ([]entity.Result, error) {
 	// 参数验证
 	if k <= 0 {
 		return nil, fmt.Errorf("k 必须是正整数")
@@ -4508,16 +4590,10 @@ func (db *VectorDB) FileSystemSearch(query string, vectorizedType int, k int, np
 	}
 
 	// 对筛选后的候选集进行向量相似度排序
-	type result struct {
-		id         string
-		similarity float64
-		wordCount  int
-	}
-
 	// 使用工作池并行计算相似度
 	numWorkers := runtime.NumCPU()
 	workChan := make(chan candidate, len(candidates))
-	resultChan := make(chan result, len(candidates))
+	resultChan := make(chan entity.Result, len(candidates))
 
 	var wg sync.WaitGroup
 	for i := 0; i < numWorkers; i++ {
@@ -4530,7 +4606,7 @@ func (db *VectorDB) FileSystemSearch(query string, vectorizedType int, k int, np
 					continue
 				}
 				sim := algorithm.CosineSimilarity(queryVector, vec)
-				resultChan <- result{id: c.id, similarity: sim, wordCount: c.count}
+				resultChan <- entity.Result{Id: c.id, Similarity: sim, WordCount: c.count}
 			}
 		}()
 	}
@@ -4550,7 +4626,7 @@ func (db *VectorDB) FileSystemSearch(query string, vectorizedType int, k int, np
 	}()
 
 	// 收集结果
-	results := make([]result, 0, len(candidates))
+	results := make([]entity.Result, 0, len(candidates))
 	for r := range resultChan {
 		results = append(results, r)
 	}
@@ -4558,25 +4634,19 @@ func (db *VectorDB) FileSystemSearch(query string, vectorizedType int, k int, np
 	// 使用混合排序：先按关键词匹配数量，再按向量相似度
 	sort.Slice(results, func(i, j int) bool {
 		// 如果关键词匹配数量相差超过阈值，优先考虑匹配数量
-		if math.Abs(float64(results[i].wordCount-results[j].wordCount)) > 2 {
-			return results[i].wordCount > results[j].wordCount
+		if math.Abs(float64(results[i].WordCount-results[j].WordCount)) > 2 {
+			return results[i].WordCount > results[j].WordCount
 		}
 		// 否则按相似度排序
-		return results[i].similarity > results[j].similarity
+		return results[i].Similarity > results[j].Similarity
 	})
 
 	// 提取前k个结果
-	count := k
-	if len(results) < k {
-		count = len(results)
+	if len(results) > k {
+		results = results[:k]
 	}
 
-	ids := make([]string, count)
-	for i := 0; i < count; i++ {
-		ids[i] = results[i].id
-	}
-
-	return ids, nil
+	return results, nil
 }
 
 // 改进的查询缓存结构
@@ -4622,7 +4692,7 @@ func (db *ShardedVectorDB) Get(id string) ([]float64, bool) {
 }
 
 // ParallelFindNearest 优化的并行查询实现
-func (db *VectorDB) ParallelFindNearest(query []float64, k int) ([]string, error) {
+func (db *VectorDB) ParallelFindNearest(query []float64, k int) ([]entity.Result, error) {
 	// 创建固定大小的工作池
 	numWorkers := runtime.NumCPU()
 
@@ -4704,13 +4774,7 @@ func (db *VectorDB) ParallelFindNearest(query []float64, k int) ([]string, error
 		allResults = allResults[:k]
 	}
 
-	// 提取ID
-	ids := make([]string, len(allResults))
-	for i, result := range allResults {
-		ids[i] = result.Id
-	}
-
-	return ids, nil
+	return allResults, nil
 }
 
 func (db *VectorDB) GetDataSize() int {
@@ -4725,7 +4789,7 @@ type SearchOptions struct {
 	SearchTimeout time.Duration // 搜索超时时间
 }
 
-// 多级缓存结构
+// MultiLevelCache 多级缓存结构
 type MultiLevelCache struct {
 	// L1: 内存缓存 - 最快，容量小
 	l1Cache    map[string]queryCache
@@ -4941,4 +5005,118 @@ func (db *VectorDB) generateQueryKey(query []float64, k int) string {
 	}
 	binary.Write(h, binary.LittleEndian, int64(k))
 	return fmt.Sprintf("%x", h.Sum64())
+}
+
+// OptimizedBatchSearch GPU加速的批量搜索方法
+func (db *VectorDB) OptimizedBatchSearch(queries [][]float64, k int, options SearchOptions) ([][]entity.Result, error) {
+	// 更新查询计数
+	db.statsMu.Lock()
+	db.stats.TotalQueries += int64(len(queries))
+	db.statsMu.Unlock()
+
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	if k <= 0 {
+		return nil, fmt.Errorf("k 必须是正整数")
+	}
+
+	if len(db.vectors) == 0 {
+		// 如果数据库为空，返回空结果
+		emptyResults := make([][]entity.Result, len(queries))
+		for i := range emptyResults {
+			emptyResults[i] = []entity.Result{}
+		}
+		return emptyResults, nil
+	}
+
+	// 检查是否可以使用GPU加速
+	if db.shouldUseGPUBatchSearch(len(queries), len(db.vectors)) {
+		log.Info("使用GPU加速批量搜索，查询数量: %d, 数据库大小: %d", len(queries), len(db.vectors))
+		return db.gpuBatchSearch(queries, k, options)
+	}
+
+	// 回退到传统批量搜索方法
+	log.Trace("使用传统批量搜索方法")
+	return db.fallbackBatchSearch(queries, k, options)
+}
+
+// shouldUseGPUBatchSearch 判断是否应该使用GPU批量搜索
+func (db *VectorDB) shouldUseGPUBatchSearch(queryCount, dbSize int) bool {
+	// 检查GPU是否可用
+	if !db.hardwareCaps.HasGPU || db.gpuAccelerator == nil {
+		return false
+	}
+
+	// 检查GPU加速器是否已初始化
+	if gpuAccel, ok := db.gpuAccelerator.(*algorithm.FAISSGPUAccelerator); ok {
+		if err := gpuAccel.CheckGPUAvailability(); err != nil {
+			log.Warning("GPU不可用，回退到CPU搜索: %v", err)
+			return false
+		}
+	} else {
+		return false
+	}
+
+	// 数据规模判断：当查询数量较多或数据库较大时，GPU加速效果更明显
+	if queryCount >= 10 && dbSize >= 1000 {
+		return true
+	}
+
+	// 对于大规模数据，即使单个查询也值得使用GPU
+	if dbSize >= 100000 {
+		return true
+	}
+
+	return false
+}
+
+// gpuBatchSearch GPU加速的批量搜索实现
+func (db *VectorDB) gpuBatchSearch(queries [][]float64, k int, options SearchOptions) ([][]entity.Result, error) {
+	// 准备数据库向量数组
+	database := make([][]float64, 0, len(db.vectors))
+	idMapping := make([]string, 0, len(db.vectors))
+
+	// 构建向量数组和ID映射
+	for id, vector := range db.vectors {
+		database = append(database, vector)
+		idMapping = append(idMapping, id)
+	}
+
+	// 调用GPU加速器的BatchSearch方法
+	gpuResults, err := db.gpuAccelerator.BatchSearch(queries, database, k)
+	if err != nil {
+		return nil, fmt.Errorf("GPU批量搜索失败: %w", err)
+	}
+
+	// 转换GPU结果为entity.Result格式
+	results := make([][]entity.Result, len(gpuResults))
+	for i, queryResults := range gpuResults {
+		results[i] = make([]entity.Result, min(k, len(queryResults)))
+		for j, gpuResult := range queryResults {
+			// 将GPU返回的数字ID转换为实际的向量ID
+			gpuID := gpuResult.ID
+			if idx, err := strconv.Atoi(gpuID); err == nil && idx < len(idMapping) {
+				results[i][j] = entity.Result{
+					Id:         idMapping[idx],
+					Similarity: gpuResult.Similarity,
+				}
+			} else {
+				// 如果ID转换失败，使用原始ID
+				results[i][j] = entity.Result{
+					Id:         gpuID,
+					Similarity: gpuResult.Similarity,
+				}
+			}
+		}
+	}
+
+	return results, nil
+}
+
+// fallbackBatchSearch 传统批量搜索方法（回退方案）
+func (db *VectorDB) fallbackBatchSearch(queries [][]float64, k int, options SearchOptions) ([][]entity.Result, error) {
+	// 使用现有的BatchFindNearestWithScores方法
+	numWorkers := runtime.NumCPU()
+	return db.BatchFindNearestWithScores(queries, k, numWorkers)
 }

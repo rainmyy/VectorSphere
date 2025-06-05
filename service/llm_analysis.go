@@ -276,7 +276,7 @@ func (s *LLMAnalysisService) AnalyzeWithHistory(userQuery string, topK int, hist
 	}
 	var contextText string
 	for _, id := range ids {
-		meta, _ := s.VectorDB.GetMetadata(id)
+		meta, _ := s.VectorDB.GetMetadata(id.Id)
 		content, _ := meta["content"].(string)
 		contextText += content + "\n"
 	}
@@ -331,7 +331,7 @@ func (s *LLMAnalysisService) HandleAnalyzeWS(w http.ResponseWriter, r *http.Requ
 		}
 		var contextText string
 		for _, id := range ids {
-			meta, _ := s.VectorDB.GetMetadata(id)
+			meta, _ := s.VectorDB.GetMetadata(id.Id)
 			content, _ := meta["content"].(string)
 			contextText += content + "\n"
 		}
