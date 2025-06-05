@@ -37,8 +37,9 @@ func (index *SkipListInvertedIndex) Add(doc messages.Document) {
 	for _, keyword := range doc.KeWords {
 		key := keyword.ToString()
 		lock := index.getLock(key)
+		newDocId := key + ":" + doc.Id
 		skipListValue := SkipListValue{
-			Id:          doc.Id,
+			Id:          newDocId,
 			BitsFeature: doc.BitsFeature,
 		}
 		lock.Lock()
@@ -89,6 +90,21 @@ func (index *SkipListInvertedIndex) Search(query *messages.TermQuery, onFlag uin
 
 func (index *SkipListInvertedIndex) searchQuery(query *messages.TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) *strategy.SkipList {
 	switch {
+	case query.Keyword != nil && query.ScoreId > 0:
+		keyWord := query.Keyword.ToString()
+		if value, ok := index.table.Get(keyWord); ok {
+			list := value.(*strategy.SkipList)
+			if elem, ok := list.Search(query.ScoreId); ok {
+				skipListValue := elem.Value.(SkipListValue)
+				flag := skipListValue.BitsFeature
+				if index.FilterBits(flag, onFlag, offFlag, orFlags) {
+					result := strategy.NewSkipList()
+					result.Insert(query.ScoreId, skipListValue)
+					return result
+				}
+			}
+		}
+		return nil
 	case query.Keyword != nil:
 		keyWord := query.Keyword.ToString()
 		if value, ok := index.table.Get(keyWord); ok {
@@ -102,23 +118,22 @@ func (index *SkipListInvertedIndex) searchQuery(query *messages.TermQuery, onFla
 				if intId > 0 && index.FilterBits(flag, onFlag, offFlag, orFlags) {
 					result.Insert(intId, skipListValue)
 				}
+				node = node.Next()
 			}
 			return result
 		}
 		return nil
 	case len(query.Must) > 0:
-		// 优化Must查询：任意子查询为空则整体为空
 		var validLists []*strategy.SkipList
 		for _, q := range query.Must {
 			subResult := index.searchQuery(q, onFlag, offFlag, orFlags)
 			if subResult == nil || subResult.Len() == 0 {
-				return nil // 任意Must条件无结果则整体无结果
+				return nil
 			}
 			validLists = append(validLists, subResult)
 		}
 		return index.IntersectionList(validLists...)
 	case len(query.Should) > 0:
-		// 优化Should查询：提前过滤空列表
 		var validLists []*strategy.SkipList
 		for _, q := range query.Should {
 			subResult := index.searchQuery(q, onFlag, offFlag, orFlags)
@@ -178,7 +193,7 @@ func (index *SkipListInvertedIndex) IntersectionList(lists ...*strategy.SkipList
 		return lists[0]
 	}
 
-	// 选择最短的列表作为基准（减少查找次数）
+	// 选择最短的列表作为基准
 	shortest := lists[0]
 	for _, list := range lists[1:] {
 		if list.Len() < shortest.Len() {
@@ -193,7 +208,7 @@ func (index *SkipListInvertedIndex) IntersectionList(lists ...*strategy.SkipList
 		value := iter.Value.(SkipListValue)
 		found := true
 
-		// 检查其他列表是否包含该键（利用跳表的Find方法）
+		// 检查其他列表是否包含该键（用Search）
 		for _, list := range lists {
 			if list == shortest {
 				continue
@@ -207,6 +222,7 @@ func (index *SkipListInvertedIndex) IntersectionList(lists ...*strategy.SkipList
 		if found {
 			result.Insert(key, value)
 		}
+		iter = iter.Next()
 	}
 	return result
 }
