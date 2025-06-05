@@ -1,0 +1,48 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "VectorSphere Monitoring",
+    "tags": ["vectorsphere"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Request Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total[5m])",
+            "legendFormat": "{{service}} - {{method}}"
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Response Time",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile"
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Vector Index Size",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "vector_index_size",
+            "legendFormat": "{{instance}}"
+          }
+        ]
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "refresh": "5s"
+  }
+}

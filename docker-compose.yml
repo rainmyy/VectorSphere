@@ -1,0 +1,114 @@
+version: '3.8'
+
+services:
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.0
+    environment:
+      - ETCD_NAME=etcd0
+      - ETCD_DATA_DIR=/etcd-data
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd:2379
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd:2380
+      - ETCD_INITIAL_CLUSTER=etcd0=http://etcd:2380
+      - ETCD_INITIAL_CLUSTER_TOKEN=etcd-cluster
+      - ETCD_INITIAL_CLUSTER_STATE=new
+    ports:
+      - "2379:2379"
+      - "2380:2380"
+    volumes:
+      - etcd-data:/etcd-data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+
+  master:
+    build:
+      context: .
+      dockerfile: Dockerfile.master
+    ports:
+      - "8080:8080"
+    environment:
+      - ETCD_ENDPOINTS=etcd:2379
+      - REDIS_ADDR=redis:6379
+      - LOG_LEVEL=info
+      - SERVICE_PORT=8080
+    depends_on:
+      - etcd
+      - redis
+    volumes:
+      - ./conf:/root/conf
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    ports:
+      - "8081:8081"
+    environment:
+      - ETCD_ENDPOINTS=etcd:2379
+      - REDIS_ADDR=redis:6379
+      - MASTER_ADDR=master:8080
+      - LOG_LEVEL=info
+      - SERVICE_PORT=8081
+    depends_on:
+      - etcd
+      - redis
+      - master
+    volumes:
+      - ./conf:/root/conf
+
+  vectordb:
+    build:
+      context: .
+      dockerfile: Dockerfile.vectordb
+    ports:
+      - "8082:8082"
+    environment:
+      - ETCD_ENDPOINTS=etcd:2379
+      - REDIS_ADDR=redis:6379
+      - LOG_LEVEL=info
+      - SERVICE_PORT=8082
+      - DATA_PATH=/data
+    depends_on:
+      - etcd
+      - redis
+    volumes:
+      - ./conf:/root/conf
+      - vector-data:/data
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+
+volumes:
+  etcd-data:
+  redis-data:
+  vector-data:
+  prometheus-data:
+  grafana-data:

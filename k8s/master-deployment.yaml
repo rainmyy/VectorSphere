@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: master
+  namespace: vectorsphere
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: master
+  template:
+    metadata:
+      labels:
+        app: master
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: master
+        image: vectorsphere/master:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: ETCD_ENDPOINTS
+          value: "etcd-service:2379"
+        - name: REDIS_ADDR
+          value: "redis-service:6379"
+        - name: SERVICE_PORT
+          value: "8080"
+        - name: LOG_LEVEL
+          value: "info"
+        volumeMounts:
+        - name: config
+          mountPath: /root/conf
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: config
+        configMap:
+          name: vectorsphere-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: master-service
+  namespace: vectorsphere
+spec:
+  selector:
+    app: master
+  ports:
+  - port: 8080
+    targetPort: 8080
+  type: ClusterIP

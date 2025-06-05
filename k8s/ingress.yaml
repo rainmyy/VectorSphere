@@ -1,0 +1,41 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vectorsphere-ingress
+  namespace: vectorsphere
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+  - hosts:
+    - api.vectorsphere.com
+    secretName: vectorsphere-tls
+  rules:
+  - host: api.vectorsphere.com
+    http:
+      paths:
+      - path: /api/v1/master
+        pathType: Prefix
+        backend:
+          service:
+            name: master-service
+            port:
+              number: 8080
+      - path: /api/v1/worker
+        pathType: Prefix
+        backend:
+          service:
+            name: worker-service
+            port:
+              number: 8081
+      - path: /api/v1/vector
+        pathType: Prefix
+        backend:
+          service:
+            name: vectordb-service
+            port:
+              number: 8082
