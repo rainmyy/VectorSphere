@@ -1,9 +1,9 @@
 package bind
 
 import (
+	. "VectorSphere/library/common"
+	. "VectorSphere/library/tree"
 	. "bytes"
-	. "seetaSearch/library/common"
-	. "seetaSearch/library/tree"
 )
 
 type String struct {

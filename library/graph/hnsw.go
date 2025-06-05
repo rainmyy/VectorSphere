@@ -1,6 +1,8 @@
 package graph
 
 import (
+	"VectorSphere/library/algorithm"
+	"VectorSphere/library/entity"
 	"container/heap"
 	"encoding/gob"
 	"fmt"
@@ -8,8 +10,6 @@ import (
 	"math/rand"
 	"os"
 	"runtime"
-	"seetaSearch/library/algorithm"
-	"seetaSearch/library/entity"
 	"sort"
 	"sync"
 )

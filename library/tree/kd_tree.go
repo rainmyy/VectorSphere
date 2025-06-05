@@ -1,10 +1,10 @@
 package tree
 
 import (
+	"VectorSphere/library/algorithm"
+	"VectorSphere/library/entity"
 	"container/heap"
 	"math"
-	"seetaSearch/library/algorithm"
-	"seetaSearch/library/entity"
 )
 
 // KDTreeNode KD树节点结构

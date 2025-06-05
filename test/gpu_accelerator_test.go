@@ -1,7 +1,7 @@
 package test
 
 import (
-	"seetaSearch/library/algorithm"
+	"VectorSphere/library/algorithm"
 	"testing"
 )
 

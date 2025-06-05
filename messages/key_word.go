@@ -1,6 +1,6 @@
 package messages
 
-import "seetaSearch/library/tree"
+import "VectorSphere/library/tree"
 
 func (kw *KeyWord) ToString() string {
 	if len(kw.Word) > 0 {

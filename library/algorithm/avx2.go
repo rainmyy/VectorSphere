@@ -47,7 +47,7 @@ package algorithm
 import "C"
 
 import (
-	"seetaSearch/library/entity"
+	"VectorSphere/library/entity"
 	"unsafe"
 )
 

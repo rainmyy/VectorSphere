@@ -1,10 +1,10 @@
 package bootstrap
 
 import (
+	"VectorSphere/library/log"
+	PoolLib "VectorSphere/library/pool"
+	"VectorSphere/scheduler"
 	"context"
-	"seetaSearch/library/log"
-	PoolLib "seetaSearch/library/pool"
-	"seetaSearch/scheduler"
 	"time"
 )
 

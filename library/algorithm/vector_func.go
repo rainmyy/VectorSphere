@@ -2,6 +2,8 @@ package algorithm
 
 import "C"
 import (
+	"VectorSphere/library/entity"
+	"VectorSphere/library/enum"
 	"bufio"
 	"encoding/binary"
 	"fmt"
@@ -11,8 +13,6 @@ import (
 	"math/rand"
 	"os"
 	"runtime"
-	"seetaSearch/library/entity"
-	"seetaSearch/library/enum"
 	"sync"
 	"time"
 )

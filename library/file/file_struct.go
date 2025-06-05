@@ -1,12 +1,12 @@
 package file
 
 import (
+	. "VectorSphere/library/common"
+	. "VectorSphere/library/tree"
 	"fmt"
 	"os"
 	"path"
 	"path/filepath"
-	. "seetaSearch/library/common"
-	. "seetaSearch/library/tree"
 	"time"
 )
 

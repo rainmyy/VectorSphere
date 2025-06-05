@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"seetaSearch/library/log"
+	"VectorSphere/library/log"
 
 	"github.com/robfig/cron/v3"
 )

@@ -1,20 +1,20 @@
 package bootstrap
 
 import (
+	"VectorSphere/library/common"
+	"VectorSphere/library/log"
+	"VectorSphere/scheduler"
+	"VectorSphere/server"
 	"context"
 	"fmt"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"seetaSearch/library/common"
-	"seetaSearch/library/log"
-	"seetaSearch/scheduler"
-	"seetaSearch/server"
 	"sync"
 	"time"
 
-	"seetaSearch/library/conf"
-	PoolLib "seetaSearch/library/pool"
+	"VectorSphere/library/conf"
+	PoolLib "VectorSphere/library/pool"
 )
 
 /**
@@ -98,7 +98,7 @@ func (app *AppServer) ReadServiceConf() (error, *ServiceConfig) {
 	//}
 
 	//err = conf.ReadYAML(path.Join(rootPath, "conf", "idc", "simple", "service.yaml"), &cfg)
-	err := conf.ReadYAML("D:\\code\\seetaSearch\\conf\\idc\\simple\\service.yaml", &cfg)
+	err := conf.ReadYAML("D:\\code\\VectorSphere\\conf\\idc\\simple\\service.yaml", &cfg)
 
 	if err != nil {
 		return err, nil
@@ -219,12 +219,12 @@ func NewAppServer() *AppServer {
 	}
 }
 func (app *AppServer) RegisterToEtcd(serviceName, addr string) error {
-	key := fmt.Sprintf("/seetasearch/services/%s/%s", serviceName, addr)
+	key := fmt.Sprintf("/VectorSphere/services/%s/%s", serviceName, addr)
 	_, err := app.etcdCli.Put(context.Background(), key, addr)
 	return err
 }
 func (app *AppServer) DiscoverMaster(serviceName string) (string, error) {
-	resp, err := app.etcdCli.Get(context.Background(), fmt.Sprintf("/seetasearch/services/%s/", serviceName), clientv3.WithPrefix())
+	resp, err := app.etcdCli.Get(context.Background(), fmt.Sprintf("/VectorSphere/services/%s/", serviceName), clientv3.WithPrefix())
 	if err != nil {
 		return "", err
 	}

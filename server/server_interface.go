@@ -1,6 +1,6 @@
 package server
 
-import "seetaSearch/messages"
+import "VectorSphere/messages"
 
 type ServerInterface interface {
 	DelDoc(id *DocId) int

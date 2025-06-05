@@ -62,15 +62,15 @@ faiss_wrapper:
 ifeq ($(DETECTED_OS),Windows)
 build: faiss_wrapper
 	@echo "正在为 Windows 编译 Go 程序..."
-	$(SET_ENV) CGO_ENABLED=1 && go build -o seetaSearch$(EXE_EXT) .
-	@echo "编译完成: seetaSearch$(EXE_EXT)"
+	$(SET_ENV) CGO_ENABLED=1 && go build -o VectorSphere$(EXE_EXT) .
+	@echo "编译完成: VectorSphere$(EXE_EXT)"
 else
 build: faiss_wrapper
 	@echo "正在为 Linux 编译 Go 程序..."
 	$(SET_ENV) CGO_ENABLED=1 && \\
 	$(SET_ENV) LD_LIBRARY_PATH=$(CUDA_PATH)/lib64:$(FAISS_PATH)/lib:$$LD_LIBRARY_PATH && \\
-	go build -o seetaSearch$(EXE_EXT) .
-	@echo "编译完成: seetaSearch$(EXE_EXT)"
+	go build -o VectorSphere$(EXE_EXT) .
+	@echo "编译完成: VectorSphere$(EXE_EXT)"
 endif
 
 # 安装依赖 (仅Linux)
@@ -86,13 +86,13 @@ ifeq ($(DETECTED_OS),Windows)
 clean:
 	@echo "清理 Windows 构建文件..."
 	-$(RM_CMD) library$(PATH_SEP)algorithm$(PATH_SEP)libfaiss_gpu_wrapper$(LIB_EXT)
-	-$(RM_CMD) seetaSearch$(EXE_EXT)
+	-$(RM_CMD) VectorSphere$(EXE_EXT)
 	@echo "清理完成"
 else
 clean:
 	@echo "清理 Linux 构建文件..."
 	-$(RM_CMD) library$(PATH_SEP)algorithm$(PATH_SEP)libfaiss_gpu_wrapper$(LIB_EXT)
-	-$(RM_CMD) seetaSearch$(EXE_EXT)
+	-$(RM_CMD) VectorSphere$(EXE_EXT)
 	@echo "清理完成"
 endif
 

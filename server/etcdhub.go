@@ -38,7 +38,7 @@ var (
 	hubOnce        sync.Once
 )
 
-const ServiceRootPath = "/opt/seeta_search/services"
+const ServiceRootPath = "/opt/vector_sphere/services"
 
 func init() {
 

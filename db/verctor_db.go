@@ -1,6 +1,11 @@
 package db
 
 import (
+	"VectorSphere/library/algorithm"
+	"VectorSphere/library/entity"
+	"VectorSphere/library/graph"
+	"VectorSphere/library/log"
+	"VectorSphere/library/tree"
 	"container/heap"
 	"encoding/binary"
 	"encoding/gob"
@@ -10,11 +15,6 @@ import (
 	"math/rand"
 	"os"
 	"runtime"
-	"seetaSearch/library/algorithm"
-	"seetaSearch/library/entity"
-	"seetaSearch/library/graph"
-	"seetaSearch/library/log"
-	"seetaSearch/library/tree"
 	"sort"
 	"strings"
 	"sync"

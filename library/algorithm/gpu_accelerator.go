@@ -53,8 +53,8 @@ int faiss_gpu_set_device(int device_id);
 import "C"
 
 import (
+	"VectorSphere/library/log"
 	"fmt"
-	"seetaSearch/library/log"
 	"sync"
 	"unsafe"
 )

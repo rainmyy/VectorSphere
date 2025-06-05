@@ -1,9 +1,9 @@
 package search
 
 import (
+	tree "VectorSphere/library/tree"
+	"VectorSphere/messages"
 	"fmt"
-	tree "seetaSearch/library/tree"
-	"seetaSearch/messages"
 	"sort"
 	"strconv"
 )

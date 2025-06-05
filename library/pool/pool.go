@@ -1,8 +1,8 @@
 package pool
 
 import (
+	"VectorSphere/library/res"
 	"errors"
-	"seetaSearch/library/res"
 	"sync"
 )
 

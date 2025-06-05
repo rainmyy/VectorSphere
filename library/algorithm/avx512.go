@@ -39,8 +39,8 @@ package algorithm
 import "C"
 
 import (
+	"VectorSphere/library/entity"
 	"math"
-	"seetaSearch/library/entity"
 	"unsafe"
 )
 

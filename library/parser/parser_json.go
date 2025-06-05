@@ -1,9 +1,9 @@
 package parser
 
 import (
+	. "VectorSphere/library/tree"
 	"encoding/json"
 	"fmt"
-	. "seetaSearch/library/tree"
 )
 
 func ParserJsonContent(data []byte) ([]*TreeStruct, error) {

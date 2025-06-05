@@ -1,11 +1,11 @@
 package service
 
 import (
+	"VectorSphere/db"
+	"VectorSphere/index"
+	"VectorSphere/messages"
 	"encoding/json"
 	"fmt"
-	"seetaSearch/db"
-	"seetaSearch/index"
-	"seetaSearch/messages"
 )
 
 type SkipListSessionStore struct {

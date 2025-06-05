@@ -1,10 +1,10 @@
 package algorithm
 
 import (
+	"VectorSphere/library/entity"
 	"fmt"
 	"math"
 	"math/rand"
-	"seetaSearch/library/entity"
 	"time"
 )
 

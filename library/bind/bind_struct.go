@@ -3,7 +3,6 @@ package bind
 import (
 	"log"
 	"reflect"
-	. "seetaSearch/library/tree"
 )
 
 type Struct struct {

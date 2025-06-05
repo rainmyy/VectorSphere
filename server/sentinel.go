@@ -1,6 +1,8 @@
 package server
 
 import (
+	"VectorSphere/library/log"
+	"VectorSphere/messages"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,8 +17,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"seetaSearch/library/log"
-	"seetaSearch/messages"
 	"strconv"
 	"sync"
 	"sync/atomic"

@@ -1,13 +1,13 @@
 package service
 
 import (
+	"VectorSphere/db"
+	"VectorSphere/index"
 	"encoding/json"
 	"fmt"
 	"github.com/gorilla/websocket"
 	"github.com/pkoukk/tiktoken-go"
 	"net/http"
-	"seetaSearch/db"
-	"seetaSearch/index"
 	"sync"
 	"time"
 )

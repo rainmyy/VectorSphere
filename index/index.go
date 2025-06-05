@@ -1,11 +1,11 @@
 package index
 
 import (
+	"VectorSphere/db"
+	"VectorSphere/messages"
 	"bytes"
 	"encoding/gob"
 	"errors"
-	"seetaSearch/db"
-	"seetaSearch/messages"
 	"strings"
 	"sync/atomic"
 )

@@ -1,8 +1,8 @@
 package bind
 
 import (
+	. "VectorSphere/library/tree"
 	"fmt"
-	. "seetaSearch/library/tree"
 )
 
 type Array struct {

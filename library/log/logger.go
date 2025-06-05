@@ -1,13 +1,13 @@
 package log
 
 import (
+	"VectorSphere/library/util"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"path"
 	"path/filepath"
-	"seetaSearch/library/util"
 	"sync"
 	"time"
 )
@@ -43,7 +43,7 @@ func init() {
 		return
 	}
 
-	_ = InitLogger(INFO, path.Join(basePath, "log", "seeta_search.log"), 10, true) // 默认INFO级别，输出到终端，最大10MB
+	_ = InitLogger(INFO, path.Join(basePath, "log", "vector_sphere.log"), 10, true) // 默认INFO级别，输出到终端，最大10MB
 }
 
 // InitLogger 初始化日志，filePath为空则输出到终端，否则输出到文件

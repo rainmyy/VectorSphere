@@ -1,11 +1,11 @@
 package search
 
 import (
+	"VectorSphere/db"
+	"VectorSphere/index"
+	tree "VectorSphere/library/tree"
+	"VectorSphere/messages"
 	"fmt"
-	"seetaSearch/db"
-	"seetaSearch/index"
-	tree "seetaSearch/library/tree"
-	"seetaSearch/messages"
 )
 
 type SearchService struct {

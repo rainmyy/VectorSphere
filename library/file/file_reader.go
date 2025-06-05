@@ -1,14 +1,14 @@
 package file
 
 import (
+	. "VectorSphere/library/common"
+	"VectorSphere/library/parser"
+	. "VectorSphere/library/tree"
 	"bufio"
 	"fmt"
 	"io"
 	"math"
 	"os"
-	. "seetaSearch/library/common"
-	"seetaSearch/library/parser"
-	. "seetaSearch/library/tree"
 	"strings"
 	"sync"
 )

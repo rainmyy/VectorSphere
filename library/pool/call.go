@@ -1,9 +1,9 @@
 package pool
 
 import (
+	. "VectorSphere/library/res"
 	"fmt"
 	"reflect"
-	. "seetaSearch/library/res"
 )
 
 func FuncCall(function interface{}, args ...interface{}) []interface{} {

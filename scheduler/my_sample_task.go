@@ -1,7 +1,7 @@
 package scheduler
 
 import (
-	"seetaSearch/library/log"
+	"VectorSphere/library/log"
 	"time"
 )
 

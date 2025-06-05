@@ -1,4 +1,4 @@
-serviceName: seeta_search
+serviceName: vector_sphere
 timeOut: 300
 defaultPort: 8080
 singleService: true

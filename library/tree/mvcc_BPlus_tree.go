@@ -1,9 +1,9 @@
 package tree
 
 import (
+	"VectorSphere/library/log"
 	"errors"
 	"fmt"
-	"seetaSearch/library/log"
 	"sync"
 	"time"
 )

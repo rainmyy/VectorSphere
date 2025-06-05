@@ -1,11 +1,11 @@
 package index
 
 import (
+	"VectorSphere/library/collect"
+	"VectorSphere/library/strategy"
+	"VectorSphere/messages"
 	farmhash "github.com/leemcloughlin/gofarmhash"
 	"runtime"
-	"seetaSearch/library/collect"
-	"seetaSearch/library/strategy"
-	"seetaSearch/messages"
 	"sync"
 )
 

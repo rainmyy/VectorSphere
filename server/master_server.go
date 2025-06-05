@@ -1,6 +1,7 @@
 package server
 
 import (
+	"VectorSphere/library/pool"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -8,7 +9,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"seetaSearch/library/pool"
 	"sort"
 	"strings"
 	"sync"
@@ -21,9 +21,9 @@ import (
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"seetaSearch/library/log"
-	"seetaSearch/messages"
-	"seetaSearch/scheduler"
+	"VectorSphere/library/log"
+	"VectorSphere/messages"
+	"VectorSphere/scheduler"
 )
 
 // TaskResult 任务结果结构体
@@ -512,7 +512,7 @@ func (m *MasterService) runElection(ctx context.Context) {
 	m.session = sess
 	m.leaseID = sess.Lease()
 
-	e := concurrency.NewElection(sess, "/seetasearch/master_election")
+	e := concurrency.NewElection(sess, "/VectorSphere/master_election")
 	m.election = e
 
 	// 循环尝试获取领导权

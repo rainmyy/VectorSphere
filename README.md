@@ -1,10 +1,14 @@
-# seetaSearch
+# VectorSphere
 ## 项目简介
-seetaSearch是一个高性能分布式搜索引擎系统，支持传统关键词搜索和向量相似度搜索，采用主从架构设计，具备高可用性和可扩展性。系统提供了丰富的索引和搜索功能，适用于大规模文本和向量数据的存储、索引和检索。
+VectorSphere是一个高性能分布式搜索引擎系统，支持传统关键词搜索和向量相似度搜索，采用主从架构设计，具备高可用性和可扩展性。系统提供了丰富的索引和搜索功能，适用于大规模文本和向量数据的存储、索引和检索。
+
+向量星环（VectorSphere）——高性能分布式向量化索引与智能检索平台
+如需更技术化的副标题，可用：
+> “面向企业的高性能分布式向量化索引与智能检索系统”
 
 ## 系统架构
 ### 整体架构
-seetaSearch采用主从（Master-Slave）分布式架构：
+VectorSphere采用主从（Master-Slave）分布式架构：
 
 - 主节点（Master） ：负责任务调度、负载均衡和集群管理
 - 从节点（Slave） ：负责数据存储、索引构建和查询执行
@@ -88,14 +92,14 @@ cmake --install build --prefix C:/faiss
 ### 安装和编译
 ```
 # 克隆仓库
-git clone https://github.com/yourusername/seetaSearch.git
-cd seetaSearch
+git clone https://github.com/yourusername/VectorSphere.git
+cd VectorSphere
 
 # 安装依赖
 go mod download
 
 # 编译
-go build -o seetaSearch
+go build -o VectorSphere
 ```
 makefile 编译
 ```
@@ -113,15 +117,15 @@ make help
 
 ### 运行模式 主节点模式
 ```
-./seetaSearch -mode master -port 8080 -etcd localhost:2379 -service 
-seetaSearch
+./VectorSphere -mode master -port 8080 -etcd localhost:2379 -service 
+VectorSphere
 ``` 从节点模式
 ```
-./seetaSearch -mode slave -port 8081 -etcd localhost:2379 -service 
-seetaSearch -data ./data -doc-num 10000 -db-type 0
+./VectorSphere -mode slave -port 8081 -etcd localhost:2379 -service 
+VectorSphere -data ./data -doc-num 10000 -db-type 0
 ``` 独立模式
 ```
-./seetaSearch -mode standalone -port 8080 -data ./data -doc-num 10000 
+./VectorSphere -mode standalone -port 8080 -data ./data -doc-num 10000 
 -db-type 0
 ```
 ### 配置说明
@@ -169,4 +173,4 @@ seetaSearch -data ./data -doc-num 10000 -db-type 0
 ## 联系方式
 如有问题或建议，请通过 Issues 或 Pull Requests 与我们联系。
 
-开始使用 seetaSearch，构建高性能的分布式搜索系统！
+开始使用 VectorSphere，构建高性能的分布式搜索系统！

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"VectorSphere/db"
 	"bytes"
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
@@ -13,7 +14,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
-	"seetaSearch/db"
 	"strings"
 	"sync"
 	"time"
@@ -23,7 +23,7 @@ import (
 // ProgressCallback 进度报告回调函数类型
 type ProgressCallback func(current, total int, phase string, elapsedTime time.Duration)
 
-// 向量化类型常量，与SeetaSearch中定义一致
+// 向量化类型常量，与VectorSphere中定义一致
 const (
 	TfidfVectorized         = 1
 	SimpleVectorized        = 2

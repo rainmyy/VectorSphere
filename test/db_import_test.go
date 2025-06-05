@@ -1,13 +1,13 @@
 package test
 
 import (
+	"VectorSphere/db"
+	"VectorSphere/library/log"
+	"VectorSphere/library/tree"
+	"VectorSphere/messages"
+	"VectorSphere/search"
+	"VectorSphere/service"
 	"fmt"
-	"seetaSearch/db"
-	"seetaSearch/library/log"
-	"seetaSearch/library/tree"
-	"seetaSearch/messages"
-	"seetaSearch/search"
-	"seetaSearch/service"
 	"time"
 )
 

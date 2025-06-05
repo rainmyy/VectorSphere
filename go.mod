@@ -1,4 +1,4 @@
-module seetaSearch
+module VectorSphere
 
 go 1.24.1
 

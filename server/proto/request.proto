@@ -125,4 +125,4 @@ service IndexService {
   rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
 }
 
-// protoc -I=D:/code/seetaSearch/messages/proto --gogofaster_opt=Mdoc.proto=seetaSearch/messages --gogofaster_opt=Mterm_query.proto=seetaSearch/messages --gogofaster_out=plugins=grpc:./server --proto_path=./server/proto request.proto
+// protoc -I=D:/code/VectorSphere/messages/proto --gogofaster_opt=Mdoc.proto=VectorSphere/messages --gogofaster_opt=Mterm_query.proto=VectorSphere/messages --gogofaster_out=plugins=grpc:./server --proto_path=./server/proto request.proto

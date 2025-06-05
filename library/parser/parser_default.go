@@ -1,7 +1,7 @@
 package parser
 
 import (
-	. "seetaSearch/library/tree"
+	. "VectorSphere/library/tree"
 	"strings"
 )
 

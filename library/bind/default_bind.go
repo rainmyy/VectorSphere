@@ -1,7 +1,7 @@
 package bind
 
 import (
-	. "seetaSearch/library/tree"
+	. "VectorSphere/library/tree"
 )
 
 type Binder interface {

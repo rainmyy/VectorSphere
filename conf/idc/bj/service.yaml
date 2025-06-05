@@ -1,4 +1,4 @@
-serviceName: "seetaSearchApp"
+serviceName: "VectorSphereApp"
 timeOut: 30
 defaultPort: 8080
 heartbeat: 10

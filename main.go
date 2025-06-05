@@ -1,14 +1,14 @@
 package main
 
 import (
+	"VectorSphere/library/log"
+	"VectorSphere/library/tree"
+	"VectorSphere/server"
 	"context"
 	"flag"
 	"fmt"
 	"google.golang.org/grpc"
 	"net"
-	"seetaSearch/library/log"
-	"seetaSearch/library/tree"
-	"seetaSearch/server"
 	"strings"
 	"time"
 )
@@ -18,7 +18,7 @@ func main() {
 	mode := flag.String("mode", "standalone", "运行模式: master, slave 或 standalone")
 	port := flag.Int("port", 8080, "服务端口")
 	etcdEndpoints := flag.String("etcd", "localhost:2379", "etcd 端点，多个端点用逗号分隔")
-	serviceName := flag.String("service", "seetaSearch", "服务名称")
+	serviceName := flag.String("service", "VectorSphere", "服务名称")
 	dataDir := flag.String("data", "./data", "数据目录")
 	docNumEstimate := flag.Int("doc-num", 10000, "文档数量估计")
 	dbType := flag.Int("db-type", 0, "数据库类型")
@@ -44,7 +44,7 @@ func main() {
 	case "master":
 		// 启动主服务
 		localhost := fmt.Sprintf("localhost:%d", *port)
-		master, err := server.NewMasterService(context.Background(), endpoints, "seetaSearch", "localhost:50051", 8080, 5*time.Minute, 30*time.Second)
+		master, err := server.NewMasterService(context.Background(), endpoints, "VectorSphere", "localhost:50051", 8080, 5*time.Minute, 30*time.Second)
 		if err != nil {
 			log.Fatal("创建主服务失败: %v", err)
 		}
@@ -138,6 +138,6 @@ func main() {
 }
 
 // etcd --listen-client-urls http://localhost:2379 --advertise-client-urls http://localhost:2379
-// go run main.go --mode=master --port=8080 --etcd=localhost:2379 --service=seetaSearch
-// go run main.go --mode=slave --port=8082 --etcd=localhost:2379 --service=seetaSearch
-//go run main.go --mode=slave --port=8083 --etcd=localhost:2379 --service=seetaSearch
+// go run main.go --mode=master --port=8080 --etcd=localhost:2379 --service=VectorSphere
+// go run main.go --mode=slave --port=8082 --etcd=localhost:2379 --service=VectorSphere
+//go run main.go --mode=slave --port=8083 --etcd=localhost:2379 --service=VectorSphere

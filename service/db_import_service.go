@@ -1,21 +1,21 @@
 package service
 
 import (
+	"VectorSphere/library/log"
+	"VectorSphere/search"
 	"context"
 	"database/sql"
 	"fmt"
 	"math/rand"
 	"runtime"
-	"seetaSearch/library/log"
-	"seetaSearch/search"
 	"strings"
 	"sync"
 	"time"
 
+	"VectorSphere/messages"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
-	"seetaSearch/messages"
 )
 
 // DataTransformHook 数据转换钩子函数类型

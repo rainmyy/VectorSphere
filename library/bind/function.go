@@ -1,6 +1,6 @@
 package bind
 
-import . "seetaSearch/library/common"
+import . "VectorSphere/library/common"
 
 func formatBytes(bytes []byte) string {
 	str := Bytes2str(bytes)

@@ -1,10 +1,9 @@
 package parser
 
 import (
+	. "VectorSphere/library/tree"
+	"VectorSphere/library/util"
 	"fmt"
-	. "seetaSearch/library/common"
-	. "seetaSearch/library/tree"
-	"seetaSearch/library/util"
 
 	"strings"
 )

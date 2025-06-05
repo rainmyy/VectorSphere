@@ -1,13 +1,13 @@
 package server
 
 import (
+	"VectorSphere/index"
+	"VectorSphere/library/common"
+	"VectorSphere/library/log"
+	"VectorSphere/messages"
 	"context"
 	"errors"
 	"fmt"
-	"seetaSearch/index"
-	"seetaSearch/library/common"
-	"seetaSearch/library/log"
-	"seetaSearch/messages"
 	"strconv"
 	"time"
 )

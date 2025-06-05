@@ -3,8 +3,8 @@ package conf
 import (
 	"sync"
 
-	. "seetaSearch/library/bind"
-	. "seetaSearch/library/file"
+	. "VectorSphere/library/bind"
+	. "VectorSphere/library/file"
 )
 
 // DefaultConf /**

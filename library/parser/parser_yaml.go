@@ -1,11 +1,11 @@
 package parser
 
 import (
+	"VectorSphere/library/bind"
+	. "VectorSphere/library/tree"
 	"fmt"
 	"gopkg.in/yaml.v2"
 	"log"
-	"seetaSearch/library/bind"
-	. "seetaSearch/library/tree"
 )
 
 func ParserYamlContent(data []byte) ([]*TreeStruct, error) {

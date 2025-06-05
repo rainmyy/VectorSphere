@@ -1,11 +1,11 @@
 package scheduler
 
 import (
+	"VectorSphere/db"
+	"VectorSphere/library/algorithm"
+	"VectorSphere/library/conf"
+	"VectorSphere/library/log"
 	"fmt"
-	"seetaSearch/db"
-	"seetaSearch/library/algorithm"
-	"seetaSearch/library/conf"
-	"seetaSearch/library/log"
 	"sync"
 	"time"
 )

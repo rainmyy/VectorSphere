@@ -14,7 +14,7 @@ import (
 	io "io"
 	math "math"
 	math_bits "math/bits"
-	messages "seetaSearch/messages"
+	messages "VectorSphere/messages"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.

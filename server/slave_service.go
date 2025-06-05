@@ -1,28 +1,28 @@
 package server
 
 import (
+	PoolLib "VectorSphere/library/pool"
+	"VectorSphere/library/tree"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/mem"
-	PoolLib "seetaSearch/library/pool"
-	"seetaSearch/library/tree"
 	"time"
 
 	"go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"VectorSphere/index"
+	"VectorSphere/library/common"
+	"VectorSphere/library/log"
+	"VectorSphere/messages"
+	"VectorSphere/scheduler"
+	"VectorSphere/search"
 	"net/http"
 	"os"
-	"seetaSearch/index"
-	"seetaSearch/library/common"
-	"seetaSearch/library/log"
-	"seetaSearch/messages"
-	"seetaSearch/scheduler"
-	"seetaSearch/search"
 	"strconv"
 	"sync"
 )
@@ -378,7 +378,7 @@ func (s *SlaveService) watchMaster(ctx context.Context) {
 		log.Warning("Cannot watch master: etcd client is nil.")
 		return
 	}
-	masterKeyPrefix := "/seetasearch/master_election/"
+	masterKeyPrefix := "/VectorSphere/master_election/"
 	log.Info("Slave %s watching for master changes at prefix: %s", s.localhost, masterKeyPrefix)
 
 	// 初始获取一次 Master 地址

@@ -1,11 +1,11 @@
 package tree
 
 import (
+	"VectorSphere/library/strategy"
 	"bytes"
 	"encoding/gob"
 	"fmt"
 	"os"
-	"seetaSearch/library/strategy"
 	"sync"
 )
 
