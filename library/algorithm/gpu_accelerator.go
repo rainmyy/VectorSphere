@@ -105,11 +105,12 @@ type GPUAccelerator interface {
 
 // FAISSGPUAccelerator FAISS GPU 加速器实现
 type FAISSGPUAccelerator struct {
-	deviceID     int
-	initialized  bool
-	mu           sync.RWMutex
-	indexType    string      // "IVF", "HNSW", "Flat"
-	gpuResources interface{} // FAISS GPU 资源
+	deviceID    int
+	initialized bool
+	mu          sync.RWMutex
+	indexType   string
+	gpuWrapper  unsafe.Pointer // C.FaissGpuWrapper*
+	dimension   int
 }
 
 // NewFAISSGPUAccelerator 创建新的 FAISS GPU 加速器
@@ -150,35 +151,34 @@ func (gpu *FAISSGPUAccelerator) Initialize() error {
 		return nil
 	}
 
-	log.Info("开始初始化 FAISS GPU 加速器，设备 ID: %d, 索引类型: %s", gpu.deviceID, gpu.indexType)
-
-	// 1. 检查 GPU 可用性
-	if err := gpu.checkGPUAvailability(); err != nil {
-		return fmt.Errorf("GPU 可用性检查失败: %w", err)
+	// 检查 GPU 设备数量
+	deviceCount := int(C.faiss_gpu_get_device_count())
+	if gpu.deviceID >= deviceCount {
+		return fmt.Errorf("GPU 设备 ID %d 超出范围，可用设备数量: %d", gpu.deviceID, deviceCount)
 	}
 
-	// 2. 初始化 CUDA 上下文
-	if err := gpu.initializeCUDAContext(); err != nil {
-		return fmt.Errorf("CUDA 上下文初始化失败: %w", err)
+	// 设置 GPU 设备
+	if C.faiss_gpu_set_device(C.int(gpu.deviceID)) != 0 {
+		return fmt.Errorf("无法设置 GPU 设备 %d", gpu.deviceID)
 	}
 
-	// 3. 设置 GPU 内存池
-	if err := gpu.setupMemoryPool(); err != nil {
-		return fmt.Errorf("GPU 内存池设置失败: %w", err)
+	// 创建 FAISS GPU 包装器
+	gpu.gpuWrapper = unsafe.Pointer(C.faiss_gpu_wrapper_new(C.int(gpu.deviceID)))
+	if gpu.gpuWrapper == nil {
+		return fmt.Errorf("无法创建 FAISS GPU 包装器")
 	}
 
-	// 4. 初始化 FAISS GPU 资源
-	if err := gpu.initializeFAISSResources(); err != nil {
-		return fmt.Errorf("FAISS GPU 资源初始化失败: %w", err)
-	}
+	// 设置默认维度（可以后续动态调整）
+	gpu.dimension = 512
+	indexTypeC := C.CString(gpu.indexType)
+	defer C.free(unsafe.Pointer(indexTypeC))
 
-	// 5. 验证初始化结果
-	if err := gpu.validateInitialization(); err != nil {
-		return fmt.Errorf("初始化验证失败: %w", err)
+	if C.faiss_gpu_wrapper_init((*C.FaissGpuWrapper)(gpu.gpuWrapper), C.int(gpu.dimension), indexTypeC) != 0 {
+		return fmt.Errorf("FAISS GPU 包装器初始化失败")
 	}
 
 	gpu.initialized = true
-	log.Info("FAISS GPU 加速器初始化成功")
+	log.Info("FAISS GPU 加速器初始化成功，设备 ID: %d, 索引类型: %s", gpu.deviceID, gpu.indexType)
 	return nil
 }
 
@@ -307,7 +307,7 @@ func (gpu *FAISSGPUAccelerator) initializeFAISSResources() error {
 	if gpuRes == nil {
 		return fmt.Errorf("无法创建 FAISS GPU 资源")
 	}
-	gpu.gpuResources = gpuRes
+	gpu.gpuWrapper = gpuRes
 
 	// 2. 设置设备
 	if C.faiss_StandardGpuResources_setDefaultDevice(gpuRes, C.int(gpu.deviceID)) != 0 {
@@ -452,8 +452,8 @@ func (gpu *FAISSGPUAccelerator) SetMemoryFraction(fraction float64) error {
 	}
 
 	// 设置 FAISS GPU 资源的内存使用比例（需要 CGO）
-	if gpu.gpuResources != nil {
-		gpuRes := (*C.faiss_StandardGpuResources)(gpu.gpuResources)
+	if gpu.gpuWrapper != nil {
+		gpuRes := (*C.faiss_StandardGpuResources)(gpu.gpuWrapper)
 		if C.faiss_StandardGpuResources_setMemoryFraction(gpuRes, C.float(fraction)) != 0 {
 			return fmt.Errorf("设置内存比例失败")
 		}
@@ -510,18 +510,58 @@ func (gpu *FAISSGPUAccelerator) BatchCosineSimilarity(queries [][]float64, datab
 		return nil, fmt.Errorf("GPU 加速器未初始化")
 	}
 
-	results := make([][]float64, len(queries))
+	// 转换 Go 切片到 C 数组
+	dbSize := len(database)
+	querySize := len(queries)
+	if dbSize == 0 || querySize == 0 {
+		return nil, fmt.Errorf("数据库或查询向量为空")
+	}
 
-	// 简化实现，实际需要调用 FAISS GPU API
-	for i, query := range queries {
-		similarities := make([]float64, len(database))
+	dimension := len(database[0])
+	gpu.dimension = dimension
 
-		// GPU 并行计算余弦相似度
-		for j, dbVec := range database {
-			similarities[j] = CosineSimilarity(query, dbVec)
+	// 准备数据库向量
+	dbVectors := make([]float32, dbSize*dimension)
+	for i, vec := range database {
+		for j, val := range vec {
+			dbVectors[i*dimension+j] = float32(val)
 		}
+	}
 
-		results[i] = similarities
+	// 添加向量到索引
+	if C.faiss_gpu_wrapper_add_vectors((*C.FaissGpuWrapper)(gpu.gpuWrapper), C.int(dbSize), (*C.float)(&dbVectors[0])) != 0 {
+		return nil, fmt.Errorf("添加向量到 GPU 索引失败")
+	}
+
+	// 准备查询向量
+	queryVectors := make([]float32, querySize*dimension)
+	for i, vec := range queries {
+		for j, val := range vec {
+			queryVectors[i*dimension+j] = float32(val)
+		}
+	}
+
+	// 执行搜索
+	k := dbSize // 返回所有结果以计算相似度
+	distances := make([]float32, querySize*k)
+	labels := make([]C.long, querySize*k)
+
+	if C.faiss_gpu_wrapper_search((*C.FaissGpuWrapper)(gpu.gpuWrapper), C.int(querySize), (*C.float)(&queryVectors[0]), C.int(k), (*C.float)(&distances[0]), (*C.long)(&labels[0])) != 0 {
+		return nil, fmt.Errorf("GPU 搜索失败")
+	}
+
+	// 转换结果回 Go 格式
+	results := make([][]float64, querySize)
+	for i := 0; i < querySize; i++ {
+		results[i] = make([]float64, dbSize)
+		for j := 0; j < k; j++ {
+			idx := i*k + j
+			labelIdx := int(labels[idx])
+			if labelIdx < dbSize {
+				// FAISS 返回的是内积，需要转换为余弦相似度
+				results[i][labelIdx] = float64(distances[idx])
+			}
+		}
 	}
 
 	return results, nil
@@ -536,10 +576,12 @@ func (gpu *FAISSGPUAccelerator) Cleanup() error {
 		return nil
 	}
 
-	// 释放 GPU 资源
-	log.Info("清理 GPU 加速器资源")
-	gpu.initialized = false
-	gpu.gpuResources = nil
+	if gpu.gpuWrapper != nil {
+		C.faiss_gpu_wrapper_free((*C.FaissGpuWrapper)(gpu.gpuWrapper))
+		gpu.gpuWrapper = nil
+	}
 
+	gpu.initialized = false
+	log.Info("FAISS GPU 加速器资源已清理")
 	return nil
 }

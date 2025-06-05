@@ -1,41 +1,55 @@
 package algorithm
 
-// #cgo CFLAGS: -mavx512f -mavx512dq -march=native
-// #include <immintrin.h>
-// #include <stdint.h>
-//
-// // 使用 AVX512 指令集计算欧氏距离的平方
-// double euclidean_distance_squared_avx512(const double* a, const double* b, int len) {
-//     __m512d sum = _mm512_setzero_pd(); // 初始化为0
-//
-//     // 每次处理8个double (512位)
-//     for (int i = 0; i < len; i += 8) {
-//         __m512d va = _mm512_loadu_pd(a + i); // 加载8个double
-//         __m512d vb = _mm512_loadu_pd(b + i); // 加载8个double
-//         __m512d diff = _mm512_sub_pd(va, vb); // 计算差值
-//         // 使用FMA指令计算平方和累加: sum += diff * diff
-//         sum = _mm512_fmadd_pd(diff, diff, sum);
-//     }
-//
-//     // 水平相加得到最终结果
-//     return _mm512_reduce_add_pd(sum);
-// }
-//
-// // 使用 AVX512 指令集查找最近的质心
-// int find_nearest_centroid_avx512(const double* vec, const double** centroids, int num_centroids, int dim) {
-//     double min_dist = 1e100; // 初始化为一个很大的值
-//     int nearest_idx = -1;
-//
-//     for (int i = 0; i < num_centroids; i++) {
-//         double dist = euclidean_distance_squared_avx512(vec, centroids[i], dim);
-//         if (dist < min_dist) {
-//             min_dist = dist;
-//             nearest_idx = i;
-//         }
-//     }
-//
-//     return nearest_idx;
-// }
+/*
+集成FAISS-GPU 步骤:
+- 安装 FAISS-GPU 库和 CUDA 工具包
+- 配置 CGO 绑定和 C/C++ 头文件
+- 链接 CUDA 和 FAISS 库
+- 处理 C/C++ 与 Go 的数据类型转换
+*/
+
+/*
+#cgo windows CFLAGS: -IC:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.8/include -IC:/faiss/include
+#cgo windows LDFLAGS: -LC:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v11.8/lib/x64 -LC:/faiss/lib -lcudart -lcuda -lfaiss -lfaiss_gpu
+#cgo linux CFLAGS: -I/usr/local/cuda/include -I/usr/local/include/faiss
+#cgo linux LDFLAGS: -L/usr/local/cuda/lib64 -L/usr/local/lib -lcudart -lcuda -lfaiss -lfaiss_gpu
+
+#include <cuda_runtime.h>
+#include <cuda.h>
+#include <faiss/gpu/StandardGpuResources.h>
+#include <faiss/gpu/GpuIndexFlat.h>
+#include <faiss/gpu/GpuIndexIVF.h>
+#include <faiss/gpu/utils/DeviceUtils.h>
+#include <faiss/Index.h>
+#include <faiss/IndexFlat.h>
+#include <faiss/IndexIVF.h>
+
+// CUDA 错误处理宏
+#define CUDA_CHECK(call) do { \
+    cudaError_t err = call; \
+    if (err != cudaSuccess) { \
+        return err; \
+    } \
+} while(0)
+
+// FAISS GPU 资源包装器
+typedef struct {
+    faiss::gpu::StandardGpuResources* resources;
+    faiss::gpu::GpuIndexFlat* index_flat;
+    faiss::gpu::GpuIndexIVF* index_ivf;
+    int device_id;
+    bool initialized;
+} FaissGpuWrapper;
+
+// C 接口函数声明
+FaissGpuWrapper* faiss_gpu_wrapper_new(int device_id);
+int faiss_gpu_wrapper_init(FaissGpuWrapper* wrapper, int dimension, const char* index_type);
+int faiss_gpu_wrapper_add_vectors(FaissGpuWrapper* wrapper, int n, const float* vectors);
+int faiss_gpu_wrapper_search(FaissGpuWrapper* wrapper, int n_queries, const float* queries, int k, float* distances, long* labels);
+void faiss_gpu_wrapper_free(FaissGpuWrapper* wrapper);
+int faiss_gpu_get_device_count();
+int faiss_gpu_set_device(int device_id);
+*/
 import "C"
 
 import (

@@ -33,6 +33,11 @@ seetaSearch采用主从（Master-Slave）分布式架构：
 5. 负载均衡
 
     - 支持多种负载均衡策略（随机、轮询、加权轮询、一致性哈希）
+#### 集成FAISS-GPU 步骤:
+- 安装 FAISS-GPU 库和 CUDA 工具包
+- 配置 CGO 绑定和 C/C++ 头文件
+- 链接 CUDA 和 FAISS 库
+- 处理 C/C++ 与 Go 的数据类型转换
 ## 主要功能
 ### 1. 混合搜索
 - 关键词搜索 ：基于倒排索引的传统文本搜索
@@ -63,7 +68,23 @@ seetaSearch采用主从（Master-Slave）分布式架构：
 - 服务发现 ：etcd
 - 数据结构 ：B+树、跳表、KD树、Trie树
 - 算法 ：K-means、向量量化、优先队列
+
 ## 使用方法
+### 安装 CUDA 工具包:
+# 下载并安装 CUDA Toolkit (推荐 11.8 或 12.x 版本)
+# 从 NVIDIA 官网下载：https://developer.nvidia.com/cuda-downloads
+# 安装后验证
+nvcc --version
+### 安装 FAISS-GPU：
+# 方法1：使用 conda (推荐)
+conda install -c pytorch -c nvidia faiss-gpu=1.7.4 cudatoolkit=11.8
+
+# 方法2：从源码编译
+git clone https://github.com/facebookresearch/faiss.git
+cd faiss
+cmake -B build -DFAISS_ENABLE_GPU=ON -DFAISS_ENABLE_PYTHON=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+cmake --install build --prefix C:/faiss
 ### 安装和编译
 ```
 # 克隆仓库
@@ -76,6 +97,20 @@ go mod download
 # 编译
 go build -o seetaSearch
 ```
+makefile 编译
+```
+# 查看系统信息
+make info
+# 测试编译环境
+make test-env
+# 编译项目
+make build
+# 清理构建文件
+make clean
+# 查看帮助
+make help
+```
+
 ### 运行模式 主节点模式
 ```
 ./seetaSearch -mode master -port 8080 -etcd localhost:2379 -service 
