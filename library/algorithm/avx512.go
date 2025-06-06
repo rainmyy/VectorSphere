@@ -40,111 +40,96 @@ import "C"
 
 import (
 	"VectorSphere/library/entity"
+	"errors"
 	"math"
+	"runtime"
 	"unsafe"
 )
 
-// euclideanDistanceSquaredAVX512 使用 AVX512 指令集计算两个向量间的欧氏距离平方
-func euclideanDistanceSquaredAVX512(a, b []float64) float64 {
-	if len(a) != len(b) {
-		return -1
-	}
-
-	// 确保长度是8的倍数，AVX512每次处理8个double
-	if len(a)%8 != 0 {
-		return -1
-	}
-
-	aPtr := (*C.double)(unsafe.Pointer(&a[0]))
-	bPtr := (*C.double)(unsafe.Pointer(&b[0]))
-
-	return float64(C.euclidean_distance_squared_avx512(aPtr, bPtr, C.int(len(a))))
+// alignTo8 returns the largest multiple of 8 less than or equal to n
+func alignTo8(n int) int {
+	return n / 8 * 8
 }
 
-// findNearestCentroidAVX512 使用 AVX512 指令集查找最近的质心
-func findNearestCentroidAVX512(vec []float64, centroids []entity.Point) (int, float64) {
-	if len(centroids) == 0 {
-		return -1, -1
+// EuclideanDistanceSquaredAVX512 computes squared Euclidean distance using AVX512. Returns error if input is invalid.
+func EuclideanDistanceSquaredAVX512(a, b []float64) (float64, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("vector length mismatch")
 	}
+	if len(a) == 0 || len(a)%8 != 0 {
+		return 0, errors.New("vector length must be >0 and a multiple of 8")
+	}
+	aPtr := (*C.double)(unsafe.Pointer(&a[0]))
+	bPtr := (*C.double)(unsafe.Pointer(&b[0]))
+	res := float64(C.euclidean_distance_squared_avx512(aPtr, bPtr, C.int(len(a))))
+	runtime.KeepAlive(a)
+	runtime.KeepAlive(b)
+	return res, nil
+}
 
-	// 准备C数组
+// FindNearestCentroidAVX512 finds the nearest centroid using AVX512. Returns index, distance, error.
+func FindNearestCentroidAVX512(vec []float64, centroids []entity.Point) (int, float64, error) {
+	if len(centroids) == 0 {
+		return -1, 0, errors.New("no centroids")
+	}
+	if len(vec) == 0 || len(vec)%8 != 0 {
+		return -1, 0, errors.New("vector length must be >0 and a multiple of 8")
+	}
+	for i, c := range centroids {
+		if len(c) != len(vec) {
+			return -1, 0, errors.New("centroid length mismatch at index "+string(i))
+		}
+	}
 	vecPtr := (*C.double)(unsafe.Pointer(&vec[0]))
-
-	// 创建质心指针数组
 	centroidPtrs := make([]*C.double, len(centroids))
 	for i := range centroids {
 		centroidPtrs[i] = (*C.double)(unsafe.Pointer(&centroids[i][0]))
 	}
-
-	// 调用C函数
 	centroidPtrPtr := (**C.double)(unsafe.Pointer(&centroidPtrs[0]))
-	nearest := int(C.find_nearest_centroid_avx512(vecPtr, centroidPtrPtr, C.int(len(centroids)), C.int(len(vec))))
-
-	// 计算最小距离（用于返回）
-	var minDist float64
-	if nearest >= 0 {
-		minDist = euclideanDistanceSquaredAVX512(vec, centroids[nearest])
+	idx := int(C.find_nearest_centroid_avx512(vecPtr, centroidPtrPtr, C.int(len(centroids)), C.int(len(vec))))
+	runtime.KeepAlive(vec)
+	runtime.KeepAlive(centroids)
+	if idx < 0 {
+		return -1, 0, errors.New("no nearest centroid found")
 	}
-
-	return nearest, minDist
+	dist, _ := EuclideanDistanceSquaredAVX512(vec, centroids[idx])
+	return idx, dist, nil
 }
 
-// AVX512CosineSimilarity 使用 AVX512 指令计算余弦相似度
+// AVX512CosineSimilarity computes cosine similarity using AVX512. Returns 0 if input invalid.
 func AVX512CosineSimilarity(a, b []float64) float64 {
-	if len(a) != len(b) {
+	if len(a) != len(b) || len(a) == 0 {
 		return 0.0
 	}
-
 	n := len(a)
-	if n == 0 {
-		return 0.0
-	}
-
-	// 确保向量长度是 8 的倍数（AVX512 处理 8 个 float64）
-	simdLen := (n / 8) * 8
-
+	simdLen := alignTo8(n)
 	var dotProduct, normA, normB float64
-
 	if simdLen > 0 {
-		// 使用 AVX512 处理对齐部分
-		dotProduct += avx512DotProduct(a[:simdLen], b[:simdLen])
-		normA += avx512Norm(a[:simdLen])
-		normB += avx512Norm(b[:simdLen])
+		dotProduct += avx512DotOrNorm(a[:simdLen], b[:simdLen], true)
+		normA += avx512DotOrNorm(a[:simdLen], a[:simdLen], false)
+		normB += avx512DotOrNorm(b[:simdLen], b[:simdLen], false)
 	}
-
-	// 处理剩余元素
 	for i := simdLen; i < n; i++ {
 		dotProduct += a[i] * b[i]
 		normA += a[i] * a[i]
 		normB += b[i] * b[i]
 	}
-
 	if normA == 0 || normB == 0 {
 		return 0.0
 	}
-
 	return dotProduct / (math.Sqrt(normA) * math.Sqrt(normB))
 }
 
-// avx512DotProduct AVX512 点积计算（需要汇编实现）
-func avx512DotProduct(a, b []float64) float64 {
-	// 这里需要汇编实现，简化示例
-	var sum float64
-	for i := 0; i < len(a); i += 8 {
-		// 模拟 AVX512 8-way SIMD 操作
-		for j := 0; j < 8 && i+j < len(a); j++ {
-			sum += a[i+j] * b[i+j]
-		}
-	}
-	return sum
-}
-
-// avx512Norm AVX512 范数计算
-func avx512Norm(a []float64) float64 {
+// avx512DotOrNorm computes dot product if isDot is true, else computes norm (sum of squares)
+func avx512DotOrNorm(a, b []float64, isDot bool) float64 {
 	var sum float64
 	for i := 0; i < len(a); i += 8 {
 		for j := 0; j < 8 && i+j < len(a); j++ {
-			sum += a[i+j] * a[i+j]
+			if isDot {
+				sum += a[i+j] * b[i+j]
+			} else {
+				sum += a[i+j] * a[i+j]
+			}
 		}
 	}
 	return sum

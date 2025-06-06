@@ -48,50 +48,52 @@ import "C"
 
 import (
 	"VectorSphere/library/entity"
+	"errors"
+	"runtime"
 	"unsafe"
 )
 
-// euclideanDistanceSquaredAVX2 使用 AVX2 指令集计算两个向量间的欧氏距离平方
-func euclideanDistanceSquaredAVX2(a, b []float64) float64 {
+// EuclideanDistanceSquaredAVX2 computes squared Euclidean distance using AVX2. Returns error if input is invalid.
+func EuclideanDistanceSquaredAVX2(a, b []float64) (float64, error) {
 	if len(a) != len(b) {
-		return -1
+		return 0, errors.New("vector length mismatch")
 	}
-
-	// 确保长度是8的倍数，AVX2每次处理4个double，我们处理两批
-	if len(a)%8 != 0 {
-		return -1
+	if len(a) == 0 || len(a)%8 != 0 {
+		return 0, errors.New("vector length must be >0 and a multiple of 8")
 	}
-
 	aPtr := (*C.double)(unsafe.Pointer(&a[0]))
 	bPtr := (*C.double)(unsafe.Pointer(&b[0]))
-
-	return float64(C.euclidean_distance_squared_avx2(aPtr, bPtr, C.int(len(a))))
+	res := float64(C.euclidean_distance_squared_avx2(aPtr, bPtr, C.int(len(a))))
+	runtime.KeepAlive(a)
+	runtime.KeepAlive(b)
+	return res, nil
 }
 
-// FindNearestCentroidAVX2 使用 AVX2 指令集查找最近的质心
-func FindNearestCentroidAVX2(vec []float64, centroids []entity.Point) (int, float64) {
+// FindNearestCentroidAVX2 finds the nearest centroid using AVX2. Returns index, distance, error.
+func FindNearestCentroidAVX2(vec []float64, centroids []entity.Point) (int, float64, error) {
 	if len(centroids) == 0 {
-		return -1, -1
+		return -1, 0, errors.New("no centroids")
 	}
-
-	// 准备C数组
+	if len(vec) == 0 || len(vec)%8 != 0 {
+		return -1, 0, errors.New("vector length must be >0 and a multiple of 8")
+	}
+	for i, c := range centroids {
+		if len(c) != len(vec) {
+			return -1, 0, errors.New("centroid length mismatch at index " + string(i))
+		}
+	}
 	vecPtr := (*C.double)(unsafe.Pointer(&vec[0]))
-
-	// 创建质心指针数组
 	centroidPtrs := make([]*C.double, len(centroids))
 	for i := range centroids {
 		centroidPtrs[i] = (*C.double)(unsafe.Pointer(&centroids[i][0]))
 	}
-
-	// 调用C函数
 	centroidPtrPtr := (**C.double)(unsafe.Pointer(&centroidPtrs[0]))
-	nearest := int(C.find_nearest_centroid_avx2(vecPtr, centroidPtrPtr, C.int(len(centroids)), C.int(len(vec))))
-
-	// 计算最小距离（用于返回）
-	var minDist float64
-	if nearest >= 0 {
-		minDist = euclideanDistanceSquaredAVX2(vec, centroids[nearest])
+	idx := int(C.find_nearest_centroid_avx2(vecPtr, centroidPtrPtr, C.int(len(centroids)), C.int(len(vec))))
+	runtime.KeepAlive(vec)
+	runtime.KeepAlive(centroids)
+	if idx < 0 {
+		return -1, 0, errors.New("no nearest centroid found")
 	}
-
-	return nearest, minDist
+	dist, _ := EuclideanDistanceSquaredAVX2(vec, centroids[idx])
+	return idx, dist, nil
 }

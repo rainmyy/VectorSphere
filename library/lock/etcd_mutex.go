@@ -88,3 +88,25 @@ func (l *EtcdLock) Unlock() error {
 
 	return nil
 }
+
+// GlobalLock is a distributed global lock interface
+// Only one client can hold the lock at any time in the cluster
+//
+type GlobalLock interface {
+	Lock() error
+	Unlock() error
+}
+
+var _ GlobalLock = (*EtcdLock)(nil)
+
+// Lock blocks until the lock is acquired
+func (l *EtcdLock) Lock() error {
+	for {
+		err := l.TryLock()
+		if err == nil {
+			return nil
+		}
+		// Optionally, you can check for context cancellation here
+		time.Sleep(100 * time.Millisecond)
+	}
+}
