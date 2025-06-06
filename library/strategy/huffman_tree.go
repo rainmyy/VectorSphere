@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"container/heap"
 	"errors"
+	"fmt"
+	"sort"
+	"sync"
 )
 
 type MiniHeap struct {
@@ -23,6 +26,215 @@ type huffmanNode struct {
 	Weight int
 	Left   *huffmanNode
 	Right  *huffmanNode
+}
+
+// CanonicalCodeEntry stores a character and its Huffman code length.
+type CanonicalCodeEntry struct {
+	Value  byte
+	Length int
+}
+
+// ByLength implements sort.Interface for []CanonicalCodeEntry based on the Length field.
+type ByLength []CanonicalCodeEntry
+
+func (a ByLength) Len() int      { return len(a) }
+func (a ByLength) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
+func (a ByLength) Less(i, j int) bool {
+	if a[i].Length != a[j].Length {
+		return a[i].Length < a[j].Length
+	}
+	return a[i].Value < a[j].Value // Secondary sort by value for stability
+}
+
+// buildCodeLengths builds a map of character to its Huffman code length.
+func buildCodeLengths(root *huffmanNode) map[byte]int {
+	lengths := make(map[byte]int)
+	var walk func(n *huffmanNode, length int)
+	walk = func(n *huffmanNode, length int) {
+		if n == nil {
+			return
+		}
+		if n.Left == nil && n.Right == nil { // Leaf node
+			lengths[n.Value] = length
+			return
+		}
+		walk(n.Left, length+1)
+		walk(n.Right, length+1)
+	}
+	walk(root, 0)
+	return lengths
+}
+
+// generateCanonicalCodes generates canonical Huffman codes from code lengths.
+func generateCanonicalCodes(codeLengths map[byte]int) map[byte]string {
+	var entries []CanonicalCodeEntry
+	for val, length := range codeLengths {
+		entries = append(entries, CanonicalCodeEntry{Value: val, Length: length})
+	}
+	sort.Sort(ByLength(entries))
+
+	codes := make(map[byte]string)
+	var currentCode uint64 = 0
+	var lastLength int = 0
+
+	for _, entry := range entries {
+		if entry.Length > lastLength {
+			currentCode <<= (entry.Length - lastLength)
+		}
+		codes[entry.Value] = fmt.Sprintf("%b", currentCode) // Convert to binary string
+		// Pad with leading zeros if necessary
+		for len(codes[entry.Value]) < entry.Length {
+			codes[entry.Value] = "0" + codes[entry.Value]
+		}
+		currentCode++
+		lastLength = entry.Length
+	}
+	return codes
+}
+
+// HuffmanCompress compresses data using Canonical Huffman coding
+func HuffmanCompress(data []byte) ([]byte, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	root := buildHuffmanTree(data)
+	codeLengths := buildCodeLengths(root)
+	canonicalTable := generateCanonicalCodes(codeLengths)
+
+	// Store code lengths for reconstruction
+	var codeLenBuf bytes.Buffer
+	codeLenBuf.WriteByte(byte(len(codeLengths))) // Number of unique characters
+	for val, length := range codeLengths {
+		codeLenBuf.WriteByte(val)
+		codeLenBuf.WriteByte(byte(length))
+	}
+
+	// Encode data using canonical codes
+	var bitBuf []byte
+	var curByte byte
+	var nbits uint8
+	for _, b := range data {
+		code := canonicalTable[b]
+		for _, c := range code {
+			curByte <<= 1
+			if c == '1' {
+				curByte |= 1
+			}
+			nbits++
+			if nbits == 8 {
+				bitBuf = append(bitBuf, curByte)
+				curByte = 0
+				nbits = 0
+			}
+		}
+	}
+	if nbits > 0 {
+		curByte <<= (8 - nbits)
+		bitBuf = append(bitBuf, curByte)
+	}
+
+	// Output: [codeLenTableLen][codeLenTable][nbits][bitBuf]
+	out := bytes.Buffer{}
+	codeLenBytes := codeLenBuf.Bytes()
+	codeLenTableLen := int32(len(codeLenBytes))
+	out.Write([]byte{
+		byte(codeLenTableLen >> 24), byte(codeLenTableLen >> 16), byte(codeLenTableLen >> 8), byte(codeLenTableLen),
+	})
+	out.Write(codeLenBytes)
+	out.WriteByte(nbits) // how many bits used in last byte
+	out.Write(bitBuf)
+	return out.Bytes(), nil
+}
+
+// HuffmanDecompress decompresses data using Canonical Huffman coding
+func HuffmanDecompress(data []byte) ([]byte, error) {
+	if len(data) < 5 { // Minimum 1 byte for num_chars, 2 bytes per char-len pair, 1 byte for nbits, 1 byte for data
+		return nil, errors.New("data too short")
+	}
+
+	codeLenTableLen := int32(data[0])<<24 | int32(data[1])<<16 | int32(data[2])<<8 | int32(data[3])
+	currentIdx := 4
+
+	if int(codeLenTableLen)+currentIdx > len(data) {
+		return nil, errors.New("invalid code length table length")
+	}
+
+	codeLenBytes := data[currentIdx : currentIdx+int(codeLenTableLen)]
+	currentIdx += int(codeLenTableLen)
+
+	numChars := int(codeLenBytes[0])
+	codeLengths := make(map[byte]int)
+	for i := 0; i < numChars; i++ {
+		val := codeLenBytes[1+i*2]
+		length := int(codeLenBytes[1+i*2+1])
+		codeLengths[val] = length
+	}
+
+	canonicalTable := generateCanonicalCodes(codeLengths)
+
+	// Reconstruct Huffman tree from canonical codes for decoding
+	// This is a simplified approach for decoding canonical codes.
+	// A more efficient way would be to use a lookup table or a trie.
+	root := &huffmanNode{}
+	for val, code := range canonicalTable {
+		cur := root
+		for _, bit := range code {
+			if bit == '0' {
+				if cur.Left == nil {
+					cur.Left = &huffmanNode{}
+				}
+				cur = cur.Left
+			} else {
+				if cur.Right == nil {
+					cur.Right = &huffmanNode{}
+				}
+				cur = cur.Right
+			}
+		}
+		cur.Value = val
+	}
+
+	nbits := data[currentIdx]
+	currentIdx++
+	bitData := data[currentIdx:]
+
+	var out []byte
+
+	if len(bitData) == 0 && nbits == 0 { // Handle empty bitData for single character input
+		return out, nil
+	}
+
+	cur := root
+	bitsTotal := (len(bitData)-1)*8 + int(nbits)
+	// If there's only one character, bitsTotal might be 0 if nbits is 0 and len(bitData) is 1 (for 0-length data)
+	// Adjust bitsTotal for single character case where code length is 1
+	if len(codeLengths) == 1 && bitsTotal == 0 && len(bitData) == 1 && nbits == 0 {
+		// This case happens if the input data was a single character and its code length was 1.
+		// The bitData would be 1 byte, nbits 0, and bitsTotal would be calculated as 0.
+		// We need to ensure at least one bit is processed for a single character.
+		for _, length := range codeLengths {
+			if length == 1 {
+				bitsTotal = 1
+				break
+			}
+		}
+	}
+
+	for i := 0; i < bitsTotal; i++ {
+		byteIdx := i / 8
+		bitPos := 7 - uint(i%8)
+		b := (bitData[byteIdx] >> bitPos) & 1
+		if b == 0 {
+			cur = cur.Left
+		} else {
+			cur = cur.Right
+		}
+		if cur.Left == nil && cur.Right == nil { // Leaf node
+			out = append(out, cur.Value)
+			cur = root
+		}
+	}
+	return out, nil
 }
 
 type huffmanHeap []*huffmanNode
@@ -157,122 +369,81 @@ func buildCodeTable(root *huffmanNode) map[byte]string {
 	return table
 }
 
-// HuffmanCompress compresses data using Huffman coding
-func HuffmanCompress(data []byte) ([]byte, error) {
-	if len(data) == 0 {
-		return nil, nil
-	}
-	root := buildHuffmanTree(data)
-	table := buildCodeTable(root)
-	// Write tree as a pre-order traversal (for decoding)
-	var treeBuf bytes.Buffer
-	var writeTree func(n *huffmanNode)
-	writeTree = func(n *huffmanNode) {
-		if n == nil {
-			treeBuf.WriteByte(0)
-			return
-		}
-		if n.Left == nil && n.Right == nil {
-			treeBuf.WriteByte(1)
-			treeBuf.WriteByte(n.Value)
-			return
-		}
-		treeBuf.WriteByte(2)
-		writeTree(n.Left)
-		writeTree(n.Right)
-	}
-	writeTree(root)
-	// Encode data
-	var bitBuf []byte
-	var curByte byte
-	var nbits uint8
-	for _, b := range data {
-		code := table[b]
-		for _, c := range code {
-			curByte <<= 1
-			if c == '1' {
-				curByte |= 1
-			}
-			nbits++
-			if nbits == 8 {
-				bitBuf = append(bitBuf, curByte)
-				curByte = 0
-				nbits = 0
-			}
-		}
-	}
-	if nbits > 0 {
-		curByte <<= (8 - nbits)
-		bitBuf = append(bitBuf, curByte)
-	}
-	// Output: [treeLen][tree][nbits][bitBuf]
-	out := bytes.Buffer{}
-	treeBytes := treeBuf.Bytes()
-	treeLen := int32(len(treeBytes))
-	out.Write([]byte{
-		byte(treeLen >> 24), byte(treeLen >> 16), byte(treeLen >> 8), byte(treeLen),
-	})
-	out.Write(treeBytes)
-	out.WriteByte(nbits) // how many bits used in last byte
-	out.Write(bitBuf)
-	return out.Bytes(), nil
+// AdaptiveHuffman represents an adaptive Huffman encoder/decoder.
+type AdaptiveHuffman struct {
+	root *huffmanNode // Current Huffman tree root
+	freq map[byte]int // Current frequency map
+	// Add other necessary fields for FGK/Vitter algorithm, e.g., NYT node, parent pointers, etc.
 }
 
-// HuffmanDecompress decompresses data using Huffman coding
-func HuffmanDecompress(data []byte) ([]byte, error) {
-	if len(data) < 5 {
-		return nil, errors.New("data too short")
+// NewAdaptiveHuffman creates a new adaptive Huffman instance.
+func NewAdaptiveHuffman() *AdaptiveHuffman {
+	// Initialize with a basic tree (e.g., a single NYT node) and empty frequency map.
+	return &AdaptiveHuffman{
+		freq: make(map[byte]int),
+		// root: initialize with NYT node based on chosen algorithm
 	}
-	treeLen := int32(data[0])<<24 | int32(data[1])<<16 | int32(data[2])<<8 | int32(data[3])
-	if int(treeLen)+5 > len(data) {
-		return nil, errors.New("invalid tree length")
+}
+
+// EncodeByte encodes a single byte and updates the tree.
+func (ah *AdaptiveHuffman) EncodeByte(b byte) ([]byte, error) {
+	// Implement encoding logic: find code for 'b', update frequency, update tree.
+	// This will involve complex tree restructuring based on FGK/Vitter rules.
+	return nil, errors.New("not implemented")
+}
+
+// DecodeByte decodes bits from the stream and updates the tree.
+func (ah *AdaptiveHuffman) DecodeByte(bitStream *bytes.Buffer) (byte, error) {
+	// Implement decoding logic: traverse tree based on bits, update frequency, update tree.
+	return 0, errors.New("not implemented")
+}
+
+// ParallelBuildFrequencyMap builds a frequency map in parallel using multiple goroutines.
+func ParallelBuildFrequencyMap(data []byte, numWorkers int) map[byte]int {
+	if len(data) == 0 {
+		return make(map[byte]int)
 	}
-	treeBytes := data[4 : 4+treeLen]
-	nbits := data[4+treeLen]
-	bitData := data[5+treeLen:]
-	// Rebuild tree
-	var idx int
-	var readTree func() *huffmanNode
-	readTree = func() *huffmanNode {
-		if idx >= len(treeBytes) {
-			return nil
-		}
-		t := treeBytes[idx]
-		idx++
-		if t == 0 {
-			return nil
-		}
-		if t == 1 {
-			v := treeBytes[idx]
-			idx++
-			return &huffmanNode{Value: v}
-		}
-		left := readTree()
-		right := readTree()
-		return &huffmanNode{Left: left, Right: right}
+
+	if numWorkers <= 0 {
+		numWorkers = 1 // Ensure at least one worker
 	}
-	root := readTree()
-	// Decode bits
-	var out []byte
-	n := len(bitData)
-	if n == 0 {
-		return nil, nil
-	}
-	cur := root
-	bitsTotal := (n-1)*8 + int(nbits)
-	for i := 0; i < bitsTotal; i++ {
-		byteIdx := i / 8
-		bitPos := 7 - uint(i%8)
-		b := (bitData[byteIdx] >> bitPos) & 1
-		if b == 0 {
-			cur = cur.Left
-		} else {
-			cur = cur.Right
+
+	chunkSize := (len(data) + numWorkers - 1) / numWorkers
+
+	freqChan := make(chan map[byte]int, numWorkers)
+	var wg sync.WaitGroup
+
+	for i := 0; i < numWorkers; i++ {
+		start := i * chunkSize
+		end := (i + 1) * chunkSize
+		if end > len(data) {
+			end = len(data)
 		}
-		if cur.Left == nil && cur.Right == nil {
-			out = append(out, cur.Value)
-			cur = root
+
+		if start >= end {
+			continue // Skip empty chunks
+		}
+
+		wg.Add(1)
+		go func(chunk []byte) {
+			defer wg.Done()
+			localFreq := make(map[byte]int)
+			for _, b := range chunk {
+				localFreq[b]++
+			}
+			freqChan <- localFreq
+		}(data[start:end])
+	}
+
+	wg.Wait()
+	close(freqChan)
+
+	globalFreq := make(map[byte]int)
+	for localFreq := range freqChan {
+		for b, count := range localFreq {
+			globalFreq[b] += count
 		}
 	}
-	return out, nil
+
+	return globalFreq
 }
