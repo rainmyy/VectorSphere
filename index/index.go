@@ -11,7 +11,7 @@ import (
 )
 
 type Index struct {
-	db           db.KvDb
+	db           *db.MonitoredKvDb
 	reverseIndex IReverseIndex
 	maxIntId     uint64
 }
@@ -24,10 +24,7 @@ type IndexInterface interface {
 }
 
 func (is *Index) NewIndexServer(docNumEstimate int, dbType int, bucket, dbDir string) error {
-	kvDb, err := db.GetDb(dbType, dbDir, bucket)
-	if err != nil {
-		return err
-	}
+	kvDb := db.NewMonitoredKvDb(dbType, dbDir, bucket)
 	reIndex := NewSkipListInvertedIndex(docNumEstimate)
 	is.reverseIndex = reIndex
 	is.db = kvDb

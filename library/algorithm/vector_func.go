@@ -1,6 +1,5 @@
 package algorithm
 
-import "C"
 import (
 	"VectorSphere/library/entity"
 	"VectorSphere/library/enum"

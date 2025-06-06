@@ -91,15 +91,15 @@ cmake --build build --config Release
 cmake --install build --prefix C:/faiss
 ### 安装和编译
 ```
-# 克隆仓库
-git clone https://github.com/yourusername/VectorSphere.git
-cd VectorSphere
+# 克隆仓库
+git clone https://github.com/yourusername/VectorSphere.git
+cd VectorSphere
 
-# 安装依赖
-go mod download
+# 安装依赖
+go mod download
 
-# 编译
-go build -o VectorSphere
+# 编译
+go build -o VectorSphere
 ```
 makefile 编译
 ```
@@ -117,16 +117,15 @@ make help
 
 ### 运行模式 主节点模式
 ```
-./VectorSphere -mode master -port 8080 -etcd localhost:2379 -service 
-VectorSphere
-``` 从节点模式
+./VectorSphere -mode master -port 8080 -etcd localhost:2379 -service VectorSphere
+``` 
+从节点模式
 ```
-./VectorSphere -mode slave -port 8081 -etcd localhost:2379 -service 
-VectorSphere -data ./data -doc-num 10000 -db-type 0
-``` 独立模式
+./VectorSphere -mode slave -port 8081 -etcd localhost:2379 -service VectorSphere -data ./data -doc-num 10000 -db-type 0
+``` 
+独立模式
 ```
-./VectorSphere -mode standalone -port 8080 -data ./data -doc-num 10000 
--db-type 0
+./VectorSphere -mode standalone -port 8080 -data ./data -doc-num 10000 -db-type 0
 ```
 ### 配置说明
 - mode ：运行模式（master/slave/standalone）

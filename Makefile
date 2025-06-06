@@ -50,11 +50,12 @@ info:
 # 编译 C++ 包装器
 faiss_wrapper:
 	@echo "正在为 $(DETECTED_OS) 编译 FAISS GPU 包装器..."
-	$(CXX) $(CXXFLAGS) \\
-		$(INCLUDE_FLAGS) \\
-		$(LIB_FLAGS) \\
-		$(LINK_FLAGS) \\
-		-o $(WRAPPER_OUTPUT) \\
+	@echo "g++ command: $(CXX) $(CXXFLAGS) $(INCLUDE_FLAGS) $(LIB_FLAGS) $(LINK_FLAGS) -o $(WRAPPER_OUTPUT) library/algorithm/faiss_gpu_wrapper.cpp"
+	$(CXX) $(CXXFLAGS) \
+		$(INCLUDE_FLAGS) \
+		$(LIB_FLAGS) \
+		$(LINK_FLAGS) \
+		-o $(WRAPPER_OUTPUT) \
 		library/algorithm/faiss_gpu_wrapper.cpp
 	@echo "FAISS GPU 包装器编译完成: $(WRAPPER_OUTPUT)"
 
@@ -67,8 +68,9 @@ build: faiss_wrapper
 else
 build: faiss_wrapper
 	@echo "正在为 Linux 编译 Go 程序..."
-	$(SET_ENV) CGO_ENABLED=1 && \\
-	$(SET_ENV) LD_LIBRARY_PATH=$(CUDA_PATH)/lib64:$(FAISS_PATH)/lib:$$LD_LIBRARY_PATH && \\
+	@echo "LD_LIBRARY_PATH: $(CUDA_PATH)/lib64:$(FAISS_PATH)/lib:$$LD_LIBRARY_PATH"
+	$(SET_ENV) CGO_ENABLED=1 && \
+	$(SET_ENV) LD_LIBRARY_PATH=$(CUDA_PATH)/lib64:$(FAISS_PATH)/lib:$$LD_LIBRARY_PATH && \
 	go build -o VectorSphere$(EXE_EXT) .
 	@echo "编译完成: VectorSphere$(EXE_EXT)"
 endif
