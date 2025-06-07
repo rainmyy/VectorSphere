@@ -29,7 +29,7 @@ services:
 
   master:
     build:
-      context: .
+      context: ..
       dockerfile: Dockerfile.master
     ports:
       - "8080:8080"
@@ -46,7 +46,7 @@ services:
 
   worker:
     build:
-      context: .
+      context: ..
       dockerfile: Dockerfile.worker
     ports:
       - "8081:8081"
@@ -65,7 +65,7 @@ services:
 
   vectordb:
     build:
-      context: .
+      context: ..
       dockerfile: Dockerfile.vectordb
     ports:
       - "8082:8082"

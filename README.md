@@ -117,11 +117,11 @@ make help
 
 ### 运行模式 主节点模式
 ```
-./VectorSphere -mode master -port 8080 -etcd localhost:2379 -service VectorSphere
+./VectorSphere -mode master -port 8080 -etcd localhost:2379 -importService VectorSphere
 ``` 
 从节点模式
 ```
-./VectorSphere -mode slave -port 8081 -etcd localhost:2379 -service VectorSphere -data ./data -doc-num 10000 -db-type 0
+./VectorSphere -mode slave -port 8081 -etcd localhost:2379 -importService VectorSphere -data ./data -doc-num 10000 -db-type 0
 ``` 
 独立模式
 ```
@@ -131,7 +131,7 @@ make help
 - mode ：运行模式（master/slave/standalone）
 - port ：服务端口
 - etcd ：etcd服务地址，多个地址用逗号分隔
-- service ：服务名称
+- importService ：服务名称
 - data ：数据目录
 - doc-num ：文档数量估计
 - db-type ：数据库类型

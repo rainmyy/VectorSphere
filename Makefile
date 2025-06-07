@@ -32,11 +32,11 @@ INCLUDE_FLAGS := -I$(CUDA_PATH)/include -I$(FAISS_PATH)/include
 ifeq ($(DETECTED_OS),Windows)
     LIB_FLAGS := -L$(CUDA_PATH)/lib/x64 -L$(FAISS_PATH)/lib
     LINK_FLAGS := -lcudart -lcuda -lfaiss -lfaiss_gpu
-    WRAPPER_OUTPUT := library/algorithm/libfaiss_gpu_wrapper$(LIB_EXT)
+    WRAPPER_OUTPUT := src/library/algorithm/libfaiss_gpu_wrapper$(LIB_EXT)
 else
     LIB_FLAGS := -L$(CUDA_PATH)/lib64 -L$(FAISS_PATH)/lib
     LINK_FLAGS := -lcudart -lcuda -lfaiss -lfaiss_gpu -Wl,-rpath,$(CUDA_PATH)/lib64 -Wl,-rpath,$(FAISS_PATH)/lib
-    WRAPPER_OUTPUT := library/algorithm/libfaiss_gpu_wrapper$(LIB_EXT)
+    WRAPPER_OUTPUT := src/library/algorithm/libfaiss_gpu_wrapper$(LIB_EXT)
 endif
 
 # 显示检测到的操作系统
@@ -50,13 +50,13 @@ info:
 # 编译 C++ 包装器
 faiss_wrapper:
 	@echo "正在为 $(DETECTED_OS) 编译 FAISS GPU 包装器..."
-	@echo "g++ command: $(CXX) $(CXXFLAGS) $(INCLUDE_FLAGS) $(LIB_FLAGS) $(LINK_FLAGS) -o $(WRAPPER_OUTPUT) library/algorithm/faiss_gpu_wrapper.cpp"
+	@echo "g++ command: $(CXX) $(CXXFLAGS) $(INCLUDE_FLAGS) $(LIB_FLAGS) $(LINK_FLAGS) -o $(WRAPPER_OUTPUT) src/library/algorithm/faiss_gpu_wrapper.cpp"
 	$(CXX) $(CXXFLAGS) \
 		$(INCLUDE_FLAGS) \
 		$(LIB_FLAGS) \
 		$(LINK_FLAGS) \
 		-o $(WRAPPER_OUTPUT) \
-		library/algorithm/faiss_gpu_wrapper.cpp
+		src/library/algorithm/faiss_gpu_wrapper.cpp
 	@echo "FAISS GPU 包装器编译完成: $(WRAPPER_OUTPUT)"
 
 # 编译 Go 程序
@@ -87,13 +87,13 @@ install-deps-linux:
 ifeq ($(DETECTED_OS),Windows)
 clean:
 	@echo "清理 Windows 构建文件..."
-	-$(RM_CMD) library$(PATH_SEP)algorithm$(PATH_SEP)libfaiss_gpu_wrapper$(LIB_EXT)
+	-$(RM_CMD) src(PATH_SEP)library$(PATH_SEP)algorithm$(PATH_SEP)libfaiss_gpu_wrapper$(LIB_EXT)
 	-$(RM_CMD) VectorSphere$(EXE_EXT)
 	@echo "清理完成"
 else
 clean:
 	@echo "清理 Linux 构建文件..."
-	-$(RM_CMD) library$(PATH_SEP)algorithm$(PATH_SEP)libfaiss_gpu_wrapper$(LIB_EXT)
+	-$(RM_CMD) src(PATH_SEP)library$(PATH_SEP)algorithm$(PATH_SEP)libfaiss_gpu_wrapper$(LIB_EXT)
 	-$(RM_CMD) VectorSphere$(EXE_EXT)
 	@echo "清理完成"
 endif

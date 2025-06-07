@@ -1,17 +1,17 @@
 package test
 
 import (
-	"VectorSphere/library/log"
-	"VectorSphere/library/tree"
-	"VectorSphere/messages"
-	"VectorSphere/search"
-	"VectorSphere/service"
 	"VectorSphere/src/db"
+	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/tree"
+	"VectorSphere/src/messages"
+	"VectorSphere/src/search"
+	"VectorSphere/src/service"
 	"fmt"
 	"time"
 )
 
-func test_2() {
+func test_import() {
 	// 创建导入配置
 	config := &service.DBImportConfig{
 		DriverName:     "mysql",
@@ -43,10 +43,10 @@ func test_2() {
 	// 创建多表搜索服务
 	searchService := search.NewMultiTableSearchService(txMgr, lockMgr, walMgr)
 	// 创建导入服务
-	service := service.NewDBImportService(searchService, config)
+	importService := service.NewDBImportService(searchService, config)
 
 	// 创建导入调度器
-	scheduler, _ := service.GetChangedRecords(service)
+	scheduler, _ := importService.GetChangedRecords(importService)
 
 	// 添加导入计划
 	scheduler.AddSchedule("products", "SELECT * FROM products", 1*time.Hour, true)
@@ -56,13 +56,13 @@ func test_2() {
 	scheduler.Start()
 
 	// 手动执行增量导入
-	err := service.ImportTableIncremental("products", "SELECT * FROM products")
+	err := importService.ImportTableIncremental("products", "SELECT * FROM products")
 	if err != nil {
 		log.Error("增量导入失败: %v", err)
 	}
 
 	// 获取进度报告
-	progressReport := service.GetProgressReport()
+	progressReport := importService.GetProgressReport()
 	fmt.Println(progressReport)
 
 	// 停止调度器
