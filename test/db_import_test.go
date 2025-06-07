@@ -1,12 +1,12 @@
 package test
 
 import (
-	"VectorSphere/db"
 	"VectorSphere/library/log"
 	"VectorSphere/library/tree"
 	"VectorSphere/messages"
 	"VectorSphere/search"
 	"VectorSphere/service"
+	"VectorSphere/src/db"
 	"fmt"
 	"time"
 )

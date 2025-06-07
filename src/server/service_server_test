@@ -1,0 +1,183 @@
+package server
+
+import (
+	"github.com/golang/mock/gomock"
+	"VectorSphere/src/messages"
+	"VectorSphere/src/mocks"
+	"testing"
+	"time"
+)
+
+package server
+
+import (
+"context"
+"errors"
+"testing"
+"time"
+
+"VectorSphere/src/index"
+"VectorSphere/src/library/common"
+"VectorSphere/src/messages"
+"github.com/golang/mock/gomock"
+)
+
+func TestIndexServer_Init(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockIndex := mocks.NewMockIndexInterface(ctrl)
+	mockIndex.EXPECT().NewIndexServer(100, 1, "", "testDir").Return(nil)
+
+	server := &IndexServer{
+		Index: mockIndex,
+	}
+
+	err := server.Init(100, 1, "testDir")
+	if err != nil {
+		t.Errorf("Init() error = %v", err)
+	}
+}
+
+func TestIndexServer_RegisterService(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockCommon := mocks.NewMockCommon(ctrl)
+	mockCommon.EXPECT().GetLocalHost().Return("127.0.0.1", nil)
+
+	mockHub := mocks.NewMockEtcdServiceHub(ctrl)
+	mockHub.EXPECT().RegisterService("testService", gomock.Any(), 0).Return(1, nil)
+	mockHub.EXPECT().RegisterService("testService", gomock.Any(), 1).Return(1, nil).AnyTimes()
+
+	server := &IndexServer{
+		hub: mockHub,
+	}
+
+	err := server.RegisterService([]string{"localhost:2379"}, 8080, "testService")
+	if err != nil {
+		t.Errorf("RegisterService() error = %v", err)
+	}
+
+	time.Sleep(1 * time.Second)
+	server.StopService()
+}
+
+func TestIndexServer_DelDoc(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockIndex := mocks.NewMockIndex(ctrl)
+	mockIndex.EXPECT().DelDoc(1).Return(1)
+
+	server := &IndexServer{
+		Index: mockIndex,
+	}
+
+	docId := &DocId{Id: 1}
+	result, err := server.DelDoc(context.Background(), docId)
+	if err != nil {
+		t.Errorf("DelDoc() error = %v", err)
+	}
+
+	if result.Count != 1 {
+		t.Errorf("DelDoc() got = %d, want 1", result.Count)
+	}
+}
+
+func TestIndexServer_AddDoc(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockIndex := mocks.NewMockIndex(ctrl)
+	mock := &messages.Document{}
+	mockIndex.EXPECT().AddDoc(*mock).Return(1, nil)
+
+	server := &IndexServer{
+		Index: mockIndex,
+	}
+
+	result, err := server.AddDoc(context.Background(), mock)
+	if err != nil {
+		t.Errorf("AddDoc() error = %v", err)
+	}
+
+	if result.Count != 1 {
+		t.Errorf("AddDoc() got = %d, want 1", result.Count)
+	}
+}
+
+func TestIndexServer_Search(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockIndex := mocks.NewMockIndex(ctrl)
+	mockQuery := &messages.TermQuery{}
+	mockResult := []*messages.Document{}
+	mockIndex.EXPECT().Search(mockQuery, 0, 0, []uint64{}).Return(mockResult, nil)
+
+	server := &IndexServer{
+		Index: mockIndex,
+	}
+
+	request := &Request{
+		Query:    mockQuery,
+		OnFlag:   0,
+		OffFlag:  0,
+		OrFlags:  []uint64{},
+	}
+
+	result, err := server.Search(context.Background(), request)
+	if err != nil {
+		t.Errorf("Search() error = %v", err)
+	}
+
+	if result.Results != mockResult {
+		t.Errorf("Search() got = %v, want %v", result.Results, mockResult)
+	}
+}
+
+func TestIndexServer_Count(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockIndex := mocks.NewMockIndex(ctrl)
+	mockIndex.EXPECT().Total().Return(100)
+
+	server := &IndexServer{
+		Index: mockIndex,
+	}
+
+	request := &CountRequest{}
+	result, err := server.Count(context.Background(), request)
+	if err != nil {
+		t.Errorf("Count() error = %v", err)
+	}
+
+	if result.Count != 100 {
+		t.Errorf("Count() got = %d, want 100", result.Count)
+	}
+}
+
+func TestIndexServer_Close(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockIndex := mocks.NewMockIndex(ctrl)
+	mockIndex.EXPECT().Close().Return(nil)
+
+	mockHub := mocks.NewMockEtcdServiceHub(ctrl)
+	mockHub.EXPECT().UnRegisterService("testService", gomock.Any()).Return(nil)
+
+	server := &IndexServer{
+		Index:       mockIndex,
+		hub:         mockHub,
+		serviceName: "testService",
+		localhost:   "127.0.0.1:8080",
+	}
+
+	err := server.Close()
+	if err != nil {
+		t.Errorf("Close() error = %v", err)
+	}
+}
