@@ -15,6 +15,7 @@ import (
 	"github.com/pkoukk/tiktoken-go"
 	"golang.org/x/sync/errgroup"
 	"net/http"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -313,6 +314,19 @@ func (s *AnalysisService) HandleAnalyzeWithSession(w http.ResponseWriter, r *htt
 		"result":  result,
 		"history": newHistory,
 	})
+}
+
+func (s *AnalysisService) AdjustConcurrencyLimit() {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	// 根据内存使用率调整并发限制
+	memoryUsageRatio := float64(m.Alloc) / float64(m.TotalAlloc)
+	if memoryUsageRatio > 0.8 && s.ConcurrencyLimit > 2 {
+		s.ConcurrencyLimit = s.ConcurrencyLimit - 1
+	} else if memoryUsageRatio < 0.5 && s.ConcurrencyLimit < runtime.NumCPU()*3 {
+		s.ConcurrencyLimit = s.ConcurrencyLimit + 1
+	}
 }
 
 // AnalyzeWithHistoryContext 支持上下文控制、并行处理和缓存的分析函数

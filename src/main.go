@@ -1,8 +1,10 @@
 package main
 
 import (
+	"VectorSphere/src/index"
 	"VectorSphere/src/library/log"
 	"VectorSphere/src/library/tree"
+	"VectorSphere/src/llm"
 	"VectorSphere/src/server"
 	"context"
 	"flag"
@@ -135,6 +137,31 @@ func main() {
 	default:
 		log.Fatal("未知的运行模式: %s", *mode)
 	}
+}
+
+// 初始化AnalysisService
+func initAnalysisService() (*llm.AnalysisService, error) {
+	// 向量数据库路径和集群数量
+	vectorDBPath := "./data/vector_db"
+	numClusters := 10
+
+	// LLM配置
+	llmConfig := llm.LLMConfig{
+		Type:        llm.LocalLLM,    // 或其他支持的LLM类型
+		Model:       "gpt-3.5-turbo", // 或您使用的模型
+		Temperature: 0.7,
+		MaxTokens:   2000,
+		Timeout:     30, // 秒
+	}
+
+	// BadgerDB路径用于会话存储
+	badgerDBPath := "./data/sessions"
+
+	// 创建跳表索引用于会话搜索加速
+	skipListIndex := index.NewSkipListInvertedIndex(10000)
+
+	// 初始化AnalysisService
+	return llm.NewAnalysisService(vectorDBPath, numClusters, llmConfig, badgerDBPath, skipListIndex)
 }
 
 // etcd --listen-client-urls http://localhost:2379 --advertise-client-urls http://localhost:2379

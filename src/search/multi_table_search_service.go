@@ -99,7 +99,14 @@ func (mts *MultiTableSearchService) getCachedResults(cacheKey string) ([]string,
 
 	return entry.results, true
 }
-
+func (mts *MultiTableSearchService) GetCacheStats() map[string]interface{} {
+	stats := map[string]interface{}{
+		"size":     len(mts.queryCache),
+		"max_size": mts.maxCacheSize,
+		"hit_rate": float64(mts.stats.CacheHits) / float64(mts.stats.TotalQueries),
+	}
+	return stats
+}
 func (mts *MultiTableSearchService) cacheResults(cacheKey string, results []string, vectorHash uint64) {
 	mts.queryCacheMu.Lock()
 	defer mts.queryCacheMu.Unlock()

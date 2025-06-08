@@ -927,6 +927,246 @@ func (db *VectorDB) AdaptiveCosineSimilarityBatch(queries [][]float64, targets [
 	}
 }
 
+func (db *VectorDB) WarmupIndex() {
+	log.Info("开始预热索引...")
+
+	// 检查数据库是否已索引
+	if !db.IsIndexed() {
+		log.Warning("数据库未索引，跳过预热")
+		return
+	}
+
+	// 尝试获取向量维度
+	var vectorDim int
+	db.mu.RLock()
+	if len(db.vectors) > 0 {
+		for _, vec := range db.vectors {
+			vectorDim = len(vec)
+			break
+		}
+	}
+	db.mu.RUnlock()
+
+	if vectorDim == 0 {
+		log.Warning("无法确定向量维度，跳过预热")
+		return
+	}
+
+	// 生成不同维度的样本查询向量
+	sampleQueries := db.generateSampleQueries(vectorDim)
+
+	// 预热不同的索引类型和计算策略
+	warmupStrategies := []struct {
+		name     string
+		strategy IndexStrategy
+	}{
+		{"BruteForce", StrategyBruteForce},
+		{"IVF", StrategyIVF},
+		{"HNSW", StrategyHNSW},
+		{"PQ", StrategyPQ},
+		{"Hybrid", StrategyHybrid},
+	}
+
+	// 获取硬件能力
+	hwCaps := db.strategyComputeSelector.GetHardwareCapabilities()
+
+	// 预热每种索引类型
+	for _, ws := range warmupStrategies {
+		// 检查索引类型是否可用
+		canUse := true
+		switch ws.strategy {
+		case StrategyHNSW:
+			canUse = db.useHNSWIndex && db.indexed && db.hnsw != nil
+		case StrategyPQ:
+			canUse = db.usePQCompression && db.pqCodebook != nil
+		case StrategyIVF:
+			canUse = db.indexed && len(db.clusters) > 0
+		case StrategyHybrid:
+			canUse = hwCaps.HasGPU && db.gpuAccelerator != nil
+		}
+
+		if !canUse {
+			log.Trace("跳过预热索引类型 %s (不可用)", ws.name)
+			continue
+		}
+
+		log.Info("开始预热索引类型: %s", ws.name)
+
+		// 对每个样本查询执行搜索
+		for i, query := range sampleQueries {
+			// 创建搜索上下文
+			ctx := SearchContext{
+				QueryVector:  query,
+				K:            5,
+				Nprobe:       10,
+				Timeout:      0,
+				QualityLevel: 0.8,
+			}
+
+			// 执行搜索但不使用结果
+			var err error
+			var results []entity.Result
+
+			switch ws.strategy {
+			case StrategyBruteForce:
+				results, err = db.bruteForceSearch(query, 5)
+			case StrategyIVF:
+				results, err = db.ivfSearchWithScores(query, 5, 10, db.GetOptimalStrategy(query))
+			case StrategyHNSW:
+				results, err = db.hnswSearchWithScores(query, 5)
+			case StrategyPQ:
+				results, err = db.pqSearchWithScores(query, 5)
+			case StrategyHybrid:
+				results, err = db.hybridSearchWithScores(query, 5, ctx)
+			}
+
+			if err != nil {
+				log.Warning("预热索引类型 %s 查询 %d 失败: %v", ws.name, i, err)
+			} else {
+				log.Trace("预热索引类型 %s 查询 %d 成功，返回 %d 个结果", ws.name, i, len(results))
+			}
+		}
+	}
+
+	// 预热不同的计算策略
+	if hwCaps.HasGPU || hwCaps.HasAVX512 || hwCaps.HasAVX2 {
+		log.Info("开始预热计算策略...")
+
+		// 预热每种计算策略
+		strategies := []struct {
+			name      string
+			strategy  algorithm.ComputeStrategy
+			available bool
+		}{
+			{"Standard", algorithm.StrategyStandard, true},
+			{"AVX2", algorithm.StrategyAVX2, hwCaps.HasAVX2},
+			{"AVX512", algorithm.StrategyAVX512, hwCaps.HasAVX512},
+			{"GPU", algorithm.StrategyGPU, hwCaps.HasGPU},
+		}
+
+		for _, s := range strategies {
+			if !s.available {
+				log.Trace("跳过预热计算策略 %s (不可用)", s.name)
+				continue
+			}
+
+			log.Info("开始预热计算策略: %s", s.name)
+
+			// 对每个样本查询执行余弦相似度计算
+			for i, query := range sampleQueries {
+				// 随机选择一些向量进行计算
+				targets := db.getRandomVectors(10)
+				if len(targets) == 0 {
+					continue
+				}
+
+				// 执行计算
+				for _, target := range targets {
+					_ = algorithm.AdaptiveCosineSimilarity(query, target, s.strategy)
+				}
+
+				log.Trace("预热计算策略 %s 查询 %d 完成", s.name, i)
+			}
+		}
+	}
+
+	// 预热GPU加速器（如果可用）
+	if hwCaps.HasGPU && db.gpuAccelerator != nil {
+		log.Info("开始预热GPU加速器...")
+
+		// 随机选择一些向量进行批量计算
+		targets := db.getRandomVectors(100)
+		if len(targets) > 0 {
+			_, err := db.gpuBatchCosineSimilarity(sampleQueries, targets)
+			if err != nil {
+				log.Warning("预热GPU加速器失败: %v", err)
+			} else {
+				log.Info("GPU加速器预热成功")
+			}
+		}
+	}
+
+	log.Info("索引预热完成")
+}
+
+// generateSampleQueries 生成样本查询向量
+func (db *VectorDB) generateSampleQueries(dim int) [][]float64 {
+	// 生成不同类型的样本查询向量
+	queries := make([][]float64, 0)
+
+	// 1. 随机向量
+	for i := 0; i < 5; i++ {
+		query := make([]float64, dim)
+		for j := 0; j < dim; j++ {
+			query[j] = rand.Float64()*2 - 1 // 生成-1到1之间的随机数
+		}
+		queries = append(queries, algorithm.NormalizeVector(query))
+	}
+
+	// 2. 从现有数据中采样
+	db.mu.RLock()
+	if len(db.vectors) > 0 {
+		// 随机选择一些现有向量
+		samples := db.getRandomVectors(5)
+		for _, sample := range samples {
+			// 添加一些噪声
+			noisyVector := make([]float64, len(sample))
+			copy(noisyVector, sample)
+			for j := 0; j < len(noisyVector); j++ {
+				noisyVector[j] += (rand.Float64()*0.2 - 0.1) // 添加-0.1到0.1之间的噪声
+			}
+			queries = append(queries, algorithm.NormalizeVector(noisyVector))
+		}
+	}
+	db.mu.RUnlock()
+
+	// 3. 特殊向量（全1，全0等）
+	allOnes := make([]float64, dim)
+	for i := 0; i < dim; i++ {
+		allOnes[i] = 1.0
+	}
+	queries = append(queries, algorithm.NormalizeVector(allOnes))
+
+	// 稀疏向量
+	sparse := make([]float64, dim)
+	for i := 0; i < dim/10; i++ {
+		sparse[rand.Intn(dim)] = 1.0
+	}
+	queries = append(queries, algorithm.NormalizeVector(sparse))
+
+	return queries
+}
+
+// getRandomVectors 从数据库中随机获取向量
+func (db *VectorDB) getRandomVectors(count int) [][]float64 {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	if len(db.vectors) == 0 {
+		return nil
+	}
+
+	// 获取所有向量ID
+	ids := make([]string, 0, len(db.vectors))
+	for id := range db.vectors {
+		ids = append(ids, id)
+	}
+
+	// 随机选择count个向量
+	result := make([][]float64, 0, min(count, len(ids)))
+	for i := 0; i < min(count, len(ids)); i++ {
+		// 随机选择一个索引
+		idx := rand.Intn(len(ids))
+		// 获取对应的向量
+		result = append(result, db.vectors[ids[idx]])
+		// 从ids中移除已选择的ID（可选，避免重复选择）
+		ids[idx] = ids[len(ids)-1]
+		ids = ids[:len(ids)-1]
+	}
+
+	return result
+}
+
 // gpuBatchCosineSimilarity GPU批量余弦相似度计算
 func (db *VectorDB) gpuBatchCosineSimilarity(queries [][]float64, targets [][]float64) ([][]float64, error) {
 	if db.gpuAccelerator == nil {
