@@ -46,23 +46,26 @@ func (b *BadgerKV) Delete(key string) error {
 }
 
 type DistributedSessionStore struct {
-	KVClient DistributedKV                // etcd/redis client
-	Index    *index.SkipListInvertedIndex // 可选本地加速
-	config   SessionConfig                // 会话配置
+	KVClient            DistributedKV                // etcd/redis client
+	Index               *index.SkipListInvertedIndex // 可选本地加速
+	config              SessionConfig                // 会话配置
+	expirationBatchSize int                          // 每次处理的过期会话数量
 }
 
 type SessionConfig struct {
-	MaxSessionsPerUser int           // 每个用户的最大会话数
-	DefaultTTL         time.Duration // 默认会话过期时间
-	CleanupInterval    time.Duration // 清理间隔
+	MaxSessionsPerUser  int           // 每个用户的最大会话数
+	DefaultTTL          time.Duration // 默认会话过期时间
+	CleanupInterval     time.Duration // 清理间隔
+	ExpirationBatchSize int           // 每次处理的过期会话数量
 }
 
 // NewDistributedSessionStore 创建DistributedSessionStore实例
 func NewDistributedSessionStore(kvClient DistributedKV, idx *index.SkipListInvertedIndex, config SessionConfig) *DistributedSessionStore {
 	return &DistributedSessionStore{
-		KVClient: kvClient,
-		Index:    idx,
-		config:   config,
+		KVClient:            kvClient,
+		Index:               idx,
+		config:              config,
+		expirationBatchSize: config.ExpirationBatchSize,
 	}
 }
 
@@ -203,7 +206,91 @@ func (s *DistributedSessionStore) DeleteSession(sessionID string) error {
 // SetWithExpiration 设置会话时添加过期时间
 func (s *DistributedSessionStore) SetWithExpiration(meta SessionMeta, history []Message, ttl time.Duration) error {
 	meta.ExpireTime = time.Now().Add(ttl)
+
+	// 将过期时间信息存储在专门的集合中
+	expireKey := fmt.Sprintf("session_expire:%d", meta.ExpireTime.Unix())
+	expireSessions, err := s.getExpireSessionsList(expireKey)
+	if err != nil {
+		// 如果获取失败，创建新的列表
+		expireSessions = []string{}
+	}
+
+	// 检查会话ID是否已存在于列表中
+	exists := false
+	for _, id := range expireSessions {
+		if id == meta.SessionID {
+			exists = true
+			break
+		}
+	}
+
+	// 如果不存在，添加到列表中
+	if !exists {
+		expireSessions = append(expireSessions, meta.SessionID)
+		expireData, err := json.Marshal(expireSessions)
+		if err != nil {
+			return err
+		}
+
+		err = s.KVClient.Set(expireKey, expireData)
+		if err != nil {
+			return err
+		}
+	}
+
+	// 存储会话元数据
+	metaData, err := json.Marshal(meta)
+	if err != nil {
+		return err
+	}
+
+	err = s.KVClient.Set("session_meta:"+meta.SessionID, metaData)
+	if err != nil {
+		return err
+	}
+
+	// 更新用户会话列表
+	userSessions := s.GetUserSessions(meta.UserID)
+	if !contains(userSessions, meta.SessionID) {
+		userSessions = append(userSessions, meta.SessionID)
+		userSessionsData, err := json.Marshal(userSessions)
+		if err != nil {
+			return err
+		}
+
+		err = s.KVClient.Set("user_sessions:"+meta.UserID, userSessionsData)
+		if err != nil {
+			return err
+		}
+	}
+
 	return s.Set(meta, history)
+}
+
+// 辅助函数：检查切片中是否包含指定元素
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
+
+// 辅助函数：获取指定过期时间的会话列表
+func (s *DistributedSessionStore) getExpireSessionsList(expireKey string) ([]string, error) {
+	data, err := s.KVClient.Get(expireKey)
+	if err != nil || data == nil {
+		return nil, fmt.Errorf("获取过期会话列表失败: %v", err)
+	}
+
+	var sessions []string
+	err = json.Unmarshal(data, &sessions)
+	if err != nil {
+		return nil, fmt.Errorf("解析过期会话列表失败: %v", err)
+	}
+
+	return sessions, nil
 }
 
 // Get 获取会话历史记录
@@ -393,67 +480,155 @@ func (s *DistributedSessionStore) StartCleanupTask(interval time.Duration) {
 }
 
 func (s *DistributedSessionStore) CleanupExpiredSessions() error {
-	// 查询过期的会话
+	// 查询过期的会话，这里会使用分页处理
 	expiredSessions := s.FindExpiredSessions()
 
 	// 删除过期会话
 	for _, sessionID := range expiredSessions {
-		s.KVClient.Delete("session:" + sessionID)
-		// 如果使用本地索引，也需要从索引中删除
+		// 获取会话元数据以找到用户ID
+		metaKey := "session_meta:" + sessionID
+		metaData, err := s.KVClient.Get(metaKey)
+		if err != nil || metaData == nil {
+			continue
+		}
+
+		var meta SessionMeta
+		err = json.Unmarshal(metaData, &meta)
+		if err != nil {
+			continue
+		}
+
+		// 1. 从用户会话列表中移除
+		userSessionsKey := "user_sessions:" + meta.UserID
+		userSessions := s.GetUserSessions(meta.UserID)
+
+		// 过滤掉要删除的会话
+		newSessions := make([]string, 0, len(userSessions))
+		for _, id := range userSessions {
+			if id != sessionID {
+				newSessions = append(newSessions, id)
+			}
+		}
+
+		// 更新用户会话列表
+		updatedData, err := json.Marshal(newSessions)
+		if err != nil {
+			continue
+		}
+
+		err = s.KVClient.Set(userSessionsKey, updatedData)
+		if err != nil {
+			continue
+		}
+
+		// 2. 删除会话数据
+		sessionKey := "session:" + sessionID
+		s.KVClient.Delete(sessionKey)
+
+		// 3. 删除会话元数据
+		s.KVClient.Delete(metaKey)
+
+		// 4. 如果使用本地索引，也需要从索引中删除
 		if s.Index != nil {
-			// 从索引中删除
+			// 从索引中删除所有关键词
+			doc := s.formatDocument(meta, metaData)
+			for _, keyword := range doc.KeWords {
+				s.Index.Delete(doc.ScoreId, keyword)
+			}
 		}
 	}
 
 	return nil
 }
 
+// FindExpiredSessions 查找过期会话，支持分页处理
 func (s *DistributedSessionStore) FindExpiredSessions() []string {
-	// 实现查找过期会话的逻辑
-	// 可以在KV存储中使用特殊前缀存储过期时间信息
-	// 或者定期扫描所有会话并检查元数据
-
 	// 存储过期的会话ID
 	var expiredSessionIDs []string
 
 	// 当前时间
 	now := time.Now()
+	nowUnix := now.Unix()
 
-	// 获取所有用户
-	userIDs := s.getAllUserIDs()
+	// 查找所有过期时间小于当前时间的会话
+	// 我们可以使用前缀扫描来查找所有session_expire:前缀的键
+	// 这里假设KV存储支持前缀扫描，如果不支持，需要使用其他方式实现
 
-	// 遍历所有用户的会话
-	for _, userID := range userIDs {
-		// 获取用户的所有会话
-		userSessions := s.GetUserSessions(userID)
+	// 获取所有过期时间戳（这里需要根据实际KV存储实现前缀扫描）
+	expireTimestamps, err := s.scanExpireTimestamps(nowUnix)
+	if err != nil {
+		return []string{}
+	}
 
-		// 检查每个会话是否过期
-		for _, sessionID := range userSessions {
-			// 获取会话元数据
-			metaKey := "session_meta:" + sessionID
-			metaData, err := s.KVClient.Get(metaKey)
-			if err != nil || metaData == nil {
-				continue
-			}
+	// 设置批处理大小，如果未设置则默认为100
+	batchSize := s.expirationBatchSize
+	if batchSize <= 0 {
+		batchSize = 100
+	}
 
-			var meta SessionMeta
-			err = json.Unmarshal(metaData, &meta)
-			if err != nil {
-				continue
-			}
+	// 计数器，用于控制处理的会话数量
+	count := 0
 
-			// 检查是否过期
-			if meta.ExpireTime.Before(now) {
-				expiredSessionIDs = append(expiredSessionIDs, sessionID)
-			}
+	// 按时间戳顺序处理过期会话
+	for _, timestamp := range expireTimestamps {
+		if count >= batchSize {
+			break
 		}
+
+		expireKey := fmt.Sprintf("session_expire:%d", timestamp)
+		expireSessions, err := s.getExpireSessionsList(expireKey)
+		if err != nil {
+			continue
+		}
+
+		// 将过期会话添加到结果中，并控制总数不超过批处理大小
+		for _, sessionID := range expireSessions {
+			if count >= batchSize {
+				break
+			}
+			expiredSessionIDs = append(expiredSessionIDs, sessionID)
+			count++
+		}
+
+		// 处理完这个时间戳后，可以删除这个键
+		// 注意：在实际生产环境中，可能需要更复杂的错误处理和事务机制
+		s.KVClient.Delete(expireKey)
 	}
 
 	return expiredSessionIDs
 }
 
+// scanExpireTimestamps 扫描所有过期时间戳
+func (s *DistributedSessionStore) scanExpireTimestamps(maxTimestamp int64) ([]int64, error) {
+	// 这个方法需要根据实际使用的KV存储来实现
+	// 例如，如果使用Redis，可以使用SCAN命令扫描所有以"session_expire:"开头的键
+	// 如果使用etcd，可以使用前缀扫描
+
+	// 这里提供一个简化的实现，假设我们有一个存储所有过期时间戳的键
+	allTimestampsKey := "all_expire_timestamps"
+	data, err := s.KVClient.Get(allTimestampsKey)
+	if err != nil || data == nil {
+		return nil, fmt.Errorf("获取过期时间戳列表失败: %v", err)
+	}
+
+	var allTimestamps []int64
+	err = json.Unmarshal(data, &allTimestamps)
+	if err != nil {
+		return nil, fmt.Errorf("解析过期时间戳列表失败: %v", err)
+	}
+
+	// 过滤出小于等于maxTimestamp的时间戳
+	var expiredTimestamps []int64
+	for _, ts := range allTimestamps {
+		if ts <= maxTimestamp {
+			expiredTimestamps = append(expiredTimestamps, ts)
+		}
+	}
+
+	return expiredTimestamps, nil
+}
+
 // getAllUserIDs 获取所有用户ID
-// 这是一个辅助方法，用于获取所有用户ID
 func (s *DistributedSessionStore) getAllUserIDs() []string {
 	// 实际实现中，可能需要根据存储引擎的特性来实现
 	// 例如，如果使用的是支持前缀扫描的KV存储，可以扫描所有"user_sessions:"前缀的键

@@ -6,7 +6,7 @@ package mocks
 
 import (
 	reflect "reflect"
-	messages "VectorSphere/messages"
+	messages "VectorSphere/src/messages"
 
 	gomock "github.com/golang/mock/gomock"
 )
