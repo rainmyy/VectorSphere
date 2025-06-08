@@ -126,8 +126,8 @@ type VectorDB struct {
 	efSearch         float64          // HNSW 搜索时的扩展因子
 	metadata         map[string]map[string]interface{}
 
-	multiCache     *MultiLevelCache         // 多级缓存
-	gpuAccelerator algorithm.GPUAccelerator // GPU 加速器
+	multiCache     *MultiLevelCache      // 多级缓存
+	gpuAccelerator algorithm.Accelerator // GPU 加速器
 
 	// 新增硬件自适应相关字段
 	strategyComputeSelector *algorithm.ComputeStrategySelector
@@ -249,7 +249,7 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOption
 	case StrategyBruteForce:
 		results, err = db.bruteForceSearch(query, k)
 	case StrategyIVF:
-		results, err = db.ivfSearchWithScores(query, k, ctx.Nprobe, db.GetSelectStrategy(query))
+		results, err = db.ivfSearchWithScores(query, k, ctx.Nprobe, db.GetOptimalStrategy(query))
 	case StrategyHNSW:
 		results, err = db.hnswSearchWithScores(query, k)
 	case StrategyPQ:
@@ -257,7 +257,7 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOption
 	case StrategyHybrid:
 		results, err = db.hybridSearchWithScores(query, k, ctx)
 	default:
-		results, err = db.ivfSearchWithScores(query, k, ctx.Nprobe, db.GetSelectStrategy(query))
+		results, err = db.ivfSearchWithScores(query, k, ctx.Nprobe, db.GetOptimalStrategy(query))
 	}
 
 	// 记录性能指标
@@ -297,7 +297,7 @@ func (db *VectorDB) InitializeGPUAccelerator(deviceID int, indexType string) err
 	}
 
 	// 创建FAISS GPU加速器
-	gpuAccel := algorithm.NewFAISSGPUAccelerator(deviceID, indexType)
+	gpuAccel := algorithm.NewFAISSAccelerator(deviceID, indexType)
 	if err := gpuAccel.Initialize(); err != nil {
 		return fmt.Errorf("GPU加速器初始化失败: %w", err)
 	}
@@ -325,7 +325,7 @@ func (db *VectorDB) CheckGPUStatus() error {
 	}
 
 	// 如果是FAISS GPU加速器，进行详细检查
-	if gpuAccel, ok := db.gpuAccelerator.(*algorithm.FAISSGPUAccelerator); ok {
+	if gpuAccel, ok := db.gpuAccelerator.(*algorithm.FAISSAccelerator); ok {
 		if err := gpuAccel.CheckGPUAvailability(); err != nil {
 			return fmt.Errorf("GPU可用性检查失败: %w", err)
 		}
@@ -353,6 +353,8 @@ func (db *VectorDB) pqSearchWithScores(query []float64, k int) ([]entity.Result,
 	}
 
 	results := make([]entity.Result, 0, len(db.compressedVectors))
+	// 获取最优计算策略
+	selectStrategy := db.GetOptimalStrategy(query)
 
 	// 并行计算PQ近似距离
 	numWorkers := runtime.NumCPU()
@@ -366,7 +368,8 @@ func (db *VectorDB) pqSearchWithScores(query []float64, k int) ([]entity.Result,
 			defer wg.Done()
 			for id := range workChan {
 				if compVec, exists := db.compressedVectors[id]; exists {
-					dist, err := db.CalculateApproximateDistancePQ(query, compVec)
+					// 使用自适应距离计算优化PQ搜索
+					dist, err := db.CalculateApproximateDistancePQWithStrategy(query, compVec, selectStrategy)
 					if err == nil {
 						similarity := 1.0 / (1.0 + dist) // 转换为相似度
 						resultChan <- entity.Result{
@@ -405,6 +408,43 @@ func (db *VectorDB) pqSearchWithScores(query []float64, k int) ([]entity.Result,
 	return results[:k], nil
 }
 
+// CalculateApproximateDistancePQWithStrategy 使用指定策略计算PQ近似距离
+func (db *VectorDB) CalculateApproximateDistancePQWithStrategy(query []float64, compressedVector entity.CompressedVector, strategy algorithm.ComputeStrategy) (float64, error) {
+	if compressedVector.Data == nil || len(compressedVector.Data) == 0 {
+		return 0, fmt.Errorf("压缩向量数据不能为空")
+	}
+	if len(compressedVector.Data) != db.numSubVectors {
+		return 0, fmt.Errorf("压缩向量的数据长度 %d 与子向量数量 %d 不匹配", len(compressedVector.Data), db.numSubVectors)
+	}
+
+	subVectorDim := len(query) / db.numSubVectors
+	totalSquaredDistance := 0.0
+
+	// 对每个子向量使用自适应查找最近质心
+	for m := 0; m < db.numSubVectors; m++ {
+		// 获取查询向量的子向量
+		start := m * subVectorDim
+		end := start + subVectorDim
+		querySubVector := query[start:end]
+
+		// 获取压缩向量中对应的质心索引
+		centroidIndex := int(compressedVector.Data[m])
+
+		if centroidIndex < 0 || centroidIndex >= len(db.pqCodebook[m]) {
+			return 0, fmt.Errorf("子空间 %d 的质心索引 %d 超出范围", m, centroidIndex)
+		}
+
+		// 获取对应的质心
+		centroid := db.pqCodebook[m][centroidIndex]
+
+		// 使用自适应策略计算距离
+		_, dist := algorithm.AdaptiveFindNearestCentroid(querySubVector, []entity.Point{centroid}, strategy)
+		totalSquaredDistance += dist
+	}
+
+	return totalSquaredDistance, nil
+}
+
 // hnswSearchWithScores HNSW搜索并返回带分数的结果
 func (db *VectorDB) hnswSearchWithScores(query []float64, k int) ([]entity.Result, error) {
 	db.mu.RLock()
@@ -419,7 +459,7 @@ func (db *VectorDB) hnswSearchWithScores(query []float64, k int) ([]entity.Resul
 	}
 
 	// 选择最优计算策略
-	selectStrategy := db.GetSelectStrategy(query)
+	selectStrategy := db.GetOptimalStrategy(query)
 
 	// 根据策略设置距离函数
 	switch selectStrategy {
@@ -483,10 +523,10 @@ func (db *VectorDB) hybridSearchWithScores(query []float64, k int, ctx SearchCon
 		candidates, err = db.pqSearchWithScores(query, coarseK)
 		if err != nil {
 			log.Warning("PQ粗排失败，回退到IVF: %v", err)
-			candidates, err = db.ivfSearchWithScores(query, coarseK, ctx.Nprobe, db.GetSelectStrategy(query))
+			candidates, err = db.ivfSearchWithScores(query, coarseK, ctx.Nprobe, db.GetOptimalStrategy(query))
 		}
 	} else {
-		candidates, err = db.ivfSearchWithScores(query, coarseK, ctx.Nprobe, db.GetSelectStrategy(query))
+		candidates, err = db.ivfSearchWithScores(query, coarseK, ctx.Nprobe, db.GetOptimalStrategy(query))
 	}
 
 	if err != nil {
@@ -825,10 +865,10 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 
 	// 如果支持GPU，初始化GPU加速器
 	if db.hardwareCaps.HasGPU {
-		db.gpuAccelerator = algorithm.NewFAISSGPUAccelerator(0, "Flat")
+		db.gpuAccelerator = algorithm.NewFAISSAccelerator(0, "Flat")
 
 		// 先检查GPU可用性，再进行初始化
-		if gpuAccel, ok := db.gpuAccelerator.(*algorithm.FAISSGPUAccelerator); ok {
+		if gpuAccel, ok := db.gpuAccelerator.(*algorithm.FAISSAccelerator); ok {
 			if err := gpuAccel.CheckGPUAvailability(); err != nil {
 				log.Warning("GPU可用性检查失败: %v", err)
 				db.hardwareCaps.HasGPU = false
@@ -1231,6 +1271,20 @@ func (db *VectorDB) GetHardwareInfo() algorithm.HardwareCapabilities {
 // GetCurrentStrategy 获取当前计算策略
 func (db *VectorDB) GetCurrentStrategy() algorithm.ComputeStrategy {
 	return db.currentStrategy
+}
+
+// GetSelectStrategy 动态选择最佳计算策略
+func (db *VectorDB) GetSelectStrategy() algorithm.ComputeStrategy {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	// 优先选择最高性能的可用策略
+	if db.hardwareCaps.HasAVX512 {
+		return algorithm.StrategyAVX512
+	} else if db.hardwareCaps.HasAVX2 {
+		return algorithm.StrategyAVX2
+	}
+	return algorithm.StrategyStandard
 }
 
 // BatchAddToHNSWIndex 批量添加向量到 HNSW 索引
@@ -2287,7 +2341,6 @@ func (db *VectorDB) UpdateIndexIncrementally(id string, vector []float64) error 
 	}
 
 	// 找到最近的簇
-	minDist := math.MaxFloat64
 	nearestClusterIndex := -1
 
 	// 使用归一化向量进行距离计算（如果可用）
@@ -2298,18 +2351,27 @@ func (db *VectorDB) UpdateIndexIncrementally(id string, vector []float64) error 
 		queryVecForDist = algorithm.NormalizeVector(vector) // 如果没有预计算，则动态计算
 	}
 
+	//for i, cluster := range db.clusters {
+	//	// 假设簇中心也是归一化的，或者在KMeans时已处理
+	//	dist, err := algorithm.EuclideanDistanceSquared(queryVecForDist, cluster.Centroid) // 或者使用余弦相似度
+	//	if err != nil {
+	//		log.Warning("计算到簇 %d 中心的距离失败: %v", i, err)
+	//		continue
+	//	}
+	//	if dist < minDist {
+	//		minDist = dist
+	//		nearestClusterIndex = i
+	//	}
+	//}
+
+	// 使用自适应策略查找最近质心
+	selectedStrategy := db.GetSelectStrategy()
+	centroids := make([]entity.Point, len(db.clusters))
 	for i, cluster := range db.clusters {
-		// 假设簇中心也是归一化的，或者在KMeans时已处理
-		dist, err := algorithm.EuclideanDistanceSquared(queryVecForDist, cluster.Centroid) // 或者使用余弦相似度
-		if err != nil {
-			log.Warning("计算到簇 %d 中心的距离失败: %v", i, err)
-			continue
-		}
-		if dist < minDist {
-			minDist = dist
-			nearestClusterIndex = i
-		}
+		centroids[i] = cluster.Centroid
 	}
+
+	nearestClusterIndex, _ = algorithm.AdaptiveFindNearestCentroid(queryVecForDist, centroids, selectedStrategy)
 
 	if nearestClusterIndex != -1 {
 		// 从旧的簇中移除 (如果它之前在某个簇中)
@@ -3558,7 +3620,7 @@ func (db *VectorDB) EnableGPUAcceleration(gpuID int, indexType string) error {
 	defer db.mu.Unlock()
 
 	// 创建 GPU 加速器
-	db.gpuAccelerator = algorithm.NewFAISSGPUAccelerator(gpuID, indexType)
+	db.gpuAccelerator = algorithm.NewFAISSAccelerator(gpuID, indexType)
 
 	// 初始化 GPU 加速器
 	err := db.gpuAccelerator.Initialize()
@@ -4016,12 +4078,12 @@ func (db *VectorDB) AdaptiveHNSWConfig() {
 	}
 }
 
-func (db *VectorDB) GetSelectStrategy(query []float64) algorithm.ComputeStrategy {
+func (db *VectorDB) GetOptimalStrategy(query []float64) algorithm.ComputeStrategy {
 	dataSize := len(db.vectors)
 	vectorDim := len(query)
-	strategy := db.strategyComputeSelector.SelectOptimalStrategy(dataSize, vectorDim)
+	optimalStrategy := db.strategyComputeSelector.SelectOptimalStrategy(dataSize, vectorDim)
 
-	return strategy
+	return optimalStrategy
 }
 
 // FindNearestWithScores 查找最近邻并返回分数（更新为使用自适应计算）
@@ -4034,7 +4096,7 @@ func (db *VectorDB) FindNearestWithScores(query []float64, k int, nprobe int) ([
 	}
 
 	// 选择最优计算策略
-	selectStrategy := db.GetSelectStrategy(query)
+	selectStrategy := db.GetOptimalStrategy(query)
 
 	// 如果启用了HNSW索引，优先使用
 	if db.useHNSWIndex && db.indexed && db.hnsw != nil {
@@ -5374,7 +5436,7 @@ func (db *VectorDB) shouldUseGPUBatchSearch(queryCount, dbSize int) bool {
 	}
 
 	// 检查GPU加速器是否已初始化
-	if gpuAccel, ok := db.gpuAccelerator.(*algorithm.FAISSGPUAccelerator); ok {
+	if gpuAccel, ok := db.gpuAccelerator.(*algorithm.FAISSAccelerator); ok {
 		if err := gpuAccel.CheckGPUAvailability(); err != nil {
 			log.Warning("GPU不可用，回退到CPU搜索: %v", err)
 			return false

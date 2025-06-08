@@ -868,7 +868,7 @@ func (hd *HardwareDetector) GetHardwareCapabilities() HardwareCapabilities {
 // detectGPUSupport 检测GPU支持
 func detectGPUSupport() bool {
 	// 尝试初始化GPU加速器来检测GPU支持
-	gpuAccelerator := NewFAISSGPUAccelerator(0, "Flat")
+	gpuAccelerator := NewFAISSAccelerator(0, "Flat")
 	if err := gpuAccelerator.Initialize(); err != nil {
 		return false
 	}
@@ -1025,4 +1025,44 @@ func FindNearestDefaultCentroid(vec []float64, centroids []entity.Point) (int, f
 	}
 
 	return nearestIdx, minDist
+}
+
+// AdaptiveEuclideanDistanceSquared 自适应计算两个向量的平方欧氏距离
+func AdaptiveEuclideanDistanceSquared(v1, v2 []float64, strategy ComputeStrategy) (float64, error) {
+	if len(v1) != len(v2) {
+		return 0, fmt.Errorf("向量维度不匹配: %d vs %d", len(v1), len(v2))
+	}
+
+	switch strategy {
+	case StrategyAVX512:
+		if len(v1)%8 == 0 {
+			dist, err := EuclideanDistanceSquaredAVX512(v1, v2)
+			if err != nil {
+				return EuclideanDistanceSquaredDefault(v1, v2), nil
+			}
+			return dist, nil
+		}
+		fallthrough
+	case StrategyAVX2:
+		if len(v1)%8 == 0 {
+			dist, err := EuclideanDistanceSquaredAVX2(v1, v2)
+			if err != nil {
+				return EuclideanDistanceSquaredDefault(v1, v2), nil
+			}
+			return dist, nil
+		}
+		fallthrough
+	default:
+		return EuclideanDistanceSquaredDefault(v1, v2), nil
+	}
+}
+
+// EuclideanDistanceSquaredDefault 标准实现的平方欧氏距离计算
+func EuclideanDistanceSquaredDefault(v1, v2 []float64) float64 {
+	dist := 0.0
+	for i := 0; i < len(v1); i++ {
+		diff := v1[i] - v2[i]
+		dist += diff * diff
+	}
+	return dist
 }

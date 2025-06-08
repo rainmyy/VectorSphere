@@ -49,12 +49,18 @@ import "C"
 import (
 	"VectorSphere/src/library/entity"
 	"errors"
+	"github.com/klauspost/cpuid"
 	"runtime"
 	"unsafe"
 )
 
 // EuclideanDistanceSquaredAVX2 computes squared Euclidean distance using AVX2. Returns error if input is invalid.
 func EuclideanDistanceSquaredAVX2(a, b []float64) (float64, error) {
+	// 检查AVX2支持
+	if !cpuid.CPU.AVX2() {
+		return EuclideanDistanceSquaredDefault(a, b), nil
+	}
+
 	if len(a) != len(b) {
 		return 0, errors.New("vector length mismatch")
 	}

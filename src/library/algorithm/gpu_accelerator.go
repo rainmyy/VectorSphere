@@ -242,13 +242,8 @@ func (c *FAISSAccelerator) Cleanup() error {
 	return nil
 }
 
-// CheckGPUAvailability 公共方法，供外部调用检查GPU可用性
-func (c *FAISSAccelerator) CheckGPUAvailability() error {
-	return c.checkGPUAvailability()
-}
-
 // checkGPUAvailability 检查 GPU 可用性
-func (c *FAISSAccelerator) checkGPUAvailability() error {
+func (c *FAISSAccelerator) CheckGPUAvailability() error {
 	log.Info("检查 GPU 设备 %d 的可用性...", c.deviceID)
 
 	// 1. 首先检查 CUDA 驱动是否可用
@@ -324,7 +319,7 @@ func (c *FAISSAccelerator) checkGPUAvailability() error {
 
 	log.Info("GPU 设备 %d (%s) 可用性检查通过 - 计算能力: %d.%d, 内存: %d MB",
 		c.deviceID, deviceName, props.major, props.minor, props.totalGlobalMem/(1024*1024))
-	return nil
+	return c.checkGPUAvailability()
 }
 
 // testDeviceMemoryAllocation 测试设备内存分配

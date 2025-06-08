@@ -41,6 +41,7 @@ import "C"
 import (
 	"VectorSphere/src/library/entity"
 	"errors"
+	"github.com/klauspost/cpuid"
 	"math"
 	"runtime"
 	"unsafe"
@@ -53,6 +54,11 @@ func alignTo8(n int) int {
 
 // EuclideanDistanceSquaredAVX512 computes squared Euclidean distance using AVX512. Returns error if input is invalid.
 func EuclideanDistanceSquaredAVX512(a, b []float64) (float64, error) {
+	// 检查AVX512支持
+	if !cpuid.CPU.AVX512F() {
+		return EuclideanDistanceSquaredDefault(a, b), nil
+	}
+
 	if len(a) != len(b) {
 		return 0, errors.New("vector length mismatch")
 	}
