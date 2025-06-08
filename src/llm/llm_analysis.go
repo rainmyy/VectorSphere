@@ -4,6 +4,7 @@ import (
 	db2 "VectorSphere/src/db"
 	"VectorSphere/src/index"
 	"VectorSphere/src/library/entity"
+	"VectorSphere/src/library/log"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -188,7 +189,7 @@ func generateCacheKey(query string, topK int, systemInstruction string) string {
 
 type AnalysisService struct {
 	VectorDB         *db2.VectorDB
-	DeepSeek         *DeepSeekClient
+	LLMClient        LLMClient // 使用通用LLM客户端接口
 	SessionStore     *DistributedSessionStore
 	Tokenizer        TokenCounter
 	QueryCache       *cache.Cache  // 查询结果缓存
@@ -199,18 +200,21 @@ type AnalysisService struct {
 	RetryDelay       time.Duration // 重试延迟
 }
 
-func NewAnalysisService(vectorDBPath string, numClusters int, deepSeekConfig DeepSeekConfig, badgerDBPath string, skipListIndex *index.SkipListInvertedIndex) *AnalysisService {
+func NewAnalysisService(vectorDBPath string, numClusters int, llmConfig LLMConfig, badgerDBPath string, skipListIndex *index.SkipListInvertedIndex) (*AnalysisService, error) {
 	// 初始化向量数据库
 	vectorDB := db2.NewVectorDB(vectorDBPath, numClusters)
 
-	// 初始化DeepSeek客户端
-	deepSeek := NewDeepSeekClient(deepSeekConfig)
+	// 初始化LLM客户端
+	llmClient, err := NewLLMClient(llmConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create LLM client: %w", err)
+	}
 
 	// 初始化BadgerDB作为会话存储
 	badgerDB := new(db2.BadgerDB).NewInstance(badgerDBPath, 1, db2.ERROR, 0.5)
-	err := badgerDB.Open()
+	err = badgerDB.Open()
 	if err != nil {
-		panic(fmt.Sprintf("Failed to open BadgerDB: %v", err))
+		return nil, fmt.Errorf("failed to open BadgerDB: %w", err)
 	}
 
 	// 创建BadgerKV适配器
@@ -219,8 +223,14 @@ func NewAnalysisService(vectorDBPath string, numClusters int, deepSeekConfig Dee
 	// 创建分布式会话存储
 	sessionStore := NewDistributedSessionStore(badgerKV, skipListIndex)
 
-	// 初始化分词器（使用默认的简单分词器）
-	tokenizer := &SimpleTokenizer{}
+	// 初始化分词器
+	var tokenizer TokenCounter
+	modelInfo := llmClient.GetModelInfo()
+	if modelInfo.Provider == "OpenAI" {
+		tokenizer = NewTikTokenizer(modelInfo.Name)
+	} else {
+		tokenizer = &SimpleTokenizer{}
+	}
 
 	// 初始化缓存
 	queryCache := cache.New(defaultCacheTTL, defaultCleanupInterval)
@@ -228,7 +238,7 @@ func NewAnalysisService(vectorDBPath string, numClusters int, deepSeekConfig Dee
 
 	return &AnalysisService{
 		VectorDB:         vectorDB,
-		DeepSeek:         deepSeek,
+		LLMClient:        llmClient,
 		SessionStore:     sessionStore,
 		Tokenizer:        tokenizer,
 		QueryCache:       queryCache,
@@ -237,7 +247,7 @@ func NewAnalysisService(vectorDBPath string, numClusters int, deepSeekConfig Dee
 		Timeout:          defaultTimeout,
 		RetryCount:       defaultRetryCount,
 		RetryDelay:       defaultRetryDelay,
-	}
+	}, nil
 }
 
 func (s *AnalysisService) HandleAnalyzeWithSession(w http.ResponseWriter, r *http.Request) {
@@ -343,7 +353,7 @@ func (s *AnalysisService) AnalyzeWithHistoryContext(ctx context.Context, userQue
 				return ctx.Err()
 			default:
 				var err error
-				queryVec, err = s.DeepSeek.GetEmbedding(userQuery)
+				queryVec, err = s.LLMClient.GetEmbeddingWithContext(ctx, userQuery)
 				if err == nil {
 					// 缓存嵌入结果
 					s.EmbedCache.Set(userQuery, queryVec, cache.DefaultExpiration)
@@ -452,7 +462,7 @@ func (s *AnalysisService) AnalyzeWithHistoryContext(ctx context.Context, userQue
 			return "", history, ctx.Err()
 		default:
 			var err error
-			answer, err = s.DeepSeek.Chat(prompt)
+			answer, err = s.LLMClient.ChatWithContext(ctx, prompt)
 			if err == nil {
 				break
 			}
@@ -481,7 +491,7 @@ func (s *AnalysisService) AnalyzeWithHistoryContext(ctx context.Context, userQue
 // AnalyzeWithHistory 支持多轮对话、token限制
 func (s *AnalysisService) AnalyzeWithHistory(userQuery string, topK int, history []Message, systemInstruction string, maxTokens int) (string, []Message, error) {
 	history = trimHistoryByToken(history, s.Tokenizer, maxTokens)
-	queryVec, err := s.DeepSeek.GetEmbedding(userQuery)
+	queryVec, err := s.LLMClient.GetEmbedding(userQuery)
 	if err != nil {
 		return "", history, fmt.Errorf("embedding failed: %w", err)
 	}
@@ -496,7 +506,7 @@ func (s *AnalysisService) AnalyzeWithHistory(userQuery string, topK int, history
 		contextText += content + "\n"
 	}
 	prompt := buildPrompt(contextText, history, userQuery, systemInstruction)
-	answer, err := s.DeepSeek.Chat(prompt)
+	answer, err := s.LLMClient.Chat(prompt)
 	if err != nil {
 		return "", history, fmt.Errorf("LLM call failed: %w", err)
 	}
@@ -514,7 +524,12 @@ func (s *AnalysisService) HandleAnalyzeWS(w http.ResponseWriter, r *http.Request
 		http.Error(w, "upgrade failed", 400)
 		return
 	}
-	defer conn.Close()
+	defer func(conn *websocket.Conn) {
+		err := conn.Close()
+		if err != nil {
+			log.Error("close conn has error:", err)
+		}
+	}(conn)
 
 	for {
 		var req struct {
@@ -555,7 +570,10 @@ func (s *AnalysisService) HandleAnalyzeWS(w http.ResponseWriter, r *http.Request
 					end = len(answer)
 				}
 				chunk := answer[i:end]
-				conn.WriteJSON(map[string]string{"delta": chunk})
+				err := conn.WriteJSON(map[string]string{"delta": chunk})
+				if err != nil {
+					log.Error("write json failed:", err)
+				}
 				time.Sleep(50 * time.Millisecond) // 模拟流式传输的延迟
 			}
 		} else {
@@ -571,11 +589,14 @@ func (s *AnalysisService) HandleAnalyzeWS(w http.ResponseWriter, r *http.Request
 				for i := 0; i <= s.RetryCount; i++ {
 					select {
 					case <-ctx.Done():
-						conn.WriteJSON(map[string]string{"error": "timeout getting embedding"})
+						err := conn.WriteJSON(map[string]string{"error": "timeout getting embedding"})
+						if err != nil {
+							log.Error("write json failed:", err)
+						}
 						cancel()
 						continue
 					default:
-						queryVec, embeddingErr = s.DeepSeek.GetEmbedding(req.Query)
+						queryVec, embeddingErr = s.LLMClient.GetEmbedding(req.Query)
 						if embeddingErr == nil {
 							// 缓存嵌入结果
 							s.EmbedCache.Set(req.Query, queryVec, cache.DefaultExpiration)
@@ -587,7 +608,10 @@ func (s *AnalysisService) HandleAnalyzeWS(w http.ResponseWriter, r *http.Request
 					}
 				}
 				if embeddingErr != nil {
-					conn.WriteJSON(map[string]string{"error": embeddingErr.Error()})
+					err := conn.WriteJSON(map[string]string{"error": embeddingErr.Error()})
+					if err != nil {
+						log.Error("write json failed:", err)
+					}
 					cancel()
 					continue
 				}
@@ -597,6 +621,9 @@ func (s *AnalysisService) HandleAnalyzeWS(w http.ResponseWriter, r *http.Request
 			ids, err := s.VectorDB.FindNearest(queryVec, req.TopK, 10)
 			if err != nil {
 				conn.WriteJSON(map[string]string{"error": err.Error()})
+				if err != nil {
+					log.Error("write json failed:", err)
+				}
 				cancel()
 				continue
 			}
@@ -650,11 +677,14 @@ func (s *AnalysisService) HandleAnalyzeWS(w http.ResponseWriter, r *http.Request
 			prompt := buildPrompt(contextText, history, req.Query, req.SystemInstruction)
 
 			// 流式推送大模型输出
-			stream := s.DeepSeek.ChatStream(prompt)
+			stream := s.LLMClient.ChatStream(prompt)
 			answer = ""
 			for chunk := range stream {
 				answer += chunk
-				conn.WriteJSON(map[string]string{"delta": chunk})
+				err := conn.WriteJSON(map[string]string{"delta": chunk})
+				if err != nil {
+					log.Error("write json failed:", err)
+				}
 			}
 
 			// 缓存查询结果
@@ -678,15 +708,21 @@ func (s *AnalysisService) HandleAnalyzeWS(w http.ResponseWriter, r *http.Request
 		// 更新会话
 		err = s.SessionStore.Set(meta, history)
 		if err != nil {
-			conn.WriteJSON(map[string]string{"error": "Failed to update session: " + err.Error()})
+			err := conn.WriteJSON(map[string]string{"error": "Failed to update session: " + err.Error()})
+			if err != nil {
+				log.Error("write json has error:", err)
+			}
 		}
 
 		// 发送完整结果
-		conn.WriteJSON(map[string]interface{}{
+		err := conn.WriteJSON(map[string]interface{}{
 			"result":  answer,
 			"history": history,
 			"cached":  useCache,
 		})
+		if err != nil {
+			log.Error("write json has error:", err)
+		}
 
 		// 取消上下文
 		cancel()
@@ -728,8 +764,50 @@ func (s *AnalysisService) HandleAnalyze(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// 返回结果
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	err = json.NewEncoder(w).Encode(map[string]interface{}{
 		"result":  result,
 		"history": newHistory,
 	})
+	if err != nil {
+		log.Error("new json has error:", err)
+	}
 }
+
+/*
+// DeepSeek 配置示例
+// 创建 DeepSeek 客户端
+deepseekConfig := llm.LLMConfig{
+	Type:         llm.DeepSeekLLM,
+	ApiKey:       "your-deepseek-api-key",
+	EmbeddingURL: "https://api.deepseek.com/v1/embeddings",
+	LLMURL:       "https://api.deepseek.com/v1/chat",
+	Model:        "deepseek-chat",
+	Temperature:  0.7,
+	MaxTokens:    1000,
+	Timeout:      60, // 秒
+}
+
+deepseekClient, err := llm.NewLLMClient(deepseekConfig)
+if err != nil {
+	panic(err)
+}
+
+// 创建 OpenAI 客户端
+openaiConfig := llm.LLMConfig{
+	Type:         llm.OpenAILLM,
+	ApiKey:       "your-openai-api-key",
+	Model:        "gpt-4",
+	Temperature:  0.5,
+	MaxTokens:    2000,
+	Timeout:      30, // 秒
+}
+
+openaiClient, err := llm.NewLLMClient(openaiConfig)
+if err != nil {
+	panic(err)
+}
+
+// 使用统一接口调用不同的模型
+response1, err := deepseekClient.Chat("Tell me about Go programming")
+response2, err := openaiClient.Chat("Tell me about Go programming")
+*/

@@ -1,0 +1,23 @@
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# 安装依赖
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 复制应用代码
+COPY model_service.py .
+COPY start_service.py .
+
+# 设置环境变量
+ENV EMBEDDING_MODEL=all-MiniLM-L6-v2
+ENV GENERATION_MODEL=gpt2
+ENV USE_GPU=false
+ENV PORT=5000
+
+# 暴露端口
+EXPOSE 5000
+
+# 启动服务
+CMD ["python", "start_service.py"]
