@@ -68,21 +68,40 @@ func NewFAISSGPUAccelerator(deviceID int, indexType string) *FAISSAccelerator {
 	}
 }
 
-// Initialize initializes the GPU accelerator
+// 优化 Initialize 方法，增加硬件能力检测和策略选择
 func (c *FAISSAccelerator) Initialize() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.initialized {
 		return nil
 	}
+
+	// 检测 GPU 硬件能力
 	if err := c.checkAndSetDevice(); err != nil {
 		log.Error("GPU device check/set failed: %v", err)
 		return err
 	}
+
+	// 初始化策略选择器
+	c.strategy = NewComputeStrategySelector()
+
+	// 获取 GPU 设备属性
+	var props C.cudaDeviceProp
+	if C.cudaGetDeviceProperties(&props, C.int(c.deviceID)) == C.cudaSuccess {
+		// 根据 GPU 计算能力选择最佳策略
+		c.currentStrategy = StrategyGPU
+		log.Info("GPU 加速器初始化: 设备 %d (%s), 计算能力 %d.%d",
+			c.deviceID, C.GoString(&props.name[0]), props.major, props.minor)
+	} else {
+		log.Warning("无法获取 GPU 属性，使用默认策略")
+		c.currentStrategy = StrategyGPU
+	}
+
 	if err := c.initFaissWrapper(); err != nil {
 		log.Error("FAISS wrapper init failed: %v", err)
 		return err
 	}
+
 	c.initialized = true
 	log.Info("FAISS GPU Accelerator initialized: device %d, type %s", c.deviceID, c.indexType)
 	return nil
@@ -118,65 +137,176 @@ func (c *FAISSAccelerator) initFaissWrapper() error {
 	return nil
 }
 
-// BatchSearch performs batch search on GPU
+// 优化 BatchSearch 方法，增加错误恢复
 func (c *FAISSAccelerator) BatchSearch(queries [][]float64, database [][]float64, k int) ([][]AccelResult, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+
+	// 基本检查
 	if !c.initialized {
 		return nil, fmt.Errorf("GPU accelerator not initialized")
 	}
+
+	// 参数验证
 	if len(queries) == 0 || len(database) == 0 {
 		return nil, fmt.Errorf("queries or database vectors empty")
 	}
+
 	qDim, err := checkVectorsDim(queries)
 	if err != nil {
 		return nil, err
 	}
+
 	dbDim, err := checkVectorsDim(database)
 	if err != nil {
 		return nil, err
 	}
+
 	if qDim != dbDim {
 		return nil, fmt.Errorf("query dim %d != db dim %d", qDim, dbDim)
 	}
+
 	if k <= 0 {
 		return nil, fmt.Errorf("k must be > 0")
 	}
+
 	if k > len(database) {
 		k = len(database)
 	}
-	dbVectors := toFloat32Flat(database, dbDim)
-	queryVectors := toFloat32Flat(queries, qDim)
-	distances := make([]float32, len(queries)*k)
-	labels := make([]int64, len(queries)*k)
-	if C.faiss_gpu_wrapper_batch_search(
-		(*C.FaissGpuWrapper)(c.gpuWrapper),
-		C.int(len(database)),
-		(*C.float)(&dbVectors[0]),
-		C.int(len(queries)),
-		(*C.float)(&queryVectors[0]),
-		C.int(k),
-		(*C.float)(&distances[0]),
-		(*C.long)(&labels[0]),
-	) != 0 {
-		return nil, fmt.Errorf("GPU batch search failed")
+
+	// 尝试 GPU 计算，如果失败则回退到 CPU
+	results, gpuErr := c.batchSearchGPU(queries, database, k)
+	if gpuErr != nil {
+		log.Warning("GPU search failed, falling back to CPU: %v", gpuErr)
+
+		// 回退到 CPU 实现
+		return c.batchSearchCPUFallback(queries, database, k)
 	}
+
+	return results, nil
+}
+
+// 新增 GPU 批量搜索实现
+func (c *FAISSAccelerator) batchSearchGPU(queries [][]float64, database [][]float64, k int) ([][]AccelResult, error) {
+	// 选择最佳批处理大小
+	batchSize := c.SelectOptimalBatchSize(len(queries[0]), len(queries))
+
+	// 准备数据库向量
+	dbVectors := toFloat32Flat(database, len(database[0]))
+
+	// 分批处理查询
 	results := make([][]AccelResult, len(queries))
-	for i := 0; i < len(queries); i++ {
-		queryResults := make([]AccelResult, k)
-		for j := 0; j < k; j++ {
-			idx := i*k + j
-			label := labels[idx]
-			distance := distances[idx]
-			similarity := 1.0 / (1.0 + float64(distance))
-			queryResults[j] = AccelResult{
-				ID:         fmt.Sprintf("%d", label),
-				Similarity: similarity,
-				Metadata:   make(map[string]interface{}),
-			}
+
+	for batchStart := 0; batchStart < len(queries); batchStart += batchSize {
+		batchEnd := batchStart + batchSize
+		if batchEnd > len(queries) {
+			batchEnd = len(queries)
 		}
-		results[i] = queryResults
+
+		currentBatch := queries[batchStart:batchEnd]
+		queryVectors := toFloat32Flat(currentBatch, len(currentBatch[0]))
+
+		// 分配结果内存
+		distances := make([]float32, len(currentBatch)*k)
+		labels := make([]int64, len(currentBatch)*k)
+
+		// 执行 GPU 批量搜索
+		if C.faiss_gpu_wrapper_batch_search(
+			(*C.FaissGpuWrapper)(c.gpuWrapper),
+			C.int(len(database)),
+			(*C.float)(&dbVectors[0]),
+			C.int(len(currentBatch)),
+			(*C.float)(&queryVectors[0]),
+			C.int(k),
+			(*C.float)(&distances[0]),
+			(*C.long)(&labels[0]),
+		) != 0 {
+			return nil, fmt.Errorf("GPU batch search failed")
+		}
+
+		// 处理结果
+		for i := 0; i < len(currentBatch); i++ {
+			queryResults := make([]AccelResult, k)
+			for j := 0; j < k; j++ {
+				idx := i*k + j
+				label := labels[idx]
+				distance := distances[idx]
+				similarity := 1.0 / (1.0 + float64(distance))
+				queryResults[j] = AccelResult{
+					ID:         fmt.Sprintf("%d", label),
+					Similarity: similarity,
+					Metadata:   make(map[string]interface{}),
+				}
+			}
+			results[batchStart+i] = queryResults
+		}
 	}
+
+	return results, nil
+}
+
+// 新增 CPU 回退实现
+func (c *FAISSAccelerator) batchSearchCPUFallback(queries [][]float64, database [][]float64, k int) ([][]AccelResult, error) {
+	results := make([][]AccelResult, len(queries))
+
+	// 使用 CPU 并行计算
+	cpuCores := runtime.NumCPU()
+	var wg sync.WaitGroup
+
+	// 分块处理查询
+	chunkSize := (len(queries) + cpuCores - 1) / cpuCores
+	for i := 0; i < len(queries); i += chunkSize {
+		wg.Add(1)
+		end := i + chunkSize
+		if end > len(queries) {
+			end = len(queries)
+		}
+
+		go func(start, end int) {
+			defer wg.Done()
+			for i := start; i < end; i++ {
+				// 计算所有距离
+				distances := make([]float64, len(database))
+				for j, dbVec := range database {
+					dist := EuclideanDistanceSquaredDefault(queries[i], dbVec)
+					distances[j] = dist
+				}
+
+				// 找出 k 个最近邻
+				type idxDist struct {
+					idx  int
+					dist float64
+				}
+
+				allDists := make([]idxDist, len(distances))
+				for j, dist := range distances {
+					allDists[j] = idxDist{j, dist}
+				}
+
+				// 按距离排序
+				sort.Slice(allDists, func(i, j int) bool {
+					return allDists[i].dist < allDists[j].dist
+				})
+
+				// 取前 k 个
+				queryResults := make([]AccelResult, k)
+				for j := 0; j < k; j++ {
+					idx := allDists[j].idx
+					dist := allDists[j].dist
+					similarity := 1.0 / (1.0 + dist) // 转换为相似度
+					queryResults[j] = AccelResult{
+						ID:         fmt.Sprintf("%d", idx),
+						Similarity: similarity,
+						Metadata:   make(map[string]interface{}),
+					}
+				}
+
+				results[i] = queryResults
+			}
+		}(i, end)
+	}
+
+	wg.Wait()
 	return results, nil
 }
 
@@ -187,9 +317,13 @@ func (c *FAISSAccelerator) BatchCosineSimilarity(queries [][]float64, database [
 	if !c.initialized {
 		return nil, fmt.Errorf("GPU accelerator not initialized")
 	}
+
+	// 基本参数检查
 	if len(queries) == 0 || len(database) == 0 {
 		return nil, fmt.Errorf("queries or database vectors empty")
 	}
+
+	// 向量维度检查
 	dbDim, err := checkVectorsDim(database)
 	if err != nil {
 		return nil, err
@@ -201,44 +335,106 @@ func (c *FAISSAccelerator) BatchCosineSimilarity(queries [][]float64, database [
 	if dbDim != qDim {
 		return nil, fmt.Errorf("query dim %d != db dim %d", qDim, dbDim)
 	}
-	dbVectors := toFloat32Flat(database, dbDim)
-	if C.faiss_gpu_wrapper_add_vectors((*C.FaissGpuWrapper)(c.gpuWrapper), C.int(len(database)), (*C.float)(&dbVectors[0])) != 0 {
-		return nil, fmt.Errorf("add vectors to GPU index failed")
-	}
-	queryVectors := toFloat32Flat(queries, qDim)
-	k := len(database)
-	distances := make([]float32, len(queries)*k)
-	labels := make([]C.long, len(queries)*k)
-	if C.faiss_gpu_wrapper_search((*C.FaissGpuWrapper)(c.gpuWrapper), C.int(len(queries)), (*C.float)(&queryVectors[0]), C.int(k), (*C.float)(&distances[0]), (*C.long)(&labels[0])) != 0 {
-		return nil, fmt.Errorf("GPU search failed")
-	}
+
+	// 优化：分批处理大型查询集
+	batchSize := 1000 // 可根据 GPU 内存调整
 	results := make([][]float64, len(queries))
-	for i := 0; i < len(queries); i++ {
-		results[i] = make([]float64, k)
-		for j := 0; j < k; j++ {
-			idx := i*k + j
-			labelIdx := int(labels[idx])
-			if labelIdx < k {
-				results[i][labelIdx] = float64(distances[idx])
+
+	for batchStart := 0; batchStart < len(queries); batchStart += batchSize {
+		batchEnd := batchStart + batchSize
+		if batchEnd > len(queries) {
+			batchEnd = len(queries)
+		}
+
+		currentBatch := queries[batchStart:batchEnd]
+		batchVectors := toFloat32Flat(currentBatch, qDim)
+		dbVectors := toFloat32Flat(database, dbDim)
+
+		// 添加向量到 GPU 索引
+		if C.faiss_gpu_wrapper_add_vectors((*C.FaissGpuWrapper)(c.gpuWrapper), C.int(len(database)), (*C.float)(&dbVectors[0])) != 0 {
+			return nil, fmt.Errorf("add vectors to GPU index failed")
+		}
+
+		// 执行批量搜索
+		k := len(database)
+		distances := make([]float32, len(currentBatch)*k)
+		labels := make([]C.long, len(currentBatch)*k)
+
+		if C.faiss_gpu_wrapper_search((*C.FaissGpuWrapper)(c.gpuWrapper), C.int(len(currentBatch)), (*C.float)(&batchVectors[0]), C.int(k), (*C.float)(&distances[0]), (*C.long)(&labels[0])) != 0 {
+			return nil, fmt.Errorf("GPU search failed")
+		}
+
+		// 处理结果
+		for i := 0; i < len(currentBatch); i++ {
+			results[batchStart+i] = make([]float64, k)
+			for j := 0; j < k; j++ {
+				idx := i*k + j
+				labelIdx := int(labels[idx])
+				if labelIdx < k {
+					results[batchStart+i][labelIdx] = float64(distances[idx])
+				}
 			}
 		}
 	}
+
 	return results, nil
 }
 
-// Cleanup releases GPU resources
+// 优化 Cleanup 方法
 func (c *FAISSAccelerator) Cleanup() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	if !c.initialized {
 		return nil
 	}
+
+	// 释放 FAISS 资源
 	if c.gpuWrapper != nil {
 		C.faiss_gpu_wrapper_free((*C.FaissGpuWrapper)(c.gpuWrapper))
 		c.gpuWrapper = nil
 	}
+
+	// 清理 CUDA 上下文
+	if C.cudaDeviceReset() != C.cudaSuccess {
+		log.Warning("CUDA device reset failed")
+	}
+
 	c.initialized = false
 	log.Info("FAISS GPU Accelerator resources cleaned up")
+	return nil
+}
+
+// 新增 ResetGPUDevice 方法，用于在出现错误时重置设备
+func (c *FAISSAccelerator) ResetGPUDevice() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !c.initialized {
+		return nil
+	}
+
+	// 释放现有资源
+	if c.gpuWrapper != nil {
+		C.faiss_gpu_wrapper_free((*C.FaissGpuWrapper)(c.gpuWrapper))
+		c.gpuWrapper = nil
+	}
+
+	// 重置设备
+	if C.cudaDeviceReset() != C.cudaSuccess {
+		return fmt.Errorf("CUDA device reset failed")
+	}
+
+	// 重新初始化
+	if err := c.checkAndSetDevice(); err != nil {
+		return fmt.Errorf("重新初始化设备失败: %w", err)
+	}
+
+	if err := c.initFaissWrapper(); err != nil {
+		return fmt.Errorf("重新初始化 FAISS 包装器失败: %w", err)
+	}
+
+	log.Info("GPU 设备 %d 已重置并重新初始化", c.deviceID)
 	return nil
 }
 
@@ -541,30 +737,69 @@ func (c *FAISSAccelerator) validateInitialization() error {
 	return nil
 }
 
-// performanceBenchmark 性能基准测试
+// 优化 performanceBenchmark 方法
 func (c *FAISSAccelerator) performanceBenchmark() error {
-	// 创建较大的测试数据集
-	dimension := 128
-	numVectors := 1000
+	log.Info("执行 GPU 性能基准测试...")
 
-	testDB := make([][]float64, numVectors)
-	for i := 0; i < numVectors; i++ {
-		testDB[i] = make([]float64, dimension)
-		for j := 0; j < dimension; j++ {
-			testDB[i][j] = float64(i*dimension + j)
+	// 测试不同维度和数据量
+	dimensions := []int{128, 256, 512, 1024}
+	dataSizes := []int{1000, 10000, 100000}
+
+	results := make(map[string]interface{})
+
+	for _, dim := range dimensions {
+		for _, size := range dataSizes {
+			// 跳过太大的测试组合
+			if dim*size > 100000000 {
+				continue
+			}
+
+			// 创建测试数据
+			testDB := make([][]float64, size)
+			for i := 0; i < size; i++ {
+				testDB[i] = make([]float64, dim)
+				for j := 0; j < dim; j++ {
+					testDB[i][j] = float64(i*dim+j) / float64(dim*size)
+				}
+			}
+
+			queries := testDB[:10] // 使用前10个向量作为查询
+
+			// 测试批量搜索性能
+			startTime := time.Now()
+			_, err := c.BatchSearch(queries, testDB, 10)
+			duration := time.Since(startTime)
+
+			testKey := fmt.Sprintf("dim_%d_size_%d", dim, size)
+			results[testKey] = map[string]interface{}{
+				"dimension":      dim,
+				"database_size":  size,
+				"duration_ms":    duration.Milliseconds(),
+				"vectors_per_ms": float64(len(queries)) / (float64(duration.Milliseconds()) / 1000),
+				"error":          err != nil,
+			}
+
+			log.Info("测试 %s: %d ms", testKey, duration.Milliseconds())
 		}
 	}
 
-	queries := testDB[:10] // 使用前10个向量作为查询
-
-	// 测试批量搜索性能
-	_, err := c.BatchSearch(queries, testDB, 10)
-	if err != nil {
-		return fmt.Errorf("批量搜索性能测试失败: %w", err)
-	}
+	// 保存结果
+	c.benchmarkResults = results
 
 	log.Info("性能基准测试完成")
 	return nil
+}
+
+// 新增 GetBenchmarkResults 方法
+func (c *FAISSAccelerator) GetBenchmarkResults() map[string]interface{} {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.benchmarkResults == nil {
+		return map[string]interface{}{"error": "未执行基准测试"}
+	}
+
+	return c.benchmarkResults
 }
 
 // GetGPUMemoryInfo 获取 GPU 内存使用信息

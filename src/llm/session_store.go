@@ -1,4 +1,4 @@
-package service
+package llm
 
 import (
 	"VectorSphere/src/db"
