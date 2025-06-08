@@ -3678,8 +3678,11 @@ func (db *VectorDB) coarseSearch(query []float64, k int, nprobe int) ([]string, 
 	nearestClusters := make([]int, 0, nprobe)
 	clusterDists := make([]float64, len(db.clusters))
 
+	// 获取最佳计算策略
+	selectedStrategy := db.GetSelectStrategy()
+
 	for i, cluster := range db.clusters {
-		dist, _ := algorithm.EuclideanDistanceSquared(normalizedQuery, cluster.Centroid)
+		dist, _ := algorithm.AdaptiveEuclideanDistanceSquared(normalizedQuery, cluster.Centroid, selectedStrategy)
 		clusterDists[i] = dist
 	}
 
@@ -4696,8 +4699,9 @@ func (db *VectorDB) multiIndexSearch(query []float64, k int, nprobe int) ([]enti
 		Dist  float64
 	}, len(db.multiIndex.clusters))
 
+	selectedStrategy := db.GetSelectStrategy()
 	for i, cluster := range db.multiIndex.clusters {
-		dist, err := algorithm.EuclideanDistanceSquared(query, cluster.Centroid)
+		dist, err := algorithm.AdaptiveEuclideanDistanceSquared(query, cluster.Centroid, selectedStrategy)
 		if err != nil {
 			return nil, fmt.Errorf("error calculating distance to centroid %d: %w", i, err)
 		}
@@ -4729,7 +4733,7 @@ func (db *VectorDB) multiIndexSearch(query []float64, k int, nprobe int) ([]enti
 			// 回退到暴力搜索该簇内的向量
 			for _, id := range selectedCluster.VectorIDs {
 				if vec, exists := db.vectors[id]; exists {
-					dist, _ := algorithm.EuclideanDistanceSquared(query, vec)
+					dist, _ := algorithm.AdaptiveEuclideanDistanceSquared(query, vec, selectedStrategy)
 					heap.Push(&resultHeap, entity.Result{Id: id, Similarity: dist})
 					if results.Len() > k {
 						heap.Pop(results)
@@ -4745,7 +4749,7 @@ func (db *VectorDB) multiIndexSearch(query []float64, k int, nprobe int) ([]enti
 			log.Warning("Sub-index for cluster %d is not a KDTree or is nil. Performing brute-force.", clusterIdx)
 			for _, id := range selectedCluster.VectorIDs {
 				if vec, exists := db.vectors[id]; exists {
-					dist, _ := algorithm.EuclideanDistanceSquared(query, vec)
+					dist, _ := algorithm.AdaptiveEuclideanDistanceSquared(query, vec, selectedStrategy)
 					heap.Push(&resultHeap, entity.Result{Id: id, Similarity: dist})
 					if results.Len() > k {
 						heap.Pop(results)
@@ -4814,9 +4818,12 @@ func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]entity.Resu
 	// 使用堆结构来维护最近的nprobe个簇
 	centroidHeap := make(entity.CentroidHeap, 0, db.numClusters)
 
+	// 获取最佳计算策略
+	selectedStrategy := db.GetSelectStrategy()
+
 	// 找到查询向量最近的nprobe个簇中心
 	for i, cluster := range db.clusters {
-		distSq, err := algorithm.EuclideanDistanceSquared(normalizedQuery, cluster.Centroid)
+		distSq, err := algorithm.AdaptiveEuclideanDistanceSquared(normalizedQuery, cluster.Centroid, selectedStrategy)
 		if err != nil {
 			continue
 		}
