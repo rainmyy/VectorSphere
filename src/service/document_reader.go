@@ -1043,7 +1043,7 @@ func insert() {
 	fmt.Printf("搜索与 '%s' 最相似的文档:\n", queryText)
 
 	// 将查询文本向量化
-	queryVector, err := vectorDB.GetVectorForText(queryText, vectorizedType)
+	queryVector, err := vectorDB.GetVectorForTextWithCache(queryText, vectorizedType)
 	if err != nil {
 		log.Fatalf("查询文本向量化失败: %v", err)
 	}

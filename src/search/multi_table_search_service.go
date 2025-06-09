@@ -425,7 +425,7 @@ func (mts *MultiTableSearchService) Search(tableName string, query *messages.Ter
 	// 使用向量搜索获取候选文件 ID
 	if table.VectorDB != nil && query.Keyword != nil && query.Keyword.ToString() != "" {
 		// 获取查询向量
-		queryVector, err := table.VectorDB.GetVectorForText(query.Keyword.ToString(), vectorizedType)
+		queryVector, err := table.VectorDB.GetVectorForTextWithCache(query.Keyword.ToString(), vectorizedType)
 		if err != nil {
 			return nil, fmt.Errorf("failed to vectorize query text: %w", err)
 		}

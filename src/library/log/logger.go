@@ -42,7 +42,7 @@ func init() {
 	if err != nil {
 		return
 	}
-	
+
 	_ = InitLogger(INFO, path.Join(basePath, "log", "vector_sphere.log"), 10, true) // 默认INFO级别，输出到终端，最大10MB
 }
 
@@ -50,10 +50,13 @@ func init() {
 func InitLogger(level Level, filePath string, maxSizeMB int64, toStdout bool) error {
 	var output io.Writer
 	var file *os.File
+	var err error
 	if filePath != "" {
 		dir := filepath.Dir(filePath)
-		os.MkdirAll(dir, 0755)
-		var err error
+		err = os.MkdirAll(dir, 0755)
+		if err != nil {
+			return err
+		}
 		file, err = os.OpenFile(filePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
 			return err

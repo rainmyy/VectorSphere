@@ -139,6 +139,10 @@ type VectorDB struct {
 	useMmap     bool           // 是否启用 mmap
 	mmapFile    *strategy.Mmap // mmap 文件映射
 	mmapEnabled bool           // mmap 是否可用
+
+	vectorCache     map[string][]float64 // 向量缓存
+	vectorCacheMu   sync.RWMutex         // 向量缓存锁
+	vectorCacheSize int                  // 向量缓存大小
 }
 
 const (
@@ -2075,7 +2079,7 @@ func (db *VectorDB) GetMetadata(id string) (map[string]interface{}, bool) {
 // SearchWithFilter 带过滤条件的向量搜索
 func (db *VectorDB) SearchWithFilter(query string, topK int, filter func(map[string]interface{}) bool) ([]SearchResult, error) {
 	// 将查询文本向量化
-	queryVector, err := db.GetVectorForText(query, db.vectorizedType)
+	queryVector, err := db.GetVectorForTextWithCache(query, db.vectorizedType)
 	if err != nil {
 		return nil, fmt.Errorf("查询文本向量化失败: %v", err)
 	}
@@ -2323,7 +2327,7 @@ func (db *VectorDB) AddDocument(id string, doc string, vectorizedType int) error
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
-	vector, err := db.GetVectorForText(doc, vectorizedType) // Use GetVectorForText internally
+	vector, err := db.GetVectorForTextWithCache(doc, vectorizedType) // Use GetVectorForText internally
 	if err != nil {
 		return fmt.Errorf("failed to vectorize document %s for AddDocument: %w", id, err)
 	}
@@ -2437,6 +2441,44 @@ func (db *VectorDB) SetFilePath(path string) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 	db.filePath = path
+}
+
+// GetVectorForTextWithCache 带缓存的向量获取
+func (db *VectorDB) GetVectorForTextWithCache(text string, vectorizedType int) ([]float64, error) {
+	// 生成缓存键
+	cacheKey := fmt.Sprintf("%d:%s", vectorizedType, text)
+
+	// 检查缓存
+	db.vectorCacheMu.RLock()
+	if vector, exists := db.vectorCache[cacheKey]; exists {
+		db.vectorCacheMu.RUnlock()
+		return vector, nil
+	}
+	db.vectorCacheMu.RUnlock()
+
+	// 缓存未命中，计算向量
+	vector, err := db.GetVectorForText(text, vectorizedType)
+	if err != nil {
+		return nil, err
+	}
+
+	// 更新缓存
+	db.vectorCacheMu.Lock()
+	defer db.vectorCacheMu.Unlock()
+
+	// 如果缓存已满，移除一个随机条目
+	if len(db.vectorCache) >= db.vectorCacheSize && db.vectorCacheSize > 0 {
+		// 简单的缓存淘汰策略：随机删除一个条目
+		for k := range db.vectorCache {
+			delete(db.vectorCache, k)
+			break
+		}
+	}
+
+	// 添加到缓存
+	db.vectorCache[cacheKey] = vector
+
+	return vector, nil
 }
 
 // GetVectorForText 将文本根据指定的向量化类型转换为向量

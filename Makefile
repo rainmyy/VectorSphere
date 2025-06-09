@@ -23,6 +23,34 @@ else
     SET_ENV := export
 endif
 
+# 检测CUDA和FAISS是否可用
+CUDA_AVAILABLE := 0
+FAISS_AVAILABLE := 0
+ifeq ($(DETECTED_OS),Windows)
+    ifneq ($(wildcard "$(CUDA_PATH)\include\cuda_runtime.h"),)
+        CUDA_AVAILABLE := 1
+    endif
+    ifneq ($(wildcard "$(FAISS_PATH)\include\faiss\Index.h"),)
+        FAISS_AVAILABLE := 1
+    endif
+else
+    ifneq ($(wildcard "$(CUDA_PATH)/include/cuda_runtime.h"),)
+        CUDA_AVAILABLE := 1
+    endif
+    ifneq ($(wildcard "$(FAISS_PATH)/include/faiss/Index.h"),)
+        FAISS_AVAILABLE := 1
+    endif
+endif
+
+# 设置GPU编译标志
+ifeq ($(CUDA_AVAILABLE)$(FAISS_AVAILABLE),11)
+    GPU_ENABLED := 1
+    BUILD_TAGS := -tags gpu
+else
+    GPU_ENABLED := 0
+    BUILD_TAGS :=
+endif
+
 # 通用编译器设置
 CXX := g++
 CXXFLAGS := -shared -fPIC -O3
@@ -44,11 +72,15 @@ info:
 	@echo "检测到的操作系统: $(DETECTED_OS)"
 	@echo "CUDA路径: $(CUDA_PATH)"
 	@echo "FAISS路径: $(FAISS_PATH)"
+	@echo "CUDA可用: $(CUDA_AVAILABLE)"
+	@echo "FAISS可用: $(FAISS_AVAILABLE)"
+	@echo "GPU加速启用: $(GPU_ENABLED)"
 	@echo "库文件扩展名: $(LIB_EXT)"
 	@echo "可执行文件扩展名: $(EXE_EXT)"
 
 # 编译 C++ 包装器
 faiss_wrapper:
+ifeq ($(GPU_ENABLED),1)
 	@echo "正在为 $(DETECTED_OS) 编译 FAISS GPU 包装器..."
 	@echo "g++ command: $(CXX) $(CXXFLAGS) $(INCLUDE_FLAGS) $(LIB_FLAGS) $(LINK_FLAGS) -o $(WRAPPER_OUTPUT) src/library/algorithm/faiss_gpu_wrapper.cpp"
 	$(CXX) $(CXXFLAGS) \
@@ -58,12 +90,15 @@ faiss_wrapper:
 		-o $(WRAPPER_OUTPUT) \
 		src/library/algorithm/faiss_gpu_wrapper.cpp
 	@echo "FAISS GPU 包装器编译完成: $(WRAPPER_OUTPUT)"
+else
+	@echo "跳过 FAISS GPU 包装器编译 - CUDA或FAISS不可用"
+endif
 
 # 编译 Go 程序
 ifeq ($(DETECTED_OS),Windows)
 build: faiss_wrapper
 	@echo "正在为 Windows 编译 Go 程序..."
-	$(SET_ENV) CGO_ENABLED=1 && go build -o VectorSphere$(EXE_EXT) .
+	$(SET_ENV) CGO_ENABLED=1 && go build $(BUILD_TAGS) -o VectorSphere$(EXE_EXT) .
 	@echo "编译完成: VectorSphere$(EXE_EXT)"
 else
 build: faiss_wrapper
@@ -71,7 +106,7 @@ build: faiss_wrapper
 	@echo "LD_LIBRARY_PATH: $(CUDA_PATH)/lib64:$(FAISS_PATH)/lib:$$LD_LIBRARY_PATH"
 	$(SET_ENV) CGO_ENABLED=1 && \
 	$(SET_ENV) LD_LIBRARY_PATH=$(CUDA_PATH)/lib64:$(FAISS_PATH)/lib:$$LD_LIBRARY_PATH && \
-	go build -o VectorSphere$(EXE_EXT) .
+	go build $(BUILD_TAGS) -o VectorSphere$(EXE_EXT) .
 	@echo "编译完成: VectorSphere$(EXE_EXT)"
 endif
 

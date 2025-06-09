@@ -375,7 +375,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) Add(tx *tree.Transaction, doc messages.Do
 
 		if docTextForVectorDB != "" {
 			// 使用GetVectorForText获取向量
-			vector, err := idx.vectorDB.GetVectorForText(docTextForVectorDB, db.DefaultVectorized)
+			vector, err := idx.vectorDB.GetVectorForTextWithCache(docTextForVectorDB, db.DefaultVectorized)
 			if err == nil {
 				docVector = vector
 			}
@@ -776,7 +776,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) Search(
 				idx.cacheMu.RUnlock()
 
 				// 缓存未命中，执行向量搜索
-				queryVec, errVec := idx.vectorDB.GetVectorForText(vectorQueryText, db.DefaultVectorized)
+				queryVec, errVec := idx.vectorDB.GetVectorForTextWithCache(vectorQueryText, db.DefaultVectorized)
 				if errVec != nil {
 					vectorErr = fmt.Errorf("error vectorizing query text for vector search: %w", errVec)
 					return
