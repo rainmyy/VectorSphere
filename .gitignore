@@ -12,7 +12,7 @@ main
 *.out
 pkg/
 VectorSphere
-log/
+./log/
 .idea/
 # Dependency directories (remove the comment below to include it)
 # vendor/

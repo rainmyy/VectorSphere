@@ -42,7 +42,7 @@ func init() {
 	if err != nil {
 		return
 	}
-
+	
 	_ = InitLogger(INFO, path.Join(basePath, "log", "vector_sphere.log"), 10, true) // 默认INFO级别，输出到终端，最大10MB
 }
 
