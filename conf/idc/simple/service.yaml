@@ -1,16 +1,32 @@
-serviceName: vector_sphere
-timeOut: 300
-defaultPort: 8080
-singleService: true
-heartbeat : 5
-endpoints:
-    service_1:
-        ip: 127.0.0.1
-        isMaster: true
-        port: 2379
-    service_2:
-        ip: 127.0.0.1
-        port: 22379
-    service_3:
-        ip: 127.0.0.1
-        port: 32379
+# config/service.yaml
+service:
+    name: "my-service"
+    port: 8080
+    tags: ["api", "v1"]
+    healthCheck:
+        type: "http"
+        path: "/health"
+        interval: "10s"
+        timeout: "5s"
+    loadBalancing:
+        strategy: "round-robin"
+        # 其他负载均衡配置
+etcd:
+    endpoints: ["127.0.0.1:2379"]
+    dialTimeout: "5s"
+    tls:
+        enabled: false
+        # certFile: "/path/to/cert.pem"
+        # keyFile: "/path/to/key.pem"
+        # caFile: "/path/to/ca.pem"
+    auth:
+        enabled: false
+        # username: "user"
+        # password: "password"
+
+# 其他配置，例如日志、度量等
+logging:
+    level: "info"
+metrics:
+    enabled: true
+    port: 9090

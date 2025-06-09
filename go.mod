@@ -6,6 +6,7 @@ toolchain go1.24.3
 
 require (
 	github.com/PuerkitoBio/goquery v1.10.3
+	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/dgraph-io/badger/v4 v4.7.0
 	github.com/go-ego/gse v0.80.3
 	github.com/go-sql-driver/mysql v1.9.2
@@ -23,6 +24,7 @@ require (
 	github.com/prometheus/client_golang v1.22.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/shirou/gopsutil/v3 v3.24.5
+	github.com/sony/gobreaker v1.0.0
 	github.com/unidoc/unioffice v1.39.0
 	github.com/wangbin/jiebago v0.3.2
 	go.etcd.io/bbolt v1.4.0
@@ -33,6 +35,7 @@ require (
 	golang.org/x/time v0.12.0
 	google.golang.org/grpc v1.73.0
 	gopkg.in/yaml.v2 v2.4.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
