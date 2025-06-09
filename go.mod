@@ -11,7 +11,7 @@ require (
 	github.com/go-ego/gse v0.80.3
 	github.com/go-sql-driver/mysql v1.9.2
 	github.com/gogo/protobuf v1.3.2
-	github.com/golang-jwt/jwt/v4 v4.3.0
+	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/golang/mock v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/huichen/sego v0.0.0-20210824061530-c87651ea5c76
