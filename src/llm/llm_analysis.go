@@ -220,9 +220,14 @@ func NewAnalysisService(vectorDBPath string, numClusters int, llmConfig LLMConfi
 
 	// 创建BadgerKV适配器
 	badgerKV := NewBadgerKV(badgerDB)
-
+	session := SessionConfig{
+		MaxSessionsPerUser:  10,
+		DefaultTTL:          defaultCacheTTL,
+		CleanupInterval:     defaultCleanupInterval,
+		ExpirationBatchSize: defaultRetryCount,
+	}
 	// 创建分布式会话存储
-	sessionStore := NewDistributedSessionStore(badgerKV, skipListIndex)
+	sessionStore := NewDistributedSessionStore(badgerKV, skipListIndex, session)
 
 	// 初始化分词器
 	var tokenizer TokenCounter
