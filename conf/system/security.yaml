@@ -1,0 +1,82 @@
+security:
+  tls:
+    certFile: "certs/server.crt"
+    keyFile: "certs/server.key"
+    caFile: "certs/ca.crt"
+    serverName: "vectorsphere.local"
+
+  rbac:
+    enabled: true
+    defaultRole: "readonly"
+    roles:
+      admin:
+        - "*:*"
+      service:
+        - "service:*"
+        - "config:read"
+        - "lock:*"
+      readonly:
+        - "config:read"
+        - "search:*"
+    policies:
+      - id: "admin_full_access"
+        subject: "role:admin"
+        resource: "*"
+        action: "*"
+        effect: "ALLOW"
+      - id: "service_limited_access"
+        subject: "role:service"
+        resource: "service"
+        action: "*"
+        effect: "ALLOW"
+
+  encryption:
+    algorithm: "AES-256-GCM"
+    keySize: 256
+    rotationDays: 30
+
+  audit:
+    enabled: true
+    logFile: "logs/audit.log"
+    retention: "90d"
+    logLevel: "INFO"
+    encrypted: true
+
+  network:
+    firewall:
+      enabled: true
+      rules:
+        - id: "allow_internal"
+          source: "10.0.0.0/8"
+          destination: "*"
+          port: 0
+          protocol: "*"
+          action: "ALLOW"
+          priority: 100
+        - id: "deny_external"
+          source: "0.0.0.0/0"
+          destination: "*"
+          port: 0
+          protocol: "*"
+          action: "DENY"
+          priority: 200
+
+    rateLimit:
+      enabled: true
+      requests: 100
+      window: "1m"
+      burstSize: 10
+
+    allowedIPs:
+      - "10.0.0.0/8"
+      - "172.16.0.0/12"
+      - "192.168.0.0/16"
+
+    blockedIPs:
+      - "0.0.0.0/32"  # 示例阻止IP
+
+  jwt:
+    secret: "your-super-secret-jwt-key-change-this-in-production"
+    expiration: "24h"
+    issuer: "VectorSphere"
+    algorithm: "HS256"

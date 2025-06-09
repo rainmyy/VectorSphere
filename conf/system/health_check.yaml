@@ -1,0 +1,44 @@
+healthCheck:
+  enabled: true
+  checkInterval: 30s
+  timeout: 5s
+  failureThreshold: 3
+  successThreshold: 2
+  heartbeatInterval: 10s
+  heartbeatTimeout: 3s
+  gracefulShutdown: 30s
+  retryPolicy:
+    maxElapsedTime: 300s
+    initialInterval: 1s
+    maxInterval: 30s
+    multiplier: 2.0
+    randomizationFactor: 0.1
+
+# 告警配置
+alerting:
+  enabled: true
+  webhookURL: "http://localhost:9093/api/v1/alerts"
+  email:
+    smtpServer: "smtp.example.com"
+    smtpPort: 587
+    username: "alerts@example.com"
+    password: "password"
+    from: "alerts@example.com"
+    to: ["admin@example.com"]
+
+  rules:
+    - name: "service_down"
+      condition: "status == 'NOT_SERVING'"
+      action: "send_alert"
+      cooldown: 300s
+    - name: "high_failure_rate"
+      condition: "failure_rate > 0.5"
+      action: "send_warning"
+      cooldown: 600s
+
+# 负载均衡健康检查集成
+loadBalancer:
+  healthAware: true
+  healthCheckInterval: 15s
+  unhealthyThreshold: 2
+  healthyThreshold: 1

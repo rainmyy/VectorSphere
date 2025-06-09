@@ -1,9 +1,12 @@
 package bootstrap
 
 import (
+	"VectorSphere/src/library/conf"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"go.etcd.io/etcd/client/pkg/v3/transport"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"log"
@@ -25,23 +28,25 @@ import (
 
 // AppConfig 应用配置
 type AppConfig struct {
-	AppName             string        `yaml:"appName"`
-	Version             string        `yaml:"version"`
-	ListenAddress       string        `yaml:"listenAddress"`
-	EtcdEndpoints       []string      `yaml:"etcdEndpoints"`
-	EtcdDialTimeout     time.Duration `yaml:"etcdDialTimeout"`
-	EtcdUsername        string        `yaml:"etcdUsername"`
-	EtcdPassword        string        `yaml:"etcdPassword"`
-	EtcdTLS             *TLSConfig    `yaml:"etcdTLS"`
-	ServiceRegistryPath string        `yaml:"serviceRegistryPath"` // e.g., /services/my-app/
-	ServiceTTL          int64         `yaml:"serviceTTL"`          // 服务租约TTL (秒)
-	ConfigPathPrefix    string        `yaml:"configPathPrefix"`    // 配置在etcd中的路径前缀, e.g., /config/my-app/
-	LockPathPrefix      string        `yaml:"lockPathPrefix"`      // 分布式锁路径前缀
-	ElectionPathPrefix  string        `yaml:"electionPathPrefix"`  // 领导者选举路径前缀
-	RetryPolicy         *RetryPolicy  `yaml:"retryPolicy"`
-	LoadBalancer        string        `yaml:"loadBalancer"` // e.g., "round_robin", "random"
-	CircuitBreaker      *CBConfig     `yaml:"circuitBreaker"`
-	RateLimiter         *RLConfig     `yaml:"rateLimiter"`
+	AppName             string             `yaml:"appName"`
+	Version             string             `yaml:"version"`
+	ListenAddress       string             `yaml:"listenAddress"`
+	EtcdEndpoints       []string           `yaml:"etcdEndpoints"`
+	EtcdDialTimeout     time.Duration      `yaml:"etcdDialTimeout"`
+	EtcdUsername        string             `yaml:"etcdUsername"`
+	EtcdPassword        string             `yaml:"etcdPassword"`
+	EtcdTLS             *TLSConfig         `yaml:"etcdTLS"`
+	ServiceRegistryPath string             `yaml:"serviceRegistryPath"` // e.g., /services/my-app/
+	ServiceTTL          int64              `yaml:"serviceTTL"`          // 服务租约TTL (秒)
+	ConfigPathPrefix    string             `yaml:"configPathPrefix"`    // 配置在etcd中的路径前缀, e.g., /config/my-app/
+	LockPathPrefix      string             `yaml:"lockPathPrefix"`      // 分布式锁路径前缀
+	ElectionPathPrefix  string             `yaml:"electionPathPrefix"`  // 领导者选举路径前缀
+	RetryPolicy         *RetryPolicy       `yaml:"retryPolicy"`
+	LoadBalancer        string             `yaml:"loadBalancer"` // e.g., "round_robin", "random"
+	CircuitBreaker      *CBConfig          `yaml:"circuitBreaker"`
+	RateLimiter         *RLConfig          `yaml:"rateLimiter"`
+	ClientTLS           *TLSConfig         `yaml:"clientTLS"` // 客户端TLS配置
+	HealthCheck         *HealthCheckConfig `yaml:"healthCheck"`
 }
 
 // TLSConfig TLS配置
@@ -50,6 +55,19 @@ type TLSConfig struct {
 	KeyFile    string `yaml:"keyFile"`
 	CAFile     string `yaml:"caFile"`
 	ServerName string `yaml:"serverName"` // 用于验证服务端证书的 CN
+}
+
+// HealthCheckConfig 健康检查配置
+type HealthCheckConfig struct {
+	Enabled           bool          `yaml:"enabled"`           // 是否启用健康检查
+	CheckInterval     time.Duration `yaml:"checkInterval"`     // 健康检查间隔
+	Timeout           time.Duration `yaml:"timeout"`           // 健康检查超时时间
+	FailureThreshold  int           `yaml:"failureThreshold"`  // 失败阈值
+	SuccessThreshold  int           `yaml:"successThreshold"`  // 成功阈值
+	HeartbeatInterval time.Duration `yaml:"heartbeatInterval"` // 心跳间隔
+	HeartbeatTimeout  time.Duration `yaml:"heartbeatTimeout"`  // 心跳超时
+	GracefulShutdown  time.Duration `yaml:"gracefulShutdown"`  // 优雅关闭时间
+	RetryPolicy       *RetryPolicy  `yaml:"retryPolicy"`       // 重试策略
 }
 
 // RetryPolicy 重试策略配置
@@ -79,33 +97,190 @@ type RLConfig struct {
 
 // AppContext 应用上下文
 type AppContext struct {
-	Config           *AppConfig
-	EtcdClient       *clientv3.Client
-	EtcdSession      *concurrency.Session // 用于分布式锁和选举
-	LeaseID          clientv3.LeaseID
-	cancelKeepAlive  context.CancelFunc
-	wg               sync.WaitGroup
-	mu               sync.Mutex
-	ServiceDiscovery *EtcdServiceDiscovery
-	DefaultBackOff   backoff.BackOff
-	CircuitBreakers  map[string]*gobreaker.CircuitBreaker // 服务名 -> 熔断器
-	RateLimiters     map[string]*rate.Limiter             // 服务名 -> 限流器
-	isLeader         bool
-	leaderChan       chan bool // 用于通知领导者状态变化
-	shutdownOnce     sync.Once
-	grpcServer       *grpc.Server // gRPC 服务器实例 (如果应用是gRPC服务)
+	Config                  *AppConfig
+	EtcdClient              *clientv3.Client
+	EtcdSession             *concurrency.Session // 用于分布式锁和选举
+	LeaseID                 clientv3.LeaseID
+	cancelKeepAlive         context.CancelFunc
+	wg                      sync.WaitGroup
+	mu                      sync.Mutex
+	ServiceDiscovery        *EtcdServiceDiscovery
+	DefaultBackOff          backoff.BackOff
+	CircuitBreakers         map[string]*gobreaker.CircuitBreaker // 服务名 -> 熔断器
+	RateLimiters            map[string]*rate.Limiter             // 服务名 -> 限流器
+	isLeader                bool
+	leaderChan              chan bool // 用于通知领导者状态变化
+	shutdownOnce            sync.Once
+	grpcServer              *grpc.Server // gRPC 服务器实例 (如果应用是gRPC服务)
+	EnhancedSecurityManager *EnhancedSecurityManager
+}
+
+// SecurityManager 安全管理器
+type SecurityManager struct {
+	tlsConfig   *tls.Config
+	rbacEnabled bool
+	userRoles   sync.Map // map[string][]string 用户角色映射
+	permissions sync.Map // map[string][]string 角色权限映射
+}
+
+// ConfigVersion 配置版本信息
+type ConfigVersion struct {
+	Version   int64     `json:"version"`
+	Data      []byte    `json:"data"`
+	Timestamp time.Time `json:"timestamp"`
+	Comment   string    `json:"comment"`
+}
+
+// NewSecurityManager 创建安全管理器
+func NewSecurityManager(tlsConfig *tls.Config, rbacEnabled bool) *SecurityManager {
+	sm := &SecurityManager{
+		tlsConfig:   tlsConfig,
+		rbacEnabled: rbacEnabled,
+	}
+
+	// 初始化默认角色和权限
+	sm.initDefaultRoles()
+
+	return sm
+}
+
+// initDefaultRoles 初始化默认角色
+func (sm *SecurityManager) initDefaultRoles() {
+	// 管理员角色
+	sm.permissions.Store("admin", []string{
+		"service:register",
+		"service:unregister",
+		"config:read",
+		"config:write",
+		"lock:acquire",
+		"lock:release",
+		"election:participate",
+	})
+
+	// 服务角色
+	sm.permissions.Store("service", []string{
+		"service:register",
+		"service:unregister",
+		"config:read",
+		"lock:acquire",
+		"lock:release",
+	})
+
+	// 只读角色
+	sm.permissions.Store("readonly", []string{
+		"config:read",
+	})
+}
+
+// AuthenticateAndAuthorize 认证和授权
+func (sm *SecurityManager) AuthenticateAndAuthorize(ctx context.Context, token string, requiredPermission string) error {
+	if !sm.rbacEnabled {
+		return nil // RBAC未启用，跳过检查
+	}
+
+	// 解析token获取用户信息（这里简化处理）
+	userID, err := sm.parseToken(token)
+	if err != nil {
+		return fmt.Errorf("authentication failed: %w", err)
+	}
+
+	// 获取用户角色
+	rolesInterface, exists := sm.userRoles.Load(userID)
+	if !exists {
+		return fmt.Errorf("user %s not found", userID)
+	}
+
+	userRoles := rolesInterface.([]string)
+
+	// 检查权限
+	for _, role := range userRoles {
+		if permissionsInterface, exists := sm.permissions.Load(role); exists {
+			permissions := permissionsInterface.([]string)
+			for _, permission := range permissions {
+				if permission == requiredPermission {
+					return nil // 有权限
+				}
+			}
+		}
+	}
+
+	return fmt.Errorf("insufficient permissions for %s", requiredPermission)
+}
+
+// parseToken 解析token（简化实现）
+func (sm *SecurityManager) parseToken(token string) (string, error) {
+	// 这里应该实现JWT token解析或其他认证机制
+	// 简化处理，直接返回token作为用户ID
+	if token == "" {
+		return "", fmt.Errorf("empty token")
+	}
+	return token, nil
+}
+
+// AddUser 添加用户
+func (sm *SecurityManager) AddUser(userID string, roles []string) {
+	sm.userRoles.Store(userID, roles)
+}
+
+// AddRole 添加角色
+func (sm *SecurityManager) AddRole(role string, permissions []string) {
+	sm.permissions.Store(role, permissions)
+}
+
+// GetTLSConfig 获取TLS配置
+func (sm *SecurityManager) GetTLSConfig() *tls.Config {
+	return sm.tlsConfig
+}
+
+// CreateSecureEtcdClient 创建安全的etcd客户端
+func CreateSecureEtcdClient(endpoints []string, tlsConfig *TLSConfig) (*clientv3.Client, error) {
+	cliConfig := clientv3.Config{
+		Endpoints:   endpoints,
+		DialTimeout: 5 * time.Second,
+	}
+
+	// 配置TLS
+	if tlsConfig != nil && tlsConfig.CertFile != "" {
+		tlsInfo := transport.TLSInfo{
+			CertFile:      tlsConfig.CertFile,
+			KeyFile:       tlsConfig.KeyFile,
+			TrustedCAFile: tlsConfig.CAFile,
+			ServerName:    tlsConfig.ServerName,
+		}
+
+		clientTLS, err := tlsInfo.ClientConfig()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create TLS config: %w", err)
+		}
+
+		cliConfig.TLS = clientTLS
+	}
+
+	return clientv3.New(cliConfig)
 }
 
 // NewAppContext 创建新的应用上下文
 func NewAppContext(config *AppConfig) (*AppContext, error) {
-	ctx := &AppContext{
-		Config:          config,
-		CircuitBreakers: make(map[string]*gobreaker.CircuitBreaker),
-		RateLimiters:    make(map[string]*rate.Limiter),
-		leaderChan:      make(chan bool, 1),
+	// 加载安全配置
+	securityConfig, err := loadSecurityConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load security config: %w", err)
 	}
 
-	var err error
+	// 创建增强的安全管理器
+	enhancedSecurityManager, err := NewEnhancedSecurityManager(securityConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create enhanced security manager: %w", err)
+	}
+
+	ctx := &AppContext{
+		Config:                  config,
+		CircuitBreakers:         make(map[string]*gobreaker.CircuitBreaker),
+		RateLimiters:            make(map[string]*rate.Limiter),
+		leaderChan:              make(chan bool, 1),
+		EnhancedSecurityManager: enhancedSecurityManager,
+	}
+
 	ctx.EtcdClient, err = initEtcdClient(config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize etcd client: %w", err)
@@ -165,6 +340,16 @@ func NewAppContext(config *AppConfig) (*AppContext, error) {
 	return ctx, nil
 }
 
+// loadSecurityConfig 加载安全配置
+func loadSecurityConfig() (*SecurityConfig, error) {
+	var securityConfig SecurityConfig
+	err := conf.ReadYAML("conf/security.yaml", &securityConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read security config: %w", err)
+	}
+	return &securityConfig, nil
+}
+
 // initEtcdClient 初始化etcd客户端
 func initEtcdClient(config *AppConfig) (*clientv3.Client, error) {
 	cliConfig := clientv3.Config{
@@ -175,7 +360,7 @@ func initEtcdClient(config *AppConfig) (*clientv3.Client, error) {
 	}
 
 	if config.EtcdTLS != nil && config.EtcdTLS.CertFile != "" && config.EtcdTLS.KeyFile != "" && config.EtcdTLS.CAFile != "" {
-		tlsInfo := credentials.TLSInfo{
+		tlsInfo := transport.TLSInfo{
 			CertFile:      config.EtcdTLS.CertFile,
 			KeyFile:       config.EtcdTLS.KeyFile,
 			TrustedCAFile: config.EtcdTLS.CAFile,

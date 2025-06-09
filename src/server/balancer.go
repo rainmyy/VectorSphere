@@ -1,12 +1,15 @@
 package server
 
 import (
+	"fmt"
 	"hash/crc32"
+	"math"
 	"math/rand"
 	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 const (
@@ -14,6 +17,11 @@ const (
 	RoundRobin
 	WeightedRoundRobin
 	ConsistentHash
+	LeastConnections     // 新增：最少连接数
+	SourceIPHash         // 新增：源IP哈希
+	ResponseTimeWeighted // 新增：响应时间加权
+	AdaptiveRoundRobin   // 新增：自适应轮询
+	AdaptiveWeighted
 )
 
 func LoadBalanceFactory(lbType int) Balancer {
@@ -26,6 +34,16 @@ func LoadBalanceFactory(lbType int) Balancer {
 		return &WeightRandomBalance{}
 	case ConsistentHash:
 		return NewConsistentHashBalancer(10, nil)
+	case LeastConnections:
+		return &LeastConnBalancer{}
+	case SourceIPHash:
+		return NewSourceIPHashBalancer()
+	case ResponseTimeWeighted:
+		return NewResponseTimeWeightedBalancer()
+	case AdaptiveRoundRobin:
+		return NewAdaptiveRoundRobinBalancer()
+	case AdaptiveWeighted:
+		return NewAdaptiveWeightedBalancer()
 	default:
 		return &RoundRobinBalancer{}
 	}
@@ -243,4 +261,367 @@ func (c *ConsistentHashBalancer) Take() EndPoint {
 	defer c.mux.RUnlock()
 
 	return c.hashMap[c.keys[idx]]
+}
+
+// 源IP哈希负载均衡器
+type SourceIPHashBalancer struct {
+	endpoints []EndPoint
+	mu        sync.RWMutex
+}
+
+func NewSourceIPHashBalancer() *SourceIPHashBalancer {
+	return &SourceIPHashBalancer{}
+}
+
+func (s *SourceIPHashBalancer) Set(endpoints ...EndPoint) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.endpoints = endpoints
+	return true
+}
+
+func (s *SourceIPHashBalancer) Take() EndPoint {
+	return s.TakeWithContext("")
+}
+
+func (s *SourceIPHashBalancer) TakeWithContext(clientIP string) EndPoint {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if len(s.endpoints) == 0 {
+		return EndPoint{}
+	}
+
+	if clientIP == "" {
+		// 如果没有客户端IP，回退到轮询
+		return s.endpoints[0]
+	}
+
+	hash := crc32.ChecksumIEEE([]byte(clientIP))
+	index := int(hash) % len(s.endpoints)
+	return s.endpoints[index]
+}
+
+// 响应时间加权负载均衡器
+type ResponseTimeWeightedBalancer struct {
+	endpoints     []EndPoint
+	responseTimes []int64 // 平均响应时间（毫秒）
+	requestCounts []int64 // 请求计数
+	mu            sync.RWMutex
+}
+
+func NewResponseTimeWeightedBalancer() *ResponseTimeWeightedBalancer {
+	return &ResponseTimeWeightedBalancer{}
+}
+
+func (r *ResponseTimeWeightedBalancer) Set(endpoints ...EndPoint) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.endpoints = endpoints
+	r.responseTimes = make([]int64, len(endpoints))
+	r.requestCounts = make([]int64, len(endpoints))
+
+	// 初始化响应时间为100ms
+	for i := range r.responseTimes {
+		r.responseTimes[i] = 100
+	}
+	return true
+}
+
+func (r *ResponseTimeWeightedBalancer) Take() EndPoint {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if len(r.endpoints) == 0 {
+		return EndPoint{}
+	}
+
+	// 计算权重（响应时间越低权重越高）
+	var totalWeight float64
+	weights := make([]float64, len(r.endpoints))
+
+	for i, responseTime := range r.responseTimes {
+		if responseTime > 0 {
+			weights[i] = 1000.0 / float64(responseTime) // 倒数作为权重
+		} else {
+			weights[i] = 10.0 // 默认权重
+		}
+		totalWeight += weights[i]
+	}
+
+	// 加权随机选择
+	random := rand.Float64() * totalWeight
+	var currentWeight float64
+
+	for i, weight := range weights {
+		currentWeight += weight
+		if random <= currentWeight {
+			return r.endpoints[i]
+		}
+	}
+
+	return r.endpoints[0]
+}
+
+// 记录响应时间
+func (r *ResponseTimeWeightedBalancer) RecordResponseTime(endpoint EndPoint, responseTime time.Duration) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for i, ep := range r.endpoints {
+		if ep.Ip == endpoint.Ip && ep.Port == endpoint.Port {
+			// 使用移动平均计算响应时间
+			count := atomic.LoadInt64(&r.requestCounts[i])
+			currentAvg := atomic.LoadInt64(&r.responseTimes[i])
+
+			newAvg := (currentAvg*count + responseTime.Milliseconds()) / (count + 1)
+			atomic.StoreInt64(&r.responseTimes[i], newAvg)
+			atomic.AddInt64(&r.requestCounts[i], 1)
+			break
+		}
+	}
+}
+
+// 自适应轮询负载均衡器
+type AdaptiveRoundRobinBalancer struct {
+	endpoints      []EndPoint
+	current        int64
+	loadFactors    []float64 // 负载因子
+	mu             sync.RWMutex
+	lastUpdate     time.Time
+	updateInterval time.Duration
+}
+
+func NewAdaptiveRoundRobinBalancer() *AdaptiveRoundRobinBalancer {
+	return &AdaptiveRoundRobinBalancer{
+		updateInterval: 30 * time.Second,
+		lastUpdate:     time.Now(),
+	}
+}
+
+func (a *AdaptiveRoundRobinBalancer) Set(endpoints ...EndPoint) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.endpoints = endpoints
+	a.loadFactors = make([]float64, len(endpoints))
+
+	// 初始化负载因子为1.0
+	for i := range a.loadFactors {
+		a.loadFactors[i] = 1.0
+	}
+	return true
+}
+
+func (a *AdaptiveRoundRobinBalancer) Take() EndPoint {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if len(a.endpoints) == 0 {
+		return EndPoint{}
+	}
+
+	// 根据负载因子调整选择
+	minLoadIndex := 0
+	minLoad := a.loadFactors[0]
+
+	for i, load := range a.loadFactors {
+		if load < minLoad {
+			minLoad = load
+			minLoadIndex = i
+		}
+	}
+
+	return a.endpoints[minLoadIndex]
+}
+
+// UpdateLoadFactor 更新负载因子
+func (a *AdaptiveRoundRobinBalancer) UpdateLoadFactor(endpoint EndPoint, loadFactor float64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	for i, ep := range a.endpoints {
+		if ep.Ip == endpoint.Ip && ep.Port == endpoint.Port {
+			a.loadFactors[i] = loadFactor
+			break
+		}
+	}
+	a.lastUpdate = time.Now()
+}
+
+// HealthAwareBalancer 健康感知负载均衡器
+type HealthAwareBalancer struct {
+	endpoints    []EndPoint
+	healthStatus map[string]bool
+	mu           sync.RWMutex
+	balancer     Balancer
+}
+
+// NewHealthAwareBalancer 创建健康感知负载均衡器
+func NewHealthAwareBalancer(balancer Balancer) *HealthAwareBalancer {
+	return &HealthAwareBalancer{
+		balancer:     balancer,
+		healthStatus: make(map[string]bool),
+	}
+}
+
+// Set 设置端点
+func (hab *HealthAwareBalancer) Set(endpoints ...EndPoint) bool {
+	hab.mu.Lock()
+	defer hab.mu.Unlock()
+
+	// 过滤健康的端点
+	var healthyEndpoints []EndPoint
+	for _, ep := range endpoints {
+		key := fmt.Sprintf("%s:%d", ep.Ip, ep.Port)
+		if healthy, exists := hab.healthStatus[key]; !exists || healthy {
+			healthyEndpoints = append(healthyEndpoints, ep)
+		}
+	}
+
+	hab.endpoints = healthyEndpoints
+	return hab.balancer.Set(healthyEndpoints...)
+}
+
+// Take 获取端点
+func (hab *HealthAwareBalancer) Take() EndPoint {
+	return hab.balancer.Take()
+}
+
+// UpdateHealth 更新健康状态
+func (hab *HealthAwareBalancer) UpdateHealth(endpoint string, healthy bool) {
+	hab.mu.Lock()
+	hab.healthStatus[endpoint] = healthy
+	hab.mu.Unlock()
+
+	// 重新设置端点
+	hab.Set(hab.endpoints...)
+}
+
+// AdaptiveWeightedBalancer 自适应加权负载均衡器
+type AdaptiveWeightedBalancer struct {
+	endpoints     []EndPoint
+	weights       []int64
+	responseTime  []int64 // 响应时间（毫秒）
+	errorCount    []int64 // 错误计数
+	totalRequests []int64 // 总请求数
+	mu            sync.RWMutex
+	current       int64
+}
+
+// NewAdaptiveWeightedBalancer 创建自适应加权负载均衡器
+func NewAdaptiveWeightedBalancer() *AdaptiveWeightedBalancer {
+	return &AdaptiveWeightedBalancer{}
+}
+
+// Set 设置端点
+func (awb *AdaptiveWeightedBalancer) Set(endpoints ...EndPoint) bool {
+	awb.mu.Lock()
+	defer awb.mu.Unlock()
+
+	awb.endpoints = endpoints
+	awb.weights = make([]int64, len(endpoints))
+	awb.responseTime = make([]int64, len(endpoints))
+	awb.errorCount = make([]int64, len(endpoints))
+	awb.totalRequests = make([]int64, len(endpoints))
+
+	// 初始化权重
+	for i, ep := range endpoints {
+		if ep.weight > 0 {
+			awb.weights[i] = int64(ep.weight)
+		} else {
+			awb.weights[i] = 100 // 默认权重
+		}
+	}
+
+	return true
+}
+
+// Take 获取端点
+func (awb *AdaptiveWeightedBalancer) Take() EndPoint {
+	awb.mu.RLock()
+	defer awb.mu.RUnlock()
+
+	if len(awb.endpoints) == 0 {
+		return EndPoint{}
+	}
+
+	// 计算动态权重
+	dynamicWeights := awb.calculateDynamicWeights()
+
+	// 加权随机选择
+	totalWeight := int64(0)
+	for _, w := range dynamicWeights {
+		totalWeight += w
+	}
+
+	if totalWeight == 0 {
+		return awb.endpoints[0]
+	}
+
+	r := rand.Int63n(totalWeight)
+	for i, w := range dynamicWeights {
+		if r < w {
+			return awb.endpoints[i]
+		}
+		r -= w
+	}
+
+	return awb.endpoints[0]
+}
+
+// calculateDynamicWeights 计算动态权重
+func (awb *AdaptiveWeightedBalancer) calculateDynamicWeights() []int64 {
+	dynamicWeights := make([]int64, len(awb.endpoints))
+
+	for i := range awb.endpoints {
+		baseWeight := awb.weights[i]
+		responseTime := atomic.LoadInt64(&awb.responseTime[i])
+		errorCount := atomic.LoadInt64(&awb.errorCount[i])
+		totalRequests := atomic.LoadInt64(&awb.totalRequests[i])
+
+		// 计算错误率
+		errorRate := float64(0)
+		if totalRequests > 0 {
+			errorRate = float64(errorCount) / float64(totalRequests)
+		}
+
+		// 根据响应时间和错误率调整权重
+		weightFactor := float64(1)
+
+		// 响应时间因子（响应时间越长，权重越低）
+		if responseTime > 0 {
+			weightFactor *= math.Max(0.1, 1.0/(1.0+float64(responseTime)/1000.0))
+		}
+
+		// 错误率因子（错误率越高，权重越低）
+		if errorRate > 0 {
+			weightFactor *= math.Max(0.1, 1.0-errorRate)
+		}
+
+		dynamicWeights[i] = int64(float64(baseWeight) * weightFactor)
+		if dynamicWeights[i] < 1 {
+			dynamicWeights[i] = 1
+		}
+	}
+
+	return dynamicWeights
+}
+
+// RecordResponse 记录响应
+func (awb *AdaptiveWeightedBalancer) RecordResponse(endpoint EndPoint, responseTime time.Duration, success bool) {
+	awb.mu.RLock()
+	defer awb.mu.RUnlock()
+
+	for i, ep := range awb.endpoints {
+		if ep.Ip == endpoint.Ip && ep.Port == endpoint.Port {
+			atomic.StoreInt64(&awb.responseTime[i], responseTime.Milliseconds())
+			atomic.AddInt64(&awb.totalRequests[i], 1)
+			if !success {
+				atomic.AddInt64(&awb.errorCount[i], 1)
+			}
+			break
+		}
+	}
 }

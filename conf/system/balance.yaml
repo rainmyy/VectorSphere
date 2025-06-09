@@ -1,0 +1,90 @@
+
+# 负载均衡配置
+loadBalancing:
+  # 默认策略
+  defaultStrategy: "round_robin"
+
+  # 客户端负载均衡配置
+  clientSide:
+    enabled: true
+    strategies:
+      - name: "round_robin"
+        weight: 1
+      - name: "random"
+        weight: 1
+      - name: "weighted"
+        weight: 2
+      - name: "least_conn"
+        weight: 3
+      - name: "consistent_hash"
+        weight: 1
+      - name: "source_ip_hash"
+        weight: 2
+      - name: "response_time"
+        weight: 3
+      - name: "adaptive"
+        weight: 4
+
+    # 健康检查配置
+    healthCheck:
+      enabled: true
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+    # 熔断器配置
+    circuitBreaker:
+      enabled: true
+      failureThreshold: 5
+      recoveryTimeout: 30s
+      halfOpenMaxRequests: 3
+
+  # 服务端负载均衡配置
+  serverSide:
+    enabled: true
+    # Nginx/HAProxy配置
+    proxy:
+      type: "nginx" # nginx, haproxy, envoy
+      configPath: "/etc/nginx/conf.d/vectorsphere.conf"
+
+    # API Gateway配置
+    gateway:
+      enabled: false
+      type: "kong" # kong, zuul, spring-cloud-gateway
+
+  # 服务发现集成
+  serviceDiscovery:
+    etcd:
+      enabled: true
+      watchInterval: 10s
+      cacheTimeout: 60s
+
+  # 负载均衡指标监控
+  metrics:
+    enabled: true
+    endpoint: "/metrics/loadbalancer"
+    interval: 30s
+
+# 灰度发布配置
+grayRelease:
+  enabled: true
+  strategies:
+    - name: "canary"
+      percentage: 10
+      tags:
+        env: "canary"
+    - name: "blue_green"
+      enabled: false
+
+# 限流配置
+rateLimit:
+  enabled: true
+  global:
+    rps: 1000
+    burst: 2000
+  perService:
+    rps: 100
+    burst: 200
+  perClient:
+    rps: 10
+    burst: 20
