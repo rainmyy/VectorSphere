@@ -2,8 +2,8 @@ package bootstrap
 
 import (
 	"VectorSphere/src/library/conf"
+	"VectorSphere/src/library/security"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"go.etcd.io/etcd/client/pkg/v3/transport"
@@ -112,15 +112,7 @@ type AppContext struct {
 	leaderChan              chan bool // 用于通知领导者状态变化
 	shutdownOnce            sync.Once
 	grpcServer              *grpc.Server // gRPC 服务器实例 (如果应用是gRPC服务)
-	EnhancedSecurityManager *EnhancedSecurityManager
-}
-
-// SecurityManager 安全管理器
-type SecurityManager struct {
-	tlsConfig   *tls.Config
-	rbacEnabled bool
-	userRoles   sync.Map // map[string][]string 用户角色映射
-	permissions sync.Map // map[string][]string 角色权限映射
+	EnhancedSecurityManager *security.EnhancedSecurityManager
 }
 
 // ConfigVersion 配置版本信息
@@ -129,107 +121,6 @@ type ConfigVersion struct {
 	Data      []byte    `json:"data"`
 	Timestamp time.Time `json:"timestamp"`
 	Comment   string    `json:"comment"`
-}
-
-// NewSecurityManager 创建安全管理器
-func NewSecurityManager(tlsConfig *tls.Config, rbacEnabled bool) *SecurityManager {
-	sm := &SecurityManager{
-		tlsConfig:   tlsConfig,
-		rbacEnabled: rbacEnabled,
-	}
-
-	// 初始化默认角色和权限
-	sm.initDefaultRoles()
-
-	return sm
-}
-
-// initDefaultRoles 初始化默认角色
-func (sm *SecurityManager) initDefaultRoles() {
-	// 管理员角色
-	sm.permissions.Store("admin", []string{
-		"service:register",
-		"service:unregister",
-		"config:read",
-		"config:write",
-		"lock:acquire",
-		"lock:release",
-		"election:participate",
-	})
-
-	// 服务角色
-	sm.permissions.Store("service", []string{
-		"service:register",
-		"service:unregister",
-		"config:read",
-		"lock:acquire",
-		"lock:release",
-	})
-
-	// 只读角色
-	sm.permissions.Store("readonly", []string{
-		"config:read",
-	})
-}
-
-// AuthenticateAndAuthorize 认证和授权
-func (sm *SecurityManager) AuthenticateAndAuthorize(ctx context.Context, token string, requiredPermission string) error {
-	if !sm.rbacEnabled {
-		return nil // RBAC未启用，跳过检查
-	}
-
-	// 解析token获取用户信息（这里简化处理）
-	userID, err := sm.parseToken(token)
-	if err != nil {
-		return fmt.Errorf("authentication failed: %w", err)
-	}
-
-	// 获取用户角色
-	rolesInterface, exists := sm.userRoles.Load(userID)
-	if !exists {
-		return fmt.Errorf("user %s not found", userID)
-	}
-
-	userRoles := rolesInterface.([]string)
-
-	// 检查权限
-	for _, role := range userRoles {
-		if permissionsInterface, exists := sm.permissions.Load(role); exists {
-			permissions := permissionsInterface.([]string)
-			for _, permission := range permissions {
-				if permission == requiredPermission {
-					return nil // 有权限
-				}
-			}
-		}
-	}
-
-	return fmt.Errorf("insufficient permissions for %s", requiredPermission)
-}
-
-// parseToken 解析token（简化实现）
-func (sm *SecurityManager) parseToken(token string) (string, error) {
-	// 这里应该实现JWT token解析或其他认证机制
-	// 简化处理，直接返回token作为用户ID
-	if token == "" {
-		return "", fmt.Errorf("empty token")
-	}
-	return token, nil
-}
-
-// AddUser 添加用户
-func (sm *SecurityManager) AddUser(userID string, roles []string) {
-	sm.userRoles.Store(userID, roles)
-}
-
-// AddRole 添加角色
-func (sm *SecurityManager) AddRole(role string, permissions []string) {
-	sm.permissions.Store(role, permissions)
-}
-
-// GetTLSConfig 获取TLS配置
-func (sm *SecurityManager) GetTLSConfig() *tls.Config {
-	return sm.tlsConfig
 }
 
 // CreateSecureEtcdClient 创建安全的etcd客户端
@@ -268,7 +159,7 @@ func NewAppContext(config *AppConfig) (*AppContext, error) {
 	}
 
 	// 创建增强的安全管理器
-	enhancedSecurityManager, err := NewEnhancedSecurityManager(securityConfig)
+	enhancedSecurityManager, err := security.NewEnhancedSecurityManager(securityConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create enhanced security manager: %w", err)
 	}
@@ -341,8 +232,8 @@ func NewAppContext(config *AppConfig) (*AppContext, error) {
 }
 
 // loadSecurityConfig 加载安全配置
-func loadSecurityConfig() (*SecurityConfig, error) {
-	var securityConfig SecurityConfig
+func loadSecurityConfig() (*security.SecurityConfig, error) {
+	var securityConfig security.SecurityConfig
 	err := conf.ReadYAML("conf/security.yaml", &securityConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read security config: %w", err)
@@ -1083,7 +974,7 @@ func createGrpcClient(appCtx *AppContext, serviceName string) (*grpc.ClientConn,
 	var clientCreds credentials.TransportCredentials
 	if appCtx.Config.ClientTLS != nil { // 假设有一个ClientTLS配置
 		var err error
-		clientCreds, err = loadClientTLS(appCtx.Config.ClientTLS)
+		clientCreds, err = security.LoadClientTLS(appCtx.Config.ClientTLS)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load client TLS credentials: %w", err)
 		}

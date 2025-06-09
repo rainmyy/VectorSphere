@@ -1,19 +1,18 @@
 package db
 
 import (
+	"VectorSphere/src/library/security"
 	"fmt"
-
-	"VectorSphere/src/bootstrap"
 )
 
 // EncryptedDB 加密数据库包装器
 type EncryptedDB struct {
 	db              KvDb
-	securityManager *bootstrap.EnhancedSecurityManager
+	securityManager *security.EnhancedSecurityManager
 }
 
 // NewEncryptedDB 创建加密数据库
-func NewEncryptedDB(db KvDb, sm *bootstrap.EnhancedSecurityManager) *EncryptedDB {
+func NewEncryptedDB(db KvDb, sm *security.EnhancedSecurityManager) *EncryptedDB {
 	return &EncryptedDB{
 		db:              db,
 		securityManager: sm,

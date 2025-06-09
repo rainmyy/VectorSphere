@@ -1,6 +1,7 @@
-package bootstrap
+package security
 
 import (
+	"VectorSphere/src/bootstrap"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -22,6 +23,14 @@ import (
 	"VectorSphere/src/library/log"
 	"github.com/golang-jwt/jwt/v4"
 )
+
+// SecurityManager 安全管理器
+type SecurityManager struct {
+	tlsConfig   *tls.Config
+	rbacEnabled bool
+	userRoles   sync.Map // map[string][]string 用户角色映射
+	permissions sync.Map // map[string][]string 角色权限映射
+}
 
 // EnhancedSecurityManager 增强的安全管理器
 type EnhancedSecurityManager struct {
@@ -94,12 +103,12 @@ type EncryptionConfig struct {
 
 // SecurityConfig 安全配置
 type SecurityConfig struct {
-	TLS        *TLSConfig        `yaml:"tls"`
-	RBAC       *RBACConfig       `yaml:"rbac"`
-	Encryption *EncryptionConfig `yaml:"encryption"`
-	Audit      *AuditConfig      `yaml:"audit"`
-	Network    *NetworkConfig    `yaml:"network"`
-	JWT        *JWTConfig        `yaml:"jwt"`
+	TLS        *bootstrap.TLSConfig `yaml:"tls"`
+	RBAC       *RBACConfig          `yaml:"rbac"`
+	Encryption *EncryptionConfig    `yaml:"encryption"`
+	Audit      *AuditConfig         `yaml:"audit"`
+	Network    *NetworkConfig       `yaml:"network"`
+	JWT        *JWTConfig           `yaml:"jwt"`
 }
 
 // RBACConfig RBAC配置
@@ -232,7 +241,7 @@ func NewEnhancedSecurityManager(config *SecurityConfig) (*EnhancedSecurityManage
 }
 
 // createTLSConfig 创建TLS配置
-func createTLSConfig(config *TLSConfig) (*tls.Config, error) {
+func createTLSConfig(config *bootstrap.TLSConfig) (*tls.Config, error) {
 	if config == nil {
 		return nil, nil
 	}
@@ -266,6 +275,107 @@ func createTLSConfig(config *TLSConfig) (*tls.Config, error) {
 	}
 
 	return tlsConfig, nil
+}
+
+// NewSecurityManager 创建安全管理器
+func NewSecurityManager(tlsConfig *tls.Config, rbacEnabled bool) *SecurityManager {
+	sm := &SecurityManager{
+		tlsConfig:   tlsConfig,
+		rbacEnabled: rbacEnabled,
+	}
+
+	// 初始化默认角色和权限
+	sm.initDefaultRoles()
+
+	return sm
+}
+
+// initDefaultRoles 初始化默认角色
+func (sm *SecurityManager) initDefaultRoles() {
+	// 管理员角色
+	sm.permissions.Store("admin", []string{
+		"service:register",
+		"service:unregister",
+		"config:read",
+		"config:write",
+		"lock:acquire",
+		"lock:release",
+		"election:participate",
+	})
+
+	// 服务角色
+	sm.permissions.Store("service", []string{
+		"service:register",
+		"service:unregister",
+		"config:read",
+		"lock:acquire",
+		"lock:release",
+	})
+
+	// 只读角色
+	sm.permissions.Store("readonly", []string{
+		"config:read",
+	})
+}
+
+// AuthenticateAndAuthorize 认证和授权
+func (sm *SecurityManager) AuthenticateAndAuthorize(ctx context.Context, token string, requiredPermission string) error {
+	if !sm.rbacEnabled {
+		return nil // RBAC未启用，跳过检查
+	}
+
+	// 解析token获取用户信息（这里简化处理）
+	userID, err := sm.parseToken(token)
+	if err != nil {
+		return fmt.Errorf("authentication failed: %w", err)
+	}
+
+	// 获取用户角色
+	rolesInterface, exists := sm.userRoles.Load(userID)
+	if !exists {
+		return fmt.Errorf("user %s not found", userID)
+	}
+
+	userRoles := rolesInterface.([]string)
+
+	// 检查权限
+	for _, role := range userRoles {
+		if permissionsInterface, exists := sm.permissions.Load(role); exists {
+			permissions := permissionsInterface.([]string)
+			for _, permission := range permissions {
+				if permission == requiredPermission {
+					return nil // 有权限
+				}
+			}
+		}
+	}
+
+	return fmt.Errorf("insufficient permissions for %s", requiredPermission)
+}
+
+// parseToken 解析token（简化实现）
+func (sm *SecurityManager) parseToken(token string) (string, error) {
+	// 这里应该实现JWT token解析或其他认证机制
+	// 简化处理，直接返回token作为用户ID
+	if token == "" {
+		return "", fmt.Errorf("empty token")
+	}
+	return token, nil
+}
+
+// AddUser 添加用户
+func (sm *SecurityManager) AddUser(userID string, roles []string) {
+	sm.userRoles.Store(userID, roles)
+}
+
+// AddRole 添加角色
+func (sm *SecurityManager) AddRole(role string, permissions []string) {
+	sm.permissions.Store(role, permissions)
+}
+
+// GetTLSConfig 获取TLS配置
+func (sm *SecurityManager) GetTLSConfig() *tls.Config {
+	return sm.tlsConfig
 }
 
 // initRBACPolicies 初始化RBAC策略
@@ -618,8 +728,8 @@ func (esm *EnhancedSecurityManager) RotateEncryptionKey() error {
 	return nil
 }
 
-// loadClientTLS 加载客户端TLS配置
-func loadClientTLS(tlsConfig *TLSConfig) (credentials.TransportCredentials, error) {
+// LoadClientTLS 加载客户端TLS配置
+func LoadClientTLS(tlsConfig *bootstrap.TLSConfig) (credentials.TransportCredentials, error) {
 	if tlsConfig == nil {
 		return nil, fmt.Errorf("TLS config is nil")
 	}

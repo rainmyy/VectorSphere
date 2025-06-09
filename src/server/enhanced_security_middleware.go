@@ -1,6 +1,7 @@
 package server
 
 import (
+	"VectorSphere/src/library/security"
 	"context"
 	"fmt"
 	"github.com/sony/gobreaker"
@@ -9,17 +10,16 @@ import (
 	"strings"
 	"time"
 
-	"VectorSphere/src/bootstrap"
 	"VectorSphere/src/library/log"
 )
 
 // SecurityMiddleware 安全中间件
 type SecurityMiddleware struct {
-	securityManager *bootstrap.EnhancedSecurityManager
+	securityManager *security.EnhancedSecurityManager
 }
 
 // NewSecurityMiddleware 创建安全中间件
-func NewSecurityMiddleware(sm *bootstrap.EnhancedSecurityManager) *SecurityMiddleware {
+func NewSecurityMiddleware(sm *security.EnhancedSecurityManager) *SecurityMiddleware {
 	return &SecurityMiddleware{
 		securityManager: sm,
 	}
