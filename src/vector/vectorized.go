@@ -1,4 +1,4 @@
-package db
+package vector
 
 import (
 	"VectorSphere/src/library/log"

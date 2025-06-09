@@ -1,15 +1,15 @@
 package search
 
 import (
-	"VectorSphere/src/db"
 	"VectorSphere/src/index"
 	"VectorSphere/src/library/tree"
 	"VectorSphere/src/messages"
+	"VectorSphere/src/vector"
 	"fmt"
 )
 
 type SearchService struct {
-	VectorDB      *db.VectorDB
+	VectorDB      *vector.VectorDB
 	InvertedIndex *index.MVCCBPlusTreeInvertedIndex
 	TxMgr         *tree.TransactionManager
 	LockMgr       *tree.LockManager
@@ -17,7 +17,7 @@ type SearchService struct {
 }
 
 func NewSearchService(vectorDBPath string, numClusters int, invertedIndexOrder int, txMgr *tree.TransactionManager, lockMgr *tree.LockManager, wal *tree.WALManager) *SearchService {
-	vectorDB := db.NewVectorDB(vectorDBPath, numClusters)
+	vectorDB := vector.NewVectorDB(vectorDBPath, numClusters)
 	invertedIndex := index.NewMVCCBPlusTreeInvertedIndex(invertedIndexOrder, txMgr, lockMgr, wal, vectorDB)
 
 	return &SearchService{

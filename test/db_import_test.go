@@ -1,12 +1,12 @@
 package test
 
 import (
-	"VectorSphere/src/db"
 	"VectorSphere/src/library/log"
 	"VectorSphere/src/library/tree"
 	"VectorSphere/src/messages"
 	"VectorSphere/src/search"
 	"VectorSphere/src/service"
+	"VectorSphere/src/vector"
 	"fmt"
 	"time"
 )
@@ -95,7 +95,7 @@ func test_1() {
 		DataSource:     "user:password@tcp(localhost:3306)/mydatabase",
 		BatchSize:      100,
 		WorkerCount:    4,
-		VectorizedType: db.DefaultVectorized,
+		VectorizedType: vector.DefaultVectorized,
 		FieldMappings: map[string]string{
 			"product_name":        "name",
 			"product_description": "description",

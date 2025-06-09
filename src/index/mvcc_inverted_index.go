@@ -1,11 +1,11 @@
 package index
 
 import (
-	"VectorSphere/src/db"
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/log"
 	"VectorSphere/src/library/tree"
 	"VectorSphere/src/messages"
+	"VectorSphere/src/vector"
 	"fmt"
 	"hash/fnv"
 	"runtime"
@@ -73,7 +73,7 @@ type MVCCBPlusTreeInvertedIndex struct {
 	tree     *tree.MVCCBPlusTree
 	order    int
 	mu       sync.RWMutex
-	vectorDB *db.VectorDB // Add VectorDB field
+	vectorDB *vector.VectorDB // Add VectorDB field
 	// 新增字段
 	stats   PerformanceStats
 	statsMu sync.RWMutex
@@ -85,7 +85,7 @@ type MVCCBPlusTreeInvertedIndex struct {
 	cacheTTL   int64 // 缓存有效期（秒）
 }
 
-func NewMVCCBPlusTreeInvertedIndex(order int, txMgr *tree.TransactionManager, lockMgr *tree.LockManager, wal *tree.WALManager, vectorDB *db.VectorDB) *MVCCBPlusTreeInvertedIndex {
+func NewMVCCBPlusTreeInvertedIndex(order int, txMgr *tree.TransactionManager, lockMgr *tree.LockManager, wal *tree.WALManager, vectorDB *vector.VectorDB) *MVCCBPlusTreeInvertedIndex {
 	return &MVCCBPlusTreeInvertedIndex{
 		tree:  tree.NewMVCCBPlusTree(order, txMgr, lockMgr, wal),
 		order: order,
@@ -375,7 +375,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) Add(tx *tree.Transaction, doc messages.Do
 
 		if docTextForVectorDB != "" {
 			// 使用GetVectorForText获取向量
-			vector, err := idx.vectorDB.GetVectorForTextWithCache(docTextForVectorDB, db.DefaultVectorized)
+			vector, err := idx.vectorDB.GetVectorForTextWithCache(docTextForVectorDB, vector.DefaultVectorized)
 			if err == nil {
 				docVector = vector
 			}
@@ -443,7 +443,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) Add(tx *tree.Transaction, doc messages.Do
 
 		if docTextForVectorDB != "" {
 			// Use a default vectorization type or make it configurable
-			if err := idx.vectorDB.AddDocument(doc.Id, docTextForVectorDB, db.DefaultVectorized); err != nil {
+			if err := idx.vectorDB.AddDocument(doc.Id, docTextForVectorDB, vector.DefaultVectorized); err != nil {
 				// VectorDB Add failed, attempt to roll back B+Tree changes for successfully added keywords
 				fmt.Printf("Warning: Failed to add document %s to VectorDB: %v. Attempting B+Tree rollback.\n", doc.Id, err)
 				rollbackErr := idx.rollbackBTreeAdd(tx, doc.Id, keywords)
@@ -776,7 +776,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) Search(
 				idx.cacheMu.RUnlock()
 
 				// 缓存未命中，执行向量搜索
-				queryVec, errVec := idx.vectorDB.GetVectorForTextWithCache(vectorQueryText, db.DefaultVectorized)
+				queryVec, errVec := idx.vectorDB.GetVectorForTextWithCache(vectorQueryText, vector.DefaultVectorized)
 				if errVec != nil {
 					vectorErr = fmt.Errorf("error vectorizing query text for vector search: %w", errVec)
 					return
@@ -800,7 +800,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) Search(
 							nprobe = 32
 						}
 
-						options := db.SearchOptions{
+						options := vector.SearchOptions{
 							Nprobe:        nprobe,
 							NumHashTables: 4 + vectorCount/10000, // 根据数据规模调整哈希表数量
 							UseANN:        true,

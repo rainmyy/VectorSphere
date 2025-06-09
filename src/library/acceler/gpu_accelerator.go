@@ -1,6 +1,6 @@
 //go:build gpu
 
-package algorithm
+package acceler
 
 /*
 集成FAISS-GPU 步骤:

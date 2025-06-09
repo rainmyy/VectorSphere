@@ -1,6 +1,7 @@
-package algorithm
+package acceler
 
 import (
+	"VectorSphere/src/library/algorithm"
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/enum"
 	"bufio"
@@ -420,7 +421,7 @@ func TrainPQCodebook(
 		}
 
 		fmt.Printf("    对 %d 个子向量进行K-Means聚类...\n", len(subspaceTrainingPoints))
-		centroids, _, err := KMeans(subspaceTrainingPoints, numCentroidsPerSubvector, maxKMeansIterations, kMeansTolerance)
+		centroids, _, err := algorithm.KMeans(subspaceTrainingPoints, numCentroidsPerSubvector, maxKMeansIterations, kMeansTolerance)
 		if err != nil {
 			return fmt.Errorf("子空间 %d K-Means 聚类失败: %w", i, err)
 		}
@@ -486,7 +487,7 @@ func CompressByPQ(vec []float64, loadedCodebook [][]entity.Point, numSubvectors 
 		assignedCentroidIndex := -1
 
 		for centroidIdx, centroid := range currentSubspaceCodebook {
-			distSq, err := EuclideanDistanceSquared(subVecPoint, centroid)
+			distSq, err := algorithm.EuclideanDistanceSquared(subVecPoint, centroid)
 			if err != nil {
 				return entity.CompressedVector{}, fmt.Errorf("计算到质心 %d (子空间 %d) 的距离失败: %w", centroidIdx, i, err)
 			}
@@ -796,7 +797,7 @@ func ApproximateDistanceADC(queryVector []float64, compressedVector entity.Compr
 		}
 
 		// 5. 计算查询子向量与质心子向量之间的平方欧氏距离
-		distSq, err := EuclideanDistanceSquared(querySubvector, centroidSubvector)
+		distSq, err := algorithm.EuclideanDistanceSquared(querySubvector, centroidSubvector)
 		if err != nil {
 			return 0, fmt.Errorf("计算子空间 %d 的距离失败: %w", m, err)
 		}

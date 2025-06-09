@@ -1,4 +1,4 @@
-package algorithm
+package acceler
 
 // #cgo CFLAGS: -mavx512f -mavx512dq -march=native
 // #include <immintrin.h>

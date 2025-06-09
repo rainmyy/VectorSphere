@@ -1,0 +1,40 @@
+# 索引配置文件
+index:
+  # IVF 索引配置
+  ivf:
+    num_clusters: 1000          # 聚类数量
+    training_ratio: 0.8         # 训练数据比例
+    rebalance_threshold: 1000   # 重平衡阈值
+    use_pq_compression: true    # 启用 PQ 压缩
+    pq_sub_vectors: 8           # PQ 子向量数量
+    pq_centroids: 256           # PQ 质心数量
+    enable_dynamic: true        # 启用动态更新
+    max_cluster_size: 10000     # 最大聚类大小
+    min_cluster_size: 10        # 最小聚类大小
+
+  # LSH 索引配置
+  lsh:
+    num_tables: 10              # 哈希表数量
+    num_hash_functions: 8       # 每表哈希函数数量
+    hash_family_type: "random_projection"  # 哈希族类型
+    bucket_size: 100            # 桶大小
+    w: 4.0                      # LSH 参数 w
+    r: 1.0                      # 查询半径
+    adaptive_threshold: 0.8     # 自适应阈值
+    enable_multi_probe: true    # 启用多探测
+    probe_radius: 2             # 探测半径
+
+  # 混合索引配置
+  hybrid:
+    enable_ivf_lsh: true        # 启用 IVF-LSH 混合
+    ivf_weight: 0.7             # IVF 权重
+    lsh_weight: 0.3             # LSH 权重
+    fallback_strategy: "ivf"    # 回退策略
+
+  # 性能优化配置
+  optimization:
+    enable_auto_tuning: true    # 启用自动调优
+    tuning_interval: "1h"       # 调优间隔
+    performance_threshold: 0.8  # 性能阈值
+    enable_caching: true        # 启用缓存
+    cache_size: 10000           # 缓存大小

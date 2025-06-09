@@ -1,7 +1,7 @@
 package service
 
 import (
-	"VectorSphere/src/db"
+	"VectorSphere/src/vector"
 	"bytes"
 	"fmt"
 	"github.com/PuerkitoBio/goquery"
@@ -275,7 +275,7 @@ func (d *EnhancedDocumentInfo) LoadAndProcess(processor DocumentProcessor, chunk
 // ProcessDocumentCollection 处理文档集合并构建向量数据库
 func ProcessDocumentCollection(config DocumentProcessingConfig) error {
 	// 初始化向量数据库
-	vectorDB := db.NewVectorDB(config.DBPath, config.NumClusters)
+	vectorDB := vector.NewVectorDB(config.DBPath, config.NumClusters)
 
 	// 尝试从文件加载现有数据库
 	err := vectorDB.LoadFromFile(config.DBPath)
@@ -409,7 +409,7 @@ func DefaultDocumentProcessingConfig() DocumentProcessingConfig {
 }
 
 // ProcessEnhancedDocuments 处理增强的文档集合
-func ProcessEnhancedDocuments(vectorDB *db.VectorDB, docInfos []*EnhancedDocumentInfo, processor DocumentProcessor, config DocumentProcessingConfig) error {
+func ProcessEnhancedDocuments(vectorDB *vector.VectorDB, docInfos []*EnhancedDocumentInfo, processor DocumentProcessor, config DocumentProcessingConfig) error {
 	totalDocs := len(docInfos)
 	if totalDocs == 0 {
 		return nil
@@ -751,7 +751,7 @@ func ReadDocumentsFromDirectory(dirPath string, extensions []string) (map[string
 }
 
 // BatchProcessDocuments 分批处理文档并添加到向量数据库
-func BatchProcessDocuments(vectorDB *db.VectorDB, docInfos []*DocumentInfo, vectorizedType int, config BatchConfig) error {
+func BatchProcessDocuments(vectorDB *vector.VectorDB, docInfos []*DocumentInfo, vectorizedType int, config BatchConfig) error {
 	totalDocs := len(docInfos)
 	if totalDocs == 0 {
 		return nil
@@ -918,7 +918,7 @@ func BatchProcessDocuments(vectorDB *db.VectorDB, docInfos []*DocumentInfo, vect
 }
 
 // BatchAddDocuments 批量添加文档到向量数据库（并行版本）
-func BatchAddDocuments(vectorDB *db.VectorDB, docs map[string]string, vectorizedType int) error {
+func BatchAddDocuments(vectorDB *vector.VectorDB, docs map[string]string, vectorizedType int) error {
 	// 使用工作池并行处理
 	numWorkers := runtime.NumCPU()
 	workChan := make(chan struct{ id, content string }, len(docs))
@@ -972,7 +972,7 @@ func BatchAddDocuments(vectorDB *db.VectorDB, docs map[string]string, vectorized
 // ProcessLargeDocumentCollection 处理大型文档集合的主函数
 func ProcessLargeDocumentCollection(docsDir string, dbPath string, vectorizedType int, config BatchConfig) error {
 	// 初始化向量数据库
-	vectorDB := db.NewVectorDB(dbPath, 10)
+	vectorDB := vector.NewVectorDB(dbPath, 10)
 
 	// 尝试从文件加载现有数据库
 	err := vectorDB.LoadFromFile(dbPath)
@@ -1033,7 +1033,7 @@ func insert() {
 	}
 
 	// 示例：搜索最相似的文档
-	vectorDB := db.NewVectorDB(dbPath, 10)
+	vectorDB := vector.NewVectorDB(dbPath, 10)
 	err = vectorDB.LoadFromFile(dbPath)
 	if err != nil {
 		log.Fatalf("加载向量数据库失败: %v", err)
@@ -1083,7 +1083,7 @@ func BatchInsert() {
 	}
 
 	// 示例：搜索最相似的文档
-	vectorDB := db.NewVectorDB(config.DBPath, config.NumClusters)
+	vectorDB := vector.NewVectorDB(config.DBPath, config.NumClusters)
 	err = vectorDB.LoadFromFile(config.DBPath)
 	if err != nil {
 		log.Fatalf("加载向量数据库失败: %v", err)

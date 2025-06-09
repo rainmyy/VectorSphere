@@ -1,6 +1,7 @@
-package db
+package vector
 
 import (
+	"VectorSphere/src/library/acceler"
 	"VectorSphere/src/library/algorithm"
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/graph"
@@ -126,13 +127,13 @@ type VectorDB struct {
 	efSearch         float64          // HNSW 搜索时的扩展因子
 	metadata         map[string]map[string]interface{}
 
-	multiCache     *MultiLevelCache      // 多级缓存
-	gpuAccelerator algorithm.Accelerator // GPU 加速器
+	multiCache     *MultiLevelCache    // 多级缓存
+	gpuAccelerator acceler.Accelerator // GPU 加速器
 
 	// 新增硬件自适应相关字段
-	strategyComputeSelector *algorithm.ComputeStrategySelector
-	currentStrategy         algorithm.ComputeStrategy
-	hardwareCaps            algorithm.HardwareCapabilities
+	strategyComputeSelector *acceler.ComputeStrategySelector
+	currentStrategy         acceler.ComputeStrategy
+	hardwareCaps            acceler.HardwareCapabilities
 	strategySelector        *StrategySelector
 
 	// 新增 mmap 相关字段
@@ -143,6 +144,19 @@ type VectorDB struct {
 	vectorCache     map[string][]float64 // 向量缓存
 	vectorCacheMu   sync.RWMutex         // 向量缓存锁
 	vectorCacheSize int                  // 向量缓存大小
+
+	// 增强 IVF 相关字段
+	ivfConfig         *IVFConfig         // IVF 配置
+	ivfIndex          *EnhancedIVFIndex  // 增强 IVF 索引
+	ivfPQIndex        *IVFPQIndex        // IVF-PQ 混合索引
+	dynamicClusters   bool               // 是否启用动态聚类
+	clusterUpdateChan chan ClusterUpdate // 聚类更新通道
+
+	// 增强 LSH 相关字段
+	LshConfig   *LSHConfig        `json:"lsh_config"`
+	LshIndex    *EnhancedLSHIndex `json:"lsh_index"`
+	LshFamilies []LSHFamily       `json:"lsh_families"`
+	AdaptiveLSH *AdaptiveLSH      `json:"adaptive_lsh"`
 }
 
 const (
@@ -301,7 +315,7 @@ func (db *VectorDB) InitializeGPUAccelerator(deviceID int, indexType string) err
 	}
 
 	// 创建FAISS GPU加速器
-	gpuAccel := algorithm.NewFAISSAccelerator(deviceID, indexType)
+	gpuAccel := acceler.NewFAISSAccelerator(deviceID, indexType)
 	if err := gpuAccel.Initialize(); err != nil {
 		return fmt.Errorf("GPU加速器初始化失败: %w", err)
 	}
@@ -329,7 +343,7 @@ func (db *VectorDB) CheckGPUStatus() error {
 	}
 
 	// 如果是FAISS GPU加速器，进行详细检查
-	if gpuAccel, ok := db.gpuAccelerator.(*algorithm.FAISSAccelerator); ok {
+	if gpuAccel, ok := db.gpuAccelerator.(*acceler.FAISSAccelerator); ok {
 		if err := gpuAccel.CheckGPUAvailability(); err != nil {
 			return fmt.Errorf("GPU可用性检查失败: %w", err)
 		}
@@ -413,7 +427,7 @@ func (db *VectorDB) pqSearchWithScores(query []float64, k int) ([]entity.Result,
 }
 
 // CalculateApproximateDistancePQWithStrategy 使用指定策略计算PQ近似距离
-func (db *VectorDB) CalculateApproximateDistancePQWithStrategy(query []float64, compressedVector entity.CompressedVector, strategy algorithm.ComputeStrategy) (float64, error) {
+func (db *VectorDB) CalculateApproximateDistancePQWithStrategy(query []float64, compressedVector entity.CompressedVector, strategy acceler.ComputeStrategy) (float64, error) {
 	if compressedVector.Data == nil || len(compressedVector.Data) == 0 {
 		return 0, fmt.Errorf("压缩向量数据不能为空")
 	}
@@ -442,7 +456,7 @@ func (db *VectorDB) CalculateApproximateDistancePQWithStrategy(query []float64, 
 		centroid := db.pqCodebook[m][centroidIndex]
 
 		// 使用自适应策略计算距离
-		_, dist := algorithm.AdaptiveFindNearestCentroid(querySubVector, []entity.Point{centroid}, strategy)
+		_, dist := acceler.AdaptiveFindNearestCentroid(querySubVector, []entity.Point{centroid}, strategy)
 		totalSquaredDistance += dist
 	}
 
@@ -467,20 +481,20 @@ func (db *VectorDB) hnswSearchWithScores(query []float64, k int) ([]entity.Resul
 
 	// 根据策略设置距离函数
 	switch selectStrategy {
-	case algorithm.StrategyAVX512, algorithm.StrategyAVX2:
+	case acceler.StrategyAVX512, acceler.StrategyAVX2:
 		db.hnsw.SetDistanceFunc(func(a, b []float64) (float64, error) {
-			sim := algorithm.AdaptiveCosineSimilarity(a, b, selectStrategy)
+			sim := acceler.AdaptiveCosineSimilarity(a, b, selectStrategy)
 			return 1.0 - sim, nil
 		})
 	default:
 		db.hnsw.SetDistanceFunc(func(a, b []float64) (float64, error) {
-			sim := algorithm.CosineSimilarity(a, b)
+			sim := acceler.CosineSimilarity(a, b)
 			return 1.0 - sim, nil
 		})
 	}
 
 	// 执行搜索
-	normalizedQuery := algorithm.NormalizeVector(query)
+	normalizedQuery := acceler.NormalizeVector(query)
 	hnswResults, err := db.hnsw.Search(normalizedQuery, k)
 	if err != nil {
 		return nil, fmt.Errorf("HNSW搜索失败: %v", err)
@@ -857,8 +871,8 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 		efSearch:       50.0,  // 默认值
 
 		// 初始化硬件自适应组件
-		strategyComputeSelector: algorithm.NewComputeStrategySelector(),
-		currentStrategy:         algorithm.StrategyStandard,
+		strategyComputeSelector: acceler.NewComputeStrategySelector(),
+		currentStrategy:         acceler.StrategyStandard,
 		strategySelector:        &StrategySelector{},
 	}
 	// 检测硬件能力
@@ -869,10 +883,10 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 
 	// 如果支持GPU，初始化GPU加速器
 	if db.hardwareCaps.HasGPU {
-		db.gpuAccelerator = algorithm.NewFAISSAccelerator(0, "Flat")
+		db.gpuAccelerator = acceler.NewFAISSAccelerator(0, "Flat")
 
 		// 先检查GPU可用性，再进行初始化
-		if gpuAccel, ok := db.gpuAccelerator.(*algorithm.FAISSAccelerator); ok {
+		if gpuAccel, ok := db.gpuAccelerator.(*acceler.FAISSAccelerator); ok {
 			if err := gpuAccel.CheckGPUAvailability(); err != nil {
 				log.Warning("GPU可用性检查失败: %v", err)
 				db.hardwareCaps.HasGPU = false
@@ -922,9 +936,9 @@ func (db *VectorDB) AdaptiveCosineSimilarityBatch(queries [][]float64, targets [
 	log.Trace("选择计算策略: %v, 数据量: %d, 向量维度: %d", optimalStrategy, dataSize, vectorDim)
 
 	switch optimalStrategy {
-	case algorithm.StrategyGPU:
+	case acceler.StrategyGPU:
 		return db.gpuBatchCosineSimilarity(queries, targets)
-	case algorithm.StrategyAVX512, algorithm.StrategyAVX2:
+	case acceler.StrategyAVX512, acceler.StrategyAVX2:
 		return db.simdBatchCosineSimilarity(queries, targets, optimalStrategy)
 	default:
 		return db.standardBatchCosineSimilarity(queries, targets)
@@ -1039,13 +1053,13 @@ func (db *VectorDB) WarmupIndex() {
 		// 预热每种计算策略
 		strategies := []struct {
 			name      string
-			strategy  algorithm.ComputeStrategy
+			strategy  acceler.ComputeStrategy
 			available bool
 		}{
-			{"Standard", algorithm.StrategyStandard, true},
-			{"AVX2", algorithm.StrategyAVX2, hwCaps.HasAVX2},
-			{"AVX512", algorithm.StrategyAVX512, hwCaps.HasAVX512},
-			{"GPU", algorithm.StrategyGPU, hwCaps.HasGPU},
+			{"Standard", acceler.StrategyStandard, true},
+			{"AVX2", acceler.StrategyAVX2, hwCaps.HasAVX2},
+			{"AVX512", acceler.StrategyAVX512, hwCaps.HasAVX512},
+			{"GPU", acceler.StrategyGPU, hwCaps.HasGPU},
 		}
 
 		for _, s := range strategies {
@@ -1066,7 +1080,7 @@ func (db *VectorDB) WarmupIndex() {
 
 				// 执行计算
 				for _, target := range targets {
-					_ = algorithm.AdaptiveCosineSimilarity(query, target, s.strategy)
+					_ = acceler.AdaptiveCosineSimilarity(query, target, s.strategy)
 				}
 
 				log.Trace("预热计算策略 %s 查询 %d 完成", s.name, i)
@@ -1104,7 +1118,7 @@ func (db *VectorDB) generateSampleQueries(dim int) [][]float64 {
 		for j := 0; j < dim; j++ {
 			query[j] = rand.Float64()*2 - 1 // 生成-1到1之间的随机数
 		}
-		queries = append(queries, algorithm.NormalizeVector(query))
+		queries = append(queries, acceler.NormalizeVector(query))
 	}
 
 	// 2. 从现有数据中采样
@@ -1119,7 +1133,7 @@ func (db *VectorDB) generateSampleQueries(dim int) [][]float64 {
 			for j := 0; j < len(noisyVector); j++ {
 				noisyVector[j] += (rand.Float64()*0.2 - 0.1) // 添加-0.1到0.1之间的噪声
 			}
-			queries = append(queries, algorithm.NormalizeVector(noisyVector))
+			queries = append(queries, acceler.NormalizeVector(noisyVector))
 		}
 	}
 	db.mu.RUnlock()
@@ -1129,14 +1143,14 @@ func (db *VectorDB) generateSampleQueries(dim int) [][]float64 {
 	for i := 0; i < dim; i++ {
 		allOnes[i] = 1.0
 	}
-	queries = append(queries, algorithm.NormalizeVector(allOnes))
+	queries = append(queries, acceler.NormalizeVector(allOnes))
 
 	// 稀疏向量
 	sparse := make([]float64, dim)
 	for i := 0; i < dim/10; i++ {
 		sparse[rand.Intn(dim)] = 1.0
 	}
-	queries = append(queries, algorithm.NormalizeVector(sparse))
+	queries = append(queries, acceler.NormalizeVector(sparse))
 
 	return queries
 }
@@ -1188,7 +1202,7 @@ func (db *VectorDB) gpuBatchCosineSimilarity(queries [][]float64, targets [][]fl
 }
 
 // simdBatchCosineSimilarity SIMD批量余弦相似度计算
-func (db *VectorDB) simdBatchCosineSimilarity(queries [][]float64, targets [][]float64, strategy algorithm.ComputeStrategy) ([][]float64, error) {
+func (db *VectorDB) simdBatchCosineSimilarity(queries [][]float64, targets [][]float64, strategy acceler.ComputeStrategy) ([][]float64, error) {
 	results := make([][]float64, len(queries))
 
 	// 并行计算
@@ -1207,7 +1221,7 @@ func (db *VectorDB) simdBatchCosineSimilarity(queries [][]float64, targets [][]f
 				similarities := make([]float64, len(targets))
 
 				for targetIdx, target := range targets {
-					similarities[targetIdx] = algorithm.AdaptiveCosineSimilarity(query, target, strategy)
+					similarities[targetIdx] = acceler.AdaptiveCosineSimilarity(query, target, strategy)
 				}
 
 				results[queryIdx] = similarities
@@ -1252,7 +1266,7 @@ func (db *VectorDB) standardBatchCosineSimilarity(queries [][]float64, targets [
 				similarities := make([]float64, len(targets))
 
 				for targetIdx, target := range targets {
-					similarities[targetIdx] = algorithm.CosineSimilarity(query, target)
+					similarities[targetIdx] = acceler.CosineSimilarity(query, target)
 				}
 
 				results[queryIdx] = similarities
@@ -1297,23 +1311,23 @@ func (db *VectorDB) AdaptiveFindNearest(query []float64, k int, nprobe int) ([]e
 }
 
 // hnswAdaptiveSearch HNSW自适应搜索
-func (db *VectorDB) hnswAdaptiveSearch(query []float64, k int, strategy algorithm.ComputeStrategy) ([]entity.Result, error) {
+func (db *VectorDB) hnswAdaptiveSearch(query []float64, k int, strategy acceler.ComputeStrategy) ([]entity.Result, error) {
 	// 根据策略设置距离函数
 	switch strategy {
-	case algorithm.StrategyAVX512, algorithm.StrategyAVX2:
+	case acceler.StrategyAVX512, acceler.StrategyAVX2:
 		db.hnsw.SetDistanceFunc(func(a, b []float64) (float64, error) {
-			sim := algorithm.AdaptiveCosineSimilarity(a, b, strategy)
+			sim := acceler.AdaptiveCosineSimilarity(a, b, strategy)
 			return 1.0 - sim, nil
 		})
 	default:
 		db.hnsw.SetDistanceFunc(func(a, b []float64) (float64, error) {
-			sim := algorithm.CosineSimilarity(a, b)
+			sim := acceler.CosineSimilarity(a, b)
 			return 1.0 - sim, nil
 		})
 	}
 
 	// 执行搜索
-	normalizedQuery := algorithm.NormalizeVector(query)
+	normalizedQuery := acceler.NormalizeVector(query)
 	results, err := db.hnsw.Search(normalizedQuery, k)
 	if err != nil {
 		return nil, err
@@ -1323,7 +1337,7 @@ func (db *VectorDB) hnswAdaptiveSearch(query []float64, k int, strategy algorith
 }
 
 // ivfAdaptiveSearch IVF自适应搜索
-func (db *VectorDB) ivfAdaptiveSearch(query []float64, k int, nprobe int, strategy algorithm.ComputeStrategy) ([]entity.Result, error) {
+func (db *VectorDB) ivfAdaptiveSearch(query []float64, k int, nprobe int, strategy acceler.ComputeStrategy) ([]entity.Result, error) {
 	if !db.indexed {
 		return nil, fmt.Errorf("数据库尚未建立索引")
 	}
@@ -1335,11 +1349,11 @@ func (db *VectorDB) ivfAdaptiveSearch(query []float64, k int, nprobe int, strate
 	for i, cluster := range db.clusters {
 		// 使用自适应距离计算
 		switch strategy {
-		case algorithm.StrategyAVX512, algorithm.StrategyAVX2:
-			sim := algorithm.AdaptiveCosineSimilarity(query, cluster.Centroid, strategy)
+		case acceler.StrategyAVX512, acceler.StrategyAVX2:
+			sim := acceler.AdaptiveCosineSimilarity(query, cluster.Centroid, strategy)
 			clusterDistances[i] = 1.0 - sim
 		default:
-			sim := algorithm.CosineSimilarity(query, cluster.Centroid)
+			sim := acceler.CosineSimilarity(query, cluster.Centroid)
 			clusterDistances[i] = 1.0 - sim
 		}
 	}
@@ -1373,14 +1387,14 @@ func (db *VectorDB) ivfAdaptiveSearch(query []float64, k int, nprobe int, strate
 }
 
 // adaptiveFineRanking 自适应精排
-func (db *VectorDB) adaptiveFineRanking(query []float64, candidates []string, k int, strategy algorithm.ComputeStrategy) ([]entity.Result, error) {
+func (db *VectorDB) adaptiveFineRanking(query []float64, candidates []string, k int, strategy acceler.ComputeStrategy) ([]entity.Result, error) {
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("candidates is empty")
 	}
 
 	// 根据策略选择计算方法
 	switch strategy {
-	case algorithm.StrategyGPU:
+	case acceler.StrategyGPU:
 		return db.gpuFineRanking(query, candidates, k)
 	default:
 		return db.cpuFineRanking(query, candidates, k, strategy)
@@ -1388,7 +1402,7 @@ func (db *VectorDB) adaptiveFineRanking(query []float64, candidates []string, k 
 }
 
 // cpuFineRanking CPU精排（支持SIMD加速）
-func (db *VectorDB) cpuFineRanking(query []float64, candidates []string, k int, strategy algorithm.ComputeStrategy) ([]entity.Result, error) {
+func (db *VectorDB) cpuFineRanking(query []float64, candidates []string, k int, strategy acceler.ComputeStrategy) ([]entity.Result, error) {
 
 	results := make([]entity.Result, 0, len(candidates))
 	resultsChan := make(chan entity.Result, len(candidates))
@@ -1406,7 +1420,7 @@ func (db *VectorDB) cpuFineRanking(query []float64, candidates []string, k int, 
 			for candidateID := range workChan {
 				if vec, exists := db.vectors[candidateID]; exists {
 					// 使用自适应相似度计算
-					sim := algorithm.AdaptiveCosineSimilarity(query, vec, strategy)
+					sim := acceler.AdaptiveCosineSimilarity(query, vec, strategy)
 					resultsChan <- entity.Result{Id: candidateID, Similarity: sim}
 				}
 			}
@@ -1480,21 +1494,21 @@ func (db *VectorDB) gpuFineRanking(query []float64, candidateIDs []string, k int
 }
 
 // SetComputeStrategy 手动设置计算策略
-func (db *VectorDB) SetComputeStrategy(strategy algorithm.ComputeStrategy) error {
+func (db *VectorDB) SetComputeStrategy(strategy acceler.ComputeStrategy) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
 	// 验证策略是否可用
 	switch strategy {
-	case algorithm.StrategyAVX2:
+	case acceler.StrategyAVX2:
 		if !db.hardwareCaps.HasAVX2 {
 			return fmt.Errorf("当前硬件不支持AVX2指令集")
 		}
-	case algorithm.StrategyAVX512:
+	case acceler.StrategyAVX512:
 		if !db.hardwareCaps.HasAVX512 {
 			return fmt.Errorf("当前硬件不支持AVX512指令集")
 		}
-	case algorithm.StrategyGPU:
+	case acceler.StrategyGPU:
 		if !db.hardwareCaps.HasGPU {
 			return fmt.Errorf("当前系统不支持GPU加速")
 		}
@@ -1508,27 +1522,27 @@ func (db *VectorDB) SetComputeStrategy(strategy algorithm.ComputeStrategy) error
 }
 
 // GetHardwareInfo 获取硬件信息
-func (db *VectorDB) GetHardwareInfo() algorithm.HardwareCapabilities {
+func (db *VectorDB) GetHardwareInfo() acceler.HardwareCapabilities {
 	return db.hardwareCaps
 }
 
 // GetCurrentStrategy 获取当前计算策略
-func (db *VectorDB) GetCurrentStrategy() algorithm.ComputeStrategy {
+func (db *VectorDB) GetCurrentStrategy() acceler.ComputeStrategy {
 	return db.currentStrategy
 }
 
 // GetSelectStrategy 动态选择最佳计算策略
-func (db *VectorDB) GetSelectStrategy() algorithm.ComputeStrategy {
+func (db *VectorDB) GetSelectStrategy() acceler.ComputeStrategy {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
 	// 优先选择最高性能的可用策略
 	if db.hardwareCaps.HasAVX512 {
-		return algorithm.StrategyAVX512
+		return acceler.StrategyAVX512
 	} else if db.hardwareCaps.HasAVX2 {
-		return algorithm.StrategyAVX2
+		return acceler.StrategyAVX2
 	}
-	return algorithm.StrategyStandard
+	return acceler.StrategyStandard
 }
 
 // BatchAddToHNSWIndex 批量添加向量到 HNSW 索引
@@ -1550,7 +1564,7 @@ func (db *VectorDB) BatchAddToHNSWIndex(ids []string, vectors [][]float64, numWo
 	processedVectors := make([][]float64, len(vectors))
 	for i, vec := range vectors {
 		if db.useNormalization {
-			processedVectors[i] = algorithm.NormalizeVector(vec)
+			processedVectors[i] = acceler.NormalizeVector(vec)
 		} else {
 			processedVectors[i] = vec
 		}
@@ -1600,7 +1614,7 @@ func (db *VectorDB) BuildHNSWIndexParallel(numWorkers int) error {
 	// 设置距离函数
 	db.hnsw.SetDistanceFunc(func(a, b []float64) (float64, error) {
 		// 使用余弦距离（1 - 余弦相似度）
-		sim := algorithm.CosineSimilarity(a, b)
+		sim := acceler.CosineSimilarity(a, b)
 		return 1.0 - sim, nil
 	})
 
@@ -1671,7 +1685,7 @@ func (db *VectorDB) BatchFindNearest(queryVectors [][]float64, k int, numWorkers
 		// 预处理查询向量（归一化）
 		normalizedQueries := make([][]float64, len(queryVectors))
 		for i, query := range queryVectors {
-			normalizedQueries[i] = algorithm.NormalizeVector(query)
+			normalizedQueries[i] = acceler.NormalizeVector(query)
 		}
 
 		// 使用 HNSW 批量搜索
@@ -1785,7 +1799,7 @@ func (db *VectorDB) BatchFindNearestWithScores(queryVectors [][]float64, k int, 
 		// 预处理查询向量（归一化）
 		normalizedQueries := make([][]float64, len(queryVectors))
 		for i, query := range queryVectors {
-			normalizedQueries[i] = algorithm.NormalizeVector(query)
+			normalizedQueries[i] = acceler.NormalizeVector(query)
 		}
 
 		// 使用 HNSW 批量搜索
@@ -1887,7 +1901,7 @@ func (db *VectorDB) BuildHNSWIndex() error {
 	// 设置距离函数
 	db.hnsw.SetDistanceFunc(func(a, b []float64) (float64, error) {
 		// 使用余弦距离（1 - 余弦相似度）
-		sim := algorithm.CosineSimilarity(a, b)
+		sim := acceler.CosineSimilarity(a, b)
 		return 1.0 - sim, nil
 	})
 
@@ -2154,11 +2168,11 @@ func (db *VectorDB) CalculateCosineSimilarity(id string, queryVector []float64) 
 	// 归一化查询向量
 	normalizedQuery := queryVector
 	if db.useNormalization {
-		normalizedQuery = algorithm.NormalizeVector(queryVector)
+		normalizedQuery = acceler.NormalizeVector(queryVector)
 	}
 
 	// 计算余弦相似度
-	similarity := algorithm.CosineSimilarity(normalizedQuery, vector)
+	similarity := acceler.CosineSimilarity(normalizedQuery, vector)
 	if similarity < 0 {
 		return 0, fmt.Errorf("计算余弦相似度失败：向量维度不匹配")
 	}
@@ -2277,7 +2291,7 @@ func (db *VectorDB) CompressExistingVectors() error {
 	log.Info("使用 %d 个工作协程进行并行压缩", numWorkers)
 
 	startTime := time.Now()
-	compressedVectors, err := algorithm.BatchCompressByPQ(
+	compressedVectors, err := acceler.BatchCompressByPQ(
 		vectorsToCompress,
 		db.pqCodebook,
 		db.numSubVectors,
@@ -2319,7 +2333,7 @@ func (db *VectorDB) preprocessVector(id string, vector []float64) {
 	}
 
 	// 预计算并存储归一化向量
-	db.normalizedVectors[id] = algorithm.NormalizeVector(vector)
+	db.normalizedVectors[id] = acceler.NormalizeVector(vector)
 }
 
 // AddDocument 添加文档并将其转换为向量后存入数据库
@@ -2342,10 +2356,10 @@ func (db *VectorDB) AddDocument(id string, doc string, vectorizedType int) error
 	// 将向量添加到数据库
 	db.vectors[id] = vector
 	// 预计算并存储归一化向量
-	db.normalizedVectors[id] = algorithm.NormalizeVector(vector)
+	db.normalizedVectors[id] = acceler.NormalizeVector(vector)
 	// 如果启用了 PQ 压缩，则压缩向量
 	if db.usePQCompression && db.pqCodebook != nil {
-		compressedVec, err := algorithm.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubVectors, db.numCentroidsPerSubVector)
+		compressedVec, err := acceler.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubVectors, db.numCentroidsPerSubVector)
 		if err != nil {
 			// 即使压缩失败，原始向量也已添加，这里只记录错误
 			log.Error("为文档 %s 添加时压缩向量失败: %v", id, err)
@@ -2531,10 +2545,10 @@ func (db *VectorDB) Add(id string, vector []float64) {
 
 	db.vectors[id] = vector
 	// 预计算并存储归一化向量
-	db.normalizedVectors[id] = algorithm.NormalizeVector(vector)
+	db.normalizedVectors[id] = acceler.NormalizeVector(vector)
 	// 如果启用了 PQ 压缩，则压缩向量
 	if db.usePQCompression && db.pqCodebook != nil {
-		compressedVec, err := algorithm.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubVectors, db.numCentroidsPerSubVector)
+		compressedVec, err := acceler.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubVectors, db.numCentroidsPerSubVector)
 		if err != nil {
 			log.Error("向量 %s 压缩失败: %v。该向量将只以原始形式存储。", id, err)
 			// 根据策略，可以选择是否回滚添加操作或仅记录错误
@@ -2630,7 +2644,7 @@ func (db *VectorDB) UpdateIndexIncrementally(id string, vector []float64) error 
 	if db.normalizedVectors[id] != nil {
 		queryVecForDist = db.normalizedVectors[id]
 	} else {
-		queryVecForDist = algorithm.NormalizeVector(vector) // 如果没有预计算，则动态计算
+		queryVecForDist = acceler.NormalizeVector(vector) // 如果没有预计算，则动态计算
 	}
 
 	//for i, cluster := range db.clusters {
@@ -2653,7 +2667,7 @@ func (db *VectorDB) UpdateIndexIncrementally(id string, vector []float64) error 
 		centroids[i] = cluster.Centroid
 	}
 
-	nearestClusterIndex, _ = algorithm.AdaptiveFindNearestCentroid(queryVecForDist, centroids, selectedStrategy)
+	nearestClusterIndex, _ = acceler.AdaptiveFindNearestCentroid(queryVecForDist, centroids, selectedStrategy)
 
 	if nearestClusterIndex != -1 {
 		// 从旧的簇中移除 (如果它之前在某个簇中)
@@ -2813,10 +2827,10 @@ func (db *VectorDB) Update(id string, vector []float64) error {
 
 	db.vectors[id] = vector
 	// 更新归一化向量
-	db.normalizedVectors[id] = algorithm.NormalizeVector(vector)
+	db.normalizedVectors[id] = acceler.NormalizeVector(vector)
 	// 如果启用了 PQ 压缩，则更新压缩向量
 	if db.usePQCompression && db.pqCodebook != nil {
-		compressedVec, err := algorithm.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubVectors, db.numCentroidsPerSubVector)
+		compressedVec, err := acceler.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubVectors, db.numCentroidsPerSubVector)
 		if err != nil {
 			log.Error("为向量 %s 更新时压缩向量失败: %v", id, err)
 			// 即使压缩失败，原始向量也已更新
@@ -3648,7 +3662,7 @@ func (db *VectorDB) loadFromFileStandard(filePath string) error {
 		// 设置距离函数,。在加载后，需要使用 SetDistanceFunc 方法重新设置距离函数
 		db.hnsw.SetDistanceFunc(func(a, b []float64) (float64, error) {
 			// 使用余弦距离（1 - 余弦相似度）
-			sim := algorithm.CosineSimilarity(a, b)
+			sim := acceler.CosineSimilarity(a, b)
 			return 1.0 - sim, nil
 		})
 
@@ -3674,7 +3688,7 @@ func (db *VectorDB) CalculateApproximateDistancePQ(queryVector []float64, compre
 	}
 
 	// 调用 util 中的 PQ 近似距离计算函数
-	dist, err := algorithm.ApproximateDistanceADC(queryVector, compressedDBVector, db.pqCodebook, db.numSubVectors)
+	dist, err := acceler.ApproximateDistanceADC(queryVector, compressedDBVector, db.pqCodebook, db.numSubVectors)
 	if err != nil {
 		return 0, fmt.Errorf("计算 PQ 近似距离失败: %w", err)
 	}
@@ -3777,7 +3791,7 @@ func (db *VectorDB) BatchNormalizeVectors() error {
 		go func() {
 			defer wg.Done()
 			for item := range vectorChan {
-				normalized := algorithm.NormalizeVector(item.vec)
+				normalized := acceler.NormalizeVector(item.vec)
 				resultChan <- struct {
 					id         string
 					normalized []float64
@@ -3902,7 +3916,7 @@ func (db *VectorDB) EnableGPUAcceleration(gpuID int, indexType string) error {
 	defer db.mu.Unlock()
 
 	// 创建 GPU 加速器
-	db.gpuAccelerator = algorithm.NewFAISSAccelerator(gpuID, indexType)
+	db.gpuAccelerator = acceler.NewFAISSAccelerator(gpuID, indexType)
 
 	// 初始化 GPU 加速器
 	err := db.gpuAccelerator.Initialize()
@@ -3954,7 +3968,7 @@ func (db *VectorDB) coarseSearch(query []float64, k int, nprobe int) ([]string, 
 	}
 
 	// 使用 IVF 索引进行粗筛
-	normalizedQuery := algorithm.NormalizeVector(query)
+	normalizedQuery := acceler.NormalizeVector(query)
 
 	// 找到最近的 nprobe 个簇
 	nearestClusters := make([]int, 0, nprobe)
@@ -3964,7 +3978,7 @@ func (db *VectorDB) coarseSearch(query []float64, k int, nprobe int) ([]string, 
 	selectedStrategy := db.GetSelectStrategy()
 
 	for i, cluster := range db.clusters {
-		dist, _ := algorithm.AdaptiveEuclideanDistanceSquared(normalizedQuery, cluster.Centroid, selectedStrategy)
+		dist, _ := acceler.AdaptiveEuclideanDistanceSquared(normalizedQuery, cluster.Centroid, selectedStrategy)
 		clusterDists[i] = dist
 	}
 
@@ -4005,7 +4019,7 @@ func (db *VectorDB) appendResults(query []float64, resultStrings []string, resul
 		if !exists {
 			continue
 		}
-		similarity := algorithm.OptimizedCosineSimilarity(query, vec)
+		similarity := acceler.OptimizedCosineSimilarity(query, vec)
 		if similarity < config.Threshold {
 			continue
 		}
@@ -4030,7 +4044,7 @@ func (db *VectorDB) fineRanking(query []float64, candidates []string, config Two
 		gpuResults, err := db.gpuFineRanking(query, candidates, config.FineK)
 		if err != nil {
 			// GPU 失败时回退到 CPU
-			cpuResults, cpuErr := db.cpuFineRanking(query, candidates, config.FineK, algorithm.StrategyStandard)
+			cpuResults, cpuErr := db.cpuFineRanking(query, candidates, config.FineK, acceler.StrategyStandard)
 			if cpuErr != nil {
 				return nil, cpuErr
 			}
@@ -4072,7 +4086,7 @@ func (db *VectorDB) fineRanking(query []float64, candidates []string, config Two
 				}
 
 				// 使用优化的相似度计算
-				similarity := algorithm.OptimizedCosineSimilarity(query, vec)
+				similarity := acceler.OptimizedCosineSimilarity(query, vec)
 
 				// 应用阈值过滤
 				if similarity >= config.Threshold {
@@ -4123,7 +4137,7 @@ func (db *VectorDB) approximateSearch(query []float64, k int) ([]string, error) 
 	}
 
 	// 归一化查询向量
-	normalizedQuery := algorithm.NormalizeVector(query)
+	normalizedQuery := acceler.NormalizeVector(query)
 
 	// 使用简化的距离计算（只计算前几个维度的距离作为近似）
 	approxDim := int(math.Min(float64(len(normalizedQuery)), 32)) // 只使用前32个维度进行近似计算
@@ -4363,7 +4377,7 @@ func (db *VectorDB) AdaptiveHNSWConfig() {
 	}
 }
 
-func (db *VectorDB) GetOptimalStrategy(query []float64) algorithm.ComputeStrategy {
+func (db *VectorDB) GetOptimalStrategy(query []float64) acceler.ComputeStrategy {
 	dataSize := len(db.vectors)
 	vectorDim := len(query)
 	optimalStrategy := db.strategyComputeSelector.SelectOptimalStrategy(dataSize, vectorDim)
@@ -4387,11 +4401,11 @@ func (db *VectorDB) FindNearestWithScores(query []float64, k int, nprobe int) ([
 	if db.useHNSWIndex && db.indexed && db.hnsw != nil {
 		// 设置自适应距离函数
 		db.hnsw.SetDistanceFunc(func(a, b []float64) (float64, error) {
-			sim := algorithm.AdaptiveCosineSimilarity(a, b, selectStrategy)
+			sim := acceler.AdaptiveCosineSimilarity(a, b, selectStrategy)
 			return 1.0 - sim, nil
 		})
 
-		normalizedQuery := algorithm.NormalizeVector(query)
+		normalizedQuery := acceler.NormalizeVector(query)
 		return db.hnsw.Search(normalizedQuery, k)
 	}
 
@@ -4405,7 +4419,7 @@ func (db *VectorDB) FindNearestWithScores(query []float64, k int, nprobe int) ([
 }
 
 // ivfSearchWithScores IVF搜索返回带分数的结果
-func (db *VectorDB) ivfSearchWithScores(query []float64, k int, nprobe int, strategy algorithm.ComputeStrategy) ([]entity.Result, error) {
+func (db *VectorDB) ivfSearchWithScores(query []float64, k int, nprobe int, strategy acceler.ComputeStrategy) ([]entity.Result, error) {
 	// 粗排：找到最近的nprobe个簇
 	candidateClusters := make([]int, 0, nprobe)
 	clusterDistances := make([]float64, len(db.clusters))
@@ -4413,11 +4427,11 @@ func (db *VectorDB) ivfSearchWithScores(query []float64, k int, nprobe int, stra
 	for i, cluster := range db.clusters {
 		// 使用自适应距离计算
 		switch strategy {
-		case algorithm.StrategyAVX512, algorithm.StrategyAVX2:
-			sim := algorithm.AdaptiveCosineSimilarity(query, cluster.Centroid, strategy)
+		case acceler.StrategyAVX512, acceler.StrategyAVX2:
+			sim := acceler.AdaptiveCosineSimilarity(query, cluster.Centroid, strategy)
 			clusterDistances[i] = 1.0 - sim
 		default:
-			sim := algorithm.CosineSimilarity(query, cluster.Centroid)
+			sim := acceler.CosineSimilarity(query, cluster.Centroid)
 			clusterDistances[i] = 1.0 - sim
 		}
 	}
@@ -4451,7 +4465,7 @@ func (db *VectorDB) ivfSearchWithScores(query []float64, k int, nprobe int, stra
 }
 
 // fineRankingWithScores 精排并返回带分数的结果
-func (db *VectorDB) fineRankingWithScores(query []float64, candidates []string, k int, strategy algorithm.ComputeStrategy) ([]entity.Result, error) {
+func (db *VectorDB) fineRankingWithScores(query []float64, candidates []string, k int, strategy acceler.ComputeStrategy) ([]entity.Result, error) {
 	if len(candidates) == 0 {
 		return []entity.Result{}, nil
 	}
@@ -4474,10 +4488,10 @@ func (db *VectorDB) fineRankingWithScores(query []float64, candidates []string, 
 					// 使用自适应相似度计算
 					var sim float64
 					switch strategy {
-					case algorithm.StrategyAVX512, algorithm.StrategyAVX2:
-						sim = algorithm.AdaptiveCosineSimilarity(query, vec, strategy)
+					case acceler.StrategyAVX512, acceler.StrategyAVX2:
+						sim = acceler.AdaptiveCosineSimilarity(query, vec, strategy)
 					default:
-						sim = algorithm.CosineSimilarity(query, vec)
+						sim = acceler.CosineSimilarity(query, vec)
 					}
 
 					resultsChan <- entity.Result{
@@ -4527,7 +4541,7 @@ func (db *VectorDB) Findnearestwithscores1(query []float64, k int, nprobe int) (
 	if len(db.vectors) == 0 {
 		return []entity.Result{}, nil
 	}
-	normalizedQuery := algorithm.NormalizeVector(query)
+	normalizedQuery := acceler.NormalizeVector(query)
 	var results []entity.Result
 	if db.indexed && len(db.clusters) > 0 && db.numClusters > 0 {
 		if nprobe <= 0 {
@@ -4569,7 +4583,7 @@ func (db *VectorDB) Findnearestwithscores1(query []float64, k int, nprobe int) (
 						if !exists {
 							return
 						}
-						sim := algorithm.CosineSimilarity(normalizedQuery, vec)
+						sim := acceler.CosineSimilarity(normalizedQuery, vec)
 						resultChan <- entity.Result{Id: vecID, Similarity: sim}
 					}(selectedCluster.VectorIDs[j])
 				}
@@ -4607,7 +4621,7 @@ func (db *VectorDB) Findnearestwithscores1(query []float64, k int, nprobe int) (
 				defer wg.Done()
 				for id := range workChan {
 					vec := db.vectors[id]
-					sim := algorithm.CosineSimilarity(normalizedQuery, vec)
+					sim := acceler.CosineSimilarity(normalizedQuery, vec)
 					innerResultChan <- entity.Result{Id: id, Similarity: sim}
 				}
 			}()
@@ -4743,7 +4757,7 @@ func (db *VectorDB) bruteForceSearch(query []float64, k int) ([]entity.Result, e
 	}
 
 	// 预处理查询向量 - 归一化可以提高相似度计算的准确性
-	normalizedQuery := algorithm.NormalizeVector(query)
+	normalizedQuery := acceler.NormalizeVector(query)
 
 	// 使用优先队列维护k个最近的向量
 	resultHeap := make(entity.ResultHeap, 0, k)
@@ -4763,7 +4777,7 @@ func (db *VectorDB) bruteForceSearch(query []float64, k int) ([]entity.Result, e
 			for id := range workChan {
 				vec := db.vectors[id]
 				// 使用余弦相似度计算
-				sim := algorithm.CosineSimilarity(normalizedQuery, vec)
+				sim := acceler.CosineSimilarity(normalizedQuery, vec)
 				resultChan <- entity.Result{Id: id, Similarity: sim}
 			}
 		}()
@@ -4832,7 +4846,7 @@ func (db *VectorDB) lshSearch(query []float64, k int, numTables int) ([]entity.R
 	}
 
 	// 预处理查询向量
-	normalizedQuery := algorithm.NormalizeVector(query)
+	normalizedQuery := acceler.NormalizeVector(query)
 
 	// 使用LSH索引进行搜索
 	candidateSet := make(map[string]struct{})
@@ -4866,7 +4880,7 @@ func (db *VectorDB) lshSearch(query []float64, k int, numTables int) ([]entity.R
 		}
 
 		// 计算余弦相似度
-		sim := algorithm.CosineSimilarity(normalizedQuery, vec)
+		sim := acceler.CosineSimilarity(normalizedQuery, vec)
 
 		if len(resultHeap) < k {
 			heap.Push(&resultHeap, entity.Result{Id: id, Similarity: sim})
@@ -4983,7 +4997,7 @@ func (db *VectorDB) multiIndexSearch(query []float64, k int, nprobe int) ([]enti
 
 	selectedStrategy := db.GetSelectStrategy()
 	for i, cluster := range db.multiIndex.clusters {
-		dist, err := algorithm.AdaptiveEuclideanDistanceSquared(query, cluster.Centroid, selectedStrategy)
+		dist, err := acceler.AdaptiveEuclideanDistanceSquared(query, cluster.Centroid, selectedStrategy)
 		if err != nil {
 			return nil, fmt.Errorf("error calculating distance to centroid %d: %w", i, err)
 		}
@@ -5015,7 +5029,7 @@ func (db *VectorDB) multiIndexSearch(query []float64, k int, nprobe int) ([]enti
 			// 回退到暴力搜索该簇内的向量
 			for _, id := range selectedCluster.VectorIDs {
 				if vec, exists := db.vectors[id]; exists {
-					dist, _ := algorithm.AdaptiveEuclideanDistanceSquared(query, vec, selectedStrategy)
+					dist, _ := acceler.AdaptiveEuclideanDistanceSquared(query, vec, selectedStrategy)
 					heap.Push(&resultHeap, entity.Result{Id: id, Similarity: dist})
 					if results.Len() > k {
 						heap.Pop(results)
@@ -5031,7 +5045,7 @@ func (db *VectorDB) multiIndexSearch(query []float64, k int, nprobe int) ([]enti
 			log.Warning("Sub-index for cluster %d is not a KDTree or is nil. Performing brute-force.", clusterIdx)
 			for _, id := range selectedCluster.VectorIDs {
 				if vec, exists := db.vectors[id]; exists {
-					dist, _ := algorithm.AdaptiveEuclideanDistanceSquared(query, vec, selectedStrategy)
+					dist, _ := acceler.AdaptiveEuclideanDistanceSquared(query, vec, selectedStrategy)
 					heap.Push(&resultHeap, entity.Result{Id: id, Similarity: dist})
 					if results.Len() > k {
 						heap.Pop(results)
@@ -5087,7 +5101,7 @@ func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]entity.Resu
 	}
 
 	// 预处理查询向量
-	normalizedQuery := algorithm.NormalizeVector(query)
+	normalizedQuery := acceler.NormalizeVector(query)
 
 	// 设置默认nprobe值
 	if nprobe <= 0 {
@@ -5105,7 +5119,7 @@ func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]entity.Resu
 
 	// 找到查询向量最近的nprobe个簇中心
 	for i, cluster := range db.clusters {
-		distSq, err := algorithm.AdaptiveEuclideanDistanceSquared(normalizedQuery, cluster.Centroid, selectedStrategy)
+		distSq, err := acceler.AdaptiveEuclideanDistanceSquared(normalizedQuery, cluster.Centroid, selectedStrategy)
 		if err != nil {
 			continue
 		}
@@ -5148,7 +5162,7 @@ func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]entity.Resu
 						return
 					}
 					// 计算余弦相似度
-					sim := algorithm.CosineSimilarity(normalizedQuery, vec)
+					sim := acceler.CosineSimilarity(normalizedQuery, vec)
 					resultChan <- entity.Result{Id: vecID, Similarity: sim}
 				}(selectedCluster.VectorIDs[j])
 			}
@@ -5275,7 +5289,7 @@ func (db *VectorDB) FileSystemSearch(query string, vectorizedType int, k int, np
 				if !exists {
 					continue
 				}
-				sim := algorithm.CosineSimilarity(queryVector, vec)
+				sim := acceler.CosineSimilarity(queryVector, vec)
 				resultChan <- entity.Result{Id: c.id, Similarity: sim, WordCount: c.count}
 			}
 		}()
@@ -5403,7 +5417,7 @@ func (db *VectorDB) ParallelFindNearest(query []float64, k int) ([]entity.Result
 			for idx := startIdx; idx < endIdx; idx++ {
 				id := vectorIDs[idx]
 				vec := db.vectors[id]
-				sim := algorithm.OptimizedCosineSimilarity(query, vec)
+				sim := acceler.OptimizedCosineSimilarity(query, vec)
 				localResults = append(localResults, entity.Result{Id: id, Similarity: sim})
 			}
 
@@ -5725,7 +5739,7 @@ func (db *VectorDB) shouldUseGPUBatchSearch(queryCount, dbSize int) bool {
 	}
 
 	// 检查GPU加速器是否已初始化
-	if gpuAccel, ok := db.gpuAccelerator.(*algorithm.FAISSAccelerator); ok {
+	if gpuAccel, ok := db.gpuAccelerator.(*acceler.FAISSAccelerator); ok {
 		if err := gpuAccel.CheckGPUAvailability(); err != nil {
 			log.Warning("GPU不可用，回退到CPU搜索: %v", err)
 			return false

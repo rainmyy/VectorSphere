@@ -60,11 +60,11 @@ INCLUDE_FLAGS := -I$(CUDA_PATH)/include -I$(FAISS_PATH)/include
 ifeq ($(DETECTED_OS),Windows)
     LIB_FLAGS := -L$(CUDA_PATH)/lib/x64 -L$(FAISS_PATH)/lib
     LINK_FLAGS := -lcudart -lcuda -lfaiss -lfaiss_gpu
-    WRAPPER_OUTPUT := src/library/algorithm/libfaiss_gpu_wrapper$(LIB_EXT)
+    WRAPPER_OUTPUT := src/library/acceler/libfaiss_gpu_wrapper$(LIB_EXT)
 else
     LIB_FLAGS := -L$(CUDA_PATH)/lib64 -L$(FAISS_PATH)/lib
     LINK_FLAGS := -lcudart -lcuda -lfaiss -lfaiss_gpu -Wl,-rpath,$(CUDA_PATH)/lib64 -Wl,-rpath,$(FAISS_PATH)/lib
-    WRAPPER_OUTPUT := src/library/algorithm/libfaiss_gpu_wrapper$(LIB_EXT)
+    WRAPPER_OUTPUT := src/library/acceler/libfaiss_gpu_wrapper$(LIB_EXT)
 endif
 
 # 显示检测到的操作系统
@@ -82,13 +82,13 @@ info:
 faiss_wrapper:
 ifeq ($(GPU_ENABLED),1)
 	@echo "正在为 $(DETECTED_OS) 编译 FAISS GPU 包装器..."
-	@echo "g++ command: $(CXX) $(CXXFLAGS) $(INCLUDE_FLAGS) $(LIB_FLAGS) $(LINK_FLAGS) -o $(WRAPPER_OUTPUT) src/library/algorithm/faiss_gpu_wrapper.cpp"
+	@echo "g++ command: $(CXX) $(CXXFLAGS) $(INCLUDE_FLAGS) $(LIB_FLAGS) $(LINK_FLAGS) -o $(WRAPPER_OUTPUT) src/library/acceler/faiss_gpu_wrapper.cpp"
 	$(CXX) $(CXXFLAGS) \
 		$(INCLUDE_FLAGS) \
 		$(LIB_FLAGS) \
 		$(LINK_FLAGS) \
 		-o $(WRAPPER_OUTPUT) \
-		src/library/algorithm/faiss_gpu_wrapper.cpp
+		src/library/acceler/faiss_gpu_wrapper.cpp
 	@echo "FAISS GPU 包装器编译完成: $(WRAPPER_OUTPUT)"
 else
 	@echo "跳过 FAISS GPU 包装器编译 - CUDA或FAISS不可用"

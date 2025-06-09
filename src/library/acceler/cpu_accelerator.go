@@ -1,6 +1,6 @@
 //go:build !gpu
 
-package algorithm
+package acceler
 
 import "C"
 import (

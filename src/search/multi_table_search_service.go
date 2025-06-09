@@ -1,13 +1,13 @@
 package search
 
 import (
-	"VectorSphere/src/db"
 	"VectorSphere/src/index"
-	"VectorSphere/src/library/algorithm"
+	"VectorSphere/src/library/acceler"
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/log"
 	"VectorSphere/src/library/tree"
 	"VectorSphere/src/messages"
+	"VectorSphere/src/vector"
 	"fmt"
 	"math/rand"
 	"regexp"
@@ -21,7 +21,7 @@ import (
 // TableInstance 包含一个表的倒排索引和向量数据库实例
 type TableInstance struct {
 	InvertedIndex *index.MVCCBPlusTreeInvertedIndex
-	VectorDB      *db.VectorDB
+	VectorDB      *vector.VectorDB
 }
 
 // MultiTableSearchService 结构体中添加缓存字段
@@ -57,7 +57,7 @@ func NewMultiTableSearchService(txMgr *tree.TransactionManager, lockMgr *tree.Lo
 		config: ServiceConfig{
 			MaxCacheSize:          1000,
 			CacheTTL:              5 * time.Minute,
-			DefaultVectorized:     db.SimpleVectorized,
+			DefaultVectorized:     vector.SimpleVectorized,
 			DefaultK:              100,
 			DefaultProbe:          10,
 			UseAdaptiveConfig:     true,
@@ -161,7 +161,7 @@ func (mts *MultiTableSearchService) CreateTable(tableName string, vectorDBBasePa
 	}
 	// 为新表创建独立的 VectorDB 和 InvertedIndex 实例
 	vectorDBPath := fmt.Sprintf("%s/%s", vectorDBBasePath, tableName) // 假设每个表有独立的 VectorDB 存储路径
-	vectorDB := db.NewVectorDB(vectorDBPath, numClusters)
+	vectorDB := vector.NewVectorDB(vectorDBPath, numClusters)
 	// InvertedIndex 需要 VectorDB 实例，所以先创建 VectorDB
 	invertedIndex := index.NewMVCCBPlusTreeInvertedIndex(invertedIndexOrder, mts.TxMgr, mts.LockMgr, mts.WAL, vectorDB)
 
@@ -431,13 +431,13 @@ func (mts *MultiTableSearchService) Search(tableName string, query *messages.Ter
 		}
 
 		// 计算向量哈希用于缓存
-		vectorHash = algorithm.ComputeVectorHash(queryVector)
+		vectorHash = acceler.ComputeVectorHash(queryVector)
 
 		// 根据数据规模和用户设置决定使用哪种搜索方法
 		dataSize := table.VectorDB.GetDataSize()
 		if useANN || dataSize > 1000 {
 			// 使用 HybridSearch 进行近似最近邻搜索
-			options := db.SearchOptions{
+			options := vector.SearchOptions{
 				Nprobe:        probe,
 				UseANN:        true,
 				SearchTimeout: 5 * time.Second, // 可配置的超时时间
@@ -860,7 +860,7 @@ type ServiceStats struct {
 
 type TableStats struct {
 	DocumentCount int
-	VectorDBStats db.PerformanceStats
+	VectorDBStats vector.PerformanceStats
 	IndexedStatus bool
 	LastUpdated   time.Time
 }

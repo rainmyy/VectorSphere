@@ -1,7 +1,7 @@
 package tree
 
 import (
-	"VectorSphere/src/library/algorithm"
+	"VectorSphere/src/library/acceler"
 	"VectorSphere/src/library/entity"
 	"container/heap"
 	"math"
@@ -102,7 +102,7 @@ func (tree *KDTree) searchNearest(node *KDTreeNode, query []float64, k int, resu
 	}
 
 	// 计算当前节点与查询点的相似度
-	sim := algorithm.CosineSimilarity(query, node.Point)
+	sim := acceler.CosineSimilarity(query, node.Point)
 
 	// 更新结果堆
 	if resultHeap.Len() < k {

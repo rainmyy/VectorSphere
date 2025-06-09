@@ -1,13 +1,13 @@
 package test
 
 import (
-	"VectorSphere/src/library/algorithm"
+	"VectorSphere/src/library/acceler"
 	"testing"
 )
 
 func TestFAISSGPUAccelerator(t *testing.T) {
 	// 创建 GPU 加速器
-	gpu := algorithm.NewFAISSAccelerator(0, "Flat")
+	gpu := acceler.NewFAISSAccelerator(0, "Flat")
 
 	// 初始化
 	err := gpu.Initialize()

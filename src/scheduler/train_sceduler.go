@@ -1,10 +1,10 @@
 package scheduler
 
 import (
-	"VectorSphere/src/db"
-	"VectorSphere/src/library/algorithm"
+	"VectorSphere/src/library/acceler"
 	"VectorSphere/src/library/conf"
 	"VectorSphere/src/library/log"
+	"VectorSphere/src/vector"
 	"fmt"
 	"sync"
 	"time"
@@ -28,7 +28,7 @@ type PQTrainingConfig struct {
 
 // PQTrainingScheduler 结构体用于管理PQ训练任务
 type PQTrainingScheduler struct {
-	vectorDB         *db.VectorDB // 或者是一个能获取 VectorDB 实例的接口/方法
+	vectorDB         *vector.VectorDB // 或者是一个能获取 VectorDB 实例的接口/方法
 	lastTrainingTime time.Time
 	trainingStatus   string
 	trainingErrors   []string
@@ -77,7 +77,7 @@ func LoadPQTrainingConfig(configPath string) (*PQTrainingConfig, error) {
 }
 
 // NewPQTrainingScheduler 创建一个新的 PQTrainingScheduler
-func NewPQTrainingScheduler(vectorDB *db.VectorDB) (*PQTrainingScheduler, error) {
+func NewPQTrainingScheduler(vectorDB *vector.VectorDB) (*PQTrainingScheduler, error) {
 	if vectorDB == nil {
 		return nil, fmt.Errorf("VectorDB 实例不能为空")
 	}
@@ -116,9 +116,9 @@ func (s *PQTrainingScheduler) Run() error {
 	s.mutex.Unlock()
 
 	// 确保 VectorDB 实例是有效的 TrainingDataSource
-	var dataSource algorithm.TrainingDataSource = s.vectorDB
+	var dataSource acceler.TrainingDataSource = s.vectorDB
 
-	trainingErr := algorithm.TrainPQCodebook(
+	trainingErr := acceler.TrainPQCodebook(
 		dataSource,
 		s.config.NumSubVectors,
 		s.config.NumbCentroidsPerSubVector,

@@ -5,6 +5,7 @@ import (
 	"VectorSphere/src/index"
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/log"
+	"VectorSphere/src/vector"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -189,7 +190,7 @@ func generateCacheKey(query string, topK int, systemInstruction string) string {
 }
 
 type AnalysisService struct {
-	VectorDB         *db2.VectorDB
+	VectorDB         *vector.VectorDB
 	LLMClient        LLMClient // 使用通用LLM客户端接口
 	SessionStore     *DistributedSessionStore
 	Tokenizer        TokenCounter
@@ -203,7 +204,7 @@ type AnalysisService struct {
 
 func NewAnalysisService(vectorDBPath string, numClusters int, llmConfig LLMConfig, badgerDBPath string, skipListIndex *index.SkipListInvertedIndex) (*AnalysisService, error) {
 	// 初始化向量数据库
-	vectorDB := db2.NewVectorDB(vectorDBPath, numClusters)
+	vectorDB := vector.NewVectorDB(vectorDBPath, numClusters)
 
 	// 初始化LLM客户端
 	llmClient, err := NewLLMClient(llmConfig)
