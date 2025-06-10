@@ -269,6 +269,30 @@ func randomSample(populationSize, sampleSize int) []int {
 	return result
 }
 
+// ConvertToPoints 将 [][]float64 转换为 []entity.Point
+func ConvertToPoints(data [][]float64) []entity.Point {
+	if data == nil {
+		return nil
+	}
+	points := make([]entity.Point, len(data))
+	for i, vec := range data {
+		points[i] = entity.Point(vec)
+	}
+	return points
+}
+
+// ConvertToFloat64Slice 将 []entity.Point 转换为 [][]float64
+func ConvertToFloat64Slice(points []entity.Point) [][]float64 {
+	if points == nil {
+		return nil
+	}
+	data := make([][]float64, len(points))
+	for i, p := range points {
+		data[i] = []float64(p)
+	}
+	return data
+}
+
 // 示例用法
 /*
 func main() {

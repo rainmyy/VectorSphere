@@ -196,7 +196,7 @@ func (db *VectorDB) BuildEnhancedIVFIndex(config *IVFConfig) error {
 
 	// 2. 执行聚类
 	log.Info("Starting KMeans clustering with %d training vectors and %d clusters.", len(trainingVectors), config.NumClusters)
-	centroids, _, err := algorithm.KMeans(trainingVectors, config.NumClusters, 100, 0.001)
+	centroids, _, err := algorithm.KMeans(algorithm.ConvertToPoints(trainingVectors), config.NumClusters, 100, 0.001)
 	if err != nil {
 		db.indexed = false
 		return fmt.Errorf("KMeans 聚类失败: %w", err)
@@ -219,14 +219,17 @@ func (db *VectorDB) BuildEnhancedIVFIndex(config *IVFConfig) error {
 
 	// 4. 分配所有向量到聚类
 	for id, vector := range db.vectors {
-		clusterID := db.findNearestCluster(vector, centroids)
+		// 使用 []entity.Point 类型的质心进行匹配
+		clusterID := db.findNearestCluster(vector, centroids) // centroids 是 []entity.Point 类型
 		enhancedClusters[clusterID].VectorIDs = append(enhancedClusters[clusterID].VectorIDs, id)
 	}
 
 	// 5. 构建 PQ 压缩（如果启用）
 	if config.UsePQCompression {
-		if err := db.buildIVFPQIndex(enhancedClusters, config); err != nil {
+		if err := db.BuildIVFPQIndex(enhancedClusters, config); err != nil {
 			log.Warning("构建 IVF-PQ 索引失败: %v", err)
+			// 根据策略，这里可以选择是否因为PQ构建失败而整体失败
+			// return fmt.Errorf("构建 IVF-PQ 索引失败: %w", err)
 		}
 	}
 
@@ -236,9 +239,10 @@ func (db *VectorDB) BuildEnhancedIVFIndex(config *IVFConfig) error {
 	}
 
 	// 7. 创建增强索引
+	clusterCentroids := algorithm.ConvertToFloat64Slice(centroids)
 	db.ivfIndex = &EnhancedIVFIndex{
 		Clusters:         enhancedClusters,
-		ClusterCentroids: centroids,
+		ClusterCentroids: clusterCentroids,
 		ClusterSizes:     make([]int, config.NumClusters),
 		ClusterMetrics:   make([]ClusterMetrics, config.NumClusters),
 		LastUpdateTime:   time.Now(),
@@ -254,6 +258,227 @@ func (db *VectorDB) BuildEnhancedIVFIndex(config *IVFConfig) error {
 	db.indexed = true
 	log.Info("增强 IVF 索引构建完成，共 %d 个聚类", config.NumClusters)
 	return nil
+}
+
+// BuildIVFPQIndex 为 IVF 索引构建 PQ 压缩
+// enhancedClusters: 增强聚类列表
+// config: IVF 配置
+func (db *VectorDB) BuildIVFPQIndex(enhancedClusters []EnhancedCluster, config *IVFConfig) error {
+	if !config.UsePQCompression || config.PQSubVectors <= 0 || config.PQCentroids <= 0 {
+		log.Info("PQ Compression is not enabled or configuration is invalid. Skipping PQ index build.")
+		return nil
+	}
+
+	log.Info("Starting to build PQ index for %d clusters. PQSubVectors: %d, PQCentroids: %d", len(enhancedClusters), config.PQSubVectors, config.PQCentroids)
+
+	db.ivfPQIndex = &IVFPQIndex{
+		IVFIndex:      db.ivfIndex, // db.ivfIndex 此时可能还未完全初始化，但其引用是需要的
+		PQCodebooks:   make([][][]float64, len(enhancedClusters)),
+		PQCodes:       make(map[string][]byte),
+		NumSubVectors: config.PQSubVectors,
+		NumCentroids:  config.PQCentroids,
+	}
+
+	var originalVectorDimension int
+	// 获取向量维度，假设所有向量维度相同
+	// 优化：可以从 db.vectors 中随机取一个向量来确定维度，或者在 VectorDB 结构中存储维度信息
+	if len(db.vectors) > 0 {
+		for _, vec := range db.vectors {
+			originalVectorDimension = len(vec)
+			break
+		}
+	} else {
+		return fmt.Errorf("cannot build PQ index without any vectors to determine dimension")
+	}
+
+	if originalVectorDimension == 0 {
+		return fmt.Errorf("cannot build PQ index with zero dimension vectors")
+	}
+
+	db.ivfPQIndex.SubVectorDim = originalVectorDimension / config.PQSubVectors
+	if originalVectorDimension%config.PQSubVectors != 0 {
+		log.Warning("Original vector dimension %d is not perfectly divisible by PQSubVectors %d. SubVectorDim will be %d. Some parts of vectors might be ignored or padded.",
+			originalVectorDimension, config.PQSubVectors, db.ivfPQIndex.SubVectorDim)
+		// 实际应用中可能需要更复杂的处理，例如填充或报错
+		if db.ivfPQIndex.SubVectorDim == 0 && originalVectorDimension > 0 { // 确保子维度至少为1
+			db.ivfPQIndex.SubVectorDim = 1
+		}
+	}
+	if db.ivfPQIndex.SubVectorDim == 0 && originalVectorDimension > 0 { // 再次检查，如果除法结果为0但原始维度不为0
+		log.Error("SubVectorDim is 0 even though original dimension is %d and PQSubVectors is %d. This indicates a problem.", originalVectorDimension, config.PQSubVectors)
+		return fmt.Errorf("calculated SubVectorDim is 0, PQSubVectors might be too large for the dimension")
+	}
+
+	for i, cluster := range enhancedClusters {
+		if len(cluster.VectorIDs) == 0 {
+			log.Info("Cluster %d has no vectors, skipping PQ codebook generation.", i)
+			db.ivfPQIndex.PQCodebooks[i] = make([][]float64, 0) // 初始化为空码本
+			continue
+		}
+
+		// 1. 收集当前聚类的所有向量数据
+		clusterVectors := make([][]float64, 0, len(cluster.VectorIDs))
+		for _, vecID := range cluster.VectorIDs {
+			if vec, ok := db.vectors[vecID]; ok {
+				clusterVectors = append(clusterVectors, vec)
+			} else {
+				log.Warning("Vector ID %s not found in db.vectors while building PQ for cluster %d", vecID, i)
+			}
+		}
+
+		if len(clusterVectors) == 0 {
+			log.Info("No valid vectors found for cluster %d after lookup, skipping PQ codebook generation.", i)
+			db.ivfPQIndex.PQCodebooks[i] = make([][]float64, 0)
+			continue
+		}
+
+		// 2. 为每个子向量空间训练PQ码本
+		codebookForCluster := make([][][]float64, config.PQSubVectors)
+		for subVecIdx := 0; subVecIdx < config.PQSubVectors; subVecIdx++ {
+			subVectorTrainingData := make([][]float64, 0, len(clusterVectors))
+			startDim := subVecIdx * db.ivfPQIndex.SubVectorDim
+			endDim := startDim + db.ivfPQIndex.SubVectorDim
+
+			// 安全检查，确保 endDim 不超过原始向量维度
+			if endDim > originalVectorDimension {
+				endDim = originalVectorDimension
+			}
+			// 如果 startDim 已经等于或超过 originalVectorDimension，说明子向量划分有问题
+			if startDim >= originalVectorDimension {
+				log.Warning("Subvector start dimension %d is out of bounds for original dimension %d in cluster %d, subvector %d. Skipping this subvector.", startDim, originalVectorDimension, i, subVecIdx)
+				codebookForCluster[subVecIdx] = make([][]float64, 0) // 空码本
+				continue
+			}
+
+			for _, vec := range clusterVectors {
+				if len(vec) >= endDim {
+					subVectorTrainingData = append(subVectorTrainingData, vec[startDim:endDim])
+				} else {
+					log.Warning("Vector dimension mismatch for PQ. Expected at least %d, got %d for a vector in cluster %d. Skipping this vector for subvector %d.", endDim, len(vec), i, subVecIdx)
+				}
+			}
+
+			if len(subVectorTrainingData) == 0 {
+				log.Warning("No training data for subvector %d in cluster %d. Skipping codebook generation for this subvector.", subVecIdx, i)
+				codebookForCluster[subVecIdx] = make([][]float64, 0) // 空码本
+				continue
+			}
+
+			numPqCentroids := config.PQCentroids
+			if numPqCentroids > len(subVectorTrainingData) {
+				log.Warning("Number of PQ centroids (%d) for subvector %d in cluster %d exceeds training samples (%d). Adjusting to %d.",
+					numPqCentroids, subVecIdx, i, len(subVectorTrainingData), len(subVectorTrainingData))
+				numPqCentroids = len(subVectorTrainingData)
+			}
+			if numPqCentroids <= 0 { // 确保至少有一个质心
+				log.Warning("Number of PQ centroids is %d for subvector %d in cluster %d. Setting to 1.", numPqCentroids, subVecIdx, i)
+				numPqCentroids = 1
+			}
+
+			log.Info("Training PQ codebook for cluster %d, subvector %d with %d samples and %d centroids.", i, subVecIdx, len(subVectorTrainingData), numPqCentroids)
+			pqCentroids, _, err := algorithm.KMeans(algorithm.ConvertToPoints(subVectorTrainingData), numPqCentroids, 50, 0.0001) // 使用较少的迭代次数和较小的容差
+			if err != nil {
+				log.Error("Failed to train PQ codebook for cluster %d, subvector %d: %v", i, subVecIdx, err)
+				codebookForCluster[subVecIdx] = make([][]float64, 0) // 错误时设置为空码本
+				continue
+			}
+			codebookForCluster[subVecIdx] = algorithm.ConvertToFloat64Slice(pqCentroids)
+		}
+		db.ivfPQIndex.PQCodebooks[i] = codebookForCluster
+
+		// 3. 为当前聚类的所有向量生成 PQ 编码
+		for _, vecID := range cluster.VectorIDs {
+			if vec, ok := db.vectors[vecID]; ok {
+				pqCode := make([]byte, config.PQSubVectors)
+				for subVecIdx := 0; subVecIdx < config.PQSubVectors; subVecIdx++ {
+					startDim := subVecIdx * db.ivfPQIndex.SubVectorDim
+					endDim := startDim + db.ivfPQIndex.SubVectorDim
+
+					if endDim > originalVectorDimension {
+						endDim = originalVectorDimension
+					}
+					if startDim >= originalVectorDimension || len(db.ivfPQIndex.PQCodebooks[i]) <= subVecIdx || len(db.ivfpqIndex.PQCodebooks[i][subVecIdx]) == 0 {
+						// 如果子向量超出边界，或者该子向量的码本为空，则无法编码
+						log.Warning("Cannot generate PQ code for vector %s, subvector %d in cluster %d due to out-of-bounds or empty codebook. Assigning default code (0).", vecID, subVecIdx, i)
+						pqCode[subVecIdx] = 0 // 或者其他默认值/错误处理
+						continue
+					}
+
+					if len(vec) >= endDim {
+						subVec := vec[startDim:endDim]
+						nearestCentroidIdx := findNearestPQCentroid(subVec, db.ivfPQIndex.PQCodebooks[i][subVecIdx])
+						pqCode[subVecIdx] = byte(nearestCentroidIdx)
+					} else {
+						log.Warning("Vector %s dimension mismatch for PQ encoding. Expected at least %d, got %d for subvector %d in cluster %d. Assigning default code (0).", vecID, endDim, len(vec), subVecIdx, i)
+						pqCode[subVecIdx] = 0 // 默认编码
+					}
+				}
+				db.ivfPQIndex.PQCodes[vecID] = pqCode
+				enhancedClusters[i].PQCodes = append(enhancedClusters[i].PQCodes, pqCode) // 同时存储在 EnhancedCluster 中
+			} else {
+				log.Warning("Vector ID %s not found in db.vectors while generating PQ codes for cluster %d", vecID, i)
+			}
+		}
+		log.Info("Finished PQ processing for cluster %d. Generated %d PQ codes.", i, len(enhancedClusters[i].PQCodes))
+	}
+
+	log.Info("IVF-PQ index build completed.")
+	return nil
+}
+
+// findNearestPQCentroid 找到距离给定子向量最近的PQ码本中的质心
+// subVector: 要编码的子向量
+// pqCodebookForSubVector: 特定子向量的PQ码本 ([][]float64)
+// 返回: 最近的PQ质心的索引
+func findNearestPQCentroid(subVector []float64, pqCodebookForSubVector [][]float64) int {
+	if len(pqCodebookForSubVector) == 0 {
+		log.Warning("findNearestPQCentroid called with empty PQ codebook for subvector.")
+		return 0 // 或者一个特殊的错误指示值
+	}
+	minDist := math.MaxFloat64
+	nearestCentroidIdx := 0
+	for idx, centroid := range pqCodebookForSubVector {
+		dist, err := algorithm.EuclideanDistanceSquared(subVector, centroid)
+		if err != nil {
+			log.Warning("Error calculating distance for PQ centroid %d: %v", idx, err)
+			continue
+		}
+		if dist < minDist {
+			minDist = dist
+			nearestCentroidIdx = idx
+		}
+	}
+	return nearestCentroidIdx
+}
+
+// findNearestCluster 找到距离给定向量最近的聚类中心
+// vector: 要分配的向量
+// centroids: 聚类中心的列表 (类型为 []entity.Point)
+// 返回: 最近的聚类中心的索引
+func (db *VectorDB) findNearestCluster(vector []float64, centroids []entity.Point) int {
+	if len(centroids) == 0 {
+		// 应该在调用此函数之前处理这种情况，但作为安全措施
+		log.Error("findNearestCluster called with no centroids")
+		return -1 // 或者 panic，取决于错误处理策略
+	}
+
+	minDist := math.MaxFloat64
+	nearestClusterID := 0
+
+	for i, centroidPoint := range centroids {
+		// entity.Point 内部存储的是 []float64
+		dist, err := algorithm.EuclideanDistanceSquared(vector, centroidPoint) // entity.Point 可以直接用于距离计算
+		if err != nil {
+			log.Warning("Error calculating distance between vector and centroid %d: %v", i, err)
+			continue // 跳过这个质心或采取其他错误处理
+		}
+
+		if dist < minDist {
+			minDist = dist
+			nearestClusterID = i
+		}
+	}
+	return nearestClusterID
 }
 
 // EnhancedIVFSearch 增强 IVF 搜索
