@@ -235,7 +235,7 @@ func (db *VectorDB) BuildEnhancedIVFIndex(config *IVFConfig) error {
 
 	// 6. 计算聚类指标
 	for i := range enhancedClusters {
-		db.calculateClusterMetrics(&enhancedClusters[i])
+		db.CalculateClusterMetrics(&enhancedClusters[i])
 	}
 
 	// 7. 创建增强索引
@@ -252,12 +252,167 @@ func (db *VectorDB) BuildEnhancedIVFIndex(config *IVFConfig) error {
 
 	// 8. 启动动态更新（如果启用）
 	if config.EnableDynamic {
-		db.startDynamicClusterUpdates()
+		db.StartDynamicClusterUpdates()
 	}
 
 	db.indexed = true
 	log.Info("增强 IVF 索引构建完成，共 %d 个聚类", config.NumClusters)
 	return nil
+}
+
+// StartDynamicClusterUpdates 启动后台 goroutine 以进行动态聚类更新
+func (db *VectorDB) StartDynamicClusterUpdates() {
+	if db.ivfIndex == nil || !db.ivfConfig.EnableDynamic {
+		log.Info("Dynamic cluster updates are not enabled or IVF index is not built.")
+		return
+	}
+
+	log.Info("Starting dynamic cluster updates goroutine...")
+	go func() {
+		// TODO: 从配置中读取更新间隔
+		ticker := time.NewTicker(1 * time.Minute) // 例如，每分钟检查一次
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				db.performClusterMaintenance()
+				// TODO: 添加一个停止通道，以便在数据库关闭时优雅地停止此 goroutine
+				// case <-db.stopDynamicUpdatesCh: // 假设有一个停止通道
+				// 	log.Info("Stopping dynamic cluster updates goroutine.")
+				// 	return
+			}
+		}
+	}()
+}
+
+// performClusterMaintenance 执行聚类维护操作，例如重平衡
+func (db *VectorDB) performClusterMaintenance() {
+	if db.ivfIndex == nil {
+		return
+	}
+	db.ivfIndex.mu.Lock()
+	defer db.ivfIndex.mu.Unlock()
+
+	log.Info("Performing cluster maintenance...")
+	var needsRebuild bool = false
+	for i := range db.ivfIndex.Clusters {
+		cluster := &db.ivfIndex.Clusters[i]
+		// 检查是否需要重平衡
+		// 例如：如果聚类大小超出阈值，或者长时间未访问等
+		if len(cluster.VectorIDs) > db.ivfConfig.MaxClusterSize || len(cluster.VectorIDs) < db.ivfConfig.MinClusterSize && len(cluster.VectorIDs) > 0 {
+			log.Info("Cluster %d (size: %d) needs rebalancing (max: %d, min: %d). Triggering index rebuild.", i, len(cluster.VectorIDs), db.ivfConfig.MaxClusterSize, db.ivfConfig.MinClusterSize)
+			// 标记需要重建索引，实际的重平衡可能需要更复杂的逻辑
+			// 例如，分裂过大的簇，合并过小的簇，或者完全重建索引
+			needsRebuild = true
+			break // 一旦发现需要重建，就可以跳出循环
+		}
+
+		// 示例：更新访问统计信息或执行其他维护任务
+		// cluster.AccessCount = 0 // 例如，定期重置访问计数
+		// cluster.Metrics.LastRebalance = time.Now() // 更新重平衡时间戳
+	}
+
+	if needsRebuild {
+		log.Info("Triggering full IVF index rebuild due to cluster maintenance requirements.")
+		// 注意：直接在后台 goroutine 中调用 BuildEnhancedIVFIndex 可能需要小心处理并发和锁
+		// 最好是通过一个任务队列或者其他机制来触发重建
+		// 简单的示例是直接调用，但这在生产环境中可能需要更健壮的处理
+		go func() {
+			if err := db.BuildEnhancedIVFIndex(db.ivfConfig); err != nil {
+				log.Error("Error during background IVF index rebuild: %v", err)
+			}
+		}()
+	}
+	log.Info("Cluster maintenance check completed.")
+}
+
+// CalculateClusterMetrics 计算并更新给定增强聚类的指标
+func (db *VectorDB) CalculateClusterMetrics(cluster *EnhancedCluster) {
+	if cluster == nil {
+		log.Warning("calculateClusterMetrics called with nil cluster")
+		return
+	}
+
+	numVectors := len(cluster.VectorIDs)
+	if numVectors == 0 {
+		cluster.Metrics = ClusterMetrics{ // 重置或设置默认指标
+			Variance:       0,
+			Density:        0,
+			Radius:         0,
+			QueryFrequency: cluster.Metrics.QueryFrequency, // 保留查询频率
+			LastRebalance:  cluster.Metrics.LastRebalance,  // 保留上次重平衡时间
+		}
+		return
+	}
+
+	var dimension int
+	if len(cluster.Centroid) > 0 {
+		dimension = len(cluster.Centroid)
+	} else if numVectors > 0 {
+		if vec, ok := db.vectors[cluster.VectorIDs[0]]; ok {
+			dimension = len(vec)
+		} else {
+			log.Warning("Cannot determine dimension for cluster metric calculation as centroid is empty and first vector %s not found.", cluster.VectorIDs[0])
+			return
+		}
+	}
+	if dimension == 0 {
+		log.Warning("Cannot calculate metrics for zero-dimension vectors.")
+		return
+	}
+
+	// 计算方差 (Variance) 和 半径 (Radius)
+	var sumSquaredDist float64
+	maxDistToCentroid := 0.0
+	meanVector := make([]float64, dimension)
+
+	for _, vecID := range cluster.VectorIDs {
+		if vector, ok := db.vectors[vecID]; ok {
+			distSq, err := algorithm.EuclideanDistanceSquared(vector, cluster.Centroid)
+			if err != nil {
+				log.Warning("Error calculating distance for variance/radius for vector %s: %v", vecID, err)
+				continue
+			}
+			sumSquaredDist += distSq
+			dist := math.Sqrt(distSq)
+			if dist > maxDistToCentroid {
+				maxDistToCentroid = dist
+			}
+			// 累加用于计算均值向量
+			for i := 0; i < dimension; i++ {
+				meanVector[i] += vector[i]
+			}
+		} else {
+			log.Warning("Vector ID %s not found in db.vectors during metric calculation.", vecID)
+		}
+	}
+
+	cluster.Metrics.Variance = sumSquaredDist / float64(numVectors)
+	cluster.Metrics.Radius = maxDistToCentroid
+
+	// 计算密度 (Density)
+	// 密度可以有多种定义，这里使用一种简单的定义：单位体积内的向量数
+	// 假设聚类大致呈球形，体积 V = (4/3) * pi * R^3 (高维时更复杂，这里简化)
+	if cluster.Metrics.Radius > 0 {
+		// 对于高维空间，球体体积公式为 V_n(R) = (pi^(n/2) / Gamma(n/2 + 1)) * R^n
+		// 这里使用一个简化的概念，或者直接使用半径的倒数等作为密度指标
+		// 或者定义为：单位距离内的平均向量数
+		// 另一种简单的密度定义： numVectors / (Radius^dimension) - 但要注意量纲和数值范围
+		// 这里采用更稳健的：numVectors / (1 + Radius) 来避免 Radius 为0或过小导致的问题
+		cluster.Metrics.Density = float64(numVectors) / (1.0 + cluster.Metrics.Radius)
+	} else if numVectors > 0 { // 如果半径为0（例如只有一个点），密度可以认为很高
+		cluster.Metrics.Density = float64(numVectors) // 或者一个预设的最大密度值
+	} else {
+		cluster.Metrics.Density = 0
+	}
+
+	// QueryFrequency 和 LastRebalance 通常在其他地方更新
+	// cluster.Metrics.QueryFrequency = ... (由查询逻辑更新)
+	// cluster.Metrics.LastRebalance = ... (由重平衡逻辑更新)
+
+	log.Trace("Calculated metrics for cluster with %d vectors: Variance=%.4f, Radius=%.4f, Density=%.4f",
+		numVectors, cluster.Metrics.Variance, cluster.Metrics.Radius, cluster.Metrics.Density)
 }
 
 // BuildIVFPQIndex 为 IVF 索引构建 PQ 压缩
@@ -491,10 +646,10 @@ func (db *VectorDB) EnhancedIVFSearch(query []float64, k int, nprobe int) ([]ent
 	defer db.ivfIndex.mu.RUnlock()
 
 	// 1. 自适应 nprobe 调整
-	adaptiveNprobe := db.calculateAdaptiveNprobe(query, nprobe)
+	adaptiveNprobe := db.CalculateAdaptiveNprobe(query, nprobe)
 
 	// 2. 智能聚类选择
-	candidateClusters := db.selectCandidateClusters(query, adaptiveNprobe)
+	candidateClusters := db.SelectCandidateClusters(query, adaptiveNprobe)
 
 	// 3. 并行搜索候选聚类
 	results := make(chan []entity.Result, len(candidateClusters))
@@ -504,7 +659,7 @@ func (db *VectorDB) EnhancedIVFSearch(query []float64, k int, nprobe int) ([]ent
 		wg.Add(1)
 		go func(cid int) {
 			defer wg.Done()
-			clusterResults := db.searchInCluster(query, k, cid)
+			clusterResults := db.SearchInCluster(query, k, cid)
 			results <- clusterResults
 		}(clusterID)
 	}
@@ -528,4 +683,320 @@ func (db *VectorDB) EnhancedIVFSearch(query []float64, k int, nprobe int) ([]ent
 	}
 
 	return allResults[:k], nil
+}
+
+// SearchInCluster 在指定的单个聚类中搜索 top-k 向量
+// query: 查询向量
+// k: 要返回的最近邻数量
+// clusterID: 要搜索的聚类ID
+// 返回: 在该聚类中找到的 top-k 结果列表
+func (db *VectorDB) SearchInCluster(query []float64, k int, clusterID int) []entity.Result {
+	if db.ivfIndex == nil || clusterID < 0 || clusterID >= len(db.ivfIndex.Clusters) {
+		log.Warning("searchInCluster called with invalid clusterID (%d) or nil IVF index.", clusterID)
+		return []entity.Result{}
+	}
+
+	db.ivfIndex.mu.RLock() // RLock for reading cluster data
+	cluster := db.ivfIndex.Clusters[clusterID]
+	db.ivfIndex.mu.RUnlock()
+
+	if len(cluster.VectorIDs) == 0 {
+		return []entity.Result{}
+	}
+
+	clusterResults := make([]entity.Result, 0, len(cluster.VectorIDs))
+
+	// 根据是否使用 PQ 压缩选择不同的搜索策略
+	if db.ivfConfig != nil && db.ivfConfig.UsePQCompression && db.ivfPQIndex != nil && len(cluster.PQCodes) > 0 {
+		// 使用 PQ 编码进行近似距离计算
+		// 1. 计算查询向量的 PQ 编码 (或者更准确地说是查询向量到各个子空间码本的距离)
+		// 这部分逻辑比较复杂，通常是计算查询向量和每个子码本中所有质心的距离，得到一个距离表
+		// 然后用这个距离表和存储的 PQ code 来估算原始向量间的距离 (Asymmetric Distance Computation - ADC)
+
+		// 简化版：如果 PQ 码本存在，则尝试使用
+		if clusterID < len(db.ivfPQIndex.PQCodebooks) && len(db.ivfPQIndex.PQCodebooks[clusterID]) == db.ivfPQIndex.NumSubVectors {
+			for i, vecID := range cluster.VectorIDs {
+				if i < len(cluster.PQCodes) {
+					pqCode := cluster.PQCodes[i]
+					// 计算 ADC (Asymmetric Distance Computation)
+					estimatedDistSq := 0.0
+					for subVecIdx := 0; subVecIdx < db.ivfPQIndex.NumSubVectors; subVecIdx++ {
+						startDim := subVecIdx * db.ivfPQIndex.SubVectorDim
+						endDim := startDim + db.ivfPQIndex.SubVectorDim
+						if endDim > len(query) {
+							endDim = len(query)
+						}
+						if startDim >= len(query) || subVecIdx >= len(db.ivfPQIndex.PQCodebooks[clusterID]) || int(pqCode[subVecIdx]) >= len(db.ivfPQIndex.PQCodebooks[clusterID][subVecIdx]) {
+							// log.Warning("Skipping sub-vector %d for ADC due to boundary or codebook issue.", subVecIdx)
+							continue
+						}
+						querySubVec := query[startDim:endDim]
+						centroidForCode := db.ivfPQIndex.PQCodebooks[clusterID][subVecIdx][pqCode[subVecIdx]]
+						distSq, err := algorithm.EuclideanDistanceSquared(querySubVec, centroidForCode)
+						if err == nil {
+							estimatedDistSq += distSq
+						} else {
+							// log.Warning("Error calculating sub-distance for ADC: %v", err)
+						}
+					}
+					// 相似度通常是距离的倒数或某种转换，这里用 1 / (1 + distance)
+					similarity := 1.0 / (1.0 + math.Sqrt(estimatedDistSq))
+					clusterResults = append(clusterResults, entity.Result{Id: vecID, Similarity: similarity, Distance: math.Sqrt(estimatedDistSq)})
+				} else {
+					// PQCode 不足，回退到精确计算
+					db.mu.RLock() // Lock for reading db.vectors
+					vector, ok := db.vectors[vecID]
+					db.mu.RUnlock()
+					if ok {
+						dist, _ := algorithm.EuclideanDistanceSquared(query, vector)
+						similarity := 1.0 / (1.0 + dist)
+						clusterResults = append(clusterResults, entity.Result{Id: vecID, Similarity: similarity, Distance: dist})
+					}
+				}
+			}
+		} else {
+			// PQ 码本不完整或不匹配，回退到精确计算
+			for _, vecID := range cluster.VectorIDs {
+				db.mu.RLock() // Lock for reading db.vectors
+				vector, ok := db.vectors[vecID]
+				db.mu.RUnlock()
+				if ok {
+					dist, _ := algorithm.EuclideanDistanceSquared(query, vector)
+					similarity := 1.0 / (1.0 + dist)
+					clusterResults = append(clusterResults, entity.Result{Id: vecID, Similarity: similarity, Distance: dist})
+				}
+			}
+		}
+	} else {
+		// 不使用 PQ 压缩，进行精确距离计算
+		for _, vecID := range cluster.VectorIDs {
+			db.mu.RLock() // Lock for reading db.vectors
+			vector, ok := db.vectors[vecID]
+			db.mu.RUnlock()
+			if ok {
+				dist, err := algorithm.EuclideanDistanceSquared(query, vector)
+				if err != nil {
+					log.Warning("Error calculating distance for vector %s in cluster %d: %v", vecID, clusterID, err)
+					continue
+				}
+				// 相似度通常是距离的倒数或某种转换，这里用 1 / (1 + distance)
+				similarity := 1.0 / (1.0 + dist)
+				clusterResults = append(clusterResults, entity.Result{Id: vecID, Similarity: similarity, Distance: dist})
+			}
+		}
+	}
+
+	// 对聚类内部的结果按相似度（或距离）排序
+	sort.Slice(clusterResults, func(i, j int) bool {
+		return clusterResults[i].Similarity > clusterResults[j].Similarity // 降序
+		// 或者按距离升序: return clusterResults[i].Distance < clusterResults[j].Distance
+	})
+
+	// 返回聚类内部的 top-k (如果需要，但通常在合并所有聚类结果后再取最终 top-k)
+	// 这里返回所有结果，由调用方处理合并和最终的 top-k
+	// if k > 0 && k < len(clusterResults) {
+	// 	 return clusterResults[:k]
+	// }
+	return clusterResults
+}
+
+// SelectCandidateClusters 根据查询向量和 nprobe 智能选择候选聚类
+// query: 查询向量
+// nprobe: 要选择的聚类数量
+// 返回: 候选聚类的 ID 列表
+func (db *VectorDB) SelectCandidateClusters(query []float64, nprobe int) []int {
+	if db.ivfIndex == nil || len(db.ivfIndex.ClusterCentroids) == 0 {
+		log.Warning("selectCandidateClusters called with nil or empty IVF index.")
+		return []int{}
+	}
+
+	db.ivfIndex.mu.RLock() // Ensure read lock for accessing shared index data
+	defer db.ivfIndex.mu.RUnlock()
+
+	if nprobe <= 0 {
+		nprobe = 1 // 至少选择一个聚类
+	}
+	if nprobe > len(db.ivfIndex.ClusterCentroids) {
+		nprobe = len(db.ivfIndex.ClusterCentroids) // 最多选择所有聚类
+	}
+
+	// 计算查询向量到所有聚类中心的距离
+	type clusterDistance struct {
+		ID       int
+		Distance float64
+		// 可以添加其他用于排序的指标，例如聚类密度、大小、查询频率等
+		Density   float64
+		Size      int
+		QueryFreq float64
+	}
+
+	distances := make([]clusterDistance, 0, len(db.ivfIndex.ClusterCentroids))
+
+	for i, centroid := range db.ivfIndex.ClusterCentroids {
+		dist, err := algorithm.EuclideanDistanceSquared(query, centroid)
+		if err != nil {
+			log.Warning("Error calculating distance to centroid %d for candidate selection: %v", i, err)
+			continue // 跳过计算错误的质心
+		}
+		metrics := ClusterMetrics{} // 默认空指标
+		if i < len(db.ivfIndex.ClusterMetrics) {
+			metrics = db.ivfIndex.ClusterMetrics[i]
+		}
+		clusterSize := 0
+		if i < len(db.ivfIndex.Clusters) {
+			clusterSize = len(db.ivfIndex.Clusters[i].VectorIDs)
+		}
+
+		distances = append(distances, clusterDistance{
+			ID:        i,
+			Distance:  dist,
+			Density:   metrics.Density,
+			Size:      clusterSize,
+			QueryFreq: metrics.QueryFrequency,
+		})
+	}
+
+	if len(distances) == 0 {
+		return []int{}
+	}
+
+	// 根据距离和其他智能因素对聚类进行排序
+	sort.Slice(distances, func(i, j int) bool {
+		// 主要按距离排序
+		if distances[i].Distance != distances[j].Distance {
+			return distances[i].Distance < distances[j].Distance
+		}
+		// 次要排序因素：可以考虑聚类密度（倾向于密度大的），或查询频率（倾向于常被查询的）
+		// 示例：如果距离相同，优先选择密度更大的聚类
+		// if distances[i].Density != distances[j].Density {
+		// 	 return distances[i].Density > distances[j].Density
+		// }
+		// 示例：如果距离和密度都相同，优先选择规模适中的聚类（避免过小或过大，除非有特定策略）
+		// idealSize := db.ivfConfig.MaxClusterSize / 2
+		// diffI := math.Abs(float64(distances[i].Size - idealSize))
+		// diffJ := math.Abs(float64(distances[j].Size - idealSize))
+		// if diffI != diffJ {
+		// 	 return diffI < diffJ
+		// }
+		return distances[i].ID < distances[j].ID // 最终通过ID保证排序稳定性
+	})
+
+	selectedClusterIDs := make([]int, 0, nprobe)
+	for i := 0; i < len(distances) && i < nprobe; i++ {
+		selectedClusterIDs = append(selectedClusterIDs, distances[i].ID)
+		// 更新被选中聚类的访问统计（如果需要）
+		if distances[i].ID < len(db.ivfIndex.Clusters) {
+			// 加锁操作，因为可能会有并发写
+			// db.ivfIndex.mu.Lock() // 这可能导致死锁，因为外层已经有RLock
+			// 考虑将更新操作移到其他地方，或者使用更细粒度的锁
+			// db.ivfIndex.Clusters[distances[i].ID].LastAccessed = time.Now()
+			// db.ivfIndex.Clusters[distances[i].ID].AccessCount++
+			// db.ivfIndex.mu.Unlock()
+		}
+		if distances[i].ID < len(db.ivfIndex.ClusterMetrics) {
+			// db.ivfIndex.ClusterMetrics[distances[i].ID].QueryFrequency++ // 同上，注意并发安全
+		}
+	}
+
+	log.Trace("Selected %d candidate clusters for query: %v", len(selectedClusterIDs), selectedClusterIDs)
+	return selectedClusterIDs
+}
+
+// CalculateAdaptiveNprobe 根据查询向量和当前聚类状态动态调整 nprobe 值
+func (db *VectorDB) CalculateAdaptiveNprobe(query []float64, baseNprobe int) int {
+	if db.ivfIndex == nil || len(db.ivfIndex.Clusters) == 0 {
+		return baseNprobe
+	}
+
+	// 1. 基础检查和限制
+	if baseNprobe <= 0 {
+		baseNprobe = 1
+	}
+	if baseNprobe > len(db.ivfIndex.Clusters) {
+		baseNprobe = len(db.ivfIndex.Clusters)
+	}
+
+	// 2. 计算查询向量到所有聚类中心的距离
+	distances := make([]struct {
+		clusterID int
+		distance  float64
+	}, len(db.ivfIndex.ClusterCentroids))
+
+	for i, centroid := range db.ivfIndex.ClusterCentroids {
+		dist, err := algorithm.EuclideanDistanceSquared(query, centroid)
+		if err != nil {
+			log.Warning("Error calculating distance to centroid %d: %v", i, err)
+			continue
+		}
+		distances[i] = struct {
+			clusterID int
+			distance  float64
+		}{i, dist}
+	}
+
+	// 3. 根据距离分布调整 nprobe
+	// 对距离进行排序
+	sort.Slice(distances, func(i, j int) bool {
+		return distances[i].distance < distances[j].distance
+	})
+
+	// 计算最近和最远的距离比率
+	if len(distances) < 2 {
+		return baseNprobe
+	}
+	minDist := distances[0].distance
+	maxDist := distances[len(distances)-1].distance
+	distanceRatio := minDist / maxDist
+
+	// 4. 动态调整因子计算
+	// 基于距离分布的调整因子
+	distanceAdjustment := 1.0
+	if distanceRatio < 0.1 { // 距离差异很大，可以减少 nprobe
+		distanceAdjustment = 0.8
+	} else if distanceRatio > 0.5 { // 距离差异小，需要增加 nprobe
+		distanceAdjustment = 1.5
+	}
+
+	// 基于聚类大小的调整
+	sizeAdjustment := 1.0
+	largestClusterSize := 0
+	for _, cluster := range db.ivfIndex.Clusters {
+		if len(cluster.VectorIDs) > largestClusterSize {
+			largestClusterSize = len(cluster.VectorIDs)
+		}
+	}
+	if largestClusterSize > db.ivfConfig.MaxClusterSize/2 {
+		// 如果有很大的聚类，增加 nprobe 以提高召回率
+		sizeAdjustment = 1.3
+	}
+
+	// 基于查询频率的调整
+	frequencyAdjustment := 1.0
+	totalQueryFrequency := 0.0
+	for _, metrics := range db.ivfIndex.ClusterMetrics {
+		totalQueryFrequency += metrics.QueryFrequency
+	}
+	averageFrequency := totalQueryFrequency / float64(len(db.ivfIndex.ClusterMetrics))
+	if averageFrequency > 0 {
+		// 如果有频繁查询的聚类，适当增加 nprobe
+		frequencyAdjustment = 1.2
+	}
+
+	// 5. 计算最终的 nprobe 值
+	adjustedNprobe := int(float64(baseNprobe) * distanceAdjustment * sizeAdjustment * frequencyAdjustment)
+
+	// 6. 确保 nprobe 在合理范围内
+	minNprobe := 1
+	maxNprobe := len(db.ivfIndex.Clusters)
+	if adjustedNprobe < minNprobe {
+		adjustedNprobe = minNprobe
+	}
+	if adjustedNprobe > maxNprobe {
+		adjustedNprobe = maxNprobe
+	}
+
+	log.Trace("Adaptive nprobe calculation: base=%d, distance_adj=%.2f, size_adj=%.2f, freq_adj=%.2f, final=%d",
+		baseNprobe, distanceAdjustment, sizeAdjustment, frequencyAdjustment, adjustedNprobe)
+
+	return adjustedNprobe
 }

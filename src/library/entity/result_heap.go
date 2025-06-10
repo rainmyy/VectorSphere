@@ -5,6 +5,7 @@ type Result struct {
 	Id         string
 	Similarity float64 // 使用相似度而非距离，值越大越相似
 	WordCount  int
+	Distance   float64
 }
 
 // ResultHeap 结果的最小堆实现（按相似度排序，保留最大的k个）
