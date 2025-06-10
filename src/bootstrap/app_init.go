@@ -1,7 +1,8 @@
 package bootstrap
 
 import (
-	"VectorSphere/src/library/conf"
+	confType "VectorSphere/src/library/confType"
+	conf "VectorSphere/src/library/config"
 	"VectorSphere/src/library/security"
 	"context"
 	"encoding/json"
@@ -26,78 +27,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// AppConfig 应用配置
-type AppConfig struct {
-	AppName             string             `yaml:"appName"`
-	Version             string             `yaml:"version"`
-	ListenAddress       string             `yaml:"listenAddress"`
-	EtcdEndpoints       []string           `yaml:"etcdEndpoints"`
-	EtcdDialTimeout     time.Duration      `yaml:"etcdDialTimeout"`
-	EtcdUsername        string             `yaml:"etcdUsername"`
-	EtcdPassword        string             `yaml:"etcdPassword"`
-	EtcdTLS             *TLSConfig         `yaml:"etcdTLS"`
-	ServiceRegistryPath string             `yaml:"serviceRegistryPath"` // e.g., /services/my-app/
-	ServiceTTL          int64              `yaml:"serviceTTL"`          // 服务租约TTL (秒)
-	ConfigPathPrefix    string             `yaml:"configPathPrefix"`    // 配置在etcd中的路径前缀, e.g., /config/my-app/
-	LockPathPrefix      string             `yaml:"lockPathPrefix"`      // 分布式锁路径前缀
-	ElectionPathPrefix  string             `yaml:"electionPathPrefix"`  // 领导者选举路径前缀
-	RetryPolicy         *RetryPolicy       `yaml:"retryPolicy"`
-	LoadBalancer        string             `yaml:"loadBalancer"` // e.g., "round_robin", "random"
-	CircuitBreaker      *CBConfig          `yaml:"circuitBreaker"`
-	RateLimiter         *RLConfig          `yaml:"rateLimiter"`
-	ClientTLS           *TLSConfig         `yaml:"clientTLS"` // 客户端TLS配置
-	HealthCheck         *HealthCheckConfig `yaml:"healthCheck"`
-}
-
-// TLSConfig TLS配置
-type TLSConfig struct {
-	CertFile   string `yaml:"certFile"`
-	KeyFile    string `yaml:"keyFile"`
-	CAFile     string `yaml:"caFile"`
-	ServerName string `yaml:"serverName"` // 用于验证服务端证书的 CN
-}
-
-// HealthCheckConfig 健康检查配置
-type HealthCheckConfig struct {
-	Enabled           bool          `yaml:"enabled"`           // 是否启用健康检查
-	CheckInterval     time.Duration `yaml:"checkInterval"`     // 健康检查间隔
-	Timeout           time.Duration `yaml:"timeout"`           // 健康检查超时时间
-	FailureThreshold  int           `yaml:"failureThreshold"`  // 失败阈值
-	SuccessThreshold  int           `yaml:"successThreshold"`  // 成功阈值
-	HeartbeatInterval time.Duration `yaml:"heartbeatInterval"` // 心跳间隔
-	HeartbeatTimeout  time.Duration `yaml:"heartbeatTimeout"`  // 心跳超时
-	GracefulShutdown  time.Duration `yaml:"gracefulShutdown"`  // 优雅关闭时间
-	RetryPolicy       *RetryPolicy  `yaml:"retryPolicy"`       // 重试策略
-}
-
-// RetryPolicy 重试策略配置
-type RetryPolicy struct {
-	MaxElapsedTime      time.Duration `yaml:"maxElapsedTime"`
-	InitialInterval     time.Duration `yaml:"initialInterval"`
-	MaxInterval         time.Duration `yaml:"maxInterval"`
-	Multiplier          float64       `yaml:"multiplier"`
-	RandomizationFactor float64       `yaml:"randomizationFactor"`
-}
-
-// CBConfig 熔断器配置
-type CBConfig struct {
-	Name          string                                                      `yaml:"name"`        // 熔断器名称
-	MaxRequests   uint32                                                      `yaml:"maxRequests"` // 半开状态下允许的请求数
-	Interval      time.Duration                                               `yaml:"interval"`    // 计数器重置周期
-	Timeout       time.Duration                                               `yaml:"timeout"`     // 从打开状态到半开状态的超时时间
-	ReadyToTrip   func(counts gobreaker.Counts) bool                          `yaml:"-"`           // 自定义判断是否熔断的函数
-	OnStateChange func(name string, from gobreaker.State, to gobreaker.State) `yaml:"-"`           // 状态变化回调
-}
-
-// RLConfig 限流器配置
-type RLConfig struct {
-	Rate  rate.Limit `yaml:"rate"`  // 每秒允许的事件数
-	Burst int        `yaml:"burst"` // 令牌桶的容量
-}
-
 // AppContext 应用上下文
 type AppContext struct {
-	Config                  *AppConfig
+	Config                  *conf.AppConfig
 	EtcdClient              *clientv3.Client
 	EtcdSession             *concurrency.Session // 用于分布式锁和选举
 	LeaseID                 clientv3.LeaseID
@@ -115,16 +47,8 @@ type AppContext struct {
 	EnhancedSecurityManager *security.EnhancedSecurityManager
 }
 
-// ConfigVersion 配置版本信息
-type ConfigVersion struct {
-	Version   int64     `json:"version"`
-	Data      []byte    `json:"data"`
-	Timestamp time.Time `json:"timestamp"`
-	Comment   string    `json:"comment"`
-}
-
 // CreateSecureEtcdClient 创建安全的etcd客户端
-func CreateSecureEtcdClient(endpoints []string, tlsConfig *TLSConfig) (*clientv3.Client, error) {
+func CreateSecureEtcdClient(endpoints []string, tlsConfig *conf.TLSConfig) (*clientv3.Client, error) {
 	cliConfig := clientv3.Config{
 		Endpoints:   endpoints,
 		DialTimeout: 5 * time.Second,
@@ -151,7 +75,7 @@ func CreateSecureEtcdClient(endpoints []string, tlsConfig *TLSConfig) (*clientv3
 }
 
 // NewAppContext 创建新的应用上下文
-func NewAppContext(config *AppConfig) (*AppContext, error) {
+func NewAppContext(config *conf.AppConfig) (*AppContext, error) {
 	// 加载安全配置
 	securityConfig, err := loadSecurityConfig()
 	if err != nil {
@@ -234,7 +158,7 @@ func NewAppContext(config *AppConfig) (*AppContext, error) {
 // loadSecurityConfig 加载安全配置
 func loadSecurityConfig() (*security.SecurityConfig, error) {
 	var securityConfig security.SecurityConfig
-	err := conf.ReadYAML("conf/security.yaml", &securityConfig)
+	err := confType.ReadYAML("conf/security.yaml", &securityConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read security config: %w", err)
 	}
@@ -242,7 +166,7 @@ func loadSecurityConfig() (*security.SecurityConfig, error) {
 }
 
 // initEtcdClient 初始化etcd客户端
-func initEtcdClient(config *AppConfig) (*clientv3.Client, error) {
+func initEtcdClient(config *conf.AppConfig) (*clientv3.Client, error) {
 	cliConfig := clientv3.Config{
 		Endpoints:   config.EtcdEndpoints,
 		DialTimeout: config.EtcdDialTimeout,
@@ -272,7 +196,7 @@ func initEtcdClient(config *AppConfig) (*clientv3.Client, error) {
 }
 
 // initDefaultBackOff 初始化默认重试策略
-func initDefaultBackOff(policyConf *RetryPolicy) backoff.BackOff {
+func initDefaultBackOff(policyConf *conf.RetryPolicy) backoff.BackOff {
 	if policyConf == nil {
 		// 提供一个合理的默认值
 		b := backoff.NewExponentialBackOff()

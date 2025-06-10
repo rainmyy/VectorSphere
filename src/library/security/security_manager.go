@@ -1,7 +1,7 @@
 package security
 
 import (
-	"VectorSphere/src/bootstrap"
+	"VectorSphere/src/library/config"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -103,12 +103,12 @@ type EncryptionConfig struct {
 
 // SecurityConfig 安全配置
 type SecurityConfig struct {
-	TLS        *bootstrap.TLSConfig `yaml:"tls"`
-	RBAC       *RBACConfig          `yaml:"rbac"`
-	Encryption *EncryptionConfig    `yaml:"encryption"`
-	Audit      *AuditConfig         `yaml:"audit"`
-	Network    *NetworkConfig       `yaml:"network"`
-	JWT        *JWTConfig           `yaml:"jwt"`
+	TLS        *config.TLSConfig `yaml:"tls"`
+	RBAC       *RBACConfig       `yaml:"rbac"`
+	Encryption *EncryptionConfig `yaml:"encryption"`
+	Audit      *AuditConfig      `yaml:"audit"`
+	Network    *NetworkConfig    `yaml:"network"`
+	JWT        *JWTConfig        `yaml:"jwt"`
 }
 
 // RBACConfig RBAC配置
@@ -241,7 +241,7 @@ func NewEnhancedSecurityManager(config *SecurityConfig) (*EnhancedSecurityManage
 }
 
 // createTLSConfig 创建TLS配置
-func createTLSConfig(config *bootstrap.TLSConfig) (*tls.Config, error) {
+func createTLSConfig(config *config.TLSConfig) (*tls.Config, error) {
 	if config == nil {
 		return nil, nil
 	}
@@ -729,7 +729,7 @@ func (esm *EnhancedSecurityManager) RotateEncryptionKey() error {
 }
 
 // LoadClientTLS 加载客户端TLS配置
-func LoadClientTLS(tlsConfig *bootstrap.TLSConfig) (credentials.TransportCredentials, error) {
+func LoadClientTLS(tlsConfig *config.TLSConfig) (credentials.TransportCredentials, error) {
 	if tlsConfig == nil {
 		return nil, fmt.Errorf("TLS config is nil")
 	}

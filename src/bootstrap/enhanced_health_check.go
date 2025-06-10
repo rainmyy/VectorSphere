@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"VectorSphere/src/library/config"
 	"VectorSphere/src/library/log"
 	"VectorSphere/src/server"
 	"context"
@@ -21,11 +22,11 @@ type HealthCheckManager struct {
 	cancel        context.CancelFunc
 	callbacks     []HealthChangeCallback
 
-	config           *HealthCheckConfig
+	config           *config.HealthCheckConfig
 	failureThreshold int
 	successThreshold int
 	checkTimeout     time.Duration
-	retryPolicy      *RetryPolicy
+	retryPolicy      *config.RetryPolicy
 	metrics          *HealthMetrics
 	alertManager     *AlertManager
 }
@@ -54,7 +55,7 @@ type HealthMetrics struct {
 // AlertManager 告警管理器
 type AlertManager struct {
 	webhookURL  string
-	emailConfig *EmailConfig
+	emailConfig *config.EmailConfig
 	alertRules  []AlertRule
 	mu          sync.RWMutex
 }

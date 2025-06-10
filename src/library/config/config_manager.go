@@ -1,4 +1,4 @@
-package bootstrap
+package config
 
 import (
 	"context"
@@ -33,6 +33,14 @@ type ConfigItem struct {
 	Environment string      `json:"environment"`
 	UpdateTime  time.Time   `json:"updateTime"`
 	Description string      `json:"description"`
+}
+
+// ConfigVersion 配置版本信息
+type ConfigVersion struct {
+	Version   int64     `json:"version"`
+	Data      []byte    `json:"data"`
+	Timestamp time.Time `json:"timestamp"`
+	Comment   string    `json:"comment"`
 }
 
 // NewConfigManager 创建配置管理器
