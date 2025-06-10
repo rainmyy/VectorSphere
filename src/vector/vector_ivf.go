@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// IVF 配置结构
+// IVFConfig IVF 配置结构
 type IVFConfig struct {
 	NumClusters        int     `json:"num_clusters"`        // 聚类数量
 	TrainingRatio      float64 `json:"training_ratio"`      // 训练数据比例
@@ -68,7 +68,7 @@ type SubCluster struct {
 // IVFPQIndex IVF-PQ 混合索引
 type IVFPQIndex struct {
 	IVFIndex      *EnhancedIVFIndex `json:"ivf_index"`
-	PQCodebooks   [][][]float64     `json:"pq_codebooks"` // 每个聚类的 PQ 码本
+	PQCodebooks   [][][][]float64   `json:"pq_codebooks"` // 每个聚类的 PQ 码本
 	PQCodes       map[string][]byte `json:"pq_codes"`     // 向量的 PQ 编码
 	SubVectorDim  int               `json:"sub_vector_dim"`
 	NumSubVectors int               `json:"num_sub_vectors"`
@@ -428,7 +428,7 @@ func (db *VectorDB) BuildIVFPQIndex(enhancedClusters []EnhancedCluster, config *
 
 	db.ivfPQIndex = &IVFPQIndex{
 		IVFIndex:      db.ivfIndex, // db.ivfIndex 此时可能还未完全初始化，但其引用是需要的
-		PQCodebooks:   make([][][]float64, len(enhancedClusters)),
+		PQCodebooks:   make([][][][]float64, len(enhancedClusters)),
 		PQCodes:       make(map[string][]byte),
 		NumSubVectors: config.PQSubVectors,
 		NumCentroids:  config.PQCentroids,
@@ -467,7 +467,7 @@ func (db *VectorDB) BuildIVFPQIndex(enhancedClusters []EnhancedCluster, config *
 	for i, cluster := range enhancedClusters {
 		if len(cluster.VectorIDs) == 0 {
 			log.Info("Cluster %d has no vectors, skipping PQ codebook generation.", i)
-			db.ivfPQIndex.PQCodebooks[i] = make([][]float64, 0) // 初始化为空码本
+			db.ivfPQIndex.PQCodebooks[i] = make([][][]float64, 0) // 初始化为空码本
 			continue
 		}
 
@@ -483,7 +483,7 @@ func (db *VectorDB) BuildIVFPQIndex(enhancedClusters []EnhancedCluster, config *
 
 		if len(clusterVectors) == 0 {
 			log.Info("No valid vectors found for cluster %d after lookup, skipping PQ codebook generation.", i)
-			db.ivfPQIndex.PQCodebooks[i] = make([][]float64, 0)
+			db.ivfPQIndex.PQCodebooks[i] = make([][][]float64, 0)
 			continue
 		}
 
@@ -659,7 +659,7 @@ func (db *VectorDB) EnhancedIVFSearch(query []float64, k int, nprobe int) ([]ent
 		wg.Add(1)
 		go func(cid int) {
 			defer wg.Done()
-			clusterResults := db.SearchInCluster(query, k, cid)
+			clusterResults, _ := db.SearchInCluster(query, k, cid)
 			results <- clusterResults
 		}(clusterID)
 	}
@@ -690,114 +690,122 @@ func (db *VectorDB) EnhancedIVFSearch(query []float64, k int, nprobe int) ([]ent
 // k: 要返回的最近邻数量
 // clusterID: 要搜索的聚类ID
 // 返回: 在该聚类中找到的 top-k 结果列表
-func (db *VectorDB) SearchInCluster(query []float64, k int, clusterID int) []entity.Result {
-	if db.ivfIndex == nil || clusterID < 0 || clusterID >= len(db.ivfIndex.Clusters) {
+func (db *VectorDB) SearchInCluster(query []float64, k int, clusterID int) ([]entity.Result, error) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	if db.ivfIndex == nil || !db.ivfIndex.Enable {
+		return nil, fmt.Errorf("IVF index is not built or not enabled")
+	}
+
+	if clusterID < 0 || clusterID >= len(db.ivfIndex.Clusters) {
 		log.Warning("searchInCluster called with invalid clusterID (%d) or nil IVF index.", clusterID)
-		return []entity.Result{}
+		return nil, fmt.Errorf("invalid clusterID: %d", clusterID)
 	}
 
-	db.ivfIndex.mu.RLock() // RLock for reading cluster data
 	cluster := db.ivfIndex.Clusters[clusterID]
-	db.ivfIndex.mu.RUnlock()
-
 	if len(cluster.VectorIDs) == 0 {
-		return []entity.Result{}
+		return []entity.Result{}, nil // 空聚类，返回空结果
 	}
 
-	clusterResults := make([]entity.Result, 0, len(cluster.VectorIDs))
+	results := make([]entity.Result, 0, len(cluster.VectorIDs))
 
-	// 根据是否使用 PQ 压缩选择不同的搜索策略
-	if db.ivfConfig != nil && db.ivfConfig.UsePQCompression && db.ivfPQIndex != nil && len(cluster.PQCodes) > 0 {
-		// 使用 PQ 编码进行近似距离计算
-		// 1. 计算查询向量的 PQ 编码 (或者更准确地说是查询向量到各个子空间码本的距离)
-		// 这部分逻辑比较复杂，通常是计算查询向量和每个子码本中所有质心的距离，得到一个距离表
-		// 然后用这个距离表和存储的 PQ code 来估算原始向量间的距离 (Asymmetric Distance Computation - ADC)
+	// 检查是否可以使用 PQ 加速
+	usePQ := db.ivfPQIndex != nil && db.ivfConfig != nil && db.ivfConfig.UsePQCompression &&
+		clusterID < len(db.ivfPQIndex.PQCodebooks) && len(db.ivfPQIndex.PQCodebooks[clusterID]) == db.ivfPQIndex.NumSubVectors
 
-		// 简化版：如果 PQ 码本存在，则尝试使用
-		if clusterID < len(db.ivfPQIndex.PQCodebooks) && len(db.ivfPQIndex.PQCodebooks[clusterID]) == db.ivfPQIndex.NumSubVectors {
-			for i, vecID := range cluster.VectorIDs {
-				if i < len(cluster.PQCodes) {
-					pqCode := cluster.PQCodes[i]
-					// 计算 ADC (Asymmetric Distance Computation)
-					estimatedDistSq := 0.0
-					for subVecIdx := 0; subVecIdx < db.ivfPQIndex.NumSubVectors; subVecIdx++ {
-						startDim := subVecIdx * db.ivfPQIndex.SubVectorDim
-						endDim := startDim + db.ivfPQIndex.SubVectorDim
-						if endDim > len(query) {
-							endDim = len(query)
-						}
-						if startDim >= len(query) || subVecIdx >= len(db.ivfPQIndex.PQCodebooks[clusterID]) || int(pqCode[subVecIdx]) >= len(db.ivfPQIndex.PQCodebooks[clusterID][subVecIdx]) {
-							// log.Warning("Skipping sub-vector %d for ADC due to boundary or codebook issue.", subVecIdx)
-							continue
-						}
-						querySubVec := query[startDim:endDim]
-						centroidForCode := db.ivfPQIndex.PQCodebooks[clusterID][subVecIdx][pqCode[subVecIdx]]
-						distSq, err := algorithm.EuclideanDistanceSquared(querySubVec, centroidForCode)
-						if err == nil {
-							estimatedDistSq += distSq
-						} else {
-							// log.Warning("Error calculating sub-distance for ADC: %v", err)
-						}
-					}
-					// 相似度通常是距离的倒数或某种转换，这里用 1 / (1 + distance)
-					similarity := 1.0 / (1.0 + math.Sqrt(estimatedDistSq))
-					clusterResults = append(clusterResults, entity.Result{Id: vecID, Similarity: similarity, Distance: math.Sqrt(estimatedDistSq)})
-				} else {
-					// PQCode 不足，回退到精确计算
-					db.mu.RLock() // Lock for reading db.vectors
-					vector, ok := db.vectors[vecID]
-					db.mu.RUnlock()
-					if ok {
-						dist, _ := algorithm.EuclideanDistanceSquared(query, vector)
-						similarity := 1.0 / (1.0 + dist)
-						clusterResults = append(clusterResults, entity.Result{Id: vecID, Similarity: similarity, Distance: dist})
-					}
-				}
-			}
-		} else {
-			// PQ 码本不完整或不匹配，回退到精确计算
-			for _, vecID := range cluster.VectorIDs {
-				db.mu.RLock() // Lock for reading db.vectors
-				vector, ok := db.vectors[vecID]
-				db.mu.RUnlock()
-				if ok {
-					dist, _ := algorithm.EuclideanDistanceSquared(query, vector)
-					similarity := 1.0 / (1.0 + dist)
-					clusterResults = append(clusterResults, entity.Result{Id: vecID, Similarity: similarity, Distance: dist})
-				}
-			}
-		}
-	} else {
-		// 不使用 PQ 压缩，进行精确距离计算
-		for _, vecID := range cluster.VectorIDs {
-			db.mu.RLock() // Lock for reading db.vectors
-			vector, ok := db.vectors[vecID]
-			db.mu.RUnlock()
-			if ok {
-				dist, err := algorithm.EuclideanDistanceSquared(query, vector)
-				if err != nil {
-					log.Warning("Error calculating distance for vector %s in cluster %d: %v", vecID, clusterID, err)
+	for _, vecID := range cluster.VectorIDs {
+		var dist float64
+		var err error
+
+		if usePQ {
+			// 使用 ADC (Asymmetric Distance Computation)
+			pqCode, ok := db.ivfPQIndex.PQCodes[vecID]
+			if !ok || len(pqCode) != db.ivfPQIndex.NumSubVectors {
+				// PQ code 不存在或长度不匹配，回退到精确计算
+				originalVec, vecExists := db.vectors[vecID]
+				if !vecExists {
+					log.Warning("Vector ID %s not found in db.vectors during PQ fallback in SearchInCluster for cluster %d", vecID, clusterID)
 					continue
 				}
-				// 相似度通常是距离的倒数或某种转换，这里用 1 / (1 + distance)
-				similarity := 1.0 / (1.0 + dist)
-				clusterResults = append(clusterResults, entity.Result{Id: vecID, Similarity: similarity, Distance: dist})
+				dist, err = algorithm.EuclideanDistanceSquared(query, originalVec)
+			} else {
+				dist, err = db.calculateADCDistance(query, clusterID, pqCode)
 			}
+		} else {
+			// 精确距离计算
+			originalVec, vecExists := db.vectors[vecID]
+			if !vecExists {
+				log.Warning("Vector ID %s not found in db.vectors during exact search in SearchInCluster for cluster %d", vecID, clusterID)
+				continue
+			}
+			dist, err = algorithm.EuclideanDistanceSquared(query, originalVec)
 		}
+
+		if err != nil {
+			log.Warning("Error calculating distance for vector %s in cluster %d: %v", vecID, clusterID, err)
+			continue
+		}
+		results = append(results, entity.Result{Id: vecID, Distance: dist})
 	}
 
-	// 对聚类内部的结果按相似度（或距离）排序
-	sort.Slice(clusterResults, func(i, j int) bool {
-		return clusterResults[i].Similarity > clusterResults[j].Similarity // 降序
-		// 或者按距离升序: return clusterResults[i].Distance < clusterResults[j].Distance
+	// 按距离升序排序
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Distance < results[j].Distance
 	})
 
-	// 返回聚类内部的 top-k (如果需要，但通常在合并所有聚类结果后再取最终 top-k)
-	// 这里返回所有结果，由调用方处理合并和最终的 top-k
-	// if k > 0 && k < len(clusterResults) {
-	// 	 return clusterResults[:k]
-	// }
-	return clusterResults
+	// 返回 top-k
+	if k > 0 && k < len(results) {
+		return results[:k], nil
+	}
+	return results, nil
+}
+
+// calculateADCDistance 使用PQ码本计算查询向量和PQ编码向量之间的近似距离（非对称距离计算）
+func (db *VectorDB) calculateADCDistance(query []float64, clusterID int, pqCode []byte) (float64, error) {
+	if db.ivfPQIndex == nil || clusterID >= len(db.ivfPQIndex.PQCodebooks) || len(pqCode) != db.ivfPQIndex.NumSubVectors {
+		return 0, fmt.Errorf("invalid parameters for ADC distance calculation")
+	}
+
+	var totalDistSq float64
+	codebooksForCluster := db.ivfPQIndex.PQCodebooks[clusterID]
+
+	for subVecIdx := 0; subVecIdx < db.ivfPQIndex.NumSubVectors; subVecIdx++ {
+		startDim := subVecIdx * db.ivfPQIndex.SubVectorDim
+		endDim := startDim + db.ivfPQIndex.SubVectorDim
+		if endDim > len(query) {
+			endDim = len(query)
+		}
+		if startDim >= len(query) {
+			// log.Warning("Skipping sub-vector %d for ADC due to boundary or codebook issue.", subVecIdx)
+			continue // 查询向量的子部分超出了其维度
+		}
+
+		querySubVector := query[startDim:endDim]
+		centroidIndex := int(pqCode[subVecIdx])
+
+		if subVecIdx >= len(codebooksForCluster) || centroidIndex >= len(codebooksForCluster[subVecIdx]) {
+			// log.Warning("Skipping sub-vector %d for ADC due to boundary or codebook issue.", subVecIdx)
+			continue // 码本索引超出范围
+		}
+
+		centroid := codebooksForCluster[subVecIdx][centroidIndex]
+
+		// 确保子向量和质心维度匹配，以防 SubVectorDim 未能整除原始维度导致末尾子向量维度不一致
+		minDim := len(querySubVector)
+		if len(centroid) < minDim {
+			minDim = len(centroid)
+		}
+
+		subDistSq, err := algorithm.EuclideanDistanceSquared(querySubVector[:minDim], centroid[:minDim])
+		if err != nil {
+			// log.Warning("Error calculating sub-distance for ADC: %v", err)
+			return 0, fmt.Errorf("error calculating sub-distance for ADC: %w", err)
+		}
+		totalDistSq += subDistSq
+	}
+
+	return math.Sqrt(totalDistSq), nil
 }
 
 // SelectCandidateClusters 根据查询向量和 nprobe 智能选择候选聚类
