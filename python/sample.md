@@ -30,7 +30,7 @@ transformer-service:gpu
 ## 使用方法
 ### 1.启动服务
 ```
-python start_service.py --embedding-model all-MiniLM-L6-v2 --generation-model gpt2 --max-conversation-history 30 --max-context-length 2048
+python start_service.py --embedding-model all-MiniLM-L6-v2 --generation-model gpt2 --duration-conversation-history 30 --duration-context-length 2048
 ```
 ### 2.创建新会话并发送消息
 ````

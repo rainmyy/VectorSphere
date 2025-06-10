@@ -156,6 +156,8 @@ type VectorDB struct {
 	LshIndex    *EnhancedLSHIndex     `json:"lsh_index"`
 	LshFamilies map[string]*LSHFamily `json:"lsh_families"`
 	AdaptiveLSH *AdaptiveLSH          `json:"adaptive_lsh"`
+
+	adaptiveSelector *AdaptiveIndexSelector // 自适应索引选择器
 }
 
 const (
@@ -318,7 +320,8 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOption
 		ctx.QualityLevel = 0.8
 	}
 
-	indexStrategy := db.SelectOptimalIndexStrategy(ctx)
+	// 使用自适应选择器优化策略选择
+	indexStrategy := db.selectOptimalStrategyWithAdaptive(ctx)
 
 	log.Trace("选择搜索策略: %v, 数据量: %d, 维度: %d, 质量要求: %.2f",
 		indexStrategy, len(db.vectors), len(query), ctx.QualityLevel)
@@ -359,9 +362,10 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOption
 		results, err = db.ivfSearchWithScores(query, k, ctx.Nprobe, db.GetOptimalStrategy(query))
 	}
 
-	// 记录性能指标
+	// 记录增强的性能指标
 	latency := time.Since(startTime)
-	db.updatePerformanceMetrics(indexStrategy, latency, len(results))
+	quality := db.estimateSearchQuality(results, ctx)
+	db.updateEnhancedPerformanceMetrics(indexStrategy, latency, len(results), quality, ctx)
 
 	return results, err
 }

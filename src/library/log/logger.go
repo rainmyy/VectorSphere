@@ -20,6 +20,7 @@ const (
 	WARNING
 	INFO
 	TRACE
+	DEBUG
 )
 
 var levelStr = [...]string{"FATAL", "ERROR", "WARNING", "INFO", "TRACE"}
@@ -138,3 +139,4 @@ func Error(format string, v ...interface{})   { defaultLogger.logf(ERROR, format
 func Warning(format string, v ...interface{}) { defaultLogger.logf(WARNING, format, v...) }
 func Info(format string, v ...interface{})    { defaultLogger.logf(INFO, format, v...) }
 func Trace(format string, v ...interface{})   { defaultLogger.logf(TRACE, format, v...) }
+func Debug(format string, v ...interface{})   { defaultLogger.logf(DEBUG, format, v...) }
