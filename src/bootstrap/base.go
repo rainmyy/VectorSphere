@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"VectorSphere/src/library/common"
+	confType "VectorSphere/src/library/confType"
 	"VectorSphere/src/library/log"
 	"VectorSphere/src/scheduler"
 	"VectorSphere/src/server"
@@ -12,8 +13,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"sync"
 	"time"
-
-	"VectorSphere/src/library/conf"
+	
 	PoolLib "VectorSphere/src/library/pool"
 )
 
@@ -98,7 +98,7 @@ func (app *AppServer) ReadServiceConf() (error, *ServiceConfig) {
 	//}
 
 	//err = conf.ReadYAML(path.Join(rootPath, "conf", "idc", "simple", "service.yaml"), &cfg)
-	err := conf.ReadYAML("D:\\code\\VectorSphere\\conf\\idc\\simple\\service.yaml", &cfg)
+	err := confType.ReadYAML("D:\\code\\VectorSphere\\conf\\idc\\simple\\service.yaml", &cfg)
 
 	if err != nil {
 		return err, nil
@@ -399,7 +399,7 @@ func (app *AppServer) Setup() error {
 			endpoints,
 			cfg.ServiceName+"_master",
 			masterBindAddress,
-			cfg.HttpPort, // 从配置中读取 HTTP 端口
+			cfg.HttpPort,                                       // 从配置中读取 HTTP 端口
 			time.Duration(cfg.TaskTimeout)*time.Second,         // 从配置中读取任务超时
 			time.Duration(cfg.HealthCheckInterval)*time.Second, // 从配置中读取健康检查间隔
 		)

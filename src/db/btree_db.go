@@ -1,7 +1,7 @@
 package db
 
 import (
-	"go.etcd.io/bbolt"
+	"github.com/coreos/bbolt"
 	"os"
 )
 

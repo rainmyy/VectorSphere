@@ -544,7 +544,7 @@ func (appCtx *AppContext) GetServiceEndpoints(serviceName string) ([]string, err
 
 // WatchService 监听服务节点变化 (主要用于服务端健康检查或调试)
 // 客户端通常依赖 EtcdServiceDiscovery
-func (appCtx *AppContext) WatchService(ctx context.Context, serviceName string, callback func(eventType clientv3.EventType, addr string)) {
+func (appCtx *AppContext) WatchService(ctx context.Context, serviceName string, callback func(addr string)) {
 	servicePrefix := fmt.Sprintf("%s%s/", appCtx.Config.ServiceRegistryPath, serviceName)
 	watcher := clientv3.NewWatcher(appCtx.EtcdClient)
 	watchChan := watcher.Watch(ctx, servicePrefix, clientv3.WithPrefix())
@@ -571,10 +571,13 @@ func (appCtx *AppContext) WatchService(ctx context.Context, serviceName string, 
 				}
 				for _, event := range watchResp.Events {
 					// Key is like /services/my-app/node1_addr, Value is node1_addr
+					if event.Type != clientv3.EventTypePut {
+						continue
+					}
 					addr := string(event.Kv.Value)
 					log.Printf("Service '%s' event: Type=%s, Addr=%s", serviceName, event.Type, addr)
 					if callback != nil {
-						callback(event.Type, addr)
+						callback(addr)
 					}
 				}
 			}

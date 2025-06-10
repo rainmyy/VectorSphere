@@ -80,6 +80,8 @@ func NewHealthCheckManager(checkInterval time.Duration) *HealthCheckManager {
 		checkInterval: checkInterval,
 		ctx:           ctx,
 		cancel:        cancel,
+		metrics:       &HealthMetrics{}, // 初始化 metrics
+		alertManager:  &AlertManager{},  // 初始化 alertManager，或者根据需要传入配置
 	}
 }
 
@@ -320,4 +322,63 @@ func (hm *HealthCheckManager) AddHealthChangeCallback(callback HealthChangeCallb
 // Stop 停止健康检查
 func (hm *HealthCheckManager) Stop() {
 	hm.cancel()
+}
+
+// updateMetrics 更新健康检查指标
+func (hm *HealthCheckManager) updateMetrics() {
+	hm.metrics.mu.Lock()
+	defer hm.metrics.mu.Unlock()
+
+	hm.metrics.TotalChecks = 0
+	hm.metrics.SuccessfulChecks = 0
+	hm.metrics.FailedChecks = 0
+	var totalLatency time.Duration
+	var checkedServices int64
+
+	hm.mu.RLock()
+	defer hm.mu.RUnlock()
+
+	for _, info := range hm.services {
+		hm.metrics.TotalChecks++
+		if info.Status == grpc_health_v1.HealthCheckResponse_SERVING {
+			hm.metrics.SuccessfulChecks++
+		} else {
+			hm.metrics.FailedChecks++
+		}
+		totalLatency += info.Latency
+		checkedServices++
+	}
+
+	if checkedServices > 0 {
+		hm.metrics.AverageLatency = totalLatency / time.Duration(checkedServices)
+	}
+	hm.metrics.LastCheckTime = time.Now()
+}
+
+// checkAlerts 检查并触发告警
+func (hm *HealthCheckManager) checkAlerts() {
+	if hm.alertManager == nil {
+		return
+	}
+
+	hm.alertManager.mu.RLock()
+	defer hm.alertManager.mu.RUnlock()
+
+	hm.mu.RLock()
+	defer hm.mu.RUnlock()
+
+	for _, rule := range hm.alertManager.alertRules {
+		for serviceName, info := range hm.services {
+			if rule.Condition(info) {
+				if time.Since(rule.LastTriggered) > rule.Cooldown {
+					log.Warning("Alert triggered for service %s: %s", serviceName, rule.Name)
+					err := rule.Action(info)
+					if err != nil {
+						log.Error("Failed to execute alert action for %s: %v", serviceName, err)
+					}
+					rule.LastTriggered = time.Now()
+				}
+			}
+		}
+	}
 }
