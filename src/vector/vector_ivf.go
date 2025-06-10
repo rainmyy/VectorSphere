@@ -6,6 +6,7 @@ import (
 	"VectorSphere/src/library/log"
 	"fmt"
 	"math"
+	"math/rand"
 	"sort"
 	"sync"
 	"time"
@@ -91,15 +92,70 @@ const (
 	UpdateTypeRebalance
 )
 
+// sampleTrainingData 从数据库中采样训练数据
+// trainingRatio: 采样比例 (0.0 to 1.0)
+// 返回: 训练向量列表和对应的ID列表
+func (db *VectorDB) sampleTrainingData(trainingRatio float64) ([][]float64, []string) {
+	if trainingRatio <= 0 || trainingRatio > 1.0 {
+		trainingRatio = 0.1 // 默认采样10%的数据进行训练
+		log.Warning("Invalid trainingRatio, defaulting to 0.1")
+	}
+
+	db.mu.RLock() // Read lock for accessing db.vectors
+	defer db.mu.RUnlock()
+
+	if len(db.vectors) == 0 {
+		return [][]float64{}, []string{}
+	}
+
+	numSamples := int(float64(len(db.vectors)) * trainingRatio)
+	if numSamples == 0 && len(db.vectors) > 0 {
+		numSamples = 1 // 至少采样一个数据点，如果数据库不为空
+	}
+	if numSamples > len(db.vectors) {
+		numSamples = len(db.vectors)
+	}
+
+	trainingVectors := make([][]float64, 0, numSamples)
+	trainingIDs := make([]string, 0, numSamples)
+
+	// 为了可复现性和随机性，创建一个临时的ID列表并打乱
+	allIDs := make([]string, 0, len(db.vectors))
+	for id := range db.vectors {
+		allIDs = append(allIDs, id)
+	}
+
+	rand.Seed(time.Now().UnixNano()) // 使用当前时间作为随机种子
+	rand.Shuffle(len(allIDs), func(i, j int) {
+		allIDs[i], allIDs[j] = allIDs[j], allIDs[i]
+	})
+
+	for i := 0; i < numSamples; i++ {
+		id := allIDs[i]
+		if vec, ok := db.vectors[id]; ok {
+			trainingVectors = append(trainingVectors, vec)
+			trainingIDs = append(trainingIDs, id)
+		}
+	}
+
+	log.Info("Sampled %d vectors for training (%.2f%% of total %d vectors)", len(trainingVectors), trainingRatio*100, len(db.vectors))
+	return trainingVectors, trainingIDs
+}
+
 // BuildEnhancedIVFIndex 构建增强 IVF 索引
 func (db *VectorDB) BuildEnhancedIVFIndex(config *IVFConfig) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
 	if config == nil {
+		// 默认配置，如果外部没有提供
+		numClustersDefault := int(math.Sqrt(float64(len(db.vectors))))
+		if numClustersDefault == 0 {
+			numClustersDefault = 1 // 至少一个簇
+		}
 		config = &IVFConfig{
-			NumClusters:        int(math.Sqrt(float64(len(db.vectors)))),
-			TrainingRatio:      0.8,
+			NumClusters:        numClustersDefault,
+			TrainingRatio:      0.1, // 默认采样10%的数据
 			RebalanceThreshold: 1000,
 			UsePQCompression:   true,
 			PQSubVectors:       8,
@@ -108,18 +164,44 @@ func (db *VectorDB) BuildEnhancedIVFIndex(config *IVFConfig) error {
 			MaxClusterSize:     10000,
 			MinClusterSize:     10,
 		}
+		log.Info("No IVFConfig provided, using default configuration: %+v", *config)
 	}
 
 	db.ivfConfig = config
 
+	// 0. 检查向量数据是否为空
+	if len(db.vectors) == 0 {
+		log.Warning("Cannot build Enhanced IVF Index: no vectors in the database.")
+		db.indexed = false // 标记为未索引
+		return fmt.Errorf("cannot build Enhanced IVF Index: no vectors in the database")
+	}
+
 	// 1. 采样训练数据
-	trainingVectors, trainingIDs := db.sampleTrainingData(config.TrainingRatio)
+	trainingVectors, _ := db.sampleTrainingData(config.TrainingRatio) // trainingIDs 暂时未使用
+	if len(trainingVectors) == 0 {
+		log.Warning("Cannot build Enhanced IVF Index: no training data sampled.")
+		db.indexed = false
+		return fmt.Errorf("cannot build Enhanced IVF Index: no training data sampled")
+	}
+
+	// 确保聚类数量不超过训练样本数量
+	if config.NumClusters > len(trainingVectors) {
+		log.Warning("Number of clusters (%d) exceeds number of training samples (%d). Adjusting NumClusters to %d.", config.NumClusters, len(trainingVectors), len(trainingVectors))
+		config.NumClusters = len(trainingVectors)
+	}
+	if config.NumClusters <= 0 {
+		log.Warning("Number of clusters must be positive. Setting to 1.")
+		config.NumClusters = 1
+	}
 
 	// 2. 执行聚类
+	log.Info("Starting KMeans clustering with %d training vectors and %d clusters.", len(trainingVectors), config.NumClusters)
 	centroids, _, err := algorithm.KMeans(trainingVectors, config.NumClusters, 100, 0.001)
 	if err != nil {
+		db.indexed = false
 		return fmt.Errorf("KMeans 聚类失败: %w", err)
 	}
+	log.Info("KMeans clustering completed. Generated %d centroids.", len(centroids))
 
 	// 3. 构建增强聚类
 	enhancedClusters := make([]EnhancedCluster, config.NumClusters)
