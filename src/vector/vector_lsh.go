@@ -66,7 +66,7 @@ type EnhancedLSHTable struct {
 
 // LSHHashFunction LSH 哈希函数接口
 type LSHHashFunction interface {
-	Hash(vector []float64) uint64
+	Hash(vector []float64) (uint64, error)
 	GetType() LSHFamilyType
 	GetParameters() map[string]interface{}
 }
@@ -370,7 +370,10 @@ func (db *VectorDB) computeEnhancedLSHHash(vector []float64, hashFunctions []LSH
 		}
 
 		// 计算单个哈希函数的哈希值
-		hashValue := hashFunc.Hash(vector)
+		hashValue, err := hashFunc.Hash(vector)
+		if err != nil {
+			return combinedHash
+		}
 
 		// 使用位移和异或操作组合哈希值
 		// 每个哈希函数的结果左移不同的位数，避免冲突

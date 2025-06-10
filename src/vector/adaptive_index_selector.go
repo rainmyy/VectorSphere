@@ -280,6 +280,16 @@ func (db *VectorDB) estimateSearchQuality(results []entity.Result, ctx SearchCon
 	return math.Min(1.0, math.Max(0.0, qualityScore))
 }
 
+/*
+- 基础统计信息 ：窗口大小、当前记录数、最后优化时间等
+- 策略使用统计 ：各策略的使用频率、平均性能、标准差等详细统计
+- 性能趋势分析 ：通过对比前后半段数据分析性能变化趋势
+- 策略推荐 ：基于综合评分推荐最优策略
+- 数据质量评估 ：评估性能数据的完整性、新鲜度和多样性
+- 异常检测 ：使用3-sigma规则检测延迟和质量异常值
+- 智能策略选择 ： GetOptimalStrategy 方法根据上下文相似度选择最优策略
+*/
+
 // GetInsights 获取自适应选择器的洞察信息
 func (ais *AdaptiveIndexSelector) GetInsights() map[string]interface{} {
 	ais.mu.RLock()

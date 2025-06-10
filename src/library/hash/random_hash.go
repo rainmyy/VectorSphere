@@ -3,6 +3,7 @@ package hash
 import (
 	"VectorSphere/src/library/log"
 	"VectorSphere/src/vector"
+	"fmt"
 	"math"
 )
 
@@ -15,10 +16,10 @@ type RandomProjectionHash struct {
 }
 
 // Hash 计算随机投影哈希值
-func (rph *RandomProjectionHash) Hash(vector []float64) uint64 {
+func (rph *RandomProjectionHash) Hash(vector []float64) (uint64, error) {
 	if len(vector) != len(rph.ProjectionVector) {
 		log.Warning("Vector dimension mismatch: expected %d, got %d", len(rph.ProjectionVector), len(vector))
-		return 0
+		return 0, fmt.Errorf("vector dimension mismatch")
 	}
 
 	// 计算点积
@@ -29,7 +30,7 @@ func (rph *RandomProjectionHash) Hash(vector []float64) uint64 {
 
 	// LSH 哈希值计算: floor((a·v + b) / w)
 	hashValue := math.Floor((dotProduct + rph.B) / rph.W)
-	return uint64(math.Abs(hashValue))
+	return uint64(math.Abs(hashValue)), nil
 }
 
 // GetType 获取哈希函数类型

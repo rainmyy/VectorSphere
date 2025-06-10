@@ -3,6 +3,7 @@ package hash
 import (
 	"VectorSphere/src/library/log"
 	"VectorSphere/src/vector"
+	"fmt"
 	"math"
 )
 
@@ -15,10 +16,10 @@ type EuclideanHash struct {
 }
 
 // Hash 计算欧几里得哈希值
-func (eh *EuclideanHash) Hash(vector []float64) uint64 {
+func (eh *EuclideanHash) Hash(vector []float64) (uint64, error) {
 	if len(vector) != len(eh.RandomVector) {
 		log.Warning("Vector dimension mismatch: expected %d, got %d", len(eh.RandomVector), len(vector))
-		return 0
+		return 0, fmt.Errorf("vector dimension mismatch: expected %d, got %d", eh.RandomVector, len(vector))
 	}
 
 	// 计算点积
@@ -29,7 +30,7 @@ func (eh *EuclideanHash) Hash(vector []float64) uint64 {
 
 	// p-stable LSH 哈希值计算: floor((a·v + b) / w)
 	hashValue := math.Floor((dotProduct + eh.B) / eh.W)
-	return uint64(math.Abs(hashValue))
+	return uint64(math.Abs(hashValue)), nil
 }
 
 // GetType 获取哈希函数类型

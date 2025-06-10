@@ -3,6 +3,7 @@ package hash
 import (
 	"VectorSphere/src/library/log"
 	"VectorSphere/src/vector"
+	"fmt"
 	"math"
 	"math/rand"
 )
@@ -57,10 +58,10 @@ func NewMinHash(numHashes int) *MinHash {
 }
 
 // Hash 计算 MinHash 值
-func (mh *MinHash) Hash(vector []float64) uint64 {
+func (mh *MinHash) Hash(vector []float64) (uint64, error) {
 	if len(vector) == 0 {
 		log.Warning("Empty vector provided for MinHash computation")
-		return 0
+		return 0, fmt.Errorf("empty vector provided for MinHash computation")
 	}
 
 	// 将浮点向量转换为特征集合（非零元素的索引）
@@ -75,7 +76,7 @@ func (mh *MinHash) Hash(vector []float64) uint64 {
 
 	if len(features) == 0 {
 		log.Warning("No non-zero features found in vector")
-		return 0
+		return 0, fmt.Errorf("no features found in vector")
 	}
 
 	// 计算 MinHash 签名
@@ -100,7 +101,7 @@ func (mh *MinHash) Hash(vector []float64) uint64 {
 		combinedHash ^= (val << shiftBits) | (val >> (64 - shiftBits))
 	}
 
-	return combinedHash
+	return combinedHash, nil
 }
 
 // GetType 获取哈希函数类型
