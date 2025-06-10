@@ -9,4 +9,5 @@ type RetryPolicy struct {
 	MaxInterval         time.Duration `yaml:"maxInterval"`
 	Multiplier          float64       `yaml:"multiplier"`
 	RandomizationFactor float64       `yaml:"randomizationFactor"`
+	MaxRetries          int           `yaml:"maxRetries"`
 }

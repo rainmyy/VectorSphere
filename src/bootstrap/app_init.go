@@ -3,7 +3,7 @@ package bootstrap
 import (
 	confType "VectorSphere/src/library/confType"
 	conf "VectorSphere/src/library/config"
-	"VectorSphere/src/library/security"
+	"VectorSphere/src/security"
 	"context"
 	"encoding/json"
 	"fmt"

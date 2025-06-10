@@ -1,7 +1,6 @@
 package bootstrap
 
 import (
-	"VectorSphere/src/library/log"
 	"VectorSphere/src/server"
 	"context"
 	"encoding/json"
@@ -190,43 +189,4 @@ func (lbm *LoadBalancerMonitor) cleanup() {
 			delete(lbm.metrics.EndpointMetrics, key)
 		}
 	}
-}
-
-// HealthMetricsCollector 健康指标收集器
-type HealthMetricsCollector struct {
-	healthManager *HealthCheckManager
-	metrics       *HealthMetrics
-	mu            sync.RWMutex
-}
-
-// CollectHealthMetrics 收集健康指标
-func (hmc *HealthMetricsCollector) CollectHealthMetrics() map[string]interface{} {
-	hmc.mu.RLock()
-	defer hmc.mu.RUnlock()
-	return map[string]interface{}{
-		"total_services":     len(hmc.healthManager.services),
-		"healthy_services":   hmc.GetHealthyServiceCount(),
-		"unhealthy_services": hmc.getUnhealthyServiceCount(),
-		"average_latency":    hmc.metrics.AverageLatency.Milliseconds(),
-		"success_rate":       hmc.calculateSuccessRate(),
-		"last_check_time":    hmc.metrics.LastCheckTime,
-	}
-}
-
-// ExposeHealthMetrics 暴露健康指标HTTP端点
-func (hmc *HealthMetricsCollector) ExposeHealthMetrics(port int) {
-	http.HandleFunc("/metrics/health", func(w http.ResponseWriter, r *http.Request) {
-		metrics := hmc.CollectHealthMetrics()
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(metrics)
-	})
-
-	http.HandleFunc("/health/services", func(w http.ResponseWriter, r *http.Request) {
-		services := hmc.healthManager.GetAllServiceHealth()
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(services)
-	})
-
-	log.Info("Health metrics server started on port %d", port)
-	http.ListenAndServe(fmt.Sprintf(":%d", port), nil)
 }

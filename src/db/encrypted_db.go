@@ -1,7 +1,7 @@
 package db
 
 import (
-	"VectorSphere/src/library/security"
+	"VectorSphere/src/security"
 	"fmt"
 )
 

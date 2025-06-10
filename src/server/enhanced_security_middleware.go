@@ -1,7 +1,7 @@
 package server
 
 import (
-	"VectorSphere/src/library/security"
+	"VectorSphere/src/security"
 	"context"
 	"fmt"
 	"github.com/sony/gobreaker"
