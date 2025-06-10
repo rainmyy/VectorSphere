@@ -34,6 +34,8 @@ const (
 	StrategyHNSW                            // HNSW索引
 	StrategyPQ                              // PQ压缩搜索
 	StrategyHybrid                          // 混合策略
+	EnhancedIVF
+	EnhancedLSH
 )
 
 // SearchContext 搜索上下文
@@ -178,8 +180,25 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 	db.mu.RLock()
 	vectorCount := len(db.vectors)
 	vectorDim := len(ctx.QueryVector)
+	ivfIndexReady := db.ivfIndex != nil && db.ivfIndex.Enable
+	lshIndexReady := db.LshIndex != nil && db.LshIndex.Enable
 	db.mu.RUnlock()
 
+	// 优先考虑增强型索引（如果可用且数据量较大）
+	if vectorCount > 50000 { // 假设增强型索引在大数据量下表现更优
+		if ivfIndexReady && db.ivfConfig != nil { // 检查 EnhancedIVF 是否配置和就绪
+			// 可以根据 ctx.QualityLevel 或 ctx.Timeout 进一步细化选择
+			log.Trace("Considering EnhancedIVF strategy due to data size and IVF index readiness.")
+			return EnhancedIVF
+		}
+		if lshIndexReady && db.LshConfig != nil { // 检查 EnhancedLSH 是否配置和就绪
+			// LSH 通常适用于高维或对召回率要求不那么极致的场景
+			if vectorDim > 512 || ctx.QualityLevel < 0.85 {
+				log.Trace("Considering EnhancedLSH strategy due to data size/dimensionality and LSH index readiness.")
+				return EnhancedLSH
+			}
+		}
+	}
 	// 1. 数据规模判断
 	if vectorCount < 1000 {
 		return StrategyBruteForce
@@ -210,21 +229,32 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 	}
 
 	// 4. 质量要求判断
+	// 4. 质量要求判断
 	if ctx.QualityLevel > 0.9 {
 		// 高质量要求，优先精确搜索
 		if vectorCount < 100000 {
-			return StrategyBruteForce
+			// 如果数据量不大，且没有其他更优的精确索引，暴力搜索可能也是一个选项
+			// 但通常HNSW在多数情况下更优
+			if db.useHNSWIndex && db.indexed && db.hnsw != nil {
+				return StrategyHNSW
+			}
+			return StrategyBruteForce // 保底选项
 		}
 		if db.useHNSWIndex && db.indexed && db.hnsw != nil {
 			return StrategyHNSW
 		}
 	}
 
-	// 5. 性能要求判断
+	// 5. 性能要求判断 (低延迟)
 	if ctx.Timeout > 0 && ctx.Timeout < 10*time.Millisecond {
 		// 低延迟要求，优先快速策略
 		if db.usePQCompression && db.pqCodebook != nil {
 			return StrategyPQ
+		}
+		// 如果 EnhancedLSH 就绪，也可以考虑
+		if lshIndexReady && db.LshConfig != nil {
+			log.Trace("Considering EnhancedLSH for low latency requirement.")
+			return EnhancedLSH
 		}
 	}
 
@@ -238,10 +268,20 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 		return StrategyHNSW
 	}
 
+	// 检查普通的IVF索引
 	if db.indexed && len(db.clusters) > 0 {
 		return StrategyIVF
 	}
+	// 如果增强型索引在前面没有被选中，但仍然是可用的，作为次级选择
+	if ivfIndexReady && db.ivfConfig != nil {
+		log.Trace("Falling back to EnhancedIVF as a general-purpose strategy.")
+		return EnhancedIVF
+	}
 
+	if lshIndexReady && db.LshConfig != nil {
+		log.Trace("Falling back to EnhancedLSH as a general-purpose strategy.")
+		return EnhancedLSH
+	}
 	return StrategyBruteForce
 }
 
@@ -274,6 +314,10 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOption
 		results, err = db.pqSearchWithScores(query, k)
 	case StrategyHybrid:
 		results, err = db.hybridSearchWithScores(query, k, ctx)
+	case EnhancedIVF:
+		results, err = db.EnhancedIVFSearch(query, k, ctx.Nprobe)
+	case EnhancedLSH:
+		results, err = db.EnhancedLSHSearch(query, k)
 	default:
 		results, err = db.ivfSearchWithScores(query, k, ctx.Nprobe, db.GetOptimalStrategy(query))
 	}
@@ -675,6 +719,10 @@ func (db *VectorDB) getStrategyName(strategy IndexStrategy) string {
 		return "PQ压缩"
 	case StrategyHybrid:
 		return "混合策略"
+	case EnhancedLSH:
+		return "增强LSH"
+	case EnhancedIVF:
+		return "增强IVF"
 	default:
 		return "未知策略"
 	}

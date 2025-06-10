@@ -41,6 +41,7 @@ type EnhancedLSHIndex struct {
 	Statistics    *LSHStatistics     `json:"statistics"`
 	LastOptimized time.Time          `json:"last_optimized"`
 	mu            sync.RWMutex
+	Enable        bool `json:"enable"`
 }
 
 // EnhancedLSHTable 增强 LSH 表结构

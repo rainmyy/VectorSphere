@@ -24,7 +24,7 @@ type IVFConfig struct {
 	MinClusterSize     int     `json:"min_cluster_size"`    // 最小聚类大小
 }
 
-// 增强 IVF 索引结构
+// EnhancedIVFIndex 增强 IVF 索引结构
 type EnhancedIVFIndex struct {
 	Clusters         []EnhancedCluster `json:"clusters"`
 	ClusterCentroids [][]float64       `json:"centroids"`
@@ -34,9 +34,10 @@ type EnhancedIVFIndex struct {
 	TotalVectors     int               `json:"total_vectors"`
 	IndexVersion     int               `json:"version"`
 	mu               sync.RWMutex
+	Enable           bool `json:"enable"`
 }
 
-// 增强聚类结构
+// EnhancedCluster 增强聚类结构
 type EnhancedCluster struct {
 	Centroid     []float64      `json:"centroid"`
 	VectorIDs    []string       `json:"vector_ids"`
@@ -47,7 +48,7 @@ type EnhancedCluster struct {
 	AccessCount  int64          `json:"access_count"`
 }
 
-// 聚类指标
+// ClusterMetrics 聚类指标
 type ClusterMetrics struct {
 	Variance       float64   `json:"variance"`        // 方差
 	Density        float64   `json:"density"`         // 密度
@@ -56,14 +57,14 @@ type ClusterMetrics struct {
 	LastRebalance  time.Time `json:"last_rebalance"`
 }
 
-// 子聚类结构（用于层次化 IVF）
+// SubCluster 子聚类结构（用于层次化 IVF）
 type SubCluster struct {
 	Centroid        []float64 `json:"centroid"`
 	VectorIDs       []string  `json:"vector_ids"`
 	ParentClusterID int       `json:"parent_id"`
 }
 
-// IVF-PQ 混合索引
+// IVFPQIndex IVF-PQ 混合索引
 type IVFPQIndex struct {
 	IVFIndex      *EnhancedIVFIndex `json:"ivf_index"`
 	PQCodebooks   [][][]float64     `json:"pq_codebooks"` // 每个聚类的 PQ 码本
@@ -73,7 +74,7 @@ type IVFPQIndex struct {
 	NumCentroids  int               `json:"num_centroids"`
 }
 
-// 聚类更新事件
+// ClusterUpdate 聚类更新事件
 type ClusterUpdate struct {
 	Type      UpdateType `json:"type"`
 	ClusterID int        `json:"cluster_id"`
