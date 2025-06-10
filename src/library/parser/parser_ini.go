@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"VectorSphere/src/library/common"
 	. "VectorSphere/src/library/tree"
 	"VectorSphere/src/library/util"
 	"fmt"
@@ -44,24 +45,24 @@ func ParserIni(data []byte) ([]*TreeStruct, error) {
 
 	hasSlash := false
 	var bytes []byte
-	if data[len(data)-1] != byte(LineBreak) {
-		data = append(data, byte(LineBreak))
+	if data[len(data)-1] != byte(common.LineBreak) {
+		data = append(data, byte(common.LineBreak))
 	}
 	for i := 0; i < len(data); i++ {
 		value := data[i]
 		//filter the slash or hash or asterisk
-		if value == byte(Slash) || value == byte(Hash) || value == byte(Asterisk) {
+		if value == byte(common.Slash) || value == byte(common.Hash) || value == byte(common.Asterisk) {
 			hasSlash = true
 			continue
 		}
 		if hasSlash {
-			if value == byte(LineBreak) {
+			if value == byte(common.LineBreak) {
 				hasSlash = false
 			}
 			continue
 		}
 		//cut out the data with linebreak or black
-		if value != byte(LineBreak) && value != byte(Blank) {
+		if value != byte(common.LineBreak) && value != byte(common.Blank) {
 			bytes = append(bytes, value)
 		} else if len(bytes) > 0 {
 			bytesList = append(bytesList, bytes)
@@ -82,7 +83,7 @@ func ParserIni(data []byte) ([]*TreeStruct, error) {
 func initTreeFunc(bytesList [][]byte) []*TreeStruct {
 	currentTree := TreeInstance()
 	//分隔符，91:'[' 46:'.' 58:'.'
-	var segment = []int{int(LeftBracket), int(Period)}
+	var segment = []int{int(common.LeftBracket), int(common.Period)}
 	infunc := util.InIntSliceSortedFunc(segment)
 	var rootTree = currentTree
 	//根节点设置为1
@@ -123,7 +124,7 @@ func initTreeFunc(bytesList [][]byte) []*TreeStruct {
 			currentTree = treeStruct
 		} else if tempNum == 0 {
 			//type of key:value
-			separatorPlace := SlicePlace(byte(Colon), bytes)
+			separatorPlace := common.SlicePlace(byte(common.Colon), bytes)
 			if separatorPlace <= 0 {
 				continue
 			}

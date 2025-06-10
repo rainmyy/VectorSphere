@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	etcdv3 "go.etcd.io/etcd/client/v3"
 )
 
 // RetryableError 可重试错误接口
@@ -94,18 +93,19 @@ func IsRetryableEtcdError(err error) bool {
 	}
 
 	// 检查etcd特定错误
-	if etcdErr, ok := err.(*etcdv3.Error); ok {
-		// 某些etcd错误码是可重试的
-		retryableCodes := []int{
-			// 添加可重试的etcd错误码
-		}
 
-		for _, code := range retryableCodes {
-			if int(etcdErr.Code) == code {
-				return true
-			}
-		}
-	}
+	//if etcdErr, ok := err.(*etcdv3.Error); ok {
+	//	// 某些etcd错误码是可重试的
+	//	retryableCodes := []int{
+	//		// 添加可重试的etcd错误码
+	//	}
+	//
+	//	for _, code := range retryableCodes {
+	//		if int(etcdErr.Code) == code {
+	//			return true
+	//		}
+	//	}
+	//}
 
 	return false
 }

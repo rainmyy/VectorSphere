@@ -45,6 +45,9 @@ type EtcdServiceHub struct {
 	heartbeatMap    sync.Map // map[string]context.CancelFunc 存储每个服务的心跳取消函数
 	leaseMap        sync.Map // map[string]etcdv3.LeaseID 存储每个服务的租约ID
 	serviceWatchers sync.Map // map[string]context.CancelFunc 存储服务监听的取消函数
+
+	// 添加版本信息字段
+	version string
 }
 
 var (
@@ -130,7 +133,7 @@ func (etcd *EtcdServiceHub) StartHeartbeat(ctx context.Context, serviceName stri
 		Status:   "healthy",
 		LastSeen: time.Now(),
 		Version:  etcd.version,
-		Metadata: endpoint.Metadata,
+		Metadata: endpoint.Tags,
 		HealthCheck: HealthCheckInfo{
 			Enabled:  true,
 			Interval: 30 * time.Second,

@@ -2,7 +2,7 @@ package scheduler
 
 import (
 	"VectorSphere/src/library/acceler"
-	"VectorSphere/src/library/conf"
+	confType "VectorSphere/src/library/confType"
 	"VectorSphere/src/library/log"
 	"VectorSphere/src/vector"
 	"fmt"
@@ -66,7 +66,7 @@ func LoadPQTrainingConfig(configPath string) (*PQTrainingConfig, error) {
 	}
 
 	// 从YAML文件读取配置
-	err := conf.ReadYAML(configPath, &config)
+	err := confType.ReadYAML(configPath, &config)
 	if err != nil {
 		log.Error("读取PQ训练配置文件失败: %v，将使用默认配置", err)
 		return &config, err
