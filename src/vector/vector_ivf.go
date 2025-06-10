@@ -397,7 +397,7 @@ func (db *VectorDB) BuildIVFPQIndex(enhancedClusters []EnhancedCluster, config *
 					if endDim > originalVectorDimension {
 						endDim = originalVectorDimension
 					}
-					if startDim >= originalVectorDimension || len(db.ivfPQIndex.PQCodebooks[i]) <= subVecIdx || len(db.ivfpqIndex.PQCodebooks[i][subVecIdx]) == 0 {
+					if startDim >= originalVectorDimension || len(db.ivfPQIndex.PQCodebooks[i]) <= subVecIdx || len(db.ivfPQIndex.PQCodebooks[i][subVecIdx]) == 0 {
 						// 如果子向量超出边界，或者该子向量的码本为空，则无法编码
 						log.Warning("Cannot generate PQ code for vector %s, subvector %d in cluster %d due to out-of-bounds or empty codebook. Assigning default code (0).", vecID, subVecIdx, i)
 						pqCode[subVecIdx] = 0 // 或者其他默认值/错误处理
