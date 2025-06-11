@@ -28,6 +28,7 @@ func main() {
 
 	// 解析 etcd 端点
 	endpointList := strings.Split(*etcdEndpoints, ",")
+	println(endpointList)
 	var endpoints []server.EndPoint
 	for _, ep := range endpointList {
 		endpoints = append(endpoints, server.EndPoint{Ip: ep})

@@ -1,0 +1,212 @@
+# VectorSphere 分布式系统配置文件
+# 详细配置说明请参考 README.md
+
+# 基础服务配置
+service_name: "vectorsphere"          # 服务名称，用于 etcd 中的服务发现
+node_type: "auto"                     # 节点类型: auto(自动选举), master(强制master), slave(强制slave)
+http_port: 8080                       # HTTP API 端口
+default_port: 9090                    # gRPC 服务端口
+data_dir: "./data"                    # 数据存储目录
+task_timeout: 30                      # 任务超时时间（秒）
+heartbeat: 10                         # 心跳间隔（秒）
+health_check_interval: 30             # 健康检查间隔（秒）
+scheduler_worker_count: 4             # 任务调度器工作线程数
+
+# etcd 配置
+etcd:
+  endpoints:                          # etcd 集群端点
+    - "localhost:2379"
+    # - "etcd-node2:2379"
+    # - "etcd-node3:2379"
+  username: ""                        # etcd 用户名（可选）
+  password: ""                        # etcd 密码（可选）
+  dial_timeout: 5                     # 连接超时（秒）
+  request_timeout: 10                 # 请求超时（秒）
+  
+  # TLS 配置（可选）
+  # ca_file: "/path/to/ca.crt"
+  # cert_file: "/path/to/client.crt"
+  # key_file: "/path/to/client.key"
+  
+  # 高级配置
+  max_call_send_msg_size: 10485760    # 最大发送消息大小（10MB）
+  max_call_recv_msg_size: 10485760    # 最大接收消息大小（10MB）
+
+# Master 节点配置
+master:
+  election_timeout: 15                # 选举超时时间（秒）
+  session_ttl: 30                     # 会话 TTL（秒）
+  max_retry_count: 3                  # 最大重试次数
+  retry_interval: 5                   # 重试间隔（秒）
+  
+  # 负载均衡配置
+  load_balancer:
+    strategy: "round_robin"           # 负载均衡策略: round_robin, least_connections, random
+    health_check_interval: 10         # 健康检查间隔（秒）
+    max_idle_connections: 10          # 最大空闲连接数
+    connection_timeout: 30            # 连接超时（秒）
+
+# Slave 节点配置
+slave:
+  register_retry_count: 3             # 注册重试次数
+  register_retry_interval: 5          # 注册重试间隔（秒）
+  heartbeat_interval: 10              # 心跳间隔（秒）
+  
+  # 索引服务配置
+  index_service:
+    max_table_count: 100              # 最大表数量
+    default_dimension: 128            # 默认向量维度
+    default_index_type: "flat"        # 默认索引类型: flat, ivf
+    cache_size: 1000000               # 缓存大小
+    
+  # GPU 配置（可选）
+  gpu:
+    enabled: false                    # 是否启用 GPU 加速
+    device_id: 0                      # GPU 设备 ID
+    memory_fraction: 0.8              # GPU 内存使用比例
+
+# HTTP API 配置
+http:
+  # 认证配置
+  auth:
+    enabled: false                    # 是否启用认证
+    jwt_secret: "your_jwt_secret_here" # JWT 密钥
+    token_expiry: 3600                # Token 过期时间（秒）
+    
+  # 限流配置
+  rate_limit:
+    enabled: true                     # 是否启用限流
+    requests_per_second: 100          # 每秒请求数限制
+    burst_size: 200                   # 突发请求大小
+    
+  # CORS 配置
+  cors:
+    enabled: true                     # 是否启用 CORS
+    allowed_origins:
+      - "*"
+    allowed_methods:
+      - "GET"
+      - "POST"
+      - "PUT"
+      - "DELETE"
+      - "OPTIONS"
+    allowed_headers:
+      - "Content-Type"
+      - "Authorization"
+      - "X-Requested-With"
+    
+  # 超时配置
+  timeouts:
+    read_timeout: 30                  # 读取超时（秒）
+    write_timeout: 30                 # 写入超时（秒）
+    idle_timeout: 120                 # 空闲超时（秒）
+
+# gRPC 配置
+grpc:
+  max_connections: 10                 # 最大连接数
+  keepalive_time: 30                  # 保活时间（秒）
+  keepalive_timeout: 5                # 保活超时（秒）
+  max_recv_msg_size: 10485760         # 最大接收消息大小（10MB）
+  max_send_msg_size: 10485760         # 最大发送消息大小（10MB）
+
+# 日志配置
+logging:
+  level: "info"                       # 日志级别: debug, info, warn, error
+  format: "json"                      # 日志格式: json, text
+  output: "stdout"                    # 日志输出: stdout, stderr, file
+  file_path: "./logs/vectorsphere.log" # 日志文件路径（当 output 为 file 时）
+  max_size: 100                       # 日志文件最大大小（MB）
+  max_backups: 10                     # 最大备份文件数
+  max_age: 30                         # 日志文件保留天数
+  compress: true                      # 是否压缩备份文件
+
+# 监控配置
+monitoring:
+  enabled: true                       # 是否启用监控
+  metrics_port: 9091                  # 指标端口
+  metrics_path: "/metrics"            # 指标路径
+  
+  # Prometheus 配置
+  prometheus:
+    enabled: true                     # 是否启用 Prometheus 指标
+    namespace: "vectorsphere"         # 指标命名空间
+    
+  # 健康检查配置
+  health_check:
+    enabled: true                     # 是否启用健康检查
+    path: "/health"                   # 健康检查路径
+    interval: 30                      # 检查间隔（秒）
+
+# 存储配置
+storage:
+  # 数据持久化
+  persistence:
+    enabled: true                     # 是否启用数据持久化
+    sync_interval: 60                 # 同步间隔（秒）
+    backup_interval: 3600             # 备份间隔（秒）
+    backup_retention: 168             # 备份保留时间（小时）
+    
+  # 压缩配置
+  compression:
+    enabled: true                     # 是否启用压缩
+    algorithm: "gzip"                 # 压缩算法: gzip, lz4, snappy
+    level: 6                          # 压缩级别（1-9）
+
+# 安全配置
+security:
+  # TLS 配置
+  tls:
+    enabled: false                    # 是否启用 TLS
+    cert_file: "/path/to/server.crt"  # 证书文件路径
+    key_file: "/path/to/server.key"   # 私钥文件路径
+    ca_file: "/path/to/ca.crt"        # CA 证书文件路径
+    
+  # 访问控制
+  access_control:
+    enabled: false                    # 是否启用访问控制
+    whitelist:                        # IP 白名单
+      - "127.0.0.1"
+      - "192.168.1.0/24"
+    blacklist: []                     # IP 黑名单
+
+# 性能调优
+performance:
+  # 内存配置
+  memory:
+    max_heap_size: "2g"               # 最大堆内存
+    gc_target_percentage: 100         # GC 目标百分比
+    
+  # 并发配置
+  concurrency:
+    max_goroutines: 1000              # 最大协程数
+    worker_pool_size: 100             # 工作池大小
+    
+  # 缓存配置
+  cache:
+    enabled: true                     # 是否启用缓存
+    size: 1000000                     # 缓存大小
+    ttl: 3600                         # 缓存 TTL（秒）
+    eviction_policy: "lru"            # 淘汰策略: lru, lfu, fifo
+
+# 开发和调试配置
+development:
+  debug: false                        # 是否启用调试模式
+  profile: false                      # 是否启用性能分析
+  profile_port: 6060                  # 性能分析端口
+  
+  # 测试配置
+  testing:
+    mock_etcd: false                  # 是否使用模拟 etcd
+    mock_slaves: 0                    # 模拟 slave 节点数量
+    load_test: false                  # 是否启用负载测试
+
+# 环境变量映射
+# 以下配置项可以通过环境变量覆盖：
+# VECTORSPHERE_NODE_TYPE -> node_type
+# VECTORSPHERE_HTTP_PORT -> http_port
+# VECTORSPHERE_GRPC_PORT -> default_port
+# VECTORSPHERE_DATA_DIR -> data_dir
+# ETCD_ENDPOINTS -> etcd.endpoints (逗号分隔)
+# ETCD_USERNAME -> etcd.username
+# ETCD_PASSWORD -> etcd.password
+# LOG_LEVEL -> logging.level

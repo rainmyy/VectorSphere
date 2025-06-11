@@ -1,0 +1,119 @@
+package distributed
+
+import (
+	"VectorSphere/src/distributed"
+	"VectorSphere/src/library/log"
+	"flag"
+	"fmt"
+	"os"
+)
+
+func main() {
+	// 解析命令行参数
+	configPath := flag.String("config", "", "配置文件路径")
+	nodeType := flag.String("type", "auto", "节点类型: master, slave, auto")
+	logLevel := flag.String("log", "info", "日志级别: debug, info, warn, error")
+	version := flag.Bool("version", false, "显示版本信息")
+	help := flag.Bool("help", false, "显示帮助信息")
+	flag.Parse()
+
+	// 显示版本信息
+	if *version {
+		fmt.Println("VectorSphere Distributed System v1.0.0")
+		fmt.Println("Build with etcd distributed architecture")
+		return
+	}
+
+	// 显示帮助信息
+	if *help {
+		printUsage()
+		return
+	}
+
+	// 设置日志级别
+	if err := log.SetLogLevel(*logLevel); err != nil {
+		fmt.Printf("设置日志级别失败: %v\n", err)
+		os.Exit(1)
+	}
+
+	// 设置节点类型环境变量（如果指定）
+	if *nodeType != "auto" {
+		os.Setenv("VECTORSPHERE_NODE_TYPE", *nodeType)
+	}
+
+	// 启动应用
+	log.Info("Starting VectorSphere Distributed System...")
+	log.Info("Node type: %s", *nodeType)
+	log.Info("Log level: %s", *logLevel)
+	if *configPath != "" {
+		log.Info("Config file: %s", *configPath)
+	}
+
+	// 创建并运行应用
+	if err := distributed.CreateAndRunApp(*configPath); err != nil {
+		log.Error("应用启动失败: %v", err)
+		os.Exit(1)
+	}
+
+	log.Info("VectorSphere Distributed System stopped gracefully")
+}
+
+// printUsage 打印使用说明
+func printUsage() {
+	fmt.Println("VectorSphere Distributed System")
+	fmt.Println("")
+	fmt.Println("Usage:")
+	fmt.Println("  vectorsphere [options]")
+	fmt.Println("")
+	fmt.Println("Options:")
+	fmt.Println("  -config string")
+	fmt.Println("        配置文件路径 (默认: ./config/config.yaml)")
+	fmt.Println("  -type string")
+	fmt.Println("        节点类型: master, slave, auto (默认: auto)")
+	fmt.Println("  -log string")
+	fmt.Println("        日志级别: debug, info, warn, error (默认: info)")
+	fmt.Println("  -version")
+	fmt.Println("        显示版本信息")
+	fmt.Println("  -help")
+	fmt.Println("        显示帮助信息")
+	fmt.Println("")
+	fmt.Println("Examples:")
+	fmt.Println("  # 自动模式启动（根据etcd选举决定角色）")
+	fmt.Println("  vectorsphere")
+	fmt.Println("")
+	fmt.Println("  # 指定配置文件启动")
+	fmt.Println("  vectorsphere -config /path/to/config.yaml")
+	fmt.Println("")
+	fmt.Println("  # 强制以master模式启动")
+	fmt.Println("  vectorsphere -type master")
+	fmt.Println("")
+	fmt.Println("  # 强制以slave模式启动")
+	fmt.Println("  vectorsphere -type slave")
+	fmt.Println("")
+	fmt.Println("  # 启用调试日志")
+	fmt.Println("  vectorsphere -log debug")
+	fmt.Println("")
+	fmt.Println("Environment Variables:")
+	fmt.Println("  VECTORSPHERE_NODE_TYPE    节点类型 (master/slave/auto)")
+	fmt.Println("  VECTORSPHERE_CONFIG_PATH  配置文件路径")
+	fmt.Println("  VECTORSPHERE_LOG_LEVEL    日志级别")
+	fmt.Println("  VECTORSPHERE_DATA_DIR     数据目录")
+	fmt.Println("  VECTORSPHERE_HTTP_PORT    HTTP端口")
+	fmt.Println("  VECTORSPHERE_GRPC_PORT    gRPC端口")
+	fmt.Println("  ETCD_ENDPOINTS            etcd端点列表")
+	fmt.Println("  ETCD_USERNAME             etcd用户名")
+	fmt.Println("  ETCD_PASSWORD             etcd密码")
+	fmt.Println("")
+	fmt.Println("Configuration:")
+	fmt.Println("  配置文件使用YAML格式，包含以下主要配置项：")
+	fmt.Println("  - service_name: 服务名称")
+	fmt.Println("  - node_type: 节点类型 (master/slave/auto)")
+	fmt.Println("  - http_port: HTTP API端口")
+	fmt.Println("  - default_port: gRPC端口")
+	fmt.Println("  - data_dir: 数据存储目录")
+	fmt.Println("  - etcd: etcd连接配置")
+	fmt.Println("  - master: master节点配置")
+	fmt.Println("  - slave: slave节点配置")
+	fmt.Println("")
+	fmt.Println("  详细配置说明请参考文档或使用默认配置文件模板。")
+}
