@@ -1,8 +1,8 @@
 package hash
 
 import (
+	"VectorSphere/src/library/enum"
 	"VectorSphere/src/library/log"
-	"VectorSphere/src/vector"
 	"fmt"
 	"math"
 	"math/rand"
@@ -27,11 +27,11 @@ MinHash 特别适用于：
 
 // MinHash MinHash 哈希函数
 type MinHash struct {
-	A          []uint64             `json:"a"`          // 随机系数 a
-	B          []uint64             `json:"b"`          // 随机系数 b
-	P          uint64               `json:"p"`          // 大质数
-	NumHashes  int                  `json:"num_hashes"` // 哈希函数数量
-	FamilyType vector.LSHFamilyType `json:"family_type"`
+	A          []uint64           `json:"a"`          // 随机系数 a
+	B          []uint64           `json:"b"`          // 随机系数 b
+	P          uint64             `json:"p"`          // 大质数
+	NumHashes  int                `json:"num_hashes"` // 哈希函数数量
+	FamilyType enum.LSHFamilyType `json:"family_type"`
 }
 
 // NewMinHash 创建新的 MinHash 实例
@@ -53,7 +53,7 @@ func NewMinHash(numHashes int) *MinHash {
 		B:          b,
 		P:          p,
 		NumHashes:  numHashes,
-		FamilyType: vector.LSHFamilyMinHash,
+		FamilyType: enum.LSHFamilyMinHash,
 	}
 }
 
@@ -105,7 +105,7 @@ func (mh *MinHash) Hash(vector []float64) (uint64, error) {
 }
 
 // GetType 获取哈希函数类型
-func (mh *MinHash) GetType() vector.LSHFamilyType {
+func (mh *MinHash) GetType() enum.LSHFamilyType {
 	return mh.FamilyType
 }
 

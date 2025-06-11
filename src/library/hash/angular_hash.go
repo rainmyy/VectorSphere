@@ -1,15 +1,16 @@
 package hash
 
 import (
+	"VectorSphere/src/library/enum"
 	"VectorSphere/src/library/log"
-	"VectorSphere/src/vector"
+
 	"fmt"
 )
 
 // AngularHash 角度哈希函数（用于余弦相似度）
 type AngularHash struct {
-	RandomVector []float64            `json:"random_vector"`
-	FamilyType   vector.LSHFamilyType `json:"family_type"`
+	RandomVector []float64          `json:"random_vector"`
+	FamilyType   enum.LSHFamilyType `json:"family_type"`
 }
 
 // Hash 计算角度哈希值
@@ -34,7 +35,7 @@ func (ah *AngularHash) Hash(vector []float64) (uint64, error) {
 }
 
 // GetType 获取哈希函数类型
-func (ah *AngularHash) GetType() vector.LSHFamilyType {
+func (ah *AngularHash) GetType() enum.LSHFamilyType {
 	return ah.FamilyType
 }
 

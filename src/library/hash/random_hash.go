@@ -1,18 +1,18 @@
 package hash
 
 import (
+	"VectorSphere/src/library/enum"
 	"VectorSphere/src/library/log"
-	"VectorSphere/src/vector"
 	"fmt"
 	"math"
 )
 
 // RandomProjectionHash 随机投影哈希函数
 type RandomProjectionHash struct {
-	ProjectionVector []float64            `json:"projection_vector"`
-	W                float64              `json:"w"`
-	B                float64              `json:"b"`
-	FamilyType       vector.LSHFamilyType `json:"family_type"`
+	ProjectionVector []float64          `json:"projection_vector"`
+	W                float64            `json:"w"`
+	B                float64            `json:"b"`
+	FamilyType       enum.LSHFamilyType `json:"family_type"`
 }
 
 // Hash 计算随机投影哈希值
@@ -34,7 +34,7 @@ func (rph *RandomProjectionHash) Hash(vector []float64) (uint64, error) {
 }
 
 // GetType 获取哈希函数类型
-func (rph *RandomProjectionHash) GetType() vector.LSHFamilyType {
+func (rph *RandomProjectionHash) GetType() enum.LSHFamilyType {
 	return rph.FamilyType
 }
 

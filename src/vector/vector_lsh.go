@@ -3,6 +3,7 @@ package vector
 import (
 	"VectorSphere/src/library/acceler"
 	"VectorSphere/src/library/entity"
+	"VectorSphere/src/library/enum"
 	hash2 "VectorSphere/src/library/hash"
 	"VectorSphere/src/library/log"
 	"fmt"
@@ -21,27 +22,16 @@ type LSHTable struct {
 
 // LSHConfig LSH 配置结构
 type LSHConfig struct {
-	NumTables         int           `json:"num_tables"`         // 哈希表数量
-	NumHashFunctions  int           `json:"num_hash_functions"` // 每表哈希函数数量
-	HashFamilyType    LSHFamilyType `json:"hash_family_type"`   // 哈希族类型
-	BucketSize        int           `json:"bucket_size"`        // 桶大小
-	W                 float64       `json:"w"`                  // LSH 参数 w
-	R                 float64       `json:"r"`                  // 查询半径
-	AdaptiveThreshold float64       `json:"adaptive_threshold"` // 自适应阈值
-	EnableMultiProbe  bool          `json:"enable_multi_probe"` // 启用多探测
-	ProbeRadius       int           `json:"probe_radius"`       // 探测半径
+	NumTables         int                `json:"num_tables"`         // 哈希表数量
+	NumHashFunctions  int                `json:"num_hash_functions"` // 每表哈希函数数量
+	HashFamilyType    enum.LSHFamilyType `json:"hash_family_type"`   // 哈希族类型
+	BucketSize        int                `json:"bucket_size"`        // 桶大小
+	W                 float64            `json:"w"`                  // LSH 参数 w
+	R                 float64            `json:"r"`                  // 查询半径
+	AdaptiveThreshold float64            `json:"adaptive_threshold"` // 自适应阈值
+	EnableMultiProbe  bool               `json:"enable_multi_probe"` // 启用多探测
+	ProbeRadius       int                `json:"probe_radius"`       // 探测半径
 }
-
-// LSHFamilyType LSH 族类型
-type LSHFamilyType int
-
-const (
-	LSHFamilyRandomProjection LSHFamilyType = iota // 随机投影
-	LSHFamilyMinHash                               // MinHash
-	LSHFamilyP2LSH                                 // p-stable LSH
-	LSHFamilyAngular                               // 角度 LSH
-	LSHFamilyEuclidean                             // 欧几里得 LSH
-)
 
 // EnhancedLSHIndex 增强 LSH 索引结构
 type EnhancedLSHIndex struct {
@@ -67,7 +57,7 @@ type EnhancedLSHTable struct {
 // LSHHashFunction LSH 哈希函数接口
 type LSHHashFunction interface {
 	Hash(vector []float64) (uint64, error)
-	GetType() LSHFamilyType
+	GetType() enum.LSHFamilyType
 	GetParameters() map[string]interface{}
 }
 
@@ -125,7 +115,7 @@ func (db *VectorDB) BuildEnhancedLSHIndex(config *LSHConfig) error {
 		config = &LSHConfig{
 			NumTables:         10,
 			NumHashFunctions:  8,
-			HashFamilyType:    LSHFamilyRandomProjection,
+			HashFamilyType:    enum.LSHFamilyRandomProjection,
 			BucketSize:        100,
 			W:                 4.0,
 			R:                 1.0,
@@ -237,7 +227,7 @@ func (db *VectorDB) generateLSHHashFunctionsWithFamily(config *LSHConfig, lshFam
 
 	// 根据哈希族类型生成相应的哈希函数
 	switch config.HashFamilyType {
-	case LSHFamilyRandomProjection:
+	case enum.LSHFamilyRandomProjection:
 		for i := 0; i < config.NumHashFunctions; i++ {
 			// 生成随机投影向量（高斯分布）
 			projectionVector := make([]float64, vectorDimension)
@@ -252,10 +242,10 @@ func (db *VectorDB) generateLSHHashFunctionsWithFamily(config *LSHConfig, lshFam
 				ProjectionVector: projectionVector,
 				W:                lshFamily.W,
 				B:                b,
-				FamilyType:       LSHFamilyRandomProjection,
+				FamilyType:       enum.LSHFamilyRandomProjection,
 			})
 		}
-	case LSHFamilyMinHash:
+	case enum.LSHFamilyMinHash:
 		// MinHash 实现
 		for i := 0; i < config.NumHashFunctions; i++ {
 			// 每个哈希函数使用不同数量的内部哈希函数
@@ -264,7 +254,7 @@ func (db *VectorDB) generateLSHHashFunctionsWithFamily(config *LSHConfig, lshFam
 			hashFunctions = append(hashFunctions, minHash)
 		}
 
-	case LSHFamilyAngular:
+	case enum.LSHFamilyAngular:
 		for i := 0; i < config.NumHashFunctions; i++ {
 			// 生成随机向量（高斯分布）
 			randomVector := make([]float64, vectorDimension)
@@ -274,11 +264,11 @@ func (db *VectorDB) generateLSHHashFunctionsWithFamily(config *LSHConfig, lshFam
 
 			hashFunctions = append(hashFunctions, &hash2.AngularHash{
 				RandomVector: randomVector,
-				FamilyType:   LSHFamilyAngular,
+				FamilyType:   enum.LSHFamilyAngular,
 			})
 		}
 
-	case LSHFamilyEuclidean:
+	case enum.LSHFamilyEuclidean:
 		for i := 0; i < config.NumHashFunctions; i++ {
 			// 生成随机向量（高斯分布）
 			randomVector := make([]float64, vectorDimension)
@@ -293,11 +283,11 @@ func (db *VectorDB) generateLSHHashFunctionsWithFamily(config *LSHConfig, lshFam
 				RandomVector: randomVector,
 				W:            lshFamily.W,
 				B:            b,
-				FamilyType:   LSHFamilyEuclidean,
+				FamilyType:   enum.LSHFamilyEuclidean,
 			})
 		}
 
-	case LSHFamilyP2LSH:
+	case enum.LSHFamilyP2LSH:
 		// p-stable LSH（类似欧几里得LSH）
 		for i := 0; i < config.NumHashFunctions; i++ {
 			// 生成随机向量（高斯分布）
@@ -313,7 +303,7 @@ func (db *VectorDB) generateLSHHashFunctionsWithFamily(config *LSHConfig, lshFam
 				RandomVector: randomVector,
 				W:            lshFamily.W,
 				B:            b,
-				FamilyType:   LSHFamilyP2LSH,
+				FamilyType:   enum.LSHFamilyP2LSH,
 			})
 		}
 
@@ -332,7 +322,7 @@ func (db *VectorDB) generateLSHHashFunctionsWithFamily(config *LSHConfig, lshFam
 				ProjectionVector: projectionVector,
 				W:                lshFamily.W,
 				B:                b,
-				FamilyType:       LSHFamilyRandomProjection,
+				FamilyType:       enum.LSHFamilyRandomProjection,
 			})
 		}
 	}
@@ -413,7 +403,7 @@ func (db *VectorDB) generateLSHHashFunctions(config *LSHConfig) []LSHHashFunctio
 		log.Warning("LSH config is nil, using default configuration")
 		config = &LSHConfig{
 			NumHashFunctions: 8,
-			HashFamilyType:   LSHFamilyRandomProjection,
+			HashFamilyType:   enum.LSHFamilyRandomProjection,
 			W:                4.0,
 		}
 	}
@@ -429,7 +419,7 @@ func (db *VectorDB) generateLSHHashFunctions(config *LSHConfig) []LSHHashFunctio
 
 	// 根据哈希族类型生成相应的哈希函数
 	switch config.HashFamilyType {
-	case LSHFamilyRandomProjection:
+	case enum.LSHFamilyRandomProjection:
 		for i := 0; i < config.NumHashFunctions; i++ {
 			// 生成随机投影向量（高斯分布）
 			projectionVector := make([]float64, vectorDimension)
@@ -444,11 +434,11 @@ func (db *VectorDB) generateLSHHashFunctions(config *LSHConfig) []LSHHashFunctio
 				ProjectionVector: projectionVector,
 				W:                config.W,
 				B:                b,
-				FamilyType:       LSHFamilyRandomProjection,
+				FamilyType:       enum.LSHFamilyRandomProjection,
 			})
 		}
 
-	case LSHFamilyMinHash:
+	case enum.LSHFamilyMinHash:
 		// MinHash 实现
 		for i := 0; i < config.NumHashFunctions; i++ {
 			numInternalHashes := 64 // 可以根据需要调整
@@ -456,7 +446,7 @@ func (db *VectorDB) generateLSHHashFunctions(config *LSHConfig) []LSHHashFunctio
 			hashFunctions = append(hashFunctions, minHash)
 		}
 
-	case LSHFamilyAngular:
+	case enum.LSHFamilyAngular:
 		for i := 0; i < config.NumHashFunctions; i++ {
 			// 生成随机向量（高斯分布）
 			randomVector := make([]float64, vectorDimension)
@@ -466,11 +456,11 @@ func (db *VectorDB) generateLSHHashFunctions(config *LSHConfig) []LSHHashFunctio
 
 			hashFunctions = append(hashFunctions, &hash2.AngularHash{
 				RandomVector: randomVector,
-				FamilyType:   LSHFamilyAngular,
+				FamilyType:   enum.LSHFamilyAngular,
 			})
 		}
 
-	case LSHFamilyEuclidean:
+	case enum.LSHFamilyEuclidean:
 		for i := 0; i < config.NumHashFunctions; i++ {
 			// 生成随机向量（高斯分布）
 			randomVector := make([]float64, vectorDimension)
@@ -485,11 +475,11 @@ func (db *VectorDB) generateLSHHashFunctions(config *LSHConfig) []LSHHashFunctio
 				RandomVector: randomVector,
 				W:            config.W,
 				B:            b,
-				FamilyType:   LSHFamilyEuclidean,
+				FamilyType:   enum.LSHFamilyEuclidean,
 			})
 		}
 
-	case LSHFamilyP2LSH:
+	case enum.LSHFamilyP2LSH:
 		// p-stable LSH（类似欧几里得LSH）
 		for i := 0; i < config.NumHashFunctions; i++ {
 			// 生成随机向量（高斯分布）
@@ -505,7 +495,7 @@ func (db *VectorDB) generateLSHHashFunctions(config *LSHConfig) []LSHHashFunctio
 				RandomVector: randomVector,
 				W:            config.W,
 				B:            b,
-				FamilyType:   LSHFamilyP2LSH,
+				FamilyType:   enum.LSHFamilyP2LSH,
 			})
 		}
 
@@ -524,7 +514,7 @@ func (db *VectorDB) generateLSHHashFunctions(config *LSHConfig) []LSHHashFunctio
 				ProjectionVector: projectionVector,
 				W:                config.W,
 				B:                b,
-				FamilyType:       LSHFamilyRandomProjection,
+				FamilyType:       enum.LSHFamilyRandomProjection,
 			})
 		}
 	}

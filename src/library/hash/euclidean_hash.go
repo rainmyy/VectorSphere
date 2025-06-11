@@ -1,18 +1,18 @@
 package hash
 
 import (
+	"VectorSphere/src/library/enum"
 	"VectorSphere/src/library/log"
-	"VectorSphere/src/vector"
 	"fmt"
 	"math"
 )
 
 // EuclideanHash 欧几里得哈希函数（p-stable LSH）
 type EuclideanHash struct {
-	RandomVector []float64            `json:"random_vector"`
-	W            float64              `json:"w"`
-	B            float64              `json:"b"`
-	FamilyType   vector.LSHFamilyType `json:"family_type"`
+	RandomVector []float64          `json:"random_vector"`
+	W            float64            `json:"w"`
+	B            float64            `json:"b"`
+	FamilyType   enum.LSHFamilyType `json:"family_type"`
 }
 
 // Hash 计算欧几里得哈希值
@@ -34,7 +34,7 @@ func (eh *EuclideanHash) Hash(vector []float64) (uint64, error) {
 }
 
 // GetType 获取哈希函数类型
-func (eh *EuclideanHash) GetType() vector.LSHFamilyType {
+func (eh *EuclideanHash) GetType() enum.LSHFamilyType {
 	return eh.FamilyType
 }
 

@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"sync"
 	"time"
-	
+
 	PoolLib "VectorSphere/src/library/pool"
 )
 
@@ -287,36 +287,6 @@ func (app *AppServer) RegisterService() {
 
 		app.sentinel = sentinel
 	}
-
-	//for name, ep := range config.Endpoints {
-	//	port := ep.Port
-	//	if port == 0 {
-	//		port = config.DefaultPort
-	//	}
-	//	ep.Ip = ep.Ip + ":" + strconv.Itoa(port)
-	//	println(ep.Ip)
-	//	endpoints := []string{ep.Ip}
-	//	if ep.IsMaster {
-	//		// master节点注册
-	//		s := new(server.IndexServer)
-	//		masterServiceName := config.ServiceName
-	//		err := s.RegisterService(endpoints, port, masterServiceName)
-	//		if err != nil {
-	//			log.Error("Master注册失败:", err)
-	//			continue
-	//		}
-	//		log.Info("Master节点 %s 注册成功: %s:%d\n", name, ep.Ip, port)
-	//	} else {
-	//		// sentinel节点注册
-	//		sentinel := server.NewSentinel(endpoints, int64(config.Heartbeat), 100, config.ServiceName)
-	//		err := sentinel.RegisterSentinel(int64(config.Heartbeat))
-	//		if err != nil {
-	//			log.Error("Sentinel注册失败:", err)
-	//			continue
-	//		}
-	//		log.Info("Sentinel节点 %s 注册成功: %s:%d\n", name, ep.Ip, port)
-	//	}
-	//}
 }
 
 func (app *AppServer) DiscoverService() {
