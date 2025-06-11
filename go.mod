@@ -7,6 +7,7 @@ toolchain go1.24.3
 require (
 	github.com/PuerkitoBio/goquery v1.10.3
 	github.com/cenkalti/backoff/v4 v4.3.0
+	github.com/coreos/bbolt v1.3.3
 	github.com/dgraph-io/badger/v4 v4.7.0
 	github.com/go-ego/gse v0.80.3
 	github.com/go-sql-driver/mysql v1.9.2
@@ -31,6 +32,7 @@ require (
 	go.etcd.io/etcd/api/v3 v3.6.1
 	go.etcd.io/etcd/client/pkg/v3 v3.6.1
 	go.etcd.io/etcd/client/v3 v3.6.1
+	golang.org/x/crypto v0.39.0
 	golang.org/x/exp v0.0.0-20250606033433-dcc06ee1d476
 	golang.org/x/sync v0.15.0
 	golang.org/x/time v0.12.0
@@ -45,7 +47,6 @@ require (
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/coreos/bbolt v1.3.3 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.2.0 // indirect
@@ -72,6 +73,7 @@ require (
 	github.com/tklauser/numcpus v0.10.0 // indirect
 	github.com/vcaesar/cedar v0.20.2 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
+	go.etcd.io/bbolt v1.4.1 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel v1.36.0 // indirect
 	go.opentelemetry.io/otel/metric v1.36.0 // indirect
