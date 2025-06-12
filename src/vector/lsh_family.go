@@ -1,6 +1,7 @@
 package vector
 
 import (
+	"VectorSphere/src/library/enum"
 	"math"
 	"sync"
 	"time"
@@ -9,7 +10,7 @@ import (
 // LSHFamily LSH 族结构
 type LSHFamily struct {
 	ID               string                 `json:"id"`                 // LSH族唯一标识
-	FamilyType       LSHFamilyType          `json:"family_type"`        // LSH族类型
+	FamilyType       enum.LSHFamilyType     `json:"family_type"`        // LSH族类型
 	HashFunctions    []LSHHashFunction      `json:"hash_functions"`     // 哈希函数集合
 	Parameters       map[string]interface{} `json:"parameters"`         // LSH族参数
 	Dimension        int                    `json:"dimension"`          // 向量维度
@@ -34,7 +35,7 @@ type LSHFamilyPerformance struct {
 }
 
 // NewLSHFamily 创建新的LSH族
-func NewLSHFamily(id string, familyType LSHFamilyType, dimension int, numHashFunctions int, parameters map[string]interface{}) *LSHFamily {
+func NewLSHFamily(id string, familyType enum.LSHFamilyType, dimension int, numHashFunctions int, parameters map[string]interface{}) *LSHFamily {
 	return &LSHFamily{
 		ID:               id,
 		FamilyType:       familyType,
