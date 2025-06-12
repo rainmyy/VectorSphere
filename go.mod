@@ -33,6 +33,7 @@ require (
 	go.etcd.io/etcd/api/v3 v3.6.1
 	go.etcd.io/etcd/client/pkg/v3 v3.6.1
 	go.etcd.io/etcd/client/v3 v3.6.1
+	golang.org/x/crypto v0.39.0
 	golang.org/x/exp v0.0.0-20250606033433-dcc06ee1d476
 	golang.org/x/sync v0.15.0
 	golang.org/x/time v0.12.0

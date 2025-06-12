@@ -1,0 +1,330 @@
+# VectorSphere 分布式系统 Docker Compose 配置
+# 包含 etcd 集群和 VectorSphere 节点
+
+version: '3.8'
+
+services:
+  # etcd 集群
+  etcd1:
+    image: quay.io/coreos/etcd:v3.5.9
+    container_name: vectorsphere-etcd1
+    hostname: etcd1
+    networks:
+      - vectorsphere-net
+    ports:
+      - "2379:2379"
+      - "2380:2380"
+    environment:
+      - ETCD_NAME=etcd1
+      - ETCD_DATA_DIR=/etcd-data
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd1:2379
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd1:2380
+      - ETCD_INITIAL_CLUSTER=etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      - ETCD_INITIAL_CLUSTER_STATE=new
+      - ETCD_INITIAL_CLUSTER_TOKEN=vectorsphere-cluster
+    volumes:
+      - etcd1-data:/etcd-data
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  etcd2:
+    image: quay.io/coreos/etcd:v3.5.9
+    container_name: vectorsphere-etcd2
+    hostname: etcd2
+    networks:
+      - vectorsphere-net
+    ports:
+      - "2389:2379"
+      - "2390:2380"
+    environment:
+      - ETCD_NAME=etcd2
+      - ETCD_DATA_DIR=/etcd-data
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd2:2379
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd2:2380
+      - ETCD_INITIAL_CLUSTER=etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      - ETCD_INITIAL_CLUSTER_STATE=new
+      - ETCD_INITIAL_CLUSTER_TOKEN=vectorsphere-cluster
+    volumes:
+      - etcd2-data:/etcd-data
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  etcd3:
+    image: quay.io/coreos/etcd:v3.5.9
+    container_name: vectorsphere-etcd3
+    hostname: etcd3
+    networks:
+      - vectorsphere-net
+    ports:
+      - "2399:2379"
+      - "2400:2380"
+    environment:
+      - ETCD_NAME=etcd3
+      - ETCD_DATA_DIR=/etcd-data
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd3:2379
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://etcd3:2380
+      - ETCD_INITIAL_CLUSTER=etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      - ETCD_INITIAL_CLUSTER_STATE=new
+      - ETCD_INITIAL_CLUSTER_TOKEN=vectorsphere-cluster
+    volumes:
+      - etcd3-data:/etcd-data
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # VectorSphere 节点1（自动选举为 Master）
+  vectorsphere-node1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: "1.0.0"
+        BUILD_TIME: "$(date +%Y-%m-%d_%H:%M:%S)"
+        GIT_COMMIT: "docker"
+    container_name: vectorsphere-node1
+    hostname: vectorsphere-node1
+    networks:
+      - vectorsphere-net
+    ports:
+      - "8080:8080"  # HTTP API
+      - "9090:9090"  # gRPC
+      - "9091:9091"  # Metrics
+    environment:
+      - VECTORSPHERE_NODE_TYPE=auto
+      - VECTORSPHERE_HTTP_PORT=8080
+      - VECTORSPHERE_GRPC_PORT=9090
+      - VECTORSPHERE_DATA_DIR=/app/data
+      - VECTORSPHERE_LOG_LEVEL=info
+      - ETCD_ENDPOINTS=etcd1:2379,etcd2:2379,etcd3:2379
+    volumes:
+      - vectorsphere-node1-data:/app/data
+      - vectorsphere-node1-logs:/app/logs
+      - ./config/config.yaml:/app/config/config.yaml:ro
+    depends_on:
+      etcd1:
+        condition: service_healthy
+      etcd2:
+        condition: service_healthy
+      etcd3:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  # VectorSphere 节点2（Slave）
+  vectorsphere-node2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: "1.0.0"
+        BUILD_TIME: "$(date +%Y-%m-%d_%H:%M:%S)"
+        GIT_COMMIT: "docker"
+    container_name: vectorsphere-node2
+    hostname: vectorsphere-node2
+    networks:
+      - vectorsphere-net
+    ports:
+      - "8081:8080"  # HTTP API
+      - "9092:9090"  # gRPC
+      - "9093:9091"  # Metrics
+    environment:
+      - VECTORSPHERE_NODE_TYPE=auto
+      - VECTORSPHERE_HTTP_PORT=8080
+      - VECTORSPHERE_GRPC_PORT=9090
+      - VECTORSPHERE_DATA_DIR=/app/data
+      - VECTORSPHERE_LOG_LEVEL=info
+      - ETCD_ENDPOINTS=etcd1:2379,etcd2:2379,etcd3:2379
+    volumes:
+      - vectorsphere-node2-data:/app/data
+      - vectorsphere-node2-logs:/app/logs
+      - ./config/config.yaml:/app/config/config.yaml:ro
+    depends_on:
+      etcd1:
+        condition: service_healthy
+      etcd2:
+        condition: service_healthy
+      etcd3:
+        condition: service_healthy
+      vectorsphere-node1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  # VectorSphere 节点3（Slave）
+  vectorsphere-node3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: "1.0.0"
+        BUILD_TIME: "$(date +%Y-%m-%d_%H:%M:%S)"
+        GIT_COMMIT: "docker"
+    container_name: vectorsphere-node3
+    hostname: vectorsphere-node3
+    networks:
+      - vectorsphere-net
+    ports:
+      - "8082:8080"  # HTTP API
+      - "9094:9090"  # gRPC
+      - "9095:9091"  # Metrics
+    environment:
+      - VECTORSPHERE_NODE_TYPE=auto
+      - VECTORSPHERE_HTTP_PORT=8080
+      - VECTORSPHERE_GRPC_PORT=9090
+      - VECTORSPHERE_DATA_DIR=/app/data
+      - VECTORSPHERE_LOG_LEVEL=info
+      - ETCD_ENDPOINTS=etcd1:2379,etcd2:2379,etcd3:2379
+    volumes:
+      - vectorsphere-node3-data:/app/data
+      - vectorsphere-node3-logs:/app/logs
+      - ./config/config.yaml:/app/config/config.yaml:ro
+    depends_on:
+      etcd1:
+        condition: service_healthy
+      etcd2:
+        condition: service_healthy
+      etcd3:
+        condition: service_healthy
+      vectorsphere-node1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  # Prometheus 监控（可选）
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: vectorsphere-prometheus
+    hostname: prometheus
+    networks:
+      - vectorsphere-net
+    ports:
+      - "9096:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    depends_on:
+      - vectorsphere-node1
+      - vectorsphere-node2
+      - vectorsphere-node3
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Grafana 仪表板（可选）
+  grafana:
+    image: grafana/grafana:10.0.0
+    container_name: vectorsphere-grafana
+    hostname: grafana
+    networks:
+      - vectorsphere-net
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    profiles:
+      - monitoring
+
+  # Nginx 负载均衡器（可选）
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: vectorsphere-nginx
+    hostname: nginx
+    networks:
+      - vectorsphere-net
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - vectorsphere-node1
+      - vectorsphere-node2
+      - vectorsphere-node3
+    restart: unless-stopped
+    profiles:
+      - loadbalancer
+
+networks:
+  vectorsphere-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  # etcd 数据卷
+  etcd1-data:
+    driver: local
+  etcd2-data:
+    driver: local
+  etcd3-data:
+    driver: local
+  
+  # VectorSphere 数据卷
+  vectorsphere-node1-data:
+    driver: local
+  vectorsphere-node1-logs:
+    driver: local
+  vectorsphere-node2-data:
+    driver: local
+  vectorsphere-node2-logs:
+    driver: local
+  vectorsphere-node3-data:
+    driver: local
+  vectorsphere-node3-logs:
+    driver: local
+  
+  # 监控数据卷
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local

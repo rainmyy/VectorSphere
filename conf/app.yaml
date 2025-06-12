@@ -1,0 +1,182 @@
+# VectorSphere 应用配置文件
+
+# etcd 配置
+etcdEndpoints:
+  - "localhost:2379"
+etcdDialTimeout: 5s
+etcdUsername: ""
+etcdPassword: ""
+
+# etcd TLS 配置（可选）
+etcdTLS:
+  certFile: ""
+  keyFile: ""
+  caFile: ""
+  serverName: ""
+
+# 服务注册配置
+serviceRegistryPath: "/services/vectorsphere/"
+serviceTTL: 30  # 秒
+
+# 配置管理
+configPathPrefix: "/config/vectorsphere/"
+
+# 领导者选举
+electionPathPrefix: "/election/vectorsphere/"
+
+# 重试策略
+retryPolicy:
+  initialInterval: 1s
+  maxInterval: 30s
+  multiplier: 2.0
+  maxElapsedTime: 5m
+
+# 熔断器配置
+circuitBreaker:
+  name: "default"
+  maxRequests: 10
+  interval: 60s
+  timeout: 30s
+
+# 限流器配置
+rateLimiter:
+  rate: 100.0  # 每秒请求数
+  burst: 200   # 突发请求数
+
+# 服务配置
+service:
+  serviceName: "VectorSphere"
+  timeOut: 30
+  defaultPort: 8080
+  maxConnections: 1000
+  readTimeout: 30s
+  writeTimeout: 30s
+  idleTimeout: 60s
+
+# 日志配置
+logging:
+  level: "info"
+  format: "json"
+  output: "stdout"
+  file: "logs/vectorsphere.log"
+  maxSize: 100  # MB
+  maxBackups: 10
+  maxAge: 30    # 天
+  compress: true
+
+# 监控配置
+monitoring:
+  enabled: true
+  metricsPath: "/metrics"
+  healthPath: "/health"
+  port: 9090
+
+# 安全配置
+security:
+  tls:
+    enabled: false
+    certFile: ""
+    keyFile: ""
+  auth:
+    enabled: false
+    jwtSecret: "your-jwt-secret-key"
+    tokenExpiry: 24h
+
+# 数据库配置
+database:
+  type: "badger"  # badger, leveldb, rocksdb
+  path: "./data/db"
+  options:
+    syncWrites: true
+    numVersionsToKeep: 1
+    numGoroutines: 8
+    memTableSize: 64MB
+    baseTableSize: 2MB
+    baseLevelSize: 10MB
+    levelSizeMultiplier: 10
+    tableLoadingMode: 2
+    valueLogLoadingMode: 2
+    numMemtables: 5
+    numLevelZeroTables: 5
+    numLevelZeroTablesStall: 10
+    numCompactors: 3
+    doNotCompact: false
+    maxTableSize: 64MB
+    compressionType: 1
+    blockSize: 4KB
+    bloomFalsePositive: 0.01
+    blockCacheSize: 256MB
+    indexCacheSize: 0
+    numBlocksToCache: 1000
+    metricsEnabled: true
+
+# 向量索引配置
+vectorIndex:
+  dimension: 768
+  metric: "cosine"  # cosine, euclidean, dot_product
+  indexType: "hnsw"  # hnsw, ivf, flat
+  hnswConfig:
+    m: 16
+    efConstruction: 200
+    efSearch: 100
+    maxConnections: 32
+  ivfConfig:
+    nlist: 1024
+    nprobe: 10
+  buildThreshold: 1000
+  rebuildInterval: 1h
+
+# 缓存配置
+cache:
+  enabled: true
+  type: "memory"  # memory, redis
+  maxSize: 1000
+  ttl: 1h
+  redis:
+    addr: "localhost:6379"
+    password: ""
+    db: 0
+    poolSize: 10
+    minIdleConns: 5
+    maxConnAge: 30m
+    poolTimeout: 4s
+    idleTimeout: 5m
+    idleCheckFrequency: 1m
+
+# 分布式配置
+distributed:
+  enabled: true
+  nodeId: "node-1"
+  clusterName: "vectorsphere-cluster"
+  replicationFactor: 3
+  consistencyLevel: "quorum"  # one, quorum, all
+  gossipInterval: 1s
+  gossipNodes: 3
+  pushPullInterval: 30s
+  probeInterval: 1s
+  probeTimeout: 500ms
+  suspicionMult: 4
+  retransmitMult: 4
+  gossipToTheDeadTime: 30s
+  enableCompression: true
+
+# 性能调优
+performance:
+  maxConcurrentQueries: 100
+  queryTimeout: 30s
+  batchSize: 1000
+  flushInterval: 5s
+  compactionInterval: 1h
+  gcInterval: 10m
+  memoryLimit: 2GB
+  diskSpaceThreshold: 0.8  # 80%
+  cpuThreshold: 0.8        # 80%
+
+# 开发模式配置
+development:
+  enabled: false
+  debugMode: false
+  profileEnabled: false
+  profilePort: 6060
+  hotReload: false
+  mockData: false
