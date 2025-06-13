@@ -31,8 +31,8 @@ const (
 	StrategyHNSW                            // HNSW索引
 	StrategyPQ                              // PQ压缩搜索
 	StrategyHybrid                          // 混合策略
-	EnhancedIVF
-	EnhancedLSH
+	StrategyEnhancedIVF
+	StrategyEnhancedLSH
 )
 
 // SearchContext 搜索上下文
@@ -42,6 +42,14 @@ type SearchContext struct {
 	Nprobe       int
 	Timeout      time.Duration
 	QualityLevel float64 // 0.0-1.0，质量要求等级
+	// 索引策略选项
+	UseIVF         bool
+	UseHNSW        bool
+	UsePQ          bool
+	UseHybrid      bool
+	UseEnhancedIVF bool
+	UseEnhancedLSH bool
+	UseGPU         bool
 }
 
 // StrategySelector 智能策略选择器
@@ -64,12 +72,6 @@ type PerformanceMetrics struct {
 type Cluster struct {
 	Centroid  entity.Point // 簇的中心点
 	VectorIDs []string     // 属于该簇的向量ID列表
-}
-
-// 添加查询缓存结构
-type queryCache struct {
-	results   []string
-	timestamp int64
 }
 
 // PerformanceStats 性能统计结构
@@ -195,7 +197,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 			// IVF适合精确搜索和中高维数据
 			if ctx.QualityLevel > 0.8 || (vectorDim >= 128 && vectorDim <= 2048) {
 				log.Trace("选择EnhancedIVF策略：数据量=%d，质量要求=%.2f，维度=%d", vectorCount, ctx.QualityLevel, vectorDim)
-				return EnhancedIVF
+				return StrategyEnhancedIVF
 			}
 		}
 
@@ -203,7 +205,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 			// LSH适合高维数据和快速近似搜索
 			if vectorDim > 512 || (ctx.QualityLevel < 0.85 && ctx.Timeout > 0 && ctx.Timeout < 50*time.Millisecond) {
 				log.Trace("选择EnhancedLSH策略：数据量=%d，维度=%d，质量要求=%.2f", vectorCount, vectorDim, ctx.QualityLevel)
-				return EnhancedLSH
+				return StrategyEnhancedLSH
 			}
 		}
 	}
@@ -225,7 +227,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 		// 超高维数据优先考虑LSH
 		if lshIndexReady && db.LshConfig != nil {
 			log.Trace("超高维数据选择EnhancedLSH策略：维度=%d", vectorDim)
-			return EnhancedLSH
+			return StrategyEnhancedLSH
 		}
 		// 其次考虑PQ压缩
 		if db.usePQCompression && db.pqCodebook != nil {
@@ -242,7 +244,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 		// 高质量要求，优先精确搜索
 		if ivfIndexReady && db.ivfConfig != nil {
 			log.Trace("高质量要求选择EnhancedIVF策略：质量要求=%.2f", ctx.QualityLevel)
-			return EnhancedIVF
+			return StrategyEnhancedIVF
 		}
 		if vectorCount < 100000 {
 			if db.useHNSWIndex && db.indexed && db.hnsw != nil {
@@ -260,7 +262,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 		// 低延迟要求，优先快速策略
 		if lshIndexReady && db.LshConfig != nil {
 			log.Trace("低延迟要求选择EnhancedLSH策略：超时限制=%v", ctx.Timeout)
-			return EnhancedLSH
+			return StrategyEnhancedLSH
 		}
 		if db.usePQCompression && db.pqCodebook != nil {
 			return StrategyPQ
@@ -271,7 +273,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 	if ctx.Timeout > 0 && ctx.Timeout < 100*time.Millisecond {
 		if ivfIndexReady && db.ivfConfig != nil && ctx.QualityLevel > 0.7 {
 			log.Trace("中等延迟要求选择EnhancedIVF策略：超时限制=%v，质量要求=%.2f", ctx.Timeout, ctx.QualityLevel)
-			return EnhancedIVF
+			return StrategyEnhancedIVF
 		}
 	}
 
@@ -284,12 +286,12 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 	// 优先选择增强型索引
 	if ivfIndexReady && db.ivfConfig != nil {
 		log.Trace("默认选择EnhancedIVF策略")
-		return EnhancedIVF
+		return StrategyEnhancedIVF
 	}
 
 	if lshIndexReady && db.LshConfig != nil {
 		log.Trace("默认选择EnhancedLSH策略")
-		return EnhancedLSH
+		return StrategyEnhancedLSH
 	}
 
 	// 传统索引作为备选
@@ -341,13 +343,13 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOption
 		results, err = db.pqSearchWithScores(query, k)
 	case StrategyHybrid:
 		results, err = db.hybridSearchWithScores(query, k, ctx)
-	case EnhancedIVF:
+	case StrategyEnhancedIVF:
 		results, err = db.EnhancedIVFSearch(query, k, ctx.Nprobe)
 		if err != nil {
 			log.Warning("EnhancedIVF搜索失败，回退到传统IVF: %v", err)
 			results, err = db.ivfSearchWithScores(query, k, ctx.Nprobe, db.GetOptimalStrategy(query))
 		}
-	case EnhancedLSH:
+	case StrategyEnhancedLSH:
 		results, err = db.EnhancedLSHSearch(query, k)
 		if err != nil {
 			log.Warning("EnhancedLSH搜索失败，回退到传统搜索: %v", err)
@@ -760,9 +762,9 @@ func (db *VectorDB) getStrategyName(strategy IndexStrategy) string {
 		return "PQ压缩"
 	case StrategyHybrid:
 		return "混合策略"
-	case EnhancedLSH:
+	case StrategyEnhancedLSH:
 		return "增强LSH"
-	case EnhancedIVF:
+	case StrategyEnhancedIVF:
 		return "增强IVF"
 	default:
 		return "未知策略"
