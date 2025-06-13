@@ -35,7 +35,7 @@ type Logger struct {
 	toStdout bool
 }
 
-var defaultLogger *Logger
+var DefaultLogger *Logger
 
 // 默认初始化
 func init() {
@@ -69,7 +69,7 @@ func InitLogger(level Level, filePath string, maxSizeMB int64, toStdout bool) er
 	} else {
 		output = os.Stdout
 	}
-	defaultLogger = &Logger{
+	DefaultLogger = &Logger{
 		level:    level,
 		logger:   log.New(output, "", log.Ldate|log.Ltime|log.Lshortfile),
 		file:     file,
@@ -126,6 +126,10 @@ func (l *Logger) logf(level Level, format string, v ...interface{}) {
 	}
 }
 
+func (l *Logger) SetLevel(level Level) {
+	l.level = level
+}
+
 func formatLog(format string, v ...interface{}) string {
 	if len(v) == 0 {
 		return format
@@ -134,9 +138,9 @@ func formatLog(format string, v ...interface{}) string {
 }
 
 // Fatal 对外接口
-func Fatal(format string, v ...interface{})   { defaultLogger.logf(FATAL, format, v...) }
-func Error(format string, v ...interface{})   { defaultLogger.logf(ERROR, format, v...) }
-func Warning(format string, v ...interface{}) { defaultLogger.logf(WARNING, format, v...) }
-func Info(format string, v ...interface{})    { defaultLogger.logf(INFO, format, v...) }
-func Trace(format string, v ...interface{})   { defaultLogger.logf(TRACE, format, v...) }
-func Debug(format string, v ...interface{})   { defaultLogger.logf(DEBUG, format, v...) }
+func Fatal(format string, v ...interface{})   { DefaultLogger.logf(FATAL, format, v...) }
+func Error(format string, v ...interface{})   { DefaultLogger.logf(ERROR, format, v...) }
+func Warning(format string, v ...interface{}) { DefaultLogger.logf(WARNING, format, v...) }
+func Info(format string, v ...interface{})    { DefaultLogger.logf(INFO, format, v...) }
+func Trace(format string, v ...interface{})   { DefaultLogger.logf(TRACE, format, v...) }
+func Debug(format string, v ...interface{})   { DefaultLogger.logf(DEBUG, format, v...) }

@@ -13,6 +13,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -1232,20 +1233,61 @@ func (sm *EnhancedSecurityManager) validatePassword(password string) error {
 		return fmt.Errorf("password too long, maximum length is %d", policy.MaxLength)
 	}
 
-	if policy.RequireUppercase && !strings.ContainsAny(password, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") {
-		return fmt.Errorf("password must contain at least one uppercase letter")
+	// 检查大写字母
+	if policy.RequireUppercase {
+		hasUpper := false
+		for _, c := range password {
+			if c >= 'A' && c <= 'Z' {
+				hasUpper = true
+				break
+			}
+		}
+		if !hasUpper {
+			return errors.New("password must contain at least one uppercase letter")
+		}
 	}
 
-	if policy.RequireLowercase && !strings.ContainsAny(password, "abcdefghijklmnopqrstuvwxyz") {
-		return fmt.Errorf("password must contain at least one lowercase letter")
+	// 检查小写字母
+	if policy.RequireLowercase {
+		hasLower := false
+		for _, c := range password {
+			if c >= 'a' && c <= 'z' {
+				hasLower = true
+				break
+			}
+		}
+		if !hasLower {
+			return errors.New("password must contain at least one lowercase letter")
+		}
 	}
 
-	if policy.RequireNumbers && !strings.ContainsAny(password, "0123456789") {
-		return fmt.Errorf("password must contain at least one number")
+	// 检查数字
+	if policy.RequireNumbers {
+		hasNumber := false
+		for _, c := range password {
+			if c >= '0' && c <= '9' {
+				hasNumber = true
+				break
+			}
+		}
+		if !hasNumber {
+			return errors.New("password must contain at least one number")
+		}
 	}
 
-	if policy.RequireSymbols && !strings.ContainsAny(password, "!@#$%^&*()_+-=[]{}|;:,.<>?") {
-		return fmt.Errorf("password must contain at least one symbol")
+	// 检查特殊字符
+	if policy.RequireSymbols {
+		hasSpecial := false
+		specialChars := "!@#$%^&*()-_=+[]{}|;:,.<>?/\\"
+		for _, c := range password {
+			if strings.ContainsRune(specialChars, c) {
+				hasSpecial = true
+				break
+			}
+		}
+		if !hasSpecial {
+			return errors.New("password must contain at least one special character")
+		}
 	}
 
 	return nil

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/cenkalti/backoff/v4"
 	"math/rand"
 	"sync"
 	"sync/atomic"
@@ -137,6 +138,10 @@ type EnhancedLeaderElection struct {
 	lastHeartbeat   time.Time
 	heartbeatChan   chan struct{}
 	stopChan        chan struct{}
+
+	leaderInfo      *LeaderInfo
+	leaderCallbacks []func(bool, *LeaderInfo)
+	retryPolicy     *backoff.ExponentialBackOff
 }
 
 // NewEnhancedLeaderElection 创建增强的领导者选举
@@ -178,6 +183,11 @@ func NewEnhancedLeaderElection(client *clientv3.Client, config *ElectionConfig, 
 	// 创建选举
 	election := concurrency.NewElection(session, config.ElectionKey)
 
+	retryPolicy := backoff.NewExponentialBackOff()
+	retryPolicy.InitialInterval = 1 * time.Second
+	retryPolicy.MaxInterval = 30 * time.Second
+	retryPolicy.MaxElapsedTime = 0 // 无限重试
+
 	ele := &EnhancedLeaderElection{
 		client:        client,
 		session:       session,
@@ -193,6 +203,7 @@ func NewEnhancedLeaderElection(client *clientv3.Client, config *ElectionConfig, 
 		basePrefix:    "/vector_sphere/election",
 		heartbeatChan: make(chan struct{}, 1),
 		stopChan:      make(chan struct{}),
+		retryPolicy:   retryPolicy,
 	}
 
 	// 初始化节点信息
@@ -1017,4 +1028,34 @@ func (ele *EnhancedLeaderElection) triggerEvent(event *ElectionEvent) {
 
 	log.Info("Election event triggered: type=%s, node=%s, term=%d, message=%s",
 		event.Type, event.NodeID, event.Term, event.Message)
+}
+
+// AddLeaderCallback 添加领导者变化回调
+func (ele *EnhancedLeaderElection) AddLeaderCallback(callback func(bool, *LeaderInfo)) {
+	ele.mu.Lock()
+	ele.leaderCallbacks = append(ele.leaderCallbacks, callback)
+	ele.mu.Unlock()
+}
+
+// notifyCallbacks 通知回调
+func (ele *EnhancedLeaderElection) notifyCallbacks(isLeader bool, leaderInfo *LeaderInfo) {
+	ele.mu.RLock()
+	callbacks := make([]func(bool, *LeaderInfo), len(ele.leaderCallbacks))
+	copy(callbacks, ele.leaderCallbacks)
+	ele.mu.RUnlock()
+
+	for _, callback := range callbacks {
+		go callback(isLeader, leaderInfo)
+	}
+}
+
+// GetLeaderInfo 获取当前领导者信息
+func (ele *EnhancedLeaderElection) GetLeaderInfo() *LeaderInfo {
+	ele.mu.RLock()
+	defer ele.mu.RUnlock()
+	if ele.leaderInfo != nil {
+		info := *ele.leaderInfo
+		return &info
+	}
+	return nil
 }

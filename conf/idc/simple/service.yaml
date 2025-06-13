@@ -1,6 +1,6 @@
-# config/service.yaml
+# VectorSphere 服务配置文件
 service:
-    name: "my-service"
+    name: "vectorsphere"
     port: 8080
     tags: ["api", "v1"]
     healthCheck:
@@ -10,23 +10,113 @@ service:
         timeout: "5s"
     loadBalancing:
         strategy: "round-robin"
-        # 其他负载均衡配置
+        sessionAffinity: true
+        healthCheckThreshold: 3
+        slowStart: true
+        slowStartDuration: "2m"
+
 etcd:
     endpoints: ["127.0.0.1:2379"]
     dialTimeout: "5s"
+    requestTimeout: "3s"
+    autoSyncInterval: "10s"
+    prefix: "/vectorsphere"
     tls:
         enabled: false
-        # certFile: "/path/to/cert.pem"
-        # keyFile: "/path/to/key.pem"
-        # caFile: "/path/to/ca.pem"
+        # certFile: "D:\\code\\VectorSphere\\conf\\certs\\cert.pem"
+        # keyFile: "D:\\code\\VectorSphere\\conf\\certs\\key.pem"
+        # caFile: "D:\\code\\VectorSphere\\conf\\certs\\ca.pem"
     auth:
         enabled: false
         # username: "user"
         # password: "password"
 
-# 其他配置，例如日志、度量等
+# 日志配置
 logging:
     level: "info"
+    path: "D:\\code\\VectorSphere\\logs"
+    maxSize: 100 # MB
+    maxBackups: 10
+    maxAge: 30 # 天
+    compress: true
+
+# 指标监控
 metrics:
     enabled: true
     port: 9090
+    path: "/metrics"
+
+# Master节点配置
+master:
+    enabled: true
+    httpPort: 8080
+    grpcPort: 9090
+    maxConnections: 1000
+    readTimeout: "5s"
+    writeTimeout: "5s"
+    idleTimeout: "60s"
+    taskPool:
+        maxWorkers: 100
+        queueSize: 1000
+        workerIdleTimeout: "60s"
+
+# Slave节点配置
+slave:
+    enabled: true
+    grpcPort: 9091
+    maxConnections: 500
+    maxConcurrentStreams: 100
+    keepaliveTime: "30s"
+    keepaliveTimeout: "10s"
+    maxSendMsgSize: 4194304 # 4MB
+    maxRecvMsgSize: 4194304 # 4MB
+    taskPool:
+        maxWorkers: 50
+        queueSize: 500
+        workerIdleTimeout: "60s"
+
+# 搜索服务配置
+search:
+    vectorDb:
+        engine: "faiss"
+        dimension: 768
+        metricType: "cosine"
+        indexType: "IVF100,PQ16"
+        nlist: 100
+        nprobe: 10
+        dataPath: "D:\\code\\VectorSphere\\data\\vector_db"
+    invertedIndex:
+        tokenizer: "standard"
+        analyzer: "standard"
+        stopwordsEnabled: true
+        stemmingEnabled: true
+        caseSensitive: false
+        dataPath: "D:\\code\\VectorSphere\\data\\inverted_index"
+    transaction:
+        isolationLevel: "read_committed"
+        maxRetryCount: 3
+        retryInterval: "100ms"
+        timeout: "5s"
+    wal:
+        enabled: true
+        syncMode: "batch"
+        batchSize: 100
+        flushInterval: "1s"
+        path: "D:\\code\\VectorSphere\\data\\wal"
+    cache:
+        enabled: true
+        type: "lru"
+        sizeMb: 256
+        ttl: "5m"
+        evictionInterval: "60s"
+
+# 安全配置
+security:
+    tlsEnabled: false
+    certFile: "D:\\code\\VectorSphere\\conf\\certs\\server.crt"
+    keyFile: "D:\\code\\VectorSphere\\conf\\certs\\server.key"
+    caFile: "D:\\code\\VectorSphere\\conf\\certs\\ca.crt"
+    authEnabled: true
+    authType: "jwt"
+    jwtSecret: "your-jwt-secret-key"
+    jwtExpiration: "24h"
