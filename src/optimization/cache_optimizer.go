@@ -279,9 +279,9 @@ func (co *CacheOptimizer) checkCache(key string) (interface{}, bool) {
 }
 
 // cacheResults 缓存结果
-func (co *CacheOptimizer) cacheResults(key string, value interface{}) {
+func (co *CacheOptimizer) cacheResults(key string, results []string) {
 	// 缓存到多级缓存
-	co.multiLevelCache.Put(key, value)
+	co.multiLevelCache.Put(key, results)
 
 	// 更新LRU策略
 	co.evictionPolicy.RecordAccess(key)

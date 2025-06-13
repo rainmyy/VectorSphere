@@ -44,8 +44,8 @@ func (db *VectorDB) WarmupIndex() {
 		{"HNSW", StrategyHNSW},
 		{"PQ", StrategyPQ},
 		{"Hybrid", StrategyHybrid},
-		{"EnhancedIVF", EnhancedIVF}, // 新增：增强IVF索引
-		{"EnhancedLSH", EnhancedLSH}, // 新增：增强LSH索引
+		{"EnhancedIVF", StrategyEnhancedIVF}, // 新增：增强IVF索引
+		{"EnhancedLSH", StrategyEnhancedLSH}, // 新增：增强LSH索引
 	}
 
 	// 获取硬件能力
@@ -64,10 +64,10 @@ func (db *VectorDB) WarmupIndex() {
 			canUse = db.indexed && len(db.clusters) > 0
 		case StrategyHybrid:
 			canUse = hwCaps.HasGPU && db.gpuAccelerator != nil
-		case EnhancedIVF:
+		case StrategyEnhancedIVF:
 			// 检查增强IVF索引是否可用
 			canUse = db.ivfIndex != nil && db.ivfIndex.Enable && db.ivfConfig != nil
-		case EnhancedLSH:
+		case StrategyEnhancedLSH:
 			// 检查增强LSH索引是否可用
 			canUse = db.LshIndex != nil && db.LshIndex.Enable && db.LshConfig != nil
 		}
@@ -105,7 +105,7 @@ func (db *VectorDB) WarmupIndex() {
 				results, err = db.pqSearchWithScores(query, 5)
 			case StrategyHybrid:
 				results, err = db.hybridSearchWithScores(query, 5, ctx)
-			case EnhancedIVF:
+			case StrategyEnhancedIVF:
 				// 预热增强IVF索引
 				results, err = db.EnhancedIVFSearch(query, 5, 10)
 				if err != nil {
@@ -113,7 +113,7 @@ func (db *VectorDB) WarmupIndex() {
 					// 预热IVF索引的各个组件
 					//db.warmupEnhancedIVFComponents(query, ctx)
 				}
-			case EnhancedLSH:
+			case StrategyEnhancedLSH:
 				// 预热增强LSH索引
 				results, err = db.EnhancedLSHSearch(query, 5)
 				if err != nil {

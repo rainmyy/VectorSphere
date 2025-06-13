@@ -125,7 +125,7 @@ func (c *Connector) Initialize() error {
 
 	// 创建缓存优化器
 	if c.config.EnableCache {
-		c.cacheOptimizer = NewCacheOptimizer(c.vectorDB)
+		c.cacheOptimizer = NewCacheOptimizer(c.vectorDB.MultiCache)
 	}
 
 	// 创建性能监控器
@@ -139,7 +139,6 @@ func (c *Connector) Initialize() error {
 	return nil
 }
 
-// Search 单向量搜索
 // Search 向量搜索
 func (c *Connector) Search(ctx context.Context, vector []float64, k int, options *SearchOptions) ([]entity.Result, error) {
 	if !c.isInitialized {
@@ -285,7 +284,7 @@ func (c *Connector) Close() error {
 
 	// 关闭性能监控器
 	if c.performanceMonitor != nil {
-		c.performanceMonitor.StopMonitoring()
+		c.performanceMonitor.Stop()
 	}
 
 	c.isInitialized = false

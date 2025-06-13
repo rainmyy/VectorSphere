@@ -1,11 +1,13 @@
 package optimization
 
 import (
+	"VectorSphere/src/enhanced"
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/log"
 	"VectorSphere/src/vector"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"runtime"
@@ -37,6 +39,7 @@ type HighThroughputOptimizer struct {
 	totalCacheHits     atomic.Int64
 	totalErrors        atomic.Int64
 	lastOptimizeTime   time.Time
+	deadlockDetector   *enhanced.DeadlockDetector
 }
 
 // ResultCache 结果缓存
@@ -57,21 +60,21 @@ type CircuitBreaker struct {
 	totalCount       int
 	lastFailureTime  time.Time
 	recoveryTime     time.Duration
-	mu               sync.RWMutex
+	mu               sync.Mutex // 使用单一锁类型
 }
 
 // LoadBalancer 负载均衡器
 type LoadBalancer struct {
 	strategy    string
 	workerLoads []int
-	mu          sync.RWMutex
+	mu          sync.Mutex // 使用单一锁类型
 }
 
 // RequestMerger 请求合并器
 type RequestMerger struct {
 	mergeWindow     time.Duration
 	pendingRequests map[string]*MergedRequest
-	mu              sync.RWMutex
+	mu              sync.Mutex // 使用单一锁类型
 }
 
 // MergedRequest 合并请求
@@ -95,7 +98,7 @@ type MergedResult struct {
 type QueryOptimizer struct {
 	queryPlanCache map[string]string
 	cacheSize      int
-	mu             sync.RWMutex
+	mu             sync.Mutex // 使用单一锁类型
 }
 
 // NewHighThroughputOptimizer 创建高吞吐量优化器
@@ -142,7 +145,7 @@ func (hto *HighThroughputOptimizer) Initialize() error {
 
 	// 创建缓存优化器
 	if hto.config.EnableCache {
-		hto.cacheOptimizer = NewCacheOptimizer(hto.vectorDB)
+		hto.cacheOptimizer = NewCacheOptimizer(hto.vectorDB.MultiCache)
 	}
 
 	// 创建结果缓存
@@ -150,6 +153,7 @@ func (hto *HighThroughputOptimizer) Initialize() error {
 		hto.resultCache = &ResultCache{
 			cache:      make(map[string][][]entity.Result),
 			expiration: make(map[string]time.Time),
+			frequency:  make(map[string]int),
 			maxEntries: hto.config.ResultCacheMaxEntries,
 			ttl:        hto.config.ResultCacheTTL,
 		}
@@ -216,20 +220,41 @@ func (hto *HighThroughputOptimizer) OptimizedSearch(ctx context.Context, vector 
 		return nil, fmt.Errorf("circuit breaker is open")
 	}
 
+	// 创建带超时的上下文
+	var cancel context.CancelFunc
+	if options.Timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, options.Timeout)
+		defer cancel()
+	} else if hto.config.BaseTimeout > 0 {
+		// 使用默认超时
+		ctx, cancel = context.WithTimeout(ctx, hto.config.BaseTimeout)
+		defer cancel()
+	}
+
 	// 检查缓存
+	var cacheKey string
 	if options.EnableCache && hto.resultCache != nil {
-		cacheKey := hto.generateCacheKey(vector, k, options)
+		cacheKey = hto.generateCacheKey(vector, k, options)
 		if cachedResults := hto.checkResultCache(cacheKey); cachedResults != nil {
 			hto.totalCacheHits.Add(1)
 			return cachedResults, nil
 		}
 	}
 
+	// 为当前搜索操作生成唯一ID
+	searchID := fmt.Sprintf("search_%d", time.Now().UnixNano())
+
 	// 选择最优策略
 	strategy := hto.selectOptimalStrategy(vector, k, options)
 
+	// 添加到死锁检测器
+	hto.deadlockDetector.AddLockOwner(searchID, "search_thread")
+
 	// 执行搜索
 	results, err := hto.executeSearch(ctx, vector, k, options, strategy)
+
+	// 从死锁检测器移除
+	hto.deadlockDetector.RemoveLockOwner(searchID)
 
 	// 更新熔断器状态
 	if hto.circuitBreaker != nil {
@@ -243,8 +268,7 @@ func (hto *HighThroughputOptimizer) OptimizedSearch(ctx context.Context, vector 
 	}
 
 	// 缓存结果
-	if options.EnableCache && hto.resultCache != nil {
-		cacheKey := hto.generateCacheKey(vector, k, options)
+	if options.EnableCache && hto.resultCache != nil && cacheKey != "" {
 		hto.cacheResults(cacheKey, results)
 	}
 
@@ -272,6 +296,23 @@ func (hto *HighThroughputOptimizer) BatchSearch(ctx context.Context, vectors [][
 		return nil, fmt.Errorf("circuit breaker is open")
 	}
 
+	// 创建带超时的上下文
+	var cancel context.CancelFunc
+	if options.Timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, options.Timeout)
+		defer cancel()
+	} else if hto.config.BaseTimeout > 0 {
+		// 使用默认超时
+		ctx, cancel = context.WithTimeout(ctx, hto.config.BaseTimeout)
+		defer cancel()
+	}
+
+	// 为当前批处理操作生成唯一ID
+	batchID := fmt.Sprintf("batch_%d", time.Now().UnixNano())
+
+	// 添加到死锁检测器
+	hto.deadlockDetector.AddLockOwner(batchID, "batch_thread")
+
 	// 检查缓存
 	if options.EnableCache && hto.resultCache != nil {
 		cachedResults := make([][]entity.Result, queryCount)
@@ -292,6 +333,8 @@ func (hto *HighThroughputOptimizer) BatchSearch(ctx context.Context, vectors [][
 
 		// 如果全部命中缓存，直接返回
 		if len(cacheMissVectors) == 0 {
+			// 从死锁检测器移除
+			hto.deadlockDetector.RemoveLockOwner(batchID)
 			return cachedResults, nil
 		}
 
@@ -299,6 +342,8 @@ func (hto *HighThroughputOptimizer) BatchSearch(ctx context.Context, vectors [][
 		if len(cacheMissVectors) < queryCount {
 			missResults, err := hto.processBatches(ctx, cacheMissVectors, k, options)
 			if err != nil {
+				// 从死锁检测器移除
+				hto.deadlockDetector.RemoveLockOwner(batchID)
 				return nil, err
 			}
 
@@ -311,12 +356,17 @@ func (hto *HighThroughputOptimizer) BatchSearch(ctx context.Context, vectors [][
 				hto.cacheResults(cacheKey, missResults[i])
 			}
 
+			// 从死锁检测器移除
+			hto.deadlockDetector.RemoveLockOwner(batchID)
 			return cachedResults, nil
 		}
 	}
 
 	// 处理所有批次
 	results, err := hto.processBatches(ctx, vectors, k, options)
+
+	// 从死锁检测器移除
+	hto.deadlockDetector.RemoveLockOwner(batchID)
 
 	// 更新熔断器状态
 	if hto.circuitBreaker != nil {
@@ -381,15 +431,6 @@ func (hto *HighThroughputOptimizer) processBatches(ctx context.Context, vectors 
 	var wg sync.WaitGroup
 	wg.Add(numBatches)
 
-	// 创建上下文，支持超时和取消
-	var cancel context.CancelFunc
-	if options.Timeout > 0 {
-		ctx, cancel = context.WithTimeout(ctx, options.Timeout)
-	} else {
-		ctx, cancel = context.WithCancel(ctx)
-	}
-	defer cancel()
-
 	// 启动监控协程
 	go func() {
 		completed := 0
@@ -423,6 +464,9 @@ func (hto *HighThroughputOptimizer) processBatches(ctx context.Context, vectors 
 		// 提取当前批次的向量
 		batchVectors := vectors[startIdx:endIdx]
 
+		// 为每个批次创建唯一ID
+		batchTaskID := fmt.Sprintf("batch_task_%d_%d", i, time.Now().UnixNano())
+
 		// 创建批处理任务
 		task := &BatchSearchTask{
 			ctx:           ctx,
@@ -439,6 +483,9 @@ func (hto *HighThroughputOptimizer) processBatches(ctx context.Context, vectors 
 			batchIndex:    i,
 			totalBatches:  numBatches,
 		}
+
+		// 添加到死锁检测器
+		hto.deadlockDetector.AddWaitingRelation(batchTaskID, "worker_pool")
 
 		// 提交任务到工作池
 		hto.workerPool.SubmitTask(task)
@@ -479,21 +526,21 @@ func (hto *HighThroughputOptimizer) processBatches(ctx context.Context, vectors 
 
 // isCircuitBreakerOpen 检查熔断器是否打开
 func (hto *HighThroughputOptimizer) isCircuitBreakerOpen() bool {
-	hto.circuitBreaker.mu.RLock()
-	defer hto.circuitBreaker.mu.RUnlock()
+	hto.circuitBreaker.mu.Unlock()
+	defer hto.circuitBreaker.mu.Unlock()
 
 	// 如果熔断器处于打开状态
 	if hto.circuitBreaker.state == 2 {
 		// 检查是否已经过了恢复时间
 		if time.Since(hto.circuitBreaker.lastFailureTime) > hto.circuitBreaker.recoveryTime {
 			// 切换到半开状态
-			hto.circuitBreaker.mu.RUnlock()
+			hto.circuitBreaker.mu.Unlock()
 			hto.circuitBreaker.mu.Lock()
 			hto.circuitBreaker.state = 1 // 半开
 			hto.circuitBreaker.failureCount = 0
 			hto.circuitBreaker.totalCount = 0
 			hto.circuitBreaker.mu.Unlock()
-			hto.circuitBreaker.mu.RLock()
+			hto.circuitBreaker.mu.Lock()
 
 			return false
 		}
@@ -606,12 +653,14 @@ func (hto *HighThroughputOptimizer) cleanExpiredCache() {
 		if now.After(expireTime) {
 			delete(hto.resultCache.cache, key)
 			delete(hto.resultCache.expiration, key)
+			delete(hto.resultCache.frequency, key)
 		}
 	}
 }
 
 // evictOldestCache 淘汰最旧的缓存
 func (hto *HighThroughputOptimizer) evictOldestCache() {
+	// 已经在调用方法中获取了锁，这里不需要再加锁
 	// 使用LRU策略淘汰缓存
 	// 1. 按访问频率和时间综合评分
 	type cacheScore struct {
@@ -782,19 +831,19 @@ func (hto *HighThroughputOptimizer) GetStats() map[string]interface{} {
 
 	// 缓存统计
 	if hto.resultCache != nil {
-		hto.resultCache.mu.RLock()
+		hto.resultCache.mu.Lock()
 		stats["cache_size"] = len(hto.resultCache.cache)
 		stats["cache_max_entries"] = hto.resultCache.maxEntries
-		hto.resultCache.mu.RUnlock()
+		hto.resultCache.mu.Unlock()
 	}
 
 	// 熔断器统计
 	if hto.circuitBreaker != nil {
-		hto.circuitBreaker.mu.RLock()
+		hto.circuitBreaker.mu.Lock()
 		stats["circuit_breaker_state"] = hto.circuitBreaker.state
 		stats["circuit_breaker_failure_count"] = hto.circuitBreaker.failureCount
 		stats["circuit_breaker_total_count"] = hto.circuitBreaker.totalCount
-		hto.circuitBreaker.mu.RUnlock()
+		hto.circuitBreaker.mu.Unlock()
 	}
 
 	// 工作池统计
@@ -810,6 +859,12 @@ func (hto *HighThroughputOptimizer) GetStats() map[string]interface{} {
 	stats["enable_gpu"] = hto.config.EnableGPU
 	stats["enable_cache"] = hto.config.EnableCache
 
+	// 死锁检测器统计
+	hto.deadlockDetector.Mu.Lock()
+	stats["deadlock_detector_wait_graph_size"] = len(hto.deadlockDetector.WaitGraph)
+	stats["deadlock_detector_lock_owners_size"] = len(hto.deadlockDetector.LockOwners)
+	hto.deadlockDetector.Mu.Unlock()
+
 	return stats
 }
 
@@ -822,9 +877,24 @@ func (hto *HighThroughputOptimizer) Close() error {
 		return nil
 	}
 
+	// 创建带超时的上下文，确保关闭操作不会无限期阻塞
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	// 停止工作池
 	if hto.workerPool != nil {
-		hto.workerPool.Stop()
+		go func() {
+			hto.workerPool.Stop()
+			cancel() // 工作池停止后取消上下文
+		}()
+
+		// 等待工作池停止或超时
+		select {
+		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				log.Warning("关闭工作池超时")
+			}
+		}
 	}
 
 	// 停止性能监控器
@@ -907,4 +977,89 @@ func calculateOptimalBatchSize(queryCount, vectorDim int, enableGPU bool) int {
 		baseBatchSize, queryCount, vectorDim, enableGPU, cpuCores, availableMemoryGB)
 
 	return baseBatchSize
+}
+
+// selectOptimalStrategy 选择最优策略
+func (hto *HighThroughputOptimizer) selectOptimalStrategy(data []float64, k int, options *SearchOptions) string {
+	// 如果强制使用特定策略，直接返回
+	if options.ForceStrategy != "" {
+		return options.ForceStrategy
+	}
+
+	// 构建搜索上下文
+	searchCtx := vector.SearchContext{
+		QueryVector:  data,
+		K:            k,
+		QualityLevel: options.QualityLevel,
+		Timeout:      options.Timeout,
+	}
+
+	// 使用向量数据库的自适应索引选择器
+	strategy := hto.vectorDB.SelectOptimalIndexStrategy(searchCtx)
+
+	// 将内部策略转换为字符串
+	strategyStr := "brute_force"
+	switch strategy {
+	case vector.StrategyBruteForce:
+		strategyStr = "brute_force"
+	case vector.StrategyIVF:
+		strategyStr = "ivf"
+	case vector.StrategyHNSW:
+		strategyStr = "hnsw"
+	case vector.StrategyPQ:
+		strategyStr = "pq"
+	case vector.StrategyHybrid:
+		strategyStr = "hybrid"
+	case vector.StrategyEnhancedIVF:
+		strategyStr = "enhanced_ivf"
+	case vector.StrategyEnhancedLSH:
+		strategyStr = "enhanced_lsh"
+	}
+
+	return strategyStr
+}
+
+// executeSearch 执行搜索
+func (hto *HighThroughputOptimizer) executeSearch(ctx context.Context, data []float64, k int, options *SearchOptions, strategy string) ([]entity.Result, error) {
+	// 构建搜索上下文
+	searchCtx := vector.SearchContext{
+		QueryVector:  data,
+		K:            k,
+		QualityLevel: options.QualityLevel,
+		Timeout:      options.Timeout,
+	}
+
+	// 根据策略设置搜索参数
+	switch strategy {
+	case "ivf":
+		searchCtx.UseIVF = true
+		searchCtx.Nprobe = options.Nprobe
+	case "hnsw":
+		searchCtx.UseHNSW = true
+	case "pq":
+		searchCtx.UsePQ = true
+	case "hybrid":
+		searchCtx.UseHybrid = true
+	case "enhanced_ivf":
+		searchCtx.UseEnhancedIVF = true
+	case "enhanced_lsh":
+		searchCtx.UseEnhancedLSH = true
+	}
+
+	// 设置GPU选项
+	if options.EnableGPU {
+		searchCtx.UseGPU = true
+	}
+
+	// 创建与SearchContext对应的SearchOptions
+	searchOptions := vector.SearchOptions{
+		Nprobe:        searchCtx.Nprobe,
+		SearchTimeout: searchCtx.Timeout,
+		QualityLevel:  searchCtx.QualityLevel,
+		UseCache:      options.EnableCache,
+		MaxCandidates: k * 2, // 设置一个合理的候选数量
+	}
+
+	// 执行优化搜索
+	return hto.vectorDB.OptimizedSearch(data, k, searchOptions)
 }
