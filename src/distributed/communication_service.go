@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
@@ -22,11 +23,11 @@ type CommunicationService struct {
 }
 
 // NewCommunicationService 创建通信服务
-func NewCommunicationService(timeout time.Duration) *CommunicationService {
+func NewCommunicationService(etcdClient *clientv3.Client, serviceName string) *CommunicationService {
 	return &CommunicationService{
 		connections: make(map[string]*grpc.ClientConn),
 		clients:     make(map[string]server.IndexServiceClient),
-		timeout:     timeout,
+		timeout:     30 * time.Second, // 默认超时时间
 	}
 }
 

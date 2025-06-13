@@ -406,9 +406,9 @@ func (ais *AdaptiveIndexSelector) getStrategyName(strategy IndexStrategy) string
 		return "PQ"
 	case StrategyHybrid:
 		return "Hybrid"
-	case EnhancedIVF:
+	case StrategyEnhancedIVF:
 		return "EnhancedIVF"
-	case EnhancedLSH:
+	case StrategyEnhancedLSH:
 		return "EnhancedLSH"
 	default:
 		return "Unknown"

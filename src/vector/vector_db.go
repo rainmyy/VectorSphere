@@ -31,8 +31,8 @@ const (
 	StrategyHNSW                            // HNSW索引
 	StrategyPQ                              // PQ压缩搜索
 	StrategyHybrid                          // 混合策略
-	EnhancedIVF
-	EnhancedLSH
+	StrategyEnhancedIVF
+	StrategyEnhancedLSH
 )
 
 // SearchContext 搜索上下文
@@ -42,6 +42,14 @@ type SearchContext struct {
 	Nprobe       int
 	Timeout      time.Duration
 	QualityLevel float64 // 0.0-1.0，质量要求等级
+	// 索引策略选项
+	UseIVF         bool
+	UseHNSW        bool
+	UsePQ          bool
+	UseHybrid      bool
+	UseEnhancedIVF bool
+	UseEnhancedLSH bool
+	UseGPU         bool
 }
 
 // StrategySelector 智能策略选择器
@@ -64,12 +72,6 @@ type PerformanceMetrics struct {
 type Cluster struct {
 	Centroid  entity.Point // 簇的中心点
 	VectorIDs []string     // 属于该簇的向量ID列表
-}
-
-// 添加查询缓存结构
-type queryCache struct {
-	results   []string
-	timestamp int64
 }
 
 // PerformanceStats 性能统计结构
@@ -126,13 +128,13 @@ type VectorDB struct {
 	efSearch         float64          // HNSW 搜索时的扩展因子
 	metadata         map[string]map[string]interface{}
 
-	multiCache     *MultiLevelCache    // 多级缓存
+	MultiCache     *MultiLevelCache    // 多级缓存
 	gpuAccelerator acceler.Accelerator // GPU 加速器
 
 	// 新增硬件自适应相关字段
 	strategyComputeSelector *acceler.ComputeStrategySelector
 	currentStrategy         acceler.ComputeStrategy
-	hardwareCaps            acceler.HardwareCapabilities
+	HardwareCaps            acceler.HardwareCapabilities
 	strategySelector        *StrategySelector
 
 	// 新增 mmap 相关字段
@@ -195,7 +197,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 			// IVF适合精确搜索和中高维数据
 			if ctx.QualityLevel > 0.8 || (vectorDim >= 128 && vectorDim <= 2048) {
 				log.Trace("选择EnhancedIVF策略：数据量=%d，质量要求=%.2f，维度=%d", vectorCount, ctx.QualityLevel, vectorDim)
-				return EnhancedIVF
+				return StrategyEnhancedIVF
 			}
 		}
 
@@ -203,13 +205,13 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 			// LSH适合高维数据和快速近似搜索
 			if vectorDim > 512 || (ctx.QualityLevel < 0.85 && ctx.Timeout > 0 && ctx.Timeout < 50*time.Millisecond) {
 				log.Trace("选择EnhancedLSH策略：数据量=%d，维度=%d，质量要求=%.2f", vectorCount, vectorDim, ctx.QualityLevel)
-				return EnhancedLSH
+				return StrategyEnhancedLSH
 			}
 		}
 	}
 
 	// 3. GPU加速判断 - 新增GPU优先策略
-	if db.hardwareCaps.HasGPU && db.gpuAccelerator != nil && vectorCount > 10000 {
+	if db.HardwareCaps.HasGPU && db.gpuAccelerator != nil && vectorCount > 10000 {
 		// 对于大规模数据，GPU混合策略通常性能最佳
 		if vectorCount > 100000 {
 			return StrategyHybrid
@@ -225,7 +227,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 		// 超高维数据优先考虑LSH
 		if lshIndexReady && db.LshConfig != nil {
 			log.Trace("超高维数据选择EnhancedLSH策略：维度=%d", vectorDim)
-			return EnhancedLSH
+			return StrategyEnhancedLSH
 		}
 		// 其次考虑PQ压缩
 		if db.usePQCompression && db.pqCodebook != nil {
@@ -242,7 +244,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 		// 高质量要求，优先精确搜索
 		if ivfIndexReady && db.ivfConfig != nil {
 			log.Trace("高质量要求选择EnhancedIVF策略：质量要求=%.2f", ctx.QualityLevel)
-			return EnhancedIVF
+			return StrategyEnhancedIVF
 		}
 		if vectorCount < 100000 {
 			if db.useHNSWIndex && db.indexed && db.hnsw != nil {
@@ -260,7 +262,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 		// 低延迟要求，优先快速策略
 		if lshIndexReady && db.LshConfig != nil {
 			log.Trace("低延迟要求选择EnhancedLSH策略：超时限制=%v", ctx.Timeout)
-			return EnhancedLSH
+			return StrategyEnhancedLSH
 		}
 		if db.usePQCompression && db.pqCodebook != nil {
 			return StrategyPQ
@@ -271,12 +273,12 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 	if ctx.Timeout > 0 && ctx.Timeout < 100*time.Millisecond {
 		if ivfIndexReady && db.ivfConfig != nil && ctx.QualityLevel > 0.7 {
 			log.Trace("中等延迟要求选择EnhancedIVF策略：超时限制=%v，质量要求=%.2f", ctx.Timeout, ctx.QualityLevel)
-			return EnhancedIVF
+			return StrategyEnhancedIVF
 		}
 	}
 
 	// 8. 硬件能力判断
-	if db.hardwareCaps.HasGPU && vectorCount > 50000 {
+	if db.HardwareCaps.HasGPU && vectorCount > 50000 {
 		return StrategyHybrid // GPU加速的混合策略
 	}
 
@@ -284,12 +286,12 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 	// 优先选择增强型索引
 	if ivfIndexReady && db.ivfConfig != nil {
 		log.Trace("默认选择EnhancedIVF策略")
-		return EnhancedIVF
+		return StrategyEnhancedIVF
 	}
 
 	if lshIndexReady && db.LshConfig != nil {
 		log.Trace("默认选择EnhancedLSH策略")
-		return EnhancedLSH
+		return StrategyEnhancedLSH
 	}
 
 	// 传统索引作为备选
@@ -341,13 +343,13 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOption
 		results, err = db.pqSearchWithScores(query, k)
 	case StrategyHybrid:
 		results, err = db.hybridSearchWithScores(query, k, ctx)
-	case EnhancedIVF:
+	case StrategyEnhancedIVF:
 		results, err = db.EnhancedIVFSearch(query, k, ctx.Nprobe)
 		if err != nil {
 			log.Warning("EnhancedIVF搜索失败，回退到传统IVF: %v", err)
 			results, err = db.ivfSearchWithScores(query, k, ctx.Nprobe, db.GetOptimalStrategy(query))
 		}
-	case EnhancedLSH:
+	case StrategyEnhancedLSH:
 		results, err = db.EnhancedLSHSearch(query, k)
 		if err != nil {
 			log.Warning("EnhancedLSH搜索失败，回退到传统搜索: %v", err)
@@ -372,7 +374,7 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOption
 
 // MonitorGPUHealth GPU健康状态监控
 func (db *VectorDB) MonitorGPUHealth() {
-	if !db.hardwareCaps.HasGPU || db.gpuAccelerator == nil {
+	if !db.HardwareCaps.HasGPU || db.gpuAccelerator == nil {
 		return
 	}
 
@@ -385,7 +387,7 @@ func (db *VectorDB) MonitorGPUHealth() {
 			if err := db.CheckGPUStatus(); err != nil {
 				log.Warning("GPU健康检查失败: %v", err)
 				// 可以在这里实现自动禁用GPU加速的逻辑
-				db.hardwareCaps.HasGPU = false
+				db.HardwareCaps.HasGPU = false
 			}
 		case <-db.stopCh:
 			return
@@ -395,7 +397,7 @@ func (db *VectorDB) MonitorGPUHealth() {
 
 // InitializeGPUAccelerator 初始化GPU加速器
 func (db *VectorDB) InitializeGPUAccelerator(deviceID int, indexType string) error {
-	if !db.hardwareCaps.HasGPU {
+	if !db.HardwareCaps.HasGPU {
 		return fmt.Errorf("系统不支持GPU加速")
 	}
 
@@ -419,7 +421,7 @@ func (db *VectorDB) CheckGPUStatus() error {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
-	if !db.hardwareCaps.HasGPU {
+	if !db.HardwareCaps.HasGPU {
 		return fmt.Errorf("系统未检测到GPU支持")
 	}
 
@@ -760,9 +762,9 @@ func (db *VectorDB) getStrategyName(strategy IndexStrategy) string {
 		return "PQ压缩"
 	case StrategyHybrid:
 		return "混合策略"
-	case EnhancedLSH:
+	case StrategyEnhancedLSH:
 		return "增强LSH"
-	case EnhancedIVF:
+	case StrategyEnhancedIVF:
 		return "增强IVF"
 	default:
 		return "未知策略"
@@ -965,26 +967,26 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 		strategySelector:        &StrategySelector{},
 	}
 	// 检测硬件能力
-	db.hardwareCaps = db.strategyComputeSelector.GetHardwareCapabilities()
+	db.HardwareCaps = db.strategyComputeSelector.GetHardwareCapabilities()
 	log.Info("硬件检测结果: AVX2=%v, AVX512=%v, GPU=%v, CPU核心=%d",
-		db.hardwareCaps.HasAVX2, db.hardwareCaps.HasAVX512,
-		db.hardwareCaps.HasGPU, db.hardwareCaps.CPUCores)
+		db.HardwareCaps.HasAVX2, db.HardwareCaps.HasAVX512,
+		db.HardwareCaps.HasGPU, db.HardwareCaps.CPUCores)
 
 	// 如果支持GPU，初始化GPU加速器
-	if db.hardwareCaps.HasGPU {
+	if db.HardwareCaps.HasGPU {
 		db.gpuAccelerator = acceler.NewFAISSAccelerator(0, "Flat")
 
 		// 先检查GPU可用性，再进行初始化
 		if gpuAccel, ok := db.gpuAccelerator.(*acceler.FAISSAccelerator); ok {
 			if err := gpuAccel.CheckGPUAvailability(); err != nil {
 				log.Warning("GPU可用性检查失败: %v", err)
-				db.hardwareCaps.HasGPU = false
+				db.HardwareCaps.HasGPU = false
 				db.gpuAccelerator = nil
 			} else {
 				// GPU可用性检查通过，进行初始化
 				if err := db.gpuAccelerator.Initialize(); err != nil {
 					log.Warning("GPU加速器初始化失败: %v", err)
-					db.hardwareCaps.HasGPU = false
+					db.HardwareCaps.HasGPU = false
 					db.gpuAccelerator = nil
 				}
 			}
@@ -992,7 +994,7 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 			// 如果类型断言失败，直接尝试初始化
 			if err := db.gpuAccelerator.Initialize(); err != nil {
 				log.Warning("GPU加速器初始化失败: %v", err)
-				db.hardwareCaps.HasGPU = false
+				db.HardwareCaps.HasGPU = false
 				db.gpuAccelerator = nil
 			}
 		}
@@ -1430,15 +1432,15 @@ func (db *VectorDB) SetComputeStrategy(strategy acceler.ComputeStrategy) error {
 	// 验证策略是否可用
 	switch strategy {
 	case acceler.StrategyAVX2:
-		if !db.hardwareCaps.HasAVX2 {
+		if !db.HardwareCaps.HasAVX2 {
 			return fmt.Errorf("当前硬件不支持AVX2指令集")
 		}
 	case acceler.StrategyAVX512:
-		if !db.hardwareCaps.HasAVX512 {
+		if !db.HardwareCaps.HasAVX512 {
 			return fmt.Errorf("当前硬件不支持AVX512指令集")
 		}
 	case acceler.StrategyGPU:
-		if !db.hardwareCaps.HasGPU {
+		if !db.HardwareCaps.HasGPU {
 			return fmt.Errorf("当前系统不支持GPU加速")
 		}
 	default:
@@ -1452,7 +1454,7 @@ func (db *VectorDB) SetComputeStrategy(strategy acceler.ComputeStrategy) error {
 
 // GetHardwareInfo 获取硬件信息
 func (db *VectorDB) GetHardwareInfo() acceler.HardwareCapabilities {
-	return db.hardwareCaps
+	return db.HardwareCaps
 }
 
 // GetCurrentStrategy 获取当前计算策略
@@ -1466,9 +1468,9 @@ func (db *VectorDB) GetSelectStrategy() acceler.ComputeStrategy {
 	defer db.mu.RUnlock()
 
 	// 优先选择最高性能的可用策略
-	if db.hardwareCaps.HasAVX512 {
+	if db.HardwareCaps.HasAVX512 {
 		return acceler.StrategyAVX512
-	} else if db.hardwareCaps.HasAVX2 {
+	} else if db.HardwareCaps.HasAVX2 {
 		return acceler.StrategyAVX2
 	}
 	return acceler.StrategyStandard
@@ -4606,7 +4608,7 @@ func (db *VectorDB) CheckIndexHealth() map[string]bool {
 	health["traditional_ivf"] = db.indexed && len(db.clusters) > 0
 	health["hnsw"] = db.useHNSWIndex && db.indexed && db.hnsw != nil
 	health["pq"] = db.usePQCompression && db.pqCodebook != nil
-	health["gpu"] = db.hardwareCaps.HasGPU && db.gpuAccelerator != nil
+	health["gpu"] = db.HardwareCaps.HasGPU && db.gpuAccelerator != nil
 
 	return health
 }
@@ -4616,7 +4618,7 @@ func (db *VectorDB) EnableMultiLevelCache(l1Size, l2Size int, l3Path string) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
-	db.multiCache = NewMultiLevelCache(l1Size, l2Size, l3Path)
+	db.MultiCache = NewMultiLevelCache(l1Size, l2Size, l3Path)
 	log.Info("多级缓存已启用：L1=%d, L2=%d, L3=%s", l1Size, l2Size, l3Path)
 }
 
@@ -4626,8 +4628,8 @@ func (db *VectorDB) CachedSearch(query []float64, k int) ([]entity.Result, error
 	queryKey := db.generateQueryKey(query, k)
 
 	// 尝试从缓存获取
-	if db.multiCache != nil {
-		if cachedIDs, found := db.multiCache.Get(queryKey); found {
+	if db.MultiCache != nil {
+		if cachedIDs, found := db.MultiCache.Get(queryKey); found {
 			// 缓存命中，转换为 Result 格式
 			results := make([]entity.Result, len(cachedIDs))
 			for i, id := range cachedIDs {
@@ -4656,12 +4658,12 @@ func (db *VectorDB) CachedSearch(query []float64, k int) ([]entity.Result, error
 	}
 
 	// 将结果存入缓存
-	if db.multiCache != nil {
+	if db.MultiCache != nil {
 		ids := make([]string, len(results))
 		for i, result := range results {
 			ids[i] = result.Id
 		}
-		db.multiCache.Put(queryKey, ids)
+		db.MultiCache.Put(queryKey, ids)
 	}
 
 	return results, nil
@@ -4720,7 +4722,7 @@ func (db *VectorDB) OptimizedBatchSearch(queries [][]float64, k int, options Sea
 // shouldUseGPUBatchSearch 判断是否应该使用GPU批量搜索
 func (db *VectorDB) shouldUseGPUBatchSearch(queryCount, dbSize int) bool {
 	// 检查GPU是否可用
-	if !db.hardwareCaps.HasGPU || db.gpuAccelerator == nil {
+	if !db.HardwareCaps.HasGPU || db.gpuAccelerator == nil {
 		return false
 	}
 
@@ -4795,4 +4797,168 @@ func (db *VectorDB) fallbackBatchSearch(queries [][]float64, k int, options Sear
 	// 使用现有的BatchFindNearestWithScores方法
 	numWorkers := runtime.NumCPU()
 	return db.BatchFindNearestWithScores(queries, k, numWorkers)
+}
+
+// IncrementalIndex 执行增量索引更新，根据当前索引类型选择合适的增量更新方法
+func (db *VectorDB) IncrementalIndex() error {
+	// 记录开始时间，用于性能统计
+	start := time.Now()
+	
+	// 检查是否有索引
+	db.mu.Lock()
+	if !db.indexed {
+		db.mu.Unlock()
+		log.Warning("索引尚未构建，无法执行增量索引更新")
+		return fmt.Errorf("索引尚未构建，请先调用 BuildIndex() 或 RebuildIndex()")
+	}
+	
+	// 获取所有向量ID
+	var vectorIDs []string
+	for id := range db.vectors {
+		vectorIDs = append(vectorIDs, id)
+	}
+	db.mu.Unlock()
+	
+	log.Info("开始执行增量索引更新，共 %d 个向量...", len(vectorIDs))
+	
+	// 根据索引类型选择不同的增量更新方法
+	if db.useHNSWIndex {
+		// 使用HNSW增量更新
+		for _, id := range vectorIDs {
+			db.mu.Lock()
+			vector, exists := db.vectors[id]
+			db.mu.Unlock()
+			
+			if !exists {
+				continue
+			}
+			
+			err := db.UpdateHNSWIndexIncrementally(id, vector)
+			if err != nil {
+				log.Warning("向量 %s 的HNSW增量更新失败: %v", id, err)
+			}
+		}
+	} else {
+		// 使用传统IVF增量更新
+		for _, id := range vectorIDs {
+			db.mu.Lock()
+			vector, exists := db.vectors[id]
+			db.mu.Unlock()
+			
+			if !exists {
+				continue
+			}
+			
+			err := db.UpdateIndexIncrementally(id, vector)
+			if err != nil {
+				log.Warning("向量 %s 的IVF增量更新失败: %v", id, err)
+			}
+		}
+	}
+	
+	// 更新性能统计信息
+	db.statsMu.Lock()
+	db.stats.LastReindexTime = time.Now()
+	
+	// 更新内存使用情况
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	db.stats.MemoryUsage = m.Alloc
+	db.statsMu.Unlock()
+	
+	log.Info("增量索引更新完成，耗时: %v", time.Since(start))
+	return nil
+}
+
+// OptimizeIndex 根据当前索引类型执行索引优化
+func (db *VectorDB) OptimizeIndex() error {
+	// 获取索引健康状态
+	indexHealth := db.CheckIndexHealth()
+	
+	// 记录开始时间，用于性能统计
+	start := time.Now()
+	
+	// 根据索引类型执行不同的优化策略
+	if indexHealth["hnsw"] {
+		// 优化HNSW索引参数
+		log.Info("优化HNSW索引参数...")
+		db.OptimizeHNSWParameters()
+	}
+	
+	// 如果启用了增强型LSH索引，执行LSH参数调优
+	if indexHealth["enhanced_lsh"] {
+		log.Info("优化LSH索引参数...")
+		db.tuneAdaptiveLSH()
+	}
+	
+	// 如果启用了增强型IVF索引，执行IVF参数调优
+	if indexHealth["enhanced_ivf"] {
+		log.Info("优化IVF索引参数...")
+		// 根据数据规模调整IVF参数
+		db.mu.Lock()
+		dataSize := len(db.vectors)
+		db.mu.Unlock()
+		
+		// 调整nlist参数
+		if db.ivfConfig != nil {
+			if dataSize < 10000 {
+				db.ivfConfig.Nlist = 100
+			} else if dataSize < 100000 {
+				db.ivfConfig.Nlist = 256
+			} else if dataSize < 1000000 {
+				db.ivfConfig.Nlist = 1024
+			} else {
+				db.ivfConfig.Nlist = 4096
+			}
+			
+			// 调整nprobe参数
+			db.ivfConfig.Nprobe = max(1, db.ivfConfig.Nlist/10)
+			log.Info("IVF参数已优化: nlist=%d, nprobe=%d", db.ivfConfig.Nlist, db.ivfConfig.Nprobe)
+		}
+	}
+	
+	// 如果启用了PQ压缩，优化PQ参数
+	if indexHealth["pq"] {
+		log.Info("优化PQ压缩参数...")
+		// 根据向量维度调整子向量数量
+		db.mu.Lock()
+		vectorDim := db.vectorDim
+		db.mu.Unlock()
+		
+		// 调整子向量数量，确保能被维度整除
+		if vectorDim >= 200 {
+			db.numSubVectors = 16
+		} else if vectorDim >= 100 {
+			db.numSubVectors = 8
+		} else if vectorDim >= 50 {
+			db.numSubVectors = 4
+		} else {
+			db.numSubVectors = 2
+		}
+		
+		// 确保子向量数量能被维度整除
+		for vectorDim%db.numSubVectors != 0 {
+			db.numSubVectors--
+			if db.numSubVectors < 1 {
+				db.numSubVectors = 1
+				break
+			}
+		}
+		
+		log.Info("PQ参数已优化: 子向量数量=%d", db.numSubVectors)
+	}
+	
+	// 调整全局配置参数
+	db.AdjustConfig()
+	
+	// 更新性能统计信息
+	db.statsMu.Lock()
+	// 更新内存使用情况
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	db.stats.MemoryUsage = m.Alloc
+	db.statsMu.Unlock()
+	
+	log.Info("索引优化完成，耗时: %v", time.Since(start))
+	return nil
 }

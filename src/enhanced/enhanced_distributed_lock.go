@@ -83,9 +83,9 @@ type LockEvent struct {
 
 // DeadlockDetector 死锁检测器
 type DeadlockDetector struct {
-	waitGraph   map[string][]string // owner -> waiting for owners
-	lockOwners  map[string]string   // lockKey -> owner
-	mu          sync.RWMutex
+	WaitGraph   map[string][]string // owner -> waiting for owners
+	LockOwners  map[string]string   // lockKey -> owner
+	Mu          sync.RWMutex
 	detectCycle bool
 }
 
@@ -148,8 +148,8 @@ func NewEnhancedDistributedLock(client *clientv3.Client, config *EnhancedDistrib
 		lockStats:     make(map[string]*LockStats),
 		waitingQueues: make(map[string][]*LockRequest),
 		deadlockDetector: &DeadlockDetector{
-			waitGraph:   make(map[string][]string),
-			lockOwners:  make(map[string]string),
+			WaitGraph:   make(map[string][]string),
+			LockOwners:  make(map[string]string),
 			detectCycle: true,
 		},
 		eventListeners:  make(map[string]chan *LockEvent),
@@ -167,7 +167,7 @@ func NewEnhancedDistributedLock(client *clientv3.Client, config *EnhancedDistrib
 		go edl.startMonitoring()
 	}
 	go edl.startCleanup()
-	go edl.startDeadlockDetection()
+	go edl.StartDeadlockDetection()
 
 	return edl, nil
 }
@@ -519,7 +519,7 @@ func (edl *EnhancedDistributedLock) acquireMutexLock(ctx context.Context, reques
 	edl.updateLockStats(request.LockKey, "acquire", time.Since(start))
 
 	// 更新死锁检测器
-	edl.deadlockDetector.addLockOwner(request.LockKey, request.OwnerID)
+	edl.deadlockDetector.AddLockOwner(request.LockKey, request.OwnerID)
 
 	// 发送事件
 	edl.sendLockEvent(&LockEvent{
@@ -621,7 +621,7 @@ func (edl *EnhancedDistributedLock) addToWaitingQueue(ctx context.Context, reque
 	edl.mu.Unlock()
 
 	// 更新死锁检测器
-	edl.deadlockDetector.addWaitingRelation(request.OwnerID, edl.getLockOwner(request.LockKey))
+	edl.deadlockDetector.AddWaitingRelation(request.OwnerID, edl.getLockOwner(request.LockKey))
 
 	// 检查死锁
 	if edl.deadlockDetector.detectDeadlock() {
@@ -934,8 +934,8 @@ func (edl *EnhancedDistributedLock) cleanupExpiredLocks() {
 	}
 }
 
-// startDeadlockDetection 启动死锁检测
-func (edl *EnhancedDistributedLock) startDeadlockDetection() {
+// StartDeadlockDetection 启动死锁检测
+func (edl *EnhancedDistributedLock) StartDeadlockDetection() {
 	log.Info("Starting deadlock detection")
 
 	ticker := time.NewTicker(10 * time.Second)
@@ -946,7 +946,7 @@ func (edl *EnhancedDistributedLock) startDeadlockDetection() {
 		case <-ticker.C:
 			if edl.deadlockDetector.detectDeadlock() {
 				log.Warning("Deadlock detected!")
-				edl.handleDeadlock()
+				edl.HandleDeadlock()
 			}
 		case <-edl.ctx.Done():
 			log.Info("Deadlock detection stopped")
@@ -956,7 +956,7 @@ func (edl *EnhancedDistributedLock) startDeadlockDetection() {
 }
 
 // handleDeadlock 处理死锁
-func (edl *EnhancedDistributedLock) handleDeadlock() {
+func (edl *EnhancedDistributedLock) HandleDeadlock() {
 	log.Warning("Handling deadlock situation")
 
 	// 发送死锁事件
@@ -977,40 +977,40 @@ func (edl *EnhancedDistributedLock) handleDeadlock() {
 // 死锁检测器方法
 
 // addLockOwner 添加锁拥有者
-func (dd *DeadlockDetector) addLockOwner(lockKey, ownerID string) {
-	dd.mu.Lock()
-	defer dd.mu.Unlock()
-	dd.lockOwners[lockKey] = ownerID
+func (dd *DeadlockDetector) AddLockOwner(lockKey, ownerID string) {
+	dd.Mu.Lock()
+	defer dd.Mu.Unlock()
+	dd.LockOwners[lockKey] = ownerID
 }
 
 // removeLockOwner 移除锁拥有者
-func (dd *DeadlockDetector) removeLockOwner(lockKey string) {
-	dd.mu.Lock()
-	defer dd.mu.Unlock()
-	delete(dd.lockOwners, lockKey)
+func (dd *DeadlockDetector) RemoveLockOwner(lockKey string) {
+	dd.Mu.Lock()
+	defer dd.Mu.Unlock()
+	delete(dd.LockOwners, lockKey)
 }
 
 // addWaitingRelation 添加等待关系
-func (dd *DeadlockDetector) addWaitingRelation(waiterID, ownerID string) {
+func (dd *DeadlockDetector) AddWaitingRelation(waiterID, ownerID string) {
 	if waiterID == ownerID || ownerID == "" {
 		return
 	}
 
-	dd.mu.Lock()
-	defer dd.mu.Unlock()
+	dd.Mu.Lock()
+	defer dd.Mu.Unlock()
 
-	if _, exists := dd.waitGraph[waiterID]; !exists {
-		dd.waitGraph[waiterID] = make([]string, 0)
+	if _, exists := dd.WaitGraph[waiterID]; !exists {
+		dd.WaitGraph[waiterID] = make([]string, 0)
 	}
 
 	// 避免重复添加
-	for _, existing := range dd.waitGraph[waiterID] {
+	for _, existing := range dd.WaitGraph[waiterID] {
 		if existing == ownerID {
 			return
 		}
 	}
 
-	dd.waitGraph[waiterID] = append(dd.waitGraph[waiterID], ownerID)
+	dd.WaitGraph[waiterID] = append(dd.WaitGraph[waiterID], ownerID)
 }
 
 // detectDeadlock 检测死锁
@@ -1019,14 +1019,14 @@ func (dd *DeadlockDetector) detectDeadlock() bool {
 		return false
 	}
 
-	dd.mu.RLock()
-	defer dd.mu.RUnlock()
+	dd.Mu.RLock()
+	defer dd.Mu.RUnlock()
 
 	// 使用DFS检测环
 	visited := make(map[string]bool)
 	recStack := make(map[string]bool)
 
-	for node := range dd.waitGraph {
+	for node := range dd.WaitGraph {
 		if !visited[node] {
 			if dd.dfsHasCycle(node, visited, recStack) {
 				return true
@@ -1042,7 +1042,7 @@ func (dd *DeadlockDetector) dfsHasCycle(node string, visited, recStack map[strin
 	visited[node] = true
 	recStack[node] = true
 
-	for _, neighbor := range dd.waitGraph[node] {
+	for _, neighbor := range dd.WaitGraph[node] {
 		if !visited[neighbor] {
 			if dd.dfsHasCycle(neighbor, visited, recStack) {
 				return true

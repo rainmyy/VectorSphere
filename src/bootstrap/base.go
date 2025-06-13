@@ -369,7 +369,7 @@ func (app *AppServer) Setup() error {
 			endpoints,
 			cfg.ServiceName+"_master",
 			masterBindAddress,
-			cfg.HttpPort,                                       // 从配置中读取 HTTP 端口
+			cfg.HttpPort, // 从配置中读取 HTTP 端口
 			time.Duration(cfg.TaskTimeout)*time.Second,         // 从配置中读取任务超时
 			time.Duration(cfg.HealthCheckInterval)*time.Second, // 从配置中读取健康检查间隔
 		)
