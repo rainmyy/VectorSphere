@@ -1107,3 +1107,126 @@ func (ecm *EnhancedConfigManager) Close() error {
 
 	return nil
 }
+
+// InitNamespace 初始化配置命名空间
+// 创建命名空间的基础结构和默认配置
+func (ecm *EnhancedConfigManager) InitNamespace(ctx context.Context, namespace string, environment string) error {
+	log.Info("Initializing config namespace: %s, environment: %s", namespace, environment)
+
+	// 设置当前环境和命名空间
+	ecm.currentNS = namespace
+	ecm.currentEnv = environment
+
+	// 检查命名空间是否已存在
+	namespaceKey := fmt.Sprintf("%s/%s", ecm.basePrefix, namespace)
+	resp, err := ecm.client.Get(ctx, namespaceKey, clientv3.WithPrefix())
+	if err != nil {
+		return fmt.Errorf("failed to check namespace existence: %v", err)
+	}
+
+	// 如果命名空间已存在且有配置项，则不需要初始化
+	if len(resp.Kvs) > 0 {
+		log.Info("Namespace %s already exists with %d config items", namespace, len(resp.Kvs))
+		return nil
+	}
+
+	// 创建命名空间元数据
+	metadata := map[string]interface{}{
+		"created_at":   time.Now(),
+		"created_by":   "system",
+		"environments": []string{environment},
+		"description":  fmt.Sprintf("Configuration namespace for %s", namespace),
+	}
+
+	// 存储命名空间元数据
+	metadataKey := fmt.Sprintf("%s/%s/_metadata", ecm.basePrefix, namespace)
+	metadataBytes, err := json.Marshal(metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal namespace metadata: %v", err)
+	}
+
+	_, err = ecm.client.Put(ctx, metadataKey, string(metadataBytes))
+	if err != nil {
+		return fmt.Errorf("failed to store namespace metadata: %v", err)
+	}
+
+	// 创建默认配置组
+	defaultGroup := &ConfigGroup{
+		Name:        "default",
+		Namespace:   namespace,
+		Environment: environment,
+		Items:       make(map[string]*ConfigItem),
+		Version: &ConfigVersion{
+			Version:     ecm.generateVersion(),
+			Timestamp:   time.Now(),
+			Author:      "system",
+			Description: "Initial namespace configuration",
+			Tags:        []string{"default", "initial"},
+		},
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	// 添加一些默认配置项
+	defaultGroup.Items["app.name"] = &ConfigItem{
+		Key:         "app.name",
+		Value:       "VectorSphere",
+		Type:        "string",
+		Environment: environment,
+		Namespace:   namespace,
+		Version:     defaultGroup.Version.Version,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		Tags:        []string{"default"},
+	}
+
+	defaultGroup.Items["app.version"] = &ConfigItem{
+		Key:         "app.version",
+		Value:       "1.0.0",
+		Type:        "string",
+		Environment: environment,
+		Namespace:   namespace,
+		Version:     defaultGroup.Version.Version,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		Tags:        []string{"default"},
+	}
+
+	defaultGroup.Items["app.environment"] = &ConfigItem{
+		Key:         "app.environment",
+		Value:       environment,
+		Type:        "string",
+		Environment: environment,
+		Namespace:   namespace,
+		Version:     defaultGroup.Version.Version,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+		Tags:        []string{"default"},
+	}
+
+	// 存储默认配置组
+	err = ecm.SetConfigGroup(ctx, defaultGroup)
+	if err != nil {
+		return fmt.Errorf("failed to create default config group: %v", err)
+	}
+
+	// 创建环境特定的目录结构
+	environmentKey := fmt.Sprintf("%s/%s/%s/_metadata", ecm.basePrefix, namespace, environment)
+	environmentMetadata := map[string]interface{}{
+		"created_at":  time.Now(),
+		"description": fmt.Sprintf("Environment %s for namespace %s", environment, namespace),
+	}
+
+	environmentMetadataBytes, err := json.Marshal(environmentMetadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal environment metadata: %v", err)
+	}
+
+	_, err = ecm.client.Put(ctx, environmentKey, string(environmentMetadataBytes))
+	if err != nil {
+		return fmt.Errorf("failed to store environment metadata: %v", err)
+	}
+
+	log.Info("Namespace %s initialized successfully with environment %s", namespace, environment)
+	return nil
+}

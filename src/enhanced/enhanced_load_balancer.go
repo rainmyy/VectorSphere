@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,6 +19,16 @@ import (
 
 // LoadBalancingAlgorithm 负载均衡算法
 type LoadBalancingAlgorithm int
+
+// ServiceDiscoverySource 定义了服务发现源的接口
+// 负载均衡器可以通过该接口获取服务实例信息
+type ServiceDiscoverySource interface {
+	// DiscoverServices 根据服务名称和过滤条件发现服务
+	DiscoverServices(ctx context.Context, serviceName string, filter *ServiceFilter) ([]*ServiceMetadata, error)
+}
+
+// 添加服务发现源字段到EnhancedLoadBalancer结构体
+var _ ServiceDiscoverySource = (*EnhancedServiceRegistry)(nil) // 确保EnhancedServiceRegistry实现了ServiceDiscoverySource接口
 
 const (
 	RoundRobin LoadBalancingAlgorithm = iota
@@ -146,25 +157,26 @@ type ConsistentHashRing struct {
 
 // EnhancedLoadBalancer 增强负载均衡器
 type EnhancedLoadBalancer struct {
-	client          *clientv3.Client
-	config          *LoadBalancerConfig
-	backends        map[string]*Backend
-	healthyBackends []*Backend
-	mu              sync.RWMutex
-	ctx             context.Context
-	cancel          context.CancelFunc
-	metrics         *LoadBalancerMetrics
-	sessions        map[string]*SessionInfo
-	sessionMu       sync.RWMutex
-	consistentHash  *ConsistentHashRing
-	roundRobinIndex int64
-	isRunning       int32
-	healthChecker   *EnhancedHealthChecker
-	circuitBreakers map[string]*CircuitBreaker
-	basePrefix      string
-	metricsTicker   *time.Ticker
-	cleanupTicker   *time.Ticker
-	httpClient      *http.Client
+	client           *clientv3.Client
+	config           *LoadBalancerConfig
+	backends         map[string]*Backend
+	healthyBackends  []*Backend
+	mu               sync.RWMutex
+	ctx              context.Context
+	cancel           context.CancelFunc
+	metrics          *LoadBalancerMetrics
+	sessions         map[string]*SessionInfo
+	sessionMu        sync.RWMutex
+	consistentHash   *ConsistentHashRing
+	roundRobinIndex  int64
+	isRunning        int32
+	healthChecker    *EnhancedHealthChecker
+	circuitBreakers  map[string]*CircuitBreaker
+	basePrefix       string
+	metricsTicker    *time.Ticker
+	cleanupTicker    *time.Ticker
+	httpClient       *http.Client
+	serviceDiscovery ServiceDiscoverySource // 服务发现源
 }
 
 // NewEnhancedLoadBalancer 创建增强负载均衡器
@@ -1395,4 +1407,158 @@ func (chr *ConsistentHashRing) hash(key string) uint32 {
 	h := fnv.New32a()
 	h.Write([]byte(key))
 	return h.Sum32()
+}
+
+// SetServiceDiscoverySource 设置负载均衡器的服务发现源
+func (lb *EnhancedLoadBalancer) SetServiceDiscoverySource(source ServiceDiscoverySource) error {
+	// 基本验证
+	if source == nil {
+		return fmt.Errorf("service discovery source cannot be nil")
+	}
+
+	// 获取源类型信息，用于日志和验证
+	sourceType := fmt.Sprintf("%T", source)
+	log.Info("Validating service discovery source: %s", sourceType)
+
+	// 类型断言检查 - 检查是否为EnhancedServiceRegistry类型
+	// 这是一个可选的检查，如果有其他实现ServiceDiscoverySource接口的类型，可以移除此检查
+	if _, ok := source.(*EnhancedServiceRegistry); !ok {
+		log.Warning("Service discovery source is not an EnhancedServiceRegistry, but %s", sourceType)
+		// 注意：这里只是警告，不返回错误，因为任何实现了ServiceDiscoverySource接口的类型都应该可以使用
+	}
+
+	// 验证服务发现源是否能够正常工作
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// 尝试调用DiscoverServices方法，使用空过滤器测试基本功能
+	testFilter := &ServiceFilter{
+		Name:      "_test_filter_", // 用特殊名称标记测试过滤器
+		MinHealth: 0.0,             // 不过滤健康分数
+	}
+
+	// 使用一个通用服务名称进行测试
+	testServiceName := "_test_service_"
+	services, err := source.DiscoverServices(ctx, testServiceName, testFilter)
+	if err != nil {
+		// 如果是测试服务不存在的错误，我们可以忽略
+		// 但其他类型的错误可能表明服务发现源存在问题
+		if !strings.Contains(err.Error(), "not found") &&
+			!strings.Contains(err.Error(), "no services") &&
+			!strings.Contains(err.Error(), "not exist") {
+			return fmt.Errorf("service discovery source validation failed: %v", err)
+		}
+		log.Info("Service discovery test returned expected 'not found' error for test service")
+	} else {
+		log.Info("Service discovery test found %d services for test service", len(services))
+	}
+
+	// 清理之前的服务发现源（如果存在）
+	if lb.serviceDiscovery != nil {
+		log.Info("Replacing existing service discovery source of type %T", lb.serviceDiscovery)
+	}
+
+	// 存储服务发现源
+	lb.mu.Lock()
+	lb.serviceDiscovery = source
+	lb.mu.Unlock()
+
+	// 记录设置成功
+	log.Info("Service discovery source set successfully: %s", sourceType)
+	return nil
+}
+
+// UpdateBackendsFromService 从服务发现源更新后端服务器列表
+func (lb *EnhancedLoadBalancer) UpdateBackendsFromService(ctx context.Context, serviceName string) error {
+	if lb.serviceDiscovery == nil {
+		return fmt.Errorf("service discovery source not set")
+	}
+
+	// 使用服务发现源获取服务实例
+	filter := &ServiceFilter{
+		MinHealth: 50.0, // 只获取健康分数大于50的服务
+	}
+
+	services, err := lb.serviceDiscovery.DiscoverServices(ctx, serviceName, filter)
+	if err != nil {
+		return fmt.Errorf("failed to discover services: %v", err)
+	}
+
+	// 将服务实例转换为后端服务器
+	backends := make([]*Backend, 0, len(services))
+	for _, service := range services {
+		backend := &Backend{
+			ID:          service.NodeID,
+			Address:     service.Address,
+			Port:        service.Port,
+			Weight:      int(service.HealthScore), // 使用健康分数作为权重
+			HealthScore: service.HealthScore,
+			Status:      BackendHealthy,
+			LastCheck:   time.Now(),
+		}
+		backends = append(backends, backend)
+	}
+
+	// 更新负载均衡器的后端服务器列表
+	lb.mu.Lock()
+	defer lb.mu.Unlock()
+
+	// 移除不再存在的后端
+	existingBackends := make(map[string]bool)
+	for _, backend := range backends {
+		existingBackends[backend.ID] = true
+
+		// 更新或添加后端
+		if existingBackend, exists := lb.backends[backend.ID]; exists {
+			// 更新现有后端
+			existingBackend.Address = backend.Address
+			existingBackend.Port = backend.Port
+			existingBackend.Weight = backend.Weight
+			existingBackend.HealthScore = backend.HealthScore
+		} else {
+			// 添加新后端
+			lb.backends[backend.ID] = backend
+		}
+	}
+
+	// 移除不再存在的后端
+	for id := range lb.backends {
+		if !existingBackends[id] {
+			delete(lb.backends, id)
+		}
+	}
+
+	// 更新健康后端列表
+	lb.updateHealthyBackends()
+
+	return nil
+}
+
+// StartServiceDiscoverySync 启动服务发现同步
+func (lb *EnhancedLoadBalancer) StartServiceDiscoverySync(serviceName string, interval time.Duration) {
+	if lb.serviceDiscovery == nil {
+		log.Error("Cannot start service discovery sync: service discovery source not set")
+		return
+	}
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-lb.ctx.Done():
+				return
+			case <-ticker.C:
+				ctx, cancel := context.WithTimeout(lb.ctx, 5*time.Second)
+				err := lb.UpdateBackendsFromService(ctx, serviceName)
+				if err != nil {
+					log.Error("Failed to update backends from service discovery: %v", err)
+				}
+				cancel()
+			}
+		}
+	}()
+
+	log.Info("Started service discovery sync for service %s with interval %v", serviceName, interval)
 }

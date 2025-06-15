@@ -140,7 +140,7 @@ func RegisterService(ctx context.Context, registry *enhanced.EnhancedServiceRegi
 	}
 
 	// 注册服务
-	err := registry.RegisterService(ctx, metadata, config.ServiceTTL)
+	err := registry.RegisterService(ctx, metadata)
 	if err != nil {
 		return fmt.Errorf("failed to register service: %v", err)
 	}
@@ -203,12 +203,9 @@ func InitLoadBalancer(client *clientv3.Client, registry *enhanced.EnhancedServic
 
 	// 创建负载均衡器实例
 	lb := enhanced.NewEnhancedLoadBalancer(client, lbConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create enhanced load balancer: %v", err)
-	}
 
 	// 设置服务发现源
-	err = lb.SetServiceDiscoverySource(registry)
+	err := lb.SetServiceDiscoverySource(registry)
 	if err != nil {
 		return nil, fmt.Errorf("failed to set service discovery source: %v", err)
 	}
@@ -231,7 +228,7 @@ func InitConfigManager(client *clientv3.Client, config *AppConfig) (*enhanced.En
 	if config.ConfigNamespace != "" {
 		err = configManager.InitNamespace(context.Background(), config.ConfigNamespace, config.ConfigEnv)
 		if err != nil {
-			log.Warn("Failed to initialize config namespace: %v", err)
+			log.Warning("Failed to initialize config namespace: %v", err)
 		}
 	}
 
