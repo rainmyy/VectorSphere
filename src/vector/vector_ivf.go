@@ -1,6 +1,7 @@
 package vector
 
 import (
+	"VectorSphere/src/library/acceler"
 	"VectorSphere/src/library/algorithm"
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/log"
@@ -638,8 +639,52 @@ func (db *VectorDB) findNearestCluster(vector []float64, centroids []entity.Poin
 
 // EnhancedIVFSearch 增强 IVF 搜索
 func (db *VectorDB) EnhancedIVFSearch(query []float64, k int, nprobe int) ([]entity.Result, error) {
-	if db.ivfIndex == nil {
-		return db.ivfSearchWithScores(query, k, nprobe, db.GetOptimalStrategy(query))
+	// 修复循环调用问题：当ivfIndex为nil时，直接使用传统IVF搜索，不再调用ivfSearchWithScores
+	if db.ivfIndex == nil || !db.ivfIndex.Enable {
+		// 使用传统IVF搜索逻辑，避免循环调用
+		// 粗排：找到最近的nprobe个簇
+		candidateClusters := make([]int, 0, nprobe)
+		clusterDistances := make([]float64, len(db.clusters))
+
+		for i, cluster := range db.clusters {
+			// 使用自适应距离计算
+			selectStrategy := db.GetOptimalStrategy(query)
+			switch selectStrategy {
+			case acceler.StrategyAVX512, acceler.StrategyAVX2:
+				sim := acceler.AdaptiveCosineSimilarity(query, cluster.Centroid, selectStrategy)
+				clusterDistances[i] = 1.0 - sim
+			default:
+				sim := acceler.CosineSimilarity(query, cluster.Centroid)
+				clusterDistances[i] = 1.0 - sim
+			}
+		}
+
+		// 选择距离最近的nprobe个簇
+		type clusterDist struct {
+			index    int
+			distance float64
+		}
+
+		clusterList := make([]clusterDist, len(db.clusters))
+		for i, dist := range clusterDistances {
+			clusterList[i] = clusterDist{index: i, distance: dist}
+		}
+
+		sort.Slice(clusterList, func(i, j int) bool {
+			return clusterList[i].distance < clusterList[j].distance
+		})
+
+		for i := 0; i < nprobe && i < len(clusterList); i++ {
+			candidateClusters = append(candidateClusters, clusterList[i].index)
+		}
+
+		// 精排：在候选簇中搜索最近邻
+		candidateVectors := make([]string, 0)
+		for _, clusterIdx := range candidateClusters {
+			candidateVectors = append(candidateVectors, db.clusters[clusterIdx].VectorIDs...)
+		}
+
+		return db.fineRankingWithScores(query, candidateVectors, k, db.GetOptimalStrategy(query))
 	}
 
 	db.ivfIndex.mu.RLock()

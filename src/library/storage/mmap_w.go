@@ -1,6 +1,6 @@
 //go:build windows
 
-package strategy
+package storage
 
 import (
 	"errors"

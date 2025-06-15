@@ -3,7 +3,7 @@ package graph
 import (
 	"VectorSphere/src/library/algorithm"
 	"VectorSphere/src/library/entity"
-	"VectorSphere/src/library/strategy"
+	"VectorSphere/src/library/storage"
 	"container/heap"
 	"encoding/gob"
 	"fmt"
@@ -735,7 +735,7 @@ func (g *HNSWGraph) SaveToFileWithMmap(filePath string) error {
 	defer g.mu.RUnlock()
 
 	// 创建mmap文件
-	mmap, err := strategy.NewMmap(filePath, strategy.MODE_CREATE)
+	mmap, err := storage.NewMmap(filePath, storage.MODE_CREATE)
 	if err != nil {
 		return fmt.Errorf("创建mmap文件 %s 失败: %v", filePath, err)
 	}
@@ -900,7 +900,7 @@ func (g *HNSWGraph) LoadFromFileWithMmap(filePath string) error {
 	defer g.mu.Unlock()
 
 	// 打开mmap文件
-	mmap, err := strategy.NewMmap(filePath, strategy.MODE_APPEND)
+	mmap, err := storage.NewMmap(filePath, storage.MODE_APPEND)
 	if err != nil {
 		return fmt.Errorf("打开mmap文件 %s 失败: %v", filePath, err)
 	}

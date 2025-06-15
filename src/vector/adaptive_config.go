@@ -2,6 +2,7 @@ package vector
 
 import (
 	"VectorSphere/src/library/entity"
+	"math"
 	"runtime"
 	"time"
 )
@@ -77,13 +78,13 @@ func (db *VectorDB) AdaptiveNprobeSearch(query []float64, k int) ([]entity.Resul
 	var nprobe int
 	switch {
 	case dataSize < 10000:
-		nprobe = max(1, db.numClusters/4)
+		nprobe = int(math.Max(1, float64(db.numClusters)/4))
 	case dataSize < 100000:
-		nprobe = max(2, db.numClusters/3)
+		nprobe = int(math.Max(2, float64(db.numClusters)/3))
 	case dataSize < 1000000:
-		nprobe = max(3, db.numClusters/2)
+		nprobe = int(math.Max(3, float64(db.numClusters)/2))
 	default:
-		nprobe = max(5, db.numClusters*2/3)
+		nprobe = int(math.Max(5, float64(db.numClusters)*2/3))
 	}
 
 	// 确保 nprobe 在合理范围内
@@ -115,6 +116,6 @@ func (db *VectorDB) AdaptiveHNSWConfig() {
 
 	// 根据向量维度调整连接数
 	if db.vectorDim > 0 {
-		db.maxConnections = min(64, max(16, db.vectorDim/10))
+		db.maxConnections = int(math.Min(64, math.Max(16, float64(db.vectorDim)/10)))
 	}
 }

@@ -5,7 +5,7 @@ import (
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/graph"
 	"VectorSphere/src/library/log"
-	"VectorSphere/src/library/strategy"
+	"VectorSphere/src/library/storage"
 	"bytes"
 	"encoding/gob"
 	"fmt"
@@ -38,12 +38,12 @@ func (db *VectorDB) SaveToFileWithMmap(filePath string) error {
 	}
 
 	// 创建 mmap 文件
-	mmapFile, err := strategy.NewMmap(db.backupPath, strategy.MODE_CREATE)
+	mmapFile, err := storage.NewMmap(db.backupPath, storage.MODE_CREATE)
 	if err != nil {
 		log.Warning("mmap 创建失败，回退到标准方式: %v", err)
 		return db.SaveToFile(filePath) // 回退到原方法
 	}
-	defer func(mmapFile *strategy.Mmap) {
+	defer func(mmapFile *storage.Mmap) {
 		err := mmapFile.Unmap()
 		if err != nil {
 			log.Error("unmap file has error:%v", err.Error())
@@ -241,12 +241,12 @@ func (db *VectorDB) LoadFromFileWithMmap(filePath string) error {
 	}
 
 	// 创建 mmap 文件映射
-	mmapFile, err := strategy.NewMmap(db.filePath, strategy.MODE_APPEND)
+	mmapFile, err := storage.NewMmap(db.filePath, storage.MODE_APPEND)
 	if err != nil {
 		log.Warning("mmap 打开失败，回退到标准方式: %v", err)
 		return db.LoadFromFile(filePath) // 回退到原方法
 	}
-	defer func(mmapFile *strategy.Mmap) {
+	defer func(mmapFile *storage.Mmap) {
 		err := mmapFile.Unmap()
 		if err != nil {
 			log.Error("unmap file has error:%v", err.Error())
@@ -353,7 +353,6 @@ func (db *VectorDB) loadFromFileStandard(filePath string) error {
 			db.clusters = make([]Cluster, 0)
 			db.indexed = false
 			db.invertedIndex = make(map[string][]string)
-			db.queryCache = make(map[string]queryCache)
 			db.normalizedVectors = make(map[string][]float64)
 			db.compressedVectors = make(map[string]entity.CompressedVector)
 			db.pqCodebook = nil
@@ -400,7 +399,6 @@ func (db *VectorDB) loadFromFileStandard(filePath string) error {
 		db.clusters = make([]Cluster, 0)
 		db.indexed = false
 		db.invertedIndex = make(map[string][]string)
-		db.queryCache = make(map[string]queryCache)
 		db.normalizedVectors = make(map[string][]float64)
 		db.compressedVectors = make(map[string]entity.CompressedVector)
 		db.pqCodebook = nil
@@ -440,9 +438,6 @@ func (db *VectorDB) loadFromFileStandard(filePath string) error {
 	}
 	if db.compressedVectors == nil {
 		db.compressedVectors = make(map[string]entity.CompressedVector)
-	}
-	if db.queryCache == nil { // queryCache 不在 gob 中，需要单独初始化
-		db.queryCache = make(map[string]queryCache)
 	}
 
 	// 如果启用了 PQ 压缩且有码本路径，则尝试加载码本

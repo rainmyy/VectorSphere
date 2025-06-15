@@ -6,7 +6,6 @@ import (
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/graph"
 	"VectorSphere/src/library/log"
-	"VectorSphere/src/library/strategy"
 	"VectorSphere/src/library/tree"
 	"container/heap"
 	"encoding/binary"
@@ -95,10 +94,10 @@ type VectorDB struct {
 	invertedIndex map[string][]string // 倒排索引，关键词 -> 文件ID列表
 	// 添加倒排索引锁，细化锁粒度
 	invertedMu sync.RWMutex
-	// 添加查询缓存
-	queryCache map[string]queryCache
-	cacheMu    sync.RWMutex
-	cacheTTL   int64 // 缓存有效期（秒）
+	//// 添加查询缓存
+	//queryCache map[string]queryCache
+	//cacheMu    sync.RWMutex
+	//cacheTTL   int64 // 缓存有效期（秒）
 
 	// 新增字段
 	vectorDim         int                  // 向量维度，用于验证
@@ -138,13 +137,12 @@ type VectorDB struct {
 	strategySelector        *StrategySelector
 
 	// 新增 mmap 相关字段
-	useMmap     bool           // 是否启用 mmap
-	mmapFile    *strategy.Mmap // mmap 文件映射
-	mmapEnabled bool           // mmap 是否可用
+	useMmap     bool // 是否启用 mmap
+	mmapEnabled bool // mmap 是否可用
 
-	vectorCache     map[string][]float64 // 向量缓存
-	vectorCacheMu   sync.RWMutex         // 向量缓存锁
-	vectorCacheSize int                  // 向量缓存大小
+	//vectorCache     map[string][]float64 // 向量缓存
+	//vectorCacheMu   sync.RWMutex         // 向量缓存锁
+	//vectorCacheSize int                  // 向量缓存大小
 
 	// 增强 IVF 相关字段
 	ivfConfig         *IVFConfig         // IVF 配置
@@ -160,6 +158,7 @@ type VectorDB struct {
 	AdaptiveLSH *AdaptiveLSH          `json:"adaptive_lsh"`
 
 	adaptiveSelector *AdaptiveIndexSelector // 自适应索引选择器
+	cachePath        string
 }
 
 const (
@@ -914,10 +913,6 @@ func (db *VectorDB) Close() {
 	db.invertedIndex = make(map[string][]string) // 清空倒排索引
 	db.invertedMu.Unlock()
 
-	db.cacheMu.Lock()
-	db.queryCache = make(map[string]queryCache) // 清空查询缓存
-	db.cacheMu.Unlock()
-
 	db.normalizedVectors = make(map[string][]float64)               // 清空归一化向量
 	db.compressedVectors = make(map[string]entity.CompressedVector) // 清空压缩向量
 
@@ -942,8 +937,6 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 		clusters:          make([]Cluster, 0),
 		indexed:           false,
 		invertedIndex:     make(map[string][]string),
-		queryCache:        make(map[string]queryCache),
-		cacheTTL:          300, // 默认缓存5分钟
 		vectorDim:         0,
 		vectorizedType:    DefaultVectorized,
 		normalizedVectors: make(map[string][]float64),
@@ -2256,11 +2249,6 @@ func (db *VectorDB) AddDocument(id string, doc string, vectorizedType int) error
 	}
 	db.invertedMu.Unlock()
 
-	// 清除查询缓存
-	db.cacheMu.Lock()
-	db.queryCache = make(map[string]queryCache)
-	db.cacheMu.Unlock()
-
 	if db.indexed {
 		db.indexed = false // 索引失效，需要重建
 		log.Info("提示: 添加新文档向量后，索引已失效，请重新调用 BuildIndex()。")
@@ -2281,11 +2269,6 @@ func (db *VectorDB) RebuildIndex() error {
 	db.indexed = false
 	db.clusters = make([]Cluster, 0)
 	db.mu.Unlock()
-
-	// 清除查询缓存
-	db.cacheMu.Lock()
-	db.queryCache = make(map[string]queryCache)
-	db.cacheMu.Unlock()
 
 	// 设置索引状态为未索引
 	db.indexed = false
@@ -2314,15 +2297,14 @@ func (db *VectorDB) RebuildIndex() error {
 // GetVectorForTextWithCache 带缓存的向量获取
 func (db *VectorDB) GetVectorForTextWithCache(text string, vectorizedType int) ([]float64, error) {
 	// 生成缓存键
-	cacheKey := fmt.Sprintf("%d:%s", vectorizedType, text)
+	cacheKey := fmt.Sprintf("vector:%d:%s", vectorizedType, text)
 
-	// 检查缓存
-	db.vectorCacheMu.RLock()
-	if vector, exists := db.vectorCache[cacheKey]; exists {
-		db.vectorCacheMu.RUnlock()
-		return vector, nil
+	// 检查MultiCache
+	if db.MultiCache != nil {
+		if cachedVector, found := db.MultiCache.Get(cacheKey); found {
+			return cachedVector, nil
+		}
 	}
-	db.vectorCacheMu.RUnlock()
 
 	// 缓存未命中，计算向量
 	vector, err := db.GetVectorForText(text, vectorizedType)
@@ -2331,20 +2313,9 @@ func (db *VectorDB) GetVectorForTextWithCache(text string, vectorizedType int) (
 	}
 
 	// 更新缓存
-	db.vectorCacheMu.Lock()
-	defer db.vectorCacheMu.Unlock()
-
-	// 如果缓存已满，移除一个随机条目
-	if len(db.vectorCache) >= db.vectorCacheSize && db.vectorCacheSize > 0 {
-		// 简单的缓存淘汰策略：随机删除一个条目
-		for k := range db.vectorCache {
-			delete(db.vectorCache, k)
-			break
-		}
+	if db.MultiCache != nil {
+		db.MultiCache.Put(cacheKey, vector)
 	}
-
-	// 添加到缓存
-	db.vectorCache[cacheKey] = vector
 
 	return vector, nil
 }
@@ -2415,11 +2386,6 @@ func (db *VectorDB) Add(id string, vector []float64) {
 		}
 	}
 
-	// 清除查询缓存
-	db.cacheMu.Lock()
-	db.queryCache = make(map[string]queryCache)
-	db.cacheMu.Unlock()
-
 	if db.indexed {
 		db.indexed = false // 索引失效，需要重建
 		log.Info("提示: 添加新向量后，索引已失效，请重新调用 BuildIndex()。")
@@ -2470,11 +2436,6 @@ func (db *VectorDB) DeleteVector(id string) error {
 			db.clusters[i].VectorIDs = newVectorIDs
 		}
 	}
-
-	// 清除查询缓存，因为数据已更改
-	db.cacheMu.Lock()
-	db.queryCache = make(map[string]queryCache)
-	db.cacheMu.Unlock()
 
 	log.Info("Vector with id %s deleted successfully.", id)
 	return nil
@@ -2693,10 +2654,6 @@ func (db *VectorDB) Update(id string, vector []float64) error {
 			db.compressedVectors[id] = compressedVec
 		}
 	}
-	// 清除查询缓存
-	db.cacheMu.Lock()
-	db.queryCache = make(map[string]queryCache)
-	db.cacheMu.Unlock()
 
 	if db.indexed {
 		db.indexed = false // 索引失效，需要重建
@@ -2715,11 +2672,6 @@ func (db *VectorDB) Delete(id string) error {
 	delete(db.vectors, id)
 	delete(db.normalizedVectors, id)
 	delete(db.compressedVectors, id) // 删除压缩向量
-
-	// 清除查询缓存
-	db.cacheMu.Lock()
-	db.queryCache = make(map[string]queryCache)
-	db.cacheMu.Unlock()
 
 	// 从倒排索引中删除
 	db.invertedMu.Lock()
@@ -2873,11 +2825,6 @@ func (db *VectorDB) BuildMultiLevelIndex(maxIterations int, tolerance float64) e
 	db.stats.MemoryUsage = memStats.Alloc
 	db.statsMu.Unlock()
 
-	// 清除查询缓存
-	db.cacheMu.Lock()
-	db.queryCache = make(map[string]queryCache)
-	db.cacheMu.Unlock()
-
 	fmt.Printf("多级索引构建完成，共 %d 个簇，耗时 %v\n", db.numClusters, time.Since(startTime))
 	return nil
 }
@@ -2938,10 +2885,6 @@ func (db *VectorDB) BuildIndex(maxIterations int, tolerance float64) error {
 	}
 
 	db.indexed = true
-	// 清除查询缓存
-	db.cacheMu.Lock()
-	db.queryCache = make(map[string]queryCache)
-	db.cacheMu.Unlock()
 
 	log.Info("索引构建完成，共 %d 个簇。\n", db.numClusters)
 	return nil
@@ -2975,7 +2918,6 @@ func (db *VectorDB) initializeEmptyDB() {
 	db.clusters = make([]Cluster, 0)
 	db.indexed = false
 	db.invertedIndex = make(map[string][]string)
-	db.queryCache = make(map[string]queryCache)
 	db.normalizedVectors = make(map[string][]float64)
 	db.compressedVectors = make(map[string]entity.CompressedVector)
 	db.pqCodebook = nil
@@ -3033,9 +2975,6 @@ func (db *VectorDB) restoreDataFromStruct(data struct {
 	}
 	if db.compressedVectors == nil {
 		db.compressedVectors = make(map[string]entity.CompressedVector)
-	}
-	if db.queryCache == nil {
-		db.queryCache = make(map[string]queryCache)
 	}
 }
 
@@ -4614,11 +4553,11 @@ func (db *VectorDB) CheckIndexHealth() map[string]bool {
 }
 
 // EnableMultiLevelCache 启用多级缓存
-func (db *VectorDB) EnableMultiLevelCache(l1Size, l2Size int, l3Path string) {
+func (db *VectorDB) EnableMultiLevelCache(l1Size, l2Size, l3Size int, l3Path string) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
-	db.MultiCache = NewMultiLevelCache(l1Size, l2Size, l3Path)
+	db.MultiCache = NewMultiLevelCache(l1Size, l2Size, l3Size, l3Path)
 	log.Info("多级缓存已启用：L1=%d, L2=%d, L3=%s", l1Size, l2Size, l3Path)
 }
 
@@ -4803,7 +4742,7 @@ func (db *VectorDB) fallbackBatchSearch(queries [][]float64, k int, options Sear
 func (db *VectorDB) IncrementalIndex() error {
 	// 记录开始时间，用于性能统计
 	start := time.Now()
-	
+
 	// 检查是否有索引
 	db.mu.Lock()
 	if !db.indexed {
@@ -4811,16 +4750,16 @@ func (db *VectorDB) IncrementalIndex() error {
 		log.Warning("索引尚未构建，无法执行增量索引更新")
 		return fmt.Errorf("索引尚未构建，请先调用 BuildIndex() 或 RebuildIndex()")
 	}
-	
+
 	// 获取所有向量ID
 	var vectorIDs []string
 	for id := range db.vectors {
 		vectorIDs = append(vectorIDs, id)
 	}
 	db.mu.Unlock()
-	
+
 	log.Info("开始执行增量索引更新，共 %d 个向量...", len(vectorIDs))
-	
+
 	// 根据索引类型选择不同的增量更新方法
 	if db.useHNSWIndex {
 		// 使用HNSW增量更新
@@ -4828,11 +4767,11 @@ func (db *VectorDB) IncrementalIndex() error {
 			db.mu.Lock()
 			vector, exists := db.vectors[id]
 			db.mu.Unlock()
-			
+
 			if !exists {
 				continue
 			}
-			
+
 			err := db.UpdateHNSWIndexIncrementally(id, vector)
 			if err != nil {
 				log.Warning("向量 %s 的HNSW增量更新失败: %v", id, err)
@@ -4844,28 +4783,28 @@ func (db *VectorDB) IncrementalIndex() error {
 			db.mu.Lock()
 			vector, exists := db.vectors[id]
 			db.mu.Unlock()
-			
+
 			if !exists {
 				continue
 			}
-			
+
 			err := db.UpdateIndexIncrementally(id, vector)
 			if err != nil {
 				log.Warning("向量 %s 的IVF增量更新失败: %v", id, err)
 			}
 		}
 	}
-	
+
 	// 更新性能统计信息
 	db.statsMu.Lock()
 	db.stats.LastReindexTime = time.Now()
-	
+
 	// 更新内存使用情况
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	db.stats.MemoryUsage = m.Alloc
 	db.statsMu.Unlock()
-	
+
 	log.Info("增量索引更新完成，耗时: %v", time.Since(start))
 	return nil
 }
@@ -4874,23 +4813,23 @@ func (db *VectorDB) IncrementalIndex() error {
 func (db *VectorDB) OptimizeIndex() error {
 	// 获取索引健康状态
 	indexHealth := db.CheckIndexHealth()
-	
+
 	// 记录开始时间，用于性能统计
 	start := time.Now()
-	
+
 	// 根据索引类型执行不同的优化策略
 	if indexHealth["hnsw"] {
 		// 优化HNSW索引参数
 		log.Info("优化HNSW索引参数...")
 		db.OptimizeHNSWParameters()
 	}
-	
+
 	// 如果启用了增强型LSH索引，执行LSH参数调优
 	if indexHealth["enhanced_lsh"] {
 		log.Info("优化LSH索引参数...")
 		db.tuneAdaptiveLSH()
 	}
-	
+
 	// 如果启用了增强型IVF索引，执行IVF参数调优
 	if indexHealth["enhanced_ivf"] {
 		log.Info("优化IVF索引参数...")
@@ -4898,25 +4837,23 @@ func (db *VectorDB) OptimizeIndex() error {
 		db.mu.Lock()
 		dataSize := len(db.vectors)
 		db.mu.Unlock()
-		
+
 		// 调整nlist参数
 		if db.ivfConfig != nil {
 			if dataSize < 10000 {
-				db.ivfConfig.Nlist = 100
+				db.ivfConfig.NumClusters = 100
 			} else if dataSize < 100000 {
-				db.ivfConfig.Nlist = 256
+				db.ivfConfig.NumClusters = 256
 			} else if dataSize < 1000000 {
-				db.ivfConfig.Nlist = 1024
+				db.ivfConfig.NumClusters = 1024
 			} else {
-				db.ivfConfig.Nlist = 4096
+				db.ivfConfig.NumClusters = 4096
 			}
-			
-			// 调整nprobe参数
-			db.ivfConfig.Nprobe = max(1, db.ivfConfig.Nlist/10)
-			log.Info("IVF参数已优化: nlist=%d, nprobe=%d", db.ivfConfig.Nlist, db.ivfConfig.Nprobe)
+
+			log.Info("IVF参数已优化: NumClusters=%d", db.ivfConfig.NumClusters)
 		}
 	}
-	
+
 	// 如果启用了PQ压缩，优化PQ参数
 	if indexHealth["pq"] {
 		log.Info("优化PQ压缩参数...")
@@ -4924,7 +4861,7 @@ func (db *VectorDB) OptimizeIndex() error {
 		db.mu.Lock()
 		vectorDim := db.vectorDim
 		db.mu.Unlock()
-		
+
 		// 调整子向量数量，确保能被维度整除
 		if vectorDim >= 200 {
 			db.numSubVectors = 16
@@ -4935,7 +4872,7 @@ func (db *VectorDB) OptimizeIndex() error {
 		} else {
 			db.numSubVectors = 2
 		}
-		
+
 		// 确保子向量数量能被维度整除
 		for vectorDim%db.numSubVectors != 0 {
 			db.numSubVectors--
@@ -4944,13 +4881,13 @@ func (db *VectorDB) OptimizeIndex() error {
 				break
 			}
 		}
-		
+
 		log.Info("PQ参数已优化: 子向量数量=%d", db.numSubVectors)
 	}
-	
+
 	// 调整全局配置参数
 	db.AdjustConfig()
-	
+
 	// 更新性能统计信息
 	db.statsMu.Lock()
 	// 更新内存使用情况
@@ -4958,7 +4895,7 @@ func (db *VectorDB) OptimizeIndex() error {
 	runtime.ReadMemStats(&m)
 	db.stats.MemoryUsage = m.Alloc
 	db.statsMu.Unlock()
-	
+
 	log.Info("索引优化完成，耗时: %v", time.Since(start))
 	return nil
 }
