@@ -1,7 +1,7 @@
 package enhanced
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"context"
 	"fmt"
 	"math"
@@ -235,7 +235,7 @@ func (eeh *EnhancedErrorHandler) ClassifyError(err error, serviceName, operation
 
 // ExecuteWithRetry 执行带重试的操作
 func (eeh *EnhancedErrorHandler) ExecuteWithRetry(ctx context.Context, operation func() (interface{}, error), serviceName, operationName string, config *RetryConfig) *RetryResult {
-	log.Info("Executing operation with retry: %s.%s", serviceName, operationName)
+	logger.Info("Executing operation with retry: %s.%s", serviceName, operationName)
 
 	if config == nil {
 		config = eeh.getRetryConfig(serviceName, operationName)
@@ -295,7 +295,7 @@ func (eeh *EnhancedErrorHandler) ExecuteWithRetry(ctx context.Context, operation
 			// 记录成功到熔断器
 			eeh.recordCircuitBreakerSuccess(serviceName, operationName)
 
-			log.Info("Operation succeeded after %d attempts: %s.%s", attempt, serviceName, operationName)
+			logger.Info("Operation succeeded after %d attempts: %s.%s", attempt, serviceName, operationName)
 			return result
 		}
 
@@ -343,11 +343,11 @@ func (eeh *EnhancedErrorHandler) ExecuteWithRetry(ctx context.Context, operation
 			// 继续重试
 		}
 
-		log.Debug("Retrying operation %s.%s, attempt %d after %v", serviceName, operationName, attempt+1, delay)
+		logger.Debug("Retrying operation %s.%s, attempt %d after %v", serviceName, operationName, attempt+1, delay)
 	}
 
 	result.TotalTime = time.Since(start)
-	log.Warning("Operation failed after %d attempts: %s.%s, final error: %v", len(result.Attempts), serviceName, operationName, result.FinalError)
+	logger.Warning("Operation failed after %d attempts: %s.%s, final error: %v", len(result.Attempts), serviceName, operationName, result.FinalError)
 
 	return result
 }
@@ -358,7 +358,7 @@ func (eeh *EnhancedErrorHandler) RegisterRetryConfig(serviceName, operation stri
 	eeh.mu.Lock()
 	eeh.retryConfigs[key] = config
 	eeh.mu.Unlock()
-	log.Info("Registered retry config for %s", key)
+	logger.Info("Registered retry config for %s", key)
 }
 
 // RegisterCircuitBreaker 注册熔断器
@@ -378,7 +378,7 @@ func (eeh *EnhancedErrorHandler) RegisterCircuitBreaker(serviceName, operation s
 	eeh.circuitBreakers[key] = cb
 	eeh.mu.Unlock()
 
-	log.Info("Registered circuit breaker for %s", key)
+	logger.Info("Registered circuit breaker for %s", key)
 }
 
 // RegisterRateLimiter 注册限流器
@@ -398,7 +398,7 @@ func (eeh *EnhancedErrorHandler) RegisterRateLimiter(serviceName, operation stri
 	eeh.rateLimiters[key] = rl
 	eeh.mu.Unlock()
 
-	log.Info("Registered rate limiter for %s", key)
+	logger.Info("Registered rate limiter for %s", key)
 }
 
 // AddErrorPattern 添加错误模式
@@ -406,7 +406,7 @@ func (eeh *EnhancedErrorHandler) AddErrorPattern(pattern *ErrorPattern) {
 	eeh.mu.Lock()
 	eeh.errorPatterns = append(eeh.errorPatterns, pattern)
 	eeh.mu.Unlock()
-	log.Info("Added error pattern: %s", pattern.Pattern)
+	logger.Info("Added error pattern: %s", pattern.Pattern)
 }
 
 // GetErrorStats 获取错误统计
@@ -761,7 +761,7 @@ func (eeh *EnhancedErrorHandler) generateCorrelationID() string {
 
 // auditError 审计错误
 func (eeh *EnhancedErrorHandler) auditError(enhancedErr *EnhancedError) {
-	log.Info("Error audit: service=%s, operation=%s, category=%d, severity=%d, retryable=%t, correlation_id=%s, message=%s",
+	logger.Info("Error audit: service=%s, operation=%s, category=%d, severity=%d, retryable=%t, correlation_id=%s, message=%s",
 		enhancedErr.ServiceName, enhancedErr.Operation, enhancedErr.Category, enhancedErr.Severity,
 		enhancedErr.Retryable, enhancedErr.CorrelationID, enhancedErr.ErrorMessage)
 
@@ -771,7 +771,7 @@ func (eeh *EnhancedErrorHandler) auditError(enhancedErr *EnhancedError) {
 
 // startMetricsCollection 启动指标收集
 func (eeh *EnhancedErrorHandler) startMetricsCollection() {
-	log.Info("Starting error metrics collection")
+	logger.Info("Starting error metrics collection")
 
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
@@ -781,7 +781,7 @@ func (eeh *EnhancedErrorHandler) startMetricsCollection() {
 		case <-ticker.C:
 			eeh.collectMetrics()
 		case <-eeh.ctx.Done():
-			log.Info("Error metrics collection stopped")
+			logger.Info("Error metrics collection stopped")
 			return
 		}
 	}
@@ -795,13 +795,13 @@ func (eeh *EnhancedErrorHandler) collectMetrics() {
 	rateLimiterCount := len(eeh.rateLimiters)
 	eeh.mu.RUnlock()
 
-	log.Debug("Error handler metrics: error_stats=%d, circuit_breakers=%d, rate_limiters=%d",
+	logger.Debug("Error handler metrics: error_stats=%d, circuit_breakers=%d, rate_limiters=%d",
 		errorStatsCount, circuitBreakerCount, rateLimiterCount)
 }
 
 // Close 关闭增强错误处理器
 func (eeh *EnhancedErrorHandler) Close() error {
-	log.Info("Closing enhanced error handler")
+	logger.Info("Closing enhanced error handler")
 	eeh.cancel()
 	return nil
 }

@@ -18,7 +18,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"VectorSphere/src/library/common"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/messages"
 	"VectorSphere/src/search"
 	"net/http"
@@ -144,23 +144,23 @@ func (s *SlaveService) Init(
 
 // Start 启动 SlaveService
 func (s *SlaveService) Start(ctx context.Context) error {
-	log.Info("Starting SlaveService on %s...", s.localhost)
+	logger.Info("Starting SlaveService on %s...", s.localhost)
 	var etcdEndpoints []string
 	for _, v := range s.etcdEndpoints {
 		etcdEndpoints = append(etcdEndpoints, v.Ip+":"+strconv.Itoa(v.Port))
 	}
 	// 如果 etcd client 未初始化，尝试重新初始化
 	if s.client == nil {
-		log.Info("etcd client not initialized, attempting to connect...")
+		logger.Info("etcd client not initialized, attempting to connect...")
 		client, err := clientv3.New(clientv3.Config{
 			Endpoints:   etcdEndpoints,
 			DialTimeout: 5 * time.Second,
 		})
 		if err != nil {
-			log.Warning("Failed to connect to etcd during SlaveService start: %v. Proceeding without etcd.", err)
+			logger.Warning("Failed to connect to etcd during SlaveService start: %v. Proceeding without etcd.", err)
 		} else {
 			s.client = client
-			log.Info("Successfully connected to etcd.")
+			logger.Info("Successfully connected to etcd.")
 		}
 	}
 
@@ -168,19 +168,19 @@ func (s *SlaveService) Start(ctx context.Context) error {
 	if s.client != nil {
 		if err := s.registerService(); err != nil {
 			// 非致命错误，服务可以尝试无etcd运行或依赖master拉取
-			log.Warning("Failed to register slave service with etcd: %v. Continuing without registration.", err)
+			logger.Warning("Failed to register slave service with etcd: %v. Continuing without registration.", err)
 		} else {
-			log.Info("Slave service registered with etcd successfully.")
+			logger.Info("Slave service registered with etcd successfully.")
 		}
 	} else {
-		log.Info("Slave service running without etcd registration.")
+		logger.Info("Slave service running without etcd registration.")
 	}
 
 	// 监听主节点 (如果 etcd client 存在)
 	if s.client != nil {
 		go s.watchMaster(ctx) // 使用传递的上下文
 	} else {
-		log.Info("Cannot watch master as etcd client is not available.")
+		logger.Info("Cannot watch master as etcd client is not available.")
 		// 这里可以考虑实现一个备用机制来发现 master，例如通过配置或广播
 	}
 
@@ -190,27 +190,27 @@ func (s *SlaveService) Start(ctx context.Context) error {
 		// 例如: docNumEstimate, dbType, DataDir 等
 		// 此处仅为示例，您需要根据实际情况调整
 		if err := s.Init(100000, 0, "./data/slave_"+s.localhost, nil, nil, nil); err != nil {
-			log.Error("Failed to initialize slave service components: %v", err)
+			logger.Error("Failed to initialize slave service components: %v", err)
 			return err // 初始化失败是致命的
 		}
-		log.Info("Slave service components initialized.")
+		logger.Info("Slave service components initialized.")
 	}
 
-	log.Info("SlaveService %s started.", s.localhost)
+	logger.Info("SlaveService %s started.", s.localhost)
 
 	// 监听停止信号
 	go func() {
 		select {
 		case <-s.stopCh:
-			log.Info("SlaveService %s received stop signal.", s.localhost)
+			logger.Info("SlaveService %s received stop signal.", s.localhost)
 		case <-ctx.Done():
-			log.Info("SlaveService %s context cancelled.", s.localhost)
+			logger.Info("SlaveService %s context cancelled.", s.localhost)
 			err := s.Stop(context.Background())
 			if err != nil {
 				return
 			}
 		case <-s.appCtx.Done():
-			log.Info("Application context cancelled, stopping SlaveService %s.", s.localhost)
+			logger.Info("Application context cancelled, stopping SlaveService %s.", s.localhost)
 			err := s.Stop(context.Background())
 			if err != nil {
 				return
@@ -289,23 +289,23 @@ func (s *SlaveService) connectMaster() {
 
 	conn, err := grpc.DialContext(ctx, s.masterEndpoint, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
-		log.Error("连接主节点失败: %v", err)
+		logger.Error("连接主节点失败: %v", err)
 		return
 	}
 
 	s.masterConn = conn
-	log.Info("连接主节点成功: %s", s.masterEndpoint)
+	logger.Info("连接主节点成功: %s", s.masterEndpoint)
 }
 
 // Stop 停止 SlaveService
 func (s *SlaveService) Stop(ctx context.Context) error {
-	log.Info("Stopping SlaveService %s...", s.localhost)
+	logger.Info("Stopping SlaveService %s...", s.localhost)
 	close(s.stopCh)
 
 	// 从 etcd 取消注册
 	if s.client != nil && s.leaseID != 0 {
 		if _, err := s.client.Revoke(context.Background(), s.leaseID); err != nil {
-			log.Warning("Failed to revoke etcd lease for slave %s: %v", s.localhost, err)
+			logger.Warning("Failed to revoke etcd lease for slave %s: %v", s.localhost, err)
 		}
 	}
 
@@ -323,7 +323,7 @@ func (s *SlaveService) Stop(ctx context.Context) error {
 	// 关闭 etcd 客户端
 	if s.client != nil {
 		if err := s.client.Close(); err != nil {
-			log.Warning("Failed to close etcd client for slave %s: %v", s.localhost, err)
+			logger.Warning("Failed to close etcd client for slave %s: %v", s.localhost, err)
 		}
 	}
 
@@ -335,7 +335,7 @@ func (s *SlaveService) Stop(ctx context.Context) error {
 		}
 	}
 
-	log.Info("SlaveService %s stopped.", s.localhost)
+	logger.Info("SlaveService %s stopped.", s.localhost)
 	return nil
 }
 
@@ -350,7 +350,7 @@ func (s *SlaveService) GetTaskSpec() *scheduler2.TaskSpec {
 // ToPoolTask 将 SlaveService 转换为 PoolLib.Task
 func (s *SlaveService) ToPoolTask() *PoolLib.Queue {
 	startWrapper := func() error {
-		log.Info("ServiceTask for SlaveService: %s is about to run Start()", s.GetName())
+		logger.Info("ServiceTask for SlaveService: %s is about to run Start()", s.GetName())
 		// 注意：s.Start 需要一个 context.Context。
 		// 在 bootstrap/base.go 中，任务池执行任务时会传递上下文。
 		// 但 PoolLib.Queue 的执行不直接接受上下文参数给 ExcelFunc。
@@ -359,7 +359,7 @@ func (s *SlaveService) ToPoolTask() *PoolLib.Queue {
 		// 为了与 PoolLib.Queue 兼容，包装器不接受参数。
 		err := s.Start(s.appCtx)
 		if err != nil {
-			log.Error("ServiceTask for SlaveService: %s failed to Start: %v", s.GetName(), err)
+			logger.Error("ServiceTask for SlaveService: %s failed to Start: %v", s.GetName(), err)
 		}
 		return err
 	}
@@ -375,11 +375,11 @@ func (s *SlaveService) SetTaskPoolManager(manager *scheduler2.TaskPoolManager) {
 // watchMaster 监听主节点变化
 func (s *SlaveService) watchMaster(ctx context.Context) {
 	if s.client == nil {
-		log.Warning("Cannot watch master: etcd client is nil.")
+		logger.Warning("Cannot watch master: etcd client is nil.")
 		return
 	}
 	masterKeyPrefix := "/VectorSphere/master_election/"
-	log.Info("Slave %s watching for master changes at prefix: %s", s.localhost, masterKeyPrefix)
+	logger.Info("Slave %s watching for master changes at prefix: %s", s.localhost, masterKeyPrefix)
 
 	// 初始获取一次 Master 地址
 	s.updateMasterConnectionFromEtcd(ctx, masterKeyPrefix)
@@ -388,14 +388,14 @@ func (s *SlaveService) watchMaster(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Info("Watch master process for slave %s cancelled by context.", s.localhost)
+			logger.Info("Watch master process for slave %s cancelled by context.", s.localhost)
 			return
 		case <-s.stopCh:
-			log.Info("Watch master process for slave %s stopped by service stop signal.", s.localhost)
+			logger.Info("Watch master process for slave %s stopped by service stop signal.", s.localhost)
 			return
 		case wresp := <-rch:
 			if wresp.Canceled {
-				log.Warning("Watch for master on slave %s was canceled: %v", s.localhost, wresp.Err())
+				logger.Warning("Watch for master on slave %s was canceled: %v", s.localhost, wresp.Err())
 				// 尝试重新 Watch
 				time.Sleep(5 * time.Second)
 				if s.client != nil {
@@ -404,7 +404,7 @@ func (s *SlaveService) watchMaster(ctx context.Context) {
 				continue
 			}
 			for _, ev := range wresp.Events {
-				log.Trace("Slave %s received etcd event: Type: %s, Key: %s, Value: %s", s.localhost, ev.Type, string(ev.Kv.Key), string(ev.Kv.Value))
+				logger.Trace("Slave %s received etcd event: Type: %s, Key: %s, Value: %s", s.localhost, ev.Type, string(ev.Kv.Key), string(ev.Kv.Value))
 				// 当有 master 相关的事件时，重新获取并连接 master
 				s.updateMasterConnectionFromEtcd(ctx, masterKeyPrefix)
 			}
@@ -418,16 +418,16 @@ func (s *SlaveService) updateMasterConnectionFromEtcd(ctx context.Context, maste
 	}
 	resp, err := s.client.Get(ctx, masterKeyPrefix, clientv3.WithPrefix(), clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend), clientv3.WithLimit(1))
 	if err != nil {
-		log.Warning("Slave %s failed to get master from etcd: %v", s.localhost, err)
+		logger.Warning("Slave %s failed to get master from etcd: %v", s.localhost, err)
 		return
 	}
 
 	var newMasterEndpoint string
 	if len(resp.Kvs) > 0 {
 		newMasterEndpoint = string(resp.Kvs[0].Value)
-		log.Info("Slave %s discovered master endpoint from etcd: %s", s.localhost, newMasterEndpoint)
+		logger.Info("Slave %s discovered master endpoint from etcd: %s", s.localhost, newMasterEndpoint)
 	} else {
-		log.Warning("Slave %s: No master found in etcd with prefix %s", s.localhost, masterKeyPrefix)
+		logger.Warning("Slave %s: No master found in etcd with prefix %s", s.localhost, masterKeyPrefix)
 		s.masterMutex.Lock()
 		if s.masterConn != nil {
 			err := s.masterConn.Close()
@@ -435,7 +435,7 @@ func (s *SlaveService) updateMasterConnectionFromEtcd(ctx context.Context, maste
 				return
 			}
 			s.masterConn = nil
-			log.Info("Slave %s: Disconnected from previous master as no master is currently elected.", s.localhost)
+			logger.Info("Slave %s: Disconnected from previous master as no master is currently elected.", s.localhost)
 		}
 		s.masterEndpoint = ""
 		s.masterMutex.Unlock()
@@ -451,17 +451,17 @@ func (s *SlaveService) updateMasterConnectionFromEtcd(ctx context.Context, maste
 			if err != nil {
 				return
 			}
-			log.Info("Slave %s: Disconnecting from old master %s", s.localhost, s.masterEndpoint)
+			logger.Info("Slave %s: Disconnecting from old master %s", s.localhost, s.masterEndpoint)
 		}
-		log.Info("Slave %s: Attempting to connect to new master %s", s.localhost, newMasterEndpoint)
+		logger.Info("Slave %s: Attempting to connect to new master %s", s.localhost, newMasterEndpoint)
 		conn, err := grpc.DialContext(ctx, newMasterEndpoint, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 		if err != nil {
-			log.Error("Slave %s: Failed to connect to master %s: %v", s.localhost, newMasterEndpoint, err)
+			logger.Error("Slave %s: Failed to connect to master %s: %v", s.localhost, newMasterEndpoint, err)
 			s.masterConn = nil
 			s.masterEndpoint = "" // 连接失败，清除 endpoint
 			return
 		}
-		log.Info("Slave %s: Successfully connected to master %s", s.localhost, newMasterEndpoint)
+		logger.Info("Slave %s: Successfully connected to master %s", s.localhost, newMasterEndpoint)
 		s.masterConn = conn
 		s.masterEndpoint = newMasterEndpoint
 		// --- 主节点变更通知 ---
@@ -475,7 +475,7 @@ func (s *SlaveService) updateMasterConnectionFromEtcd(ctx context.Context, maste
 			http.Post(webhookUrl, "application/json", bytes.NewReader(jsonBody))
 		}()
 	} else {
-		log.Trace("Slave %s: Master endpoint %s unchanged.", s.localhost, s.masterEndpoint)
+		logger.Trace("Slave %s: Master endpoint %s unchanged.", s.localhost, s.masterEndpoint)
 	}
 }
 
@@ -512,21 +512,21 @@ func (s *SlaveService) Search(ctx context.Context, request *Request) (*Result, e
 func (s *SlaveService) HealthCheck(ctx context.Context, req *HealthCheckRequest) (*HealthCheckResponse, error) {
 	// 1. 检查核心依赖服务是否可用
 	if s.client == nil {
-		log.Warning("HealthCheck: etcd client is nil")
+		logger.Warning("HealthCheck: etcd client is nil")
 		return &HealthCheckResponse{
 			Status: HealthCheckResponse_NOT_SERVING,
 			Load:   0, // 或者一个表示错误/不可用的特定负值
 		}, nil
 	}
 	if s.Index == nil {
-		log.Warning("HealthCheck: Index service is nil")
+		logger.Warning("HealthCheck: Index service is nil")
 		return &HealthCheckResponse{
 			Status: HealthCheckResponse_NOT_SERVING,
 			Load:   0,
 		}, nil
 	}
 	if s.taskExecutor == nil {
-		log.Warning("HealthCheck: TaskExecutor is nil")
+		logger.Warning("HealthCheck: TaskExecutor is nil")
 		return &HealthCheckResponse{
 			Status: HealthCheckResponse_NOT_SERVING,
 			Load:   0,
@@ -544,7 +544,7 @@ func (s *SlaveService) HealthCheck(ctx context.Context, req *HealthCheckRequest)
 	if err == nil && len(cpuPercentages) > 0 {
 		cpuUsage = float32(cpuPercentages[0])
 	} else {
-		log.Warning("HealthCheck: Failed to get CPU usage: %v", err)
+		logger.Warning("HealthCheck: Failed to get CPU usage: %v", err)
 		// 可以选择在此处返回 NOT_SERVING 或 UNKNOWN，或者继续计算其他指标
 	}
 
@@ -553,7 +553,7 @@ func (s *SlaveService) HealthCheck(ctx context.Context, req *HealthCheckRequest)
 	if err == nil {
 		memUsage = float32(vmStat.UsedPercent)
 	} else {
-		log.Warning("HealthCheck: Failed to get memory usage: %v", err)
+		logger.Warning("HealthCheck: Failed to get memory usage: %v", err)
 	}
 
 	// 获取任务队列长度/当前运行任务数
@@ -589,14 +589,14 @@ func (s *SlaveService) HealthCheck(ctx context.Context, req *HealthCheckRequest)
 		currentLoad = 0
 	}
 
-	log.Trace("HealthCheck: CPU: %.2f%%, Mem: %.2f%%, Tasks: %d (Normalized: %.2f%%), Calculated Load: %.2f%%", cpuUsage, memUsage, taskQueueLength, normalizedTaskLoad, currentLoad)
+	logger.Trace("HealthCheck: CPU: %.2f%%, Mem: %.2f%%, Tasks: %d (Normalized: %.2f%%), Calculated Load: %.2f%%", cpuUsage, memUsage, taskQueueLength, normalizedTaskLoad, currentLoad)
 
 	// 3. 判断健康状态
 	// 示例：如果综合负载超过某个阈值，则认为服务过载，状态为 UNKNOWN 或自定义状态
 	loadThreshold := float32(85.0) // 假设综合负载超过 85% 就认为过载
 
 	if currentLoad > loadThreshold {
-		log.Warning("HealthCheck: Load (%.2f%%) exceeds threshold (%.2f%%)", currentLoad, loadThreshold)
+		logger.Warning("HealthCheck: Load (%.2f%%) exceeds threshold (%.2f%%)", currentLoad, loadThreshold)
 		return &HealthCheckResponse{
 			Status: HealthCheckResponse_UNKNOWN, // 或者一个表示高负载的状态
 			Load:   float32(currentLoad),        // protobuf 的 load 是 int32，进行转换
@@ -686,7 +686,7 @@ func (s *SlaveService) ExecuteTask(ctx context.Context, request *TaskRequest) (*
 			if table.InvertedIndex != nil {
 				optErr := table.InvertedIndex.Optimize()
 				if optErr != nil {
-					log.Warning("优化倒排索引失败: %v", optErr)
+					logger.Warning("优化倒排索引失败: %v", optErr)
 					// 不中断流程，只记录警告
 				}
 			}
@@ -831,7 +831,7 @@ func (s *SlaveService) reportTaskResult(response *TaskResponse) {
 	s.masterMutex.RUnlock()
 
 	if masterConn == nil {
-		log.Error("上报任务结果失败: 没有主节点连接")
+		logger.Error("上报任务结果失败: 没有主节点连接")
 		return
 	}
 
@@ -845,7 +845,7 @@ func (s *SlaveService) reportTaskResult(response *TaskResponse) {
 	// 上报任务结果
 	_, err := client.ReportTaskResult(ctx, response)
 	if err != nil {
-		log.Error("上报任务结果失败: %v", err)
+		logger.Error("上报任务结果失败: %v", err)
 	}
 }
 

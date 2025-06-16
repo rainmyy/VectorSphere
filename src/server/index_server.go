@@ -3,7 +3,7 @@ package server
 import (
 	"VectorSphere/src/index"
 	"VectorSphere/src/library/common"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/messages"
 	"context"
 	"errors"
@@ -95,7 +95,7 @@ func (w *IndexServer) RegisterService(servers []EndPoint, port int, serviceName 
 		for !w.stop {
 			_, err := hub.RegisterService(serviceName, endPoint, leasID)
 			if err != nil {
-				log.Error("续约服务失败,租约ID:%d, 错误:%v", leasID, err)
+				logger.Error("续约服务失败,租约ID:%d, 错误:%v", leasID, err)
 			}
 			time.Sleep(time.Duration(heartBeat)*time.Second - 100*time.Millisecond)
 		}
@@ -157,9 +157,9 @@ func (w *IndexServer) Close() error {
 	endPoint := &EndPoint{Ip: w.localhost}
 	err := w.hub.UnRegisterService(w.serviceName, endPoint)
 	if err != nil {
-		log.Error("注销服务失败，服务地址: %v, 错误: %v", w.localhost, err)
+		logger.Error("注销服务失败，服务地址: %v, 错误: %v", w.localhost, err)
 		return err
 	}
-	log.Info("注销服务成功，服务地址: %v", w.localhost)
+	logger.Info("注销服务成功，服务地址: %v", w.localhost)
 	return w.Index.Close()
 }

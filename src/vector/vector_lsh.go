@@ -5,7 +5,7 @@ import (
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/enum"
 	hash2 "VectorSphere/src/library/hash"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"fmt"
 	"math"
 	"math/rand"
@@ -130,7 +130,7 @@ func (db *VectorDB) BuildEnhancedLSHIndex(config *LSHConfig) error {
 	// 获取向量维度
 	vectorDimension := db.getVectorDimension()
 	if vectorDimension == 0 {
-		log.Warning("Cannot determine vector dimension, using default dimension 128")
+		logger.Warning("Cannot determine vector dimension, using default dimension 128")
 		vectorDimension = 128
 	}
 
@@ -211,14 +211,14 @@ func (db *VectorDB) BuildEnhancedLSHIndex(config *LSHConfig) error {
 	}
 	db.LshFamilies[lshFamily.ID] = lshFamily
 
-	log.Info("增强 LSH 索引构建完成，共 %d 个哈希表，使用LSH族：%s", config.NumTables, lshFamily.ID)
+	logger.Info("增强 LSH 索引构建完成，共 %d 个哈希表，使用LSH族：%s", config.NumTables, lshFamily.ID)
 	return nil
 }
 
 // generateLSHHashFunctionsWithFamily 使用LSH族生成哈希函数
 func (db *VectorDB) generateLSHHashFunctionsWithFamily(config *LSHConfig, lshFamily *LSHFamily) []LSHHashFunction {
 	if config == nil || lshFamily == nil {
-		log.Warning("LSH config or family is nil, using fallback generation")
+		logger.Warning("LSH config or family is nil, using fallback generation")
 		return db.generateLSHHashFunctions(config)
 	}
 
@@ -308,7 +308,7 @@ func (db *VectorDB) generateLSHHashFunctionsWithFamily(config *LSHConfig, lshFam
 		}
 
 	default:
-		log.Warning("Unsupported LSH family type: %d, using RandomProjection", config.HashFamilyType)
+		logger.Warning("Unsupported LSH family type: %d, using RandomProjection", config.HashFamilyType)
 		// 默认使用随机投影
 		for i := 0; i < config.NumHashFunctions; i++ {
 			projectionVector := make([]float64, vectorDimension)
@@ -333,7 +333,7 @@ func (db *VectorDB) generateLSHHashFunctionsWithFamily(config *LSHConfig, lshFam
 	lshFamily.UsageCount++
 	lshFamily.mu.Unlock()
 
-	log.Info("Generated %d LSH hash functions of type %d for dimension %d using family %s",
+	logger.Info("Generated %d LSH hash functions of type %d for dimension %d using family %s",
 		len(hashFunctions), config.HashFamilyType, vectorDimension, lshFamily.ID)
 
 	return hashFunctions
@@ -342,12 +342,12 @@ func (db *VectorDB) generateLSHHashFunctionsWithFamily(config *LSHConfig, lshFam
 // computeEnhancedLSHHash 计算增强LSH哈希值
 func (db *VectorDB) computeEnhancedLSHHash(vector []float64, hashFunctions []LSHHashFunction) uint64 {
 	if len(hashFunctions) == 0 {
-		log.Warning("No hash functions provided for LSH hash computation")
+		logger.Warning("No hash functions provided for LSH hash computation")
 		return 0
 	}
 
 	if len(vector) == 0 {
-		log.Warning("Empty vector provided for LSH hash computation")
+		logger.Warning("Empty vector provided for LSH hash computation")
 		return 0
 	}
 
@@ -355,7 +355,7 @@ func (db *VectorDB) computeEnhancedLSHHash(vector []float64, hashFunctions []LSH
 	var combinedHash uint64 = 0
 	for i, hashFunc := range hashFunctions {
 		if hashFunc == nil {
-			log.Warning("Null hash function at index %d, skipping", i)
+			logger.Warning("Null hash function at index %d, skipping", i)
 			continue
 		}
 
@@ -373,7 +373,7 @@ func (db *VectorDB) computeEnhancedLSHHash(vector []float64, hashFunctions []LSH
 
 	// 如果所有哈希函数都无效，返回向量的简单哈希
 	if combinedHash == 0 {
-		log.Warning("All hash functions failed, using fallback hash")
+		logger.Warning("All hash functions failed, using fallback hash")
 		combinedHash = db.computeFallbackHash(vector)
 	}
 
@@ -400,7 +400,7 @@ func (db *VectorDB) computeFallbackHash(vector []float64) uint64 {
 // generateLSHHashFunctions 生成LSH哈希函数
 func (db *VectorDB) generateLSHHashFunctions(config *LSHConfig) []LSHHashFunction {
 	if config == nil {
-		log.Warning("LSH config is nil, using default configuration")
+		logger.Warning("LSH config is nil, using default configuration")
 		config = &LSHConfig{
 			NumHashFunctions: 8,
 			HashFamilyType:   enum.LSHFamilyRandomProjection,
@@ -411,7 +411,7 @@ func (db *VectorDB) generateLSHHashFunctions(config *LSHConfig) []LSHHashFunctio
 	// 获取向量维度
 	vectorDimension := db.getVectorDimension()
 	if vectorDimension == 0 {
-		log.Warning("Cannot determine vector dimension, using default dimension 128")
+		logger.Warning("Cannot determine vector dimension, using default dimension 128")
 		vectorDimension = 128
 	}
 
@@ -500,7 +500,7 @@ func (db *VectorDB) generateLSHHashFunctions(config *LSHConfig) []LSHHashFunctio
 		}
 
 	default:
-		log.Warning("Unsupported LSH family type: %d, using RandomProjection", config.HashFamilyType)
+		logger.Warning("Unsupported LSH family type: %d, using RandomProjection", config.HashFamilyType)
 		// 默认使用随机投影
 		for i := 0; i < config.NumHashFunctions; i++ {
 			projectionVector := make([]float64, vectorDimension)
@@ -519,7 +519,7 @@ func (db *VectorDB) generateLSHHashFunctions(config *LSHConfig) []LSHHashFunctio
 		}
 	}
 
-	log.Info("Generated %d LSH hash functions of type %d for dimension %d",
+	logger.Info("Generated %d LSH hash functions of type %d for dimension %d",
 		len(hashFunctions), config.HashFamilyType, vectorDimension)
 
 	return hashFunctions
@@ -692,7 +692,7 @@ func (db *VectorDB) updateLSHStatistics(candidatesCount, resultsCount int, query
 	}
 
 	// 记录日志
-	log.Trace("LSH查询统计：候选数=%d, 结果数=%d, 查询时间=%v, 平均候选数=%.2f, 碰撞率=%.2f",
+	logger.Trace("LSH查询统计：候选数=%d, 结果数=%d, 查询时间=%v, 平均候选数=%.2f, 碰撞率=%.2f",
 		candidatesCount, resultsCount, queryTime, stats.AvgCandidates, stats.CollisionRate)
 
 	// 检查是否需要自适应调整
@@ -736,7 +736,7 @@ func (db *VectorDB) tuneAdaptiveLSH() {
 
 	// 如果找到更好的配置，记录下来（但不立即应用，避免频繁重建索引）
 	if bestConfig != nil && bestScore > db.AdaptiveLSH.OptimalParams.AdaptiveThreshold {
-		log.Info("发现更优LSH配置，评分：%.2f，哈希表数：%d，哈希函数数：%d",
+		logger.Info("发现更优LSH配置，评分：%.2f，哈希表数：%d，哈希函数数：%d",
 			bestScore, bestConfig.NumTables, bestConfig.NumHashFunctions)
 		db.AdaptiveLSH.OptimalParams = bestConfig
 	}
@@ -833,7 +833,7 @@ func (db *VectorDB) generateProbeHashes(baseHash uint64, probeRadius int) []uint
 		result = append(result, hash)
 	}
 
-	log.Trace("Generated %d probe hashes for base hash %d with radius %d",
+	logger.Trace("Generated %d probe hashes for base hash %d with radius %d",
 		len(result), baseHash, probeRadius)
 
 	return result

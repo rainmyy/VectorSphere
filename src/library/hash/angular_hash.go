@@ -2,7 +2,7 @@ package hash
 
 import (
 	"VectorSphere/src/library/enum"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 
 	"fmt"
 )
@@ -16,7 +16,7 @@ type AngularHash struct {
 // Hash 计算角度哈希值
 func (ah *AngularHash) Hash(vector []float64) (uint64, error) {
 	if len(vector) != len(ah.RandomVector) {
-		log.Warning("Vector dimension mismatch: expected %d, got %d", len(ah.RandomVector), len(vector))
+		logger.Warning("Vector dimension mismatch: expected %d, got %d", len(ah.RandomVector), len(vector))
 		return 0, fmt.Errorf("vector dimension mismatch: expected %d, got %d", len(ah.RandomVector), len(vector))
 	}
 

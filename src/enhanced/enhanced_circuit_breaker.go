@@ -1,7 +1,7 @@
 package enhanced
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -100,7 +100,7 @@ func (cb *CircuitBreaker) allowRequest() bool {
 			cb.lastStateChange = now
 			cb.metrics.StateChanges++
 			cb.metrics.CurrentState = "half_open"
-			log.Info("Circuit breaker %s transitioned to half-open", cb.name)
+			logger.Info("Circuit breaker %s transitioned to half-open", cb.name)
 			return true
 		}
 		return false
@@ -133,7 +133,7 @@ func (cb *CircuitBreaker) recordSuccess() {
 			cb.lastStateChange = time.Now()
 			cb.metrics.StateChanges++
 			cb.metrics.CurrentState = "closed"
-			log.Info("Circuit breaker %s transitioned to closed", cb.name)
+			logger.Info("Circuit breaker %s transitioned to closed", cb.name)
 		}
 	}
 }
@@ -160,13 +160,13 @@ func (cb *CircuitBreaker) recordFailure() {
 			cb.lastStateChange = time.Now()
 			cb.metrics.StateChanges++
 			cb.metrics.CurrentState = "open"
-			log.Warning("Circuit breaker %s opened due to high failure rate: %.2f", cb.name, failureRate)
+			logger.Warning("Circuit breaker %s opened due to high failure rate: %.2f", cb.name, failureRate)
 		} else if cb.state == HalfOpen {
 			cb.state = Open
 			cb.lastStateChange = time.Now()
 			cb.metrics.StateChanges++
 			cb.metrics.CurrentState = "open"
-			log.Warning("Circuit breaker %s opened from half-open due to failure", cb.name)
+			logger.Warning("Circuit breaker %s opened from half-open due to failure", cb.name)
 		}
 	}
 }

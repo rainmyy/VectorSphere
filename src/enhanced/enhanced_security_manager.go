@@ -1,7 +1,7 @@
 package enhanced
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -351,18 +351,18 @@ func NewEnhancedSecurityManager(client *clientv3.Client, config *SecurityConfig)
 
 	// 初始化加密密钥
 	if err := sm.initializeEncryption(); err != nil {
-		log.Error("Failed to initialize encryption: %v", err)
+		logger.Error("Failed to initialize encryption: %v", err)
 	}
 
 	// 初始化TLS配置
 	if err := sm.initializeTLS(); err != nil {
-		log.Error("Failed to initialize TLS: %v", err)
+		logger.Error("Failed to initialize TLS: %v", err)
 	}
 
 	// 创建默认策略
 	sm.createDefaultPolicy()
 
-	log.Info("Enhanced security manager created")
+	logger.Info("Enhanced security manager created")
 	return sm
 }
 
@@ -372,17 +372,17 @@ func (sm *EnhancedSecurityManager) Start() error {
 		return fmt.Errorf("security manager is already running")
 	}
 
-	log.Info("Starting enhanced security manager")
+	logger.Info("Starting enhanced security manager")
 
 	// 加载用户和角色
 	if err := sm.loadUsersAndRoles(); err != nil {
-		log.Error("Failed to load users and roles: %v", err)
+		logger.Error("Failed to load users and roles: %v", err)
 		return err
 	}
 
 	// 加载安全策略
 	if err := sm.loadPolicies(); err != nil {
-		log.Error("Failed to load security policies: %v", err)
+		logger.Error("Failed to load security policies: %v", err)
 		return err
 	}
 
@@ -398,7 +398,7 @@ func (sm *EnhancedSecurityManager) Start() error {
 	go sm.sessionMonitor()
 
 	sm.isRunning = true
-	log.Info("Enhanced security manager started successfully")
+	logger.Info("Enhanced security manager started successfully")
 	return nil
 }
 
@@ -408,7 +408,7 @@ func (sm *EnhancedSecurityManager) Stop() error {
 		return fmt.Errorf("security manager is not running")
 	}
 
-	log.Info("Stopping enhanced security manager")
+	logger.Info("Stopping enhanced security manager")
 
 	// 停止定时器
 	if sm.auditTicker != nil {
@@ -425,7 +425,7 @@ func (sm *EnhancedSecurityManager) Stop() error {
 	sm.flushAuditLogs()
 
 	sm.isRunning = false
-	log.Info("Enhanced security manager stopped")
+	logger.Info("Enhanced security manager stopped")
 	return nil
 }
 
@@ -485,7 +485,7 @@ func (sm *EnhancedSecurityManager) CreateUser(user *User) error {
 		Message: fmt.Sprintf("User %s created", user.Username),
 	})
 
-	log.Info("User created: %s (%s)", user.Username, user.ID)
+	logger.Info("User created: %s (%s)", user.Username, user.ID)
 	return nil
 }
 
@@ -526,7 +526,7 @@ func (sm *EnhancedSecurityManager) UpdateUser(user *User) error {
 		Message: fmt.Sprintf("User %s updated", user.Username),
 	})
 
-	log.Info("User updated: %s (%s)", user.Username, user.ID)
+	logger.Info("User updated: %s (%s)", user.Username, user.ID)
 	return nil
 }
 
@@ -569,7 +569,7 @@ func (sm *EnhancedSecurityManager) DeleteUser(userID string) error {
 		Message: fmt.Sprintf("User %s deleted", user.Username),
 	})
 
-	log.Info("User deleted: %s (%s)", user.Username, userID)
+	logger.Info("User deleted: %s (%s)", user.Username, userID)
 	return nil
 }
 
@@ -651,7 +651,7 @@ func (sm *EnhancedSecurityManager) SetUserPassword(userID, password string) erro
 		Message:   "User password changed",
 	})
 
-	log.Info("Password changed for user: %s", userID)
+	logger.Info("Password changed for user: %s", userID)
 	return nil
 }
 
@@ -708,7 +708,7 @@ func (sm *EnhancedSecurityManager) CreateRole(role *Role) error {
 		Message: fmt.Sprintf("Role %s created", role.Name),
 	})
 
-	log.Info("Role created: %s (%s)", role.Name, role.ID)
+	logger.Info("Role created: %s (%s)", role.Name, role.ID)
 	return nil
 }
 
@@ -848,7 +848,7 @@ func (sm *EnhancedSecurityManager) Authenticate(username, password, ipAddress, u
 		Message: fmt.Sprintf("User %s logged in successfully", username),
 	})
 
-	log.Info("User authenticated: %s (%s)", username, user.ID)
+	logger.Info("User authenticated: %s (%s)", username, user.ID)
 	return session, nil
 }
 
@@ -997,7 +997,7 @@ func (sm *EnhancedSecurityManager) initializeEncryption() error {
 	sm.encryptionKey = key
 	sm.config.EncryptionKey = key
 
-	log.Info("Encryption key generated")
+	logger.Info("Encryption key generated")
 	return nil
 }
 
@@ -1050,7 +1050,7 @@ func (sm *EnhancedSecurityManager) initializeTLS() error {
 	sm.tlsConfig = tlsConfig
 	sm.config.TLSConfig = tlsConfig
 
-	log.Info("TLS configuration initialized")
+	logger.Info("TLS configuration initialized")
 	return nil
 }
 
@@ -1182,7 +1182,7 @@ func (sm *EnhancedSecurityManager) createDefaultPolicy() {
 	}
 
 	sm.policies[defaultPolicy.ID] = defaultPolicy
-	log.Info("Default security policy created")
+	logger.Info("Default security policy created")
 }
 
 // generateID 生成唯一ID
@@ -1348,7 +1348,7 @@ func (sm *EnhancedSecurityManager) terminateSession(sessionID string) error {
 	key := fmt.Sprintf("%s/sessions/%s", sm.basePrefix, sessionID)
 	_, err := sm.client.Delete(context.Background(), key)
 	if err != nil {
-		log.Error("Failed to delete session from etcd: %v", err)
+		logger.Error("Failed to delete session from etcd: %v", err)
 	}
 
 	// 记录审计事件
@@ -1432,11 +1432,11 @@ func (sm *EnhancedSecurityManager) logAuditEvent(event *AuditEvent) {
 	// 异步保存到etcd
 	go func() {
 		if err := sm.saveAuditEvent(event); err != nil {
-			log.Error("Failed to save audit event: %v", err)
+			logger.Error("Failed to save audit event: %v", err)
 		}
 	}()
 
-	log.Debug("Audit event logged: %s - %s", event.Type.String(), event.Message)
+	logger.Debug("Audit event logged: %s - %s", event.Type.String(), event.Message)
 }
 
 // 数据持久化
@@ -1513,19 +1513,19 @@ func (sm *EnhancedSecurityManager) loadUsersAndRoles() error {
 		// 解密数据
 		encryptedData, err := base64.StdEncoding.DecodeString(string(kv.Value))
 		if err != nil {
-			log.Error("Failed to decode user data: %v", err)
+			logger.Error("Failed to decode user data: %v", err)
 			continue
 		}
 
 		data, err := sm.Decrypt(encryptedData)
 		if err != nil {
-			log.Error("Failed to decrypt user data: %v", err)
+			logger.Error("Failed to decrypt user data: %v", err)
 			continue
 		}
 
 		var user User
 		if err := json.Unmarshal(data, &user); err != nil {
-			log.Error("Failed to unmarshal user: %v", err)
+			logger.Error("Failed to unmarshal user: %v", err)
 			continue
 		}
 
@@ -1541,14 +1541,14 @@ func (sm *EnhancedSecurityManager) loadUsersAndRoles() error {
 	for _, kv := range roleResp.Kvs {
 		var role Role
 		if err := json.Unmarshal(kv.Value, &role); err != nil {
-			log.Error("Failed to unmarshal role: %v", err)
+			logger.Error("Failed to unmarshal role: %v", err)
 			continue
 		}
 
 		sm.roles[role.ID] = &role
 	}
 
-	log.Info("Loaded %d users and %d roles", len(sm.users), len(sm.roles))
+	logger.Info("Loaded %d users and %d roles", len(sm.users), len(sm.roles))
 	return nil
 }
 
@@ -1562,14 +1562,14 @@ func (sm *EnhancedSecurityManager) loadPolicies() error {
 	for _, kv := range resp.Kvs {
 		var policy SecurityPolicy
 		if err := json.Unmarshal(kv.Value, &policy); err != nil {
-			log.Error("Failed to unmarshal policy: %v", err)
+			logger.Error("Failed to unmarshal policy: %v", err)
 			continue
 		}
 
 		sm.policies[policy.ID] = &policy
 	}
 
-	log.Info("Loaded %d security policies", len(sm.policies))
+	logger.Info("Loaded %d security policies", len(sm.policies))
 	return nil
 }
 
@@ -1577,12 +1577,12 @@ func (sm *EnhancedSecurityManager) loadPolicies() error {
 
 // auditLogger 审计日志记录器
 func (sm *EnhancedSecurityManager) auditLogger() {
-	log.Info("Starting audit logger")
+	logger.Info("Starting audit logger")
 
 	for {
 		select {
 		case <-sm.ctx.Done():
-			log.Info("Audit logger stopped")
+			logger.Info("Audit logger stopped")
 			return
 		case <-sm.auditTicker.C:
 			sm.flushAuditLogs()
@@ -1605,16 +1605,16 @@ func (sm *EnhancedSecurityManager) flushAuditLogs() {
 	// 批量保存审计事件
 	for _, event := range events {
 		if err := sm.saveAuditEvent(event); err != nil {
-			log.Error("Failed to save audit event %s: %v", event.ID, err)
+			logger.Error("Failed to save audit event %s: %v", event.ID, err)
 		}
 	}
 
-	log.Debug("Flushed %d audit events", len(events))
+	logger.Debug("Flushed %d audit events", len(events))
 }
 
 // sessionMonitor 会话监控
 func (sm *EnhancedSecurityManager) sessionMonitor() {
-	log.Info("Starting session monitor")
+	logger.Info("Starting session monitor")
 
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
@@ -1622,7 +1622,7 @@ func (sm *EnhancedSecurityManager) sessionMonitor() {
 	for {
 		select {
 		case <-sm.ctx.Done():
-			log.Info("Session monitor stopped")
+			logger.Info("Session monitor stopped")
 			return
 		case <-ticker.C:
 			sm.cleanupExpiredSessions()
@@ -1648,18 +1648,18 @@ func (sm *EnhancedSecurityManager) cleanupExpiredSessions() {
 	}
 
 	if len(expiredSessions) > 0 {
-		log.Debug("Cleaned up %d expired sessions", len(expiredSessions))
+		logger.Debug("Cleaned up %d expired sessions", len(expiredSessions))
 	}
 }
 
 // cleaner 清理器
 func (sm *EnhancedSecurityManager) cleaner() {
-	log.Info("Starting security manager cleaner")
+	logger.Info("Starting security manager cleaner")
 
 	for {
 		select {
 		case <-sm.ctx.Done():
-			log.Info("Security manager cleaner stopped")
+			logger.Info("Security manager cleaner stopped")
 			return
 		case <-sm.cleanupTicker.C:
 			sm.cleanup()
@@ -1688,7 +1688,7 @@ func (sm *EnhancedSecurityManager) cleanup() {
 		sm.auditMu.Unlock()
 	}
 
-	log.Debug("Security manager cleanup completed")
+	logger.Debug("Security manager cleanup completed")
 }
 
 // GetTLSConfig 获取TLS配置

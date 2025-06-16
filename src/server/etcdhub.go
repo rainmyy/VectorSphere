@@ -1,7 +1,7 @@
 package server
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"context"
 	"encoding/json"
 	"errors"
@@ -171,7 +171,7 @@ func (etcd *EtcdServiceHub) monitorServiceHealth(ctx context.Context, serviceNam
 			return
 		case <-ticker.C:
 			if err := etcd.performHealthCheck(serviceName, endpoint); err != nil {
-				log.Warning("Health check failed for service %s (%s:%d): %v",
+				logger.Warning("Health check failed for service %s (%s:%d): %v",
 					serviceName, endpoint.Ip, endpoint.Port, err)
 				// 可以选择更新服务状态为不健康
 				etcd.updateServiceStatus(serviceName, endpoint, "unhealthy")
@@ -249,16 +249,16 @@ func (etcd *EtcdServiceHub) keepAliveWithRetry(ctx context.Context, lease etcdv3
 		go func() {
 			for ka := range keepaliveResp {
 				if ka == nil {
-					log.Warning("Lease %d expired for service %s", leaseID, serviceName)
+					logger.Warning("Lease %d expired for service %s", leaseID, serviceName)
 					return
 				}
-				log.Info("Heartbeat success for service %s, TTL: %d", serviceName, ka.TTL)
+				logger.Info("Heartbeat success for service %s, TTL: %d", serviceName, ka.TTL)
 			}
 		}()
 
 		return nil
 	}, backoff.WithContext(bo, ctx), func(err error, duration time.Duration) {
-		log.Info("Heartbeat failed for service %s, retrying in %v: %v", serviceName, duration, err)
+		logger.Info("Heartbeat failed for service %s, retrying in %v: %v", serviceName, duration, err)
 	})
 }
 
@@ -277,7 +277,7 @@ func (etcd *EtcdServiceHub) StopHeartbeat(serviceName string, endpoint *EndPoint
 		defer cancel()
 		_, err := etcd.client.Revoke(ctx, leaseID.(etcdv3.LeaseID))
 		if err != nil {
-			log.Error("Failed to revoke lease for service %s: %v", serviceName, err)
+			logger.Error("Failed to revoke lease for service %s: %v", serviceName, err)
 		}
 		etcd.leaseMap.Delete(key)
 	}
@@ -304,7 +304,7 @@ func (etcd *EtcdServiceHub) WatchServiceChanges(ctx context.Context, serviceName
 
 		for watchResp := range watchChan {
 			if watchResp.Err() != nil {
-				log.Error("Watch error for service %s: %v", serviceName, watchResp.Err())
+				logger.Error("Watch error for service %s: %v", serviceName, watchResp.Err())
 				continue
 			}
 

@@ -3,7 +3,7 @@ package optimization
 import (
 	"VectorSphere/src/enhanced"
 	"VectorSphere/src/library/entity"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/vector"
 	"context"
 	"encoding/binary"
@@ -200,7 +200,7 @@ func (hto *HighThroughputOptimizer) Initialize() error {
 	hto.performanceMonitor.Start()
 
 	hto.isInitialized = true
-	log.Info("高吞吐量优化器初始化完成")
+	logger.Info("高吞吐量优化器初始化完成")
 	return nil
 }
 
@@ -443,7 +443,7 @@ func (hto *HighThroughputOptimizer) processBatches(ctx context.Context, vectors 
 				if completed%5 == 0 || completed == totalBatches {
 					progress := float64(completed) / float64(totalBatches) * 100
 					elapsed := time.Since(startTime)
-					log.Trace("批处理进度: %.1f%% (%d/%d), 耗时: %v",
+					logger.Trace("批处理进度: %.1f%% (%d/%d), 耗时: %v",
 						progress, completed, totalBatches, elapsed)
 				}
 			case <-ctx.Done():
@@ -518,7 +518,7 @@ func (hto *HighThroughputOptimizer) processBatches(ctx context.Context, vectors 
 	// 记录性能指标
 	elapsed := time.Since(startTime)
 	hto.recordBatchPerformance(queryCount, elapsed)
-	log.Debug("批处理完成: %d个查询, %d个批次, 耗时: %v, 平均每查询: %.2fms",
+	logger.Debug("批处理完成: %d个查询, %d个批次, 耗时: %v, 平均每查询: %.2fms",
 		queryCount, numBatches, elapsed, float64(elapsed.Milliseconds())/float64(queryCount))
 
 	return allResults, nil
@@ -571,7 +571,7 @@ func (hto *HighThroughputOptimizer) updateCircuitBreaker(success bool) {
 		// 如果失败率超过阈值，切换到打开状态
 		if failureRate >= hto.circuitBreaker.failureThreshold && hto.circuitBreaker.totalCount >= 10 {
 			hto.circuitBreaker.state = 2 // 打开
-			log.Warning("熔断器已打开，失败率: %.2f%%", failureRate*100)
+			logger.Warning("熔断器已打开，失败率: %.2f%%", failureRate*100)
 		}
 	case 1: // 半开状态
 		if success {
@@ -579,11 +579,11 @@ func (hto *HighThroughputOptimizer) updateCircuitBreaker(success bool) {
 			hto.circuitBreaker.state = 0 // 关闭
 			hto.circuitBreaker.failureCount = 0
 			hto.circuitBreaker.totalCount = 0
-			log.Info("熔断器已关闭")
+			logger.Info("熔断器已关闭")
 		} else {
 			// 失败请求，切换回打开状态
 			hto.circuitBreaker.state = 2 // 打开
-			log.Warning("熔断器重新打开")
+			logger.Warning("熔断器重新打开")
 		}
 	}
 }
@@ -616,7 +616,7 @@ func (hto *HighThroughputOptimizer) checkResultCache(key string) []entity.Result
 		extendedExpiration := time.Now().Add(hto.resultCache.ttl * 2)
 		if extendedExpiration.After(hto.resultCache.expiration[key]) {
 			hto.resultCache.expiration[key] = extendedExpiration
-			log.Trace("热点缓存延期: 键=%s, 频率=%d", key, hto.resultCache.frequency[key])
+			logger.Trace("热点缓存延期: 键=%s, 频率=%d", key, hto.resultCache.frequency[key])
 		}
 	}
 	hto.resultCache.mu.Unlock()
@@ -708,10 +708,10 @@ func (hto *HighThroughputOptimizer) evictOldestCache() {
 		delete(hto.resultCache.cache, key)
 		delete(hto.resultCache.expiration, key)
 		delete(hto.resultCache.frequency, key)
-		log.Trace("缓存淘汰: 键=%s, 评分=%.2f", key, scores[i].score)
+		logger.Trace("缓存淘汰: 键=%s, 评分=%.2f", key, scores[i].score)
 	}
 
-	log.Debug("缓存淘汰完成: 淘汰%d项, 剩余%d项", evictCount, len(hto.resultCache.cache))
+	logger.Debug("缓存淘汰完成: 淘汰%d项, 剩余%d项", evictCount, len(hto.resultCache.cache))
 }
 
 // generateCacheKey 生成缓存键
@@ -803,14 +803,14 @@ func (hto *HighThroughputOptimizer) optimizeBatchSize() {
 		newBatchSize := int(float64(hto.config.BatchSize) / hto.config.BatchSizeAdjustFactor)
 		if newBatchSize >= hto.config.MinBatchSize {
 			hto.config.BatchSize = newBatchSize
-			log.Info("批处理大小已调整为 %d", hto.config.BatchSize)
+			logger.Info("批处理大小已调整为 %d", hto.config.BatchSize)
 		}
 	} else if avgBatchSize > float64(hto.config.BatchSize)*0.9 {
 		// 如果平均批处理大小接近当前批处理大小，增大批处理大小
 		newBatchSize := int(float64(hto.config.BatchSize) * hto.config.BatchSizeAdjustFactor)
 		if newBatchSize <= hto.config.MaxBatchSize {
 			hto.config.BatchSize = newBatchSize
-			log.Info("批处理大小已调整为 %d", hto.config.BatchSize)
+			logger.Info("批处理大小已调整为 %d", hto.config.BatchSize)
 		}
 	}
 
@@ -892,7 +892,7 @@ func (hto *HighThroughputOptimizer) Close() error {
 		select {
 		case <-ctx.Done():
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				log.Warning("关闭工作池超时")
+				logger.Warning("关闭工作池超时")
 			}
 		}
 	}
@@ -903,7 +903,7 @@ func (hto *HighThroughputOptimizer) Close() error {
 	}
 
 	hto.isInitialized = false
-	log.Info("高吞吐量优化器已关闭")
+	logger.Info("高吞吐量优化器已关闭")
 	return nil
 }
 
@@ -973,7 +973,7 @@ func calculateOptimalBatchSize(queryCount, vectorDim int, enableGPU bool) int {
 		baseBatchSize = 1024 // 最大批处理大小
 	}
 
-	log.Trace("计算最优批处理大小: %d (查询数=%d, 维度=%d, GPU=%v, CPU核心=%d, 可用内存=%.2fGB)",
+	logger.Trace("计算最优批处理大小: %d (查询数=%d, 维度=%d, GPU=%v, CPU核心=%d, 可用内存=%.2fGB)",
 		baseBatchSize, queryCount, vectorDim, enableGPU, cpuCores, availableMemoryGB)
 
 	return baseBatchSize

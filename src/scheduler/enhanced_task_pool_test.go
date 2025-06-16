@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 )
 
 // 用于测试的简单任务实现
@@ -542,7 +542,7 @@ func ExampleEnhancedTaskPool() {
 
 	// 获取指标
 	metrics := pool.GetMetrics()
-	log.Info("任务执行次数: %d", metrics.TotalTasksCompleted)
+	logger.Info("任务执行次数: %d", metrics.TotalTasksCompleted)
 
 	// 停止任务池
 	pool.Stop()

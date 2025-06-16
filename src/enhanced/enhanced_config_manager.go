@@ -1,7 +1,7 @@
 package enhanced
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -166,7 +166,7 @@ func NewEnhancedConfigManager(client *clientv3.Client, config *EnhancedConfigMan
 
 // SetConfig 设置配置项
 func (ecm *EnhancedConfigManager) SetConfig(ctx context.Context, key string, value interface{}, options ...ConfigOption) error {
-	log.Info("Setting config: %s", key)
+	logger.Info("Setting config: %s", key)
 
 	// 应用选项
 	item := &ConfigItem{
@@ -249,13 +249,13 @@ func (ecm *EnhancedConfigManager) SetConfig(ctx context.Context, key string, val
 		go ecm.auditLog(event)
 	}
 
-	log.Info("Config set successfully: %s", key)
+	logger.Info("Config set successfully: %s", key)
 	return nil
 }
 
 // GetConfig 获取配置项
 func (ecm *EnhancedConfigManager) GetConfig(ctx context.Context, key string, options ...GetConfigOption) (interface{}, error) {
-	log.Debug("Getting config: %s", key)
+	logger.Debug("Getting config: %s", key)
 
 	// 应用获取选项
 	getOpts := &GetConfigOptions{
@@ -306,7 +306,7 @@ func (ecm *EnhancedConfigManager) GetConfig(ctx context.Context, key string, opt
 
 // DeleteConfig 删除配置项
 func (ecm *EnhancedConfigManager) DeleteConfig(ctx context.Context, key string, options ...ConfigOption) error {
-	log.Info("Deleting config: %s", key)
+	logger.Info("Deleting config: %s", key)
 
 	// 构建配置键
 	configKey := ecm.buildConfigKey(key, ecm.currentEnv, ecm.currentNS)
@@ -346,13 +346,13 @@ func (ecm *EnhancedConfigManager) DeleteConfig(ctx context.Context, key string, 
 		go ecm.auditLog(event)
 	}
 
-	log.Info("Config deleted successfully: %s", key)
+	logger.Info("Config deleted successfully: %s", key)
 	return nil
 }
 
 // SetConfigGroup 设置配置组
 func (ecm *EnhancedConfigManager) SetConfigGroup(ctx context.Context, group *ConfigGroup) error {
-	log.Info("Setting config group: %s", group.Name)
+	logger.Info("Setting config group: %s", group.Name)
 
 	// 处理继承
 	if err := ecm.processInheritance(ctx, group); err != nil {
@@ -395,17 +395,17 @@ func (ecm *EnhancedConfigManager) SetConfigGroup(ctx context.Context, group *Con
 		item.Namespace = group.Namespace
 		item.Version = group.Version.Version
 		if err := ecm.SetConfig(ctx, item.Key, item.Value, WithEnvironment(item.Environment), WithNamespace(item.Namespace)); err != nil {
-			log.Warning("设置配置项失败 %s: %v", item.Key, err)
+			logger.Warning("设置配置项失败 %s: %v", item.Key, err)
 		}
 	}
 
-	log.Info("Config group set successfully: %s", group.Name)
+	logger.Info("Config group set successfully: %s", group.Name)
 	return nil
 }
 
 // GetConfigGroup 获取配置组
 func (ecm *EnhancedConfigManager) GetConfigGroup(ctx context.Context, name, environment, namespace string) (*ConfigGroup, error) {
-	log.Debug("Getting config group: %s", name)
+	logger.Debug("Getting config group: %s", name)
 
 	groupKey := ecm.buildGroupKey(name, environment, namespace)
 
@@ -438,7 +438,7 @@ func (ecm *EnhancedConfigManager) GetConfigGroup(ctx context.Context, name, envi
 
 // RollbackConfig 回滚配置
 func (ecm *EnhancedConfigManager) RollbackConfig(ctx context.Context, key, targetVersion string) error {
-	log.Info("Rolling back config %s to version %s", key, targetVersion)
+	logger.Info("Rolling back config %s to version %s", key, targetVersion)
 
 	// 获取版本历史
 	ecm.mu.RLock()
@@ -507,14 +507,14 @@ func (ecm *EnhancedConfigManager) RollbackConfig(ctx context.Context, key, targe
 		go ecm.auditLog(event)
 	}
 
-	log.Info("Config rolled back successfully: %s to version %s", key, targetVersion)
+	logger.Info("Config rolled back successfully: %s to version %s", key, targetVersion)
 	return nil
 }
 
 // WatchConfig 监听配置变更
 func (ecm *EnhancedConfigManager) WatchConfig(pattern string, callback func(*ConfigChangeEvent) error, options ...WatchOption) (string, error) {
 	watcherID := ecm.generateWatcherID()
-	log.Info("Creating config watcher: %s for pattern: %s", watcherID, pattern)
+	logger.Info("Creating config watcher: %s for pattern: %s", watcherID, pattern)
 
 	watcher := &ConfigWatcher{
 		ID:          watcherID,
@@ -545,13 +545,13 @@ func (ecm *EnhancedConfigManager) WatchConfig(pattern string, callback func(*Con
 	// 启动监听协程
 	go ecm.runWatcher(watcherID, changeCh)
 
-	log.Info("Config watcher created successfully: %s", watcherID)
+	logger.Info("Config watcher created successfully: %s", watcherID)
 	return watcherID, nil
 }
 
 // UnwatchConfig 取消配置监听
 func (ecm *EnhancedConfigManager) UnwatchConfig(watcherID string) error {
-	log.Info("Removing config watcher: %s", watcherID)
+	logger.Info("Removing config watcher: %s", watcherID)
 
 	ecm.watchersMu.Lock()
 	delete(ecm.watchers, watcherID)
@@ -564,7 +564,7 @@ func (ecm *EnhancedConfigManager) UnwatchConfig(watcherID string) error {
 	}
 	ecm.mu.Unlock()
 
-	log.Info("Config watcher removed successfully: %s", watcherID)
+	logger.Info("Config watcher removed successfully: %s", watcherID)
 	return nil
 }
 
@@ -840,13 +840,13 @@ func (ecm *EnhancedConfigManager) createBackup(ctx context.Context, key string, 
 	backupKey := ecm.buildBackupKey(key, item.Version)
 	itemBytes, err := json.Marshal(item)
 	if err != nil {
-		log.Error("序列化备份配置失败: %v", err)
+		logger.Error("序列化备份配置失败: %v", err)
 		return
 	}
 
 	_, err = ecm.client.Put(ctx, backupKey, string(itemBytes))
 	if err != nil {
-		log.Error("创建配置备份失败: %v", err)
+		logger.Error("创建配置备份失败: %v", err)
 	}
 }
 
@@ -875,7 +875,7 @@ func (ecm *EnhancedConfigManager) processInheritance(ctx context.Context, group 
 	for _, inheritName := range group.Inherits {
 		inheritGroup, err := ecm.GetConfigGroup(ctx, inheritName, group.Environment, group.Namespace)
 		if err != nil {
-			log.Warning("获取继承配置组失败 %s: %v", inheritName, err)
+			logger.Warning("获取继承配置组失败 %s: %v", inheritName, err)
 			continue
 		}
 
@@ -921,9 +921,9 @@ func (ecm *EnhancedConfigManager) notifyWatchers(event *ConfigChangeEvent) {
 	for watcherID, ch := range ecm.changeListeners {
 		select {
 		case ch <- event:
-			log.Debug("Sent config change event to watcher %s", watcherID)
+			logger.Debug("Sent config change event to watcher %s", watcherID)
 		default:
-			log.Warning("Failed to send config change event to watcher %s (channel full)", watcherID)
+			logger.Warning("Failed to send config change event to watcher %s (channel full)", watcherID)
 		}
 	}
 }
@@ -961,7 +961,7 @@ func (ecm *EnhancedConfigManager) runWatcher(watcherID string, changeCh chan *Co
 
 			// 调用回调函数
 			if err := watcher.Callback(event); err != nil {
-				log.Error("Config watcher callback failed for %s: %v", watcherID, err)
+				logger.Error("Config watcher callback failed for %s: %v", watcherID, err)
 			}
 
 		case <-ecm.ctx.Done():
@@ -992,7 +992,7 @@ func (ecm *EnhancedConfigManager) matchPattern(key, pattern string) bool {
 
 // startHotReload 启动热重载
 func (ecm *EnhancedConfigManager) startHotReload() {
-	log.Info("Starting config hot reload watcher")
+	logger.Info("Starting config hot reload watcher")
 
 	watchCh := ecm.client.Watch(ecm.ctx, ecm.basePrefix, clientv3.WithPrefix())
 
@@ -1003,7 +1003,7 @@ func (ecm *EnhancedConfigManager) startHotReload() {
 				ecm.handleEtcdEvent(event)
 			}
 		case <-ecm.ctx.Done():
-			log.Info("Config hot reload watcher stopped")
+			logger.Info("Config hot reload watcher stopped")
 			return
 		}
 	}
@@ -1030,7 +1030,7 @@ func (ecm *EnhancedConfigManager) handleEtcdEvent(event *clientv3.Event) {
 		// 配置更新或创建
 		var item ConfigItem
 		if err := json.Unmarshal(event.Kv.Value, &item); err != nil {
-			log.Error("反序列化配置项失败: %v", err)
+			logger.Error("反序列化配置项失败: %v", err)
 			return
 		}
 
@@ -1077,7 +1077,7 @@ func (ecm *EnhancedConfigManager) extractConfigKey(fullKey string) string {
 
 // auditLog 审计日志
 func (ecm *EnhancedConfigManager) auditLog(event *ConfigChangeEvent) {
-	log.Info("Config audit: type=%s, key=%s, env=%s, ns=%s, author=%s, time=%s",
+	logger.Info("Config audit: type=%s, key=%s, env=%s, ns=%s, author=%s, time=%s",
 		event.Type, event.Key, event.Environment, event.Namespace, event.Author, event.Timestamp.Format(time.RFC3339))
 
 	// 这里可以集成更复杂的审计系统
@@ -1086,7 +1086,7 @@ func (ecm *EnhancedConfigManager) auditLog(event *ConfigChangeEvent) {
 
 // Close 关闭配置管理器
 func (ecm *EnhancedConfigManager) Close() error {
-	log.Info("Closing enhanced config manager")
+	logger.Info("Closing enhanced config manager")
 
 	ecm.cancel()
 
@@ -1111,7 +1111,7 @@ func (ecm *EnhancedConfigManager) Close() error {
 // InitNamespace 初始化配置命名空间
 // 创建命名空间的基础结构和默认配置
 func (ecm *EnhancedConfigManager) InitNamespace(ctx context.Context, namespace string, environment string) error {
-	log.Info("Initializing config namespace: %s, environment: %s", namespace, environment)
+	logger.Info("Initializing config namespace: %s, environment: %s", namespace, environment)
 
 	// 设置当前环境和命名空间
 	ecm.currentNS = namespace
@@ -1126,7 +1126,7 @@ func (ecm *EnhancedConfigManager) InitNamespace(ctx context.Context, namespace s
 
 	// 如果命名空间已存在且有配置项，则不需要初始化
 	if len(resp.Kvs) > 0 {
-		log.Info("Namespace %s already exists with %d config items", namespace, len(resp.Kvs))
+		logger.Info("Namespace %s already exists with %d config items", namespace, len(resp.Kvs))
 		return nil
 	}
 
@@ -1227,6 +1227,6 @@ func (ecm *EnhancedConfigManager) InitNamespace(ctx context.Context, namespace s
 		return fmt.Errorf("failed to store environment metadata: %v", err)
 	}
 
-	log.Info("Namespace %s initialized successfully with environment %s", namespace, environment)
+	logger.Info("Namespace %s initialized successfully with environment %s", namespace, environment)
 	return nil
 }

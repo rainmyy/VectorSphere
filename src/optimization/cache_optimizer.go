@@ -1,7 +1,7 @@
 package optimization
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/vector"
 	"fmt"
 	"sync"
@@ -184,7 +184,7 @@ func (co *CacheOptimizer) Optimize() error {
 	}
 
 	co.lastOptimize = time.Now()
-	log.Info("开始优化缓存...")
+	logger.Info("开始优化缓存...")
 
 	// 获取缓存统计信息
 	stats := co.multiLevelCache.GetStats()
@@ -194,29 +194,29 @@ func (co *CacheOptimizer) Optimize() error {
 	l2HitRate := float64(stats.L2Hits) / float64(stats.TotalQueries)
 	l3HitRate := float64(stats.L3Hits) / float64(stats.TotalQueries)
 
-	log.Info("缓存命中率: L1=%.2f%%, L2=%.2f%%, L3=%.2f%%",
+	logger.Info("缓存命中率: L1=%.2f%%, L2=%.2f%%, L3=%.2f%%",
 		l1HitRate*100, l2HitRate*100, l3HitRate*100)
 
 	// 根据命中率动态调整缓存大小
 	if l1HitRate < 0.5 && l2HitRate > 0.7 {
 		// L1命中率低但L2命中率高，增加L1缓存大小
 		co.multiLevelCache.IncreaseL1Capacity(2000)
-		log.Info("增加L1缓存容量")
+		logger.Info("增加L1缓存容量")
 	} else if l1HitRate > 0.9 && l2HitRate < 0.3 {
 		// L1命中率高但L2命中率低，减小L1缓存大小，增加L2缓存大小
 		co.multiLevelCache.DecreaseL1Capacity(1000)
 		co.multiLevelCache.IncreaseL2Capacity(5000)
-		log.Info("减小L1缓存大小，增加L2缓存大小")
+		logger.Info("减小L1缓存大小，增加L2缓存大小")
 	} else if l2HitRate > 0.9 && l3HitRate < 0.3 {
 		// L2命中率高但L3命中率低，减小L2缓存大小，增加L3缓存大小
 		co.multiLevelCache.DecreaseL2Capacity(2000)
 		co.multiLevelCache.IncreaseL3Capacity(10000)
-		log.Info("减小L2缓存大小，增加L3缓存大小")
+		logger.Info("减小L2缓存大小，增加L3缓存大小")
 	} else if l1HitRate < 0.3 && l2HitRate < 0.3 && l3HitRate < 0.3 {
 		// 三级缓存命中率都低，清理缓存并重新预热
 		co.clearCache()
 		co.prewarmCache()
-		log.Info("清理并预热缓存")
+		logger.Info("清理并预热缓存")
 	}
 
 	// 执行缓存清理
@@ -225,7 +225,7 @@ func (co *CacheOptimizer) Optimize() error {
 	// 重置统计
 	co.resetStats()
 
-	log.Info("缓存优化完成")
+	logger.Info("缓存优化完成")
 	return nil
 }
 
@@ -243,7 +243,7 @@ func (co *CacheOptimizer) cleanupCache() {
 	// 清理超过容量限制的缓存项
 	co.multiLevelCache.EnforceCapacityLimits()
 
-	log.Info("缓存清理完成")
+	logger.Info("缓存清理完成")
 }
 
 // checkCache 检查缓存
@@ -356,13 +356,13 @@ func (co *CacheOptimizer) OptimizeForWorkload(avgQueriesPerSecond float64, avgRe
 	if avgQueriesPerSecond > 100 {
 		// 高查询率，增加L1缓存大小
 		co.multiLevelCache.IncreaseL1Capacity(5000)
-		log.Info("高查询率，增加L1缓存容量")
+		logger.Info("高查询率，增加L1缓存容量")
 	}
 
 	if avgResultSize > 1000 {
 		// 大结果集，增加L2和L3缓存大小
 		co.multiLevelCache.IncreaseL2Capacity(10000)
 		co.multiLevelCache.IncreaseL3Capacity(50000)
-		log.Info("大结果集，增加L2和L3缓存容量")
+		logger.Info("大结果集，增加L2和L3缓存容量")
 	}
 }

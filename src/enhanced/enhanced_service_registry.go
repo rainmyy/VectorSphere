@@ -1,7 +1,7 @@
 package enhanced
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -159,7 +159,7 @@ func NewEnhancedServiceRegistry(client *clientv3.Client, config *ServiceRegistry
 // RegisterService 注册服务
 func (esr *EnhancedServiceRegistry) RegisterService(ctx context.Context, metadata *ServiceMetadata) error {
 	serviceKey := esr.buildServiceKey(metadata)
-	log.Info("Registering enhanced service: %s", serviceKey)
+	logger.Info("Registering enhanced service: %s", serviceKey)
 
 	// 计算初始TTL
 	ttl := esr.calculateInitialTTL(metadata)
@@ -200,20 +200,20 @@ func (esr *EnhancedServiceRegistry) RegisterService(ctx context.Context, metadat
 	// 启动租约续期
 	go esr.leaseManager.StartKeepAlive(ctx, leaseID, serviceKey)
 
-	log.Info("Service registered successfully: %s with lease %d", serviceKey, leaseID)
+	logger.Info("Service registered successfully: %s with lease %d", serviceKey, leaseID)
 	return nil
 }
 
 // UnregisterService 注销服务
 func (esr *EnhancedServiceRegistry) UnregisterService(ctx context.Context, serviceKey string) error {
-	log.Info("Unregistering service: %s", serviceKey)
+	logger.Info("Unregistering service: %s", serviceKey)
 
 	// 获取旧的元数据
 	oldMetadata := esr.getFromCache(serviceKey)
 
 	// 撤销租约
 	if err := esr.leaseManager.RevokeLease(ctx, serviceKey); err != nil {
-		log.Warning("撤销租约失败: %v", err)
+		logger.Warning("撤销租约失败: %v", err)
 	}
 
 	// 从etcd删除
@@ -237,14 +237,14 @@ func (esr *EnhancedServiceRegistry) UnregisterService(ctx context.Context, servi
 		})
 	}
 
-	log.Info("Service unregistered successfully: %s", serviceKey)
+	logger.Info("Service unregistered successfully: %s", serviceKey)
 	return nil
 }
 
 // UpdateService 更新服务信息
 func (esr *EnhancedServiceRegistry) UpdateService(ctx context.Context, metadata *ServiceMetadata) error {
 	serviceKey := esr.buildServiceKey(metadata)
-	log.Info("Updating service: %s", serviceKey)
+	logger.Info("Updating service: %s", serviceKey)
 
 	// 获取旧的元数据
 	oldMetadata := esr.getFromCache(serviceKey)
@@ -277,18 +277,18 @@ func (esr *EnhancedServiceRegistry) UpdateService(ctx context.Context, metadata 
 		})
 	}
 
-	log.Info("Service updated successfully: %s", serviceKey)
+	logger.Info("Service updated successfully: %s", serviceKey)
 	return nil
 }
 
 // DiscoverServices 发现服务
 func (esr *EnhancedServiceRegistry) DiscoverServices(ctx context.Context, serviceName string, filter *ServiceFilter) ([]*ServiceMetadata, error) {
-	log.Debug("Discovering services: %s", serviceName)
+	logger.Debug("Discovering services: %s", serviceName)
 
 	// 尝试从缓存获取
 	if esr.config.EnableCache {
 		if services := esr.getServicesFromCache(serviceName, filter); len(services) > 0 {
-			log.Debug("Found %d services in cache for %s", len(services), serviceName)
+			logger.Debug("Found %d services in cache for %s", len(services), serviceName)
 			return services, nil
 		}
 	}
@@ -304,7 +304,7 @@ func (esr *EnhancedServiceRegistry) DiscoverServices(ctx context.Context, servic
 	for _, kv := range resp.Kvs {
 		metadata, err := esr.deserializeMetadata(kv.Value)
 		if err != nil {
-			log.Warning("反序列化服务元数据失败: %v", err)
+			logger.Warning("反序列化服务元数据失败: %v", err)
 			continue
 		}
 
@@ -322,7 +322,7 @@ func (esr *EnhancedServiceRegistry) DiscoverServices(ctx context.Context, servic
 		}
 	}
 
-	log.Debug("Found %d services for %s", len(services), serviceName)
+	logger.Debug("Found %d services for %s", len(services), serviceName)
 	return services, nil
 }
 
@@ -332,10 +332,12 @@ func (esr *EnhancedServiceRegistry) DiscoverServices(ctx context.Context, servic
 func (lm *LeaseManager) CreateLease(ctx context.Context, serviceKey string, ttl int64) (clientv3.LeaseID, error) {
 	lm.mu.Lock()
 	defer lm.mu.Unlock()
-
+	if lm.client == nil {
+		return 0, fmt.Errorf("etcd client is nil, cannot create lease for service %s", serviceKey)
+	}
 	// 检查是否已存在租约
 	if existingLeaseID, exists := lm.leases[serviceKey]; exists {
-		log.Warning("Service %s already has lease %d, revoking old lease", serviceKey, existingLeaseID)
+		logger.Warning("Service %s already has lease %d, revoking old lease", serviceKey, existingLeaseID)
 		lm.client.Revoke(ctx, existingLeaseID)
 		delete(lm.leases, serviceKey)
 		delete(lm.leaseStats, existingLeaseID)
@@ -358,7 +360,7 @@ func (lm *LeaseManager) CreateLease(ctx context.Context, serviceKey string, ttl 
 		HealthScore: 1.0,
 	}
 
-	log.Debug("Created lease %d for service %s with TTL %d", leaseID, serviceKey, ttl)
+	logger.Debug("Created lease %d for service %s with TTL %d", leaseID, serviceKey, ttl)
 	return leaseID, nil
 }
 
@@ -382,7 +384,7 @@ func (lm *LeaseManager) RevokeLease(ctx context.Context, serviceKey string) erro
 	delete(lm.healthScores, serviceKey)
 	delete(lm.renewSuccessRate, leaseID)
 
-	log.Debug("Revoked lease %d for service %s", leaseID, serviceKey)
+	logger.Debug("Revoked lease %d for service %s", leaseID, serviceKey)
 	return nil
 }
 
@@ -390,7 +392,7 @@ func (lm *LeaseManager) RevokeLease(ctx context.Context, serviceKey string) erro
 func (lm *LeaseManager) StartKeepAlive(ctx context.Context, leaseID clientv3.LeaseID, serviceKey string) {
 	ch, kaerr := lm.client.KeepAlive(ctx, leaseID)
 	if kaerr != nil {
-		log.Error("KeepAlive failed for lease %d: %v", leaseID, kaerr)
+		logger.Error("KeepAlive failed for lease %d: %v", leaseID, kaerr)
 		return
 	}
 
@@ -411,7 +413,7 @@ func (lm *LeaseManager) StartKeepAlive(ctx context.Context, leaseID clientv3.Lea
 				}
 			} else {
 				lm.updateLeaseStats(leaseID, false)
-				log.Warning("KeepAlive response is nil for lease %d", leaseID)
+				logger.Warning("KeepAlive response is nil for lease %d", leaseID)
 				return
 			}
 
@@ -421,10 +423,10 @@ func (lm *LeaseManager) StartKeepAlive(ctx context.Context, leaseID clientv3.Lea
 			lm.mu.Unlock()
 
 		case <-ctx.Done():
-			log.Info("KeepAlive stopped for lease %d due to context cancellation", leaseID)
+			logger.Info("KeepAlive stopped for lease %d due to context cancellation", leaseID)
 			return
 		case <-lm.ctx.Done():
-			log.Info("KeepAlive stopped for lease %d due to lease manager shutdown", leaseID)
+			logger.Info("KeepAlive stopped for lease %d due to lease manager shutdown", leaseID)
 			return
 		}
 	}
@@ -563,9 +565,9 @@ func (esr *EnhancedServiceRegistry) notifyServiceChange(event *ServiceChangeEven
 	for channelName, ch := range esr.notifyChannels {
 		select {
 		case ch <- event:
-			log.Debug("Sent service change notification to channel %s", channelName)
+			logger.Debug("Sent service change notification to channel %s", channelName)
 		default:
-			log.Warning("Failed to send notification to channel %s (channel full)", channelName)
+			logger.Warning("Failed to send notification to channel %s (channel full)", channelName)
 		}
 	}
 }
@@ -621,7 +623,7 @@ func (lm *LeaseManager) adjustTTL(serviceKey string, leaseID clientv3.LeaseID) {
 	}
 
 	if newTTL != currentTTL {
-		log.Debug("Adjusting TTL for service %s from %d to %d (health: %.2f, success: %.2f)",
+		logger.Debug("Adjusting TTL for service %s from %d to %d (health: %.2f, success: %.2f)",
 			serviceKey, currentTTL, newTTL, healthScore, successRate)
 		stats.TTL = newTTL
 	}

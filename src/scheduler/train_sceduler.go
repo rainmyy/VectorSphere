@@ -3,7 +3,7 @@ package scheduler
 import (
 	"VectorSphere/src/library/acceler"
 	confType "VectorSphere/src/library/confType"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/vector"
 	"fmt"
 	"sync"
@@ -61,18 +61,18 @@ func LoadPQTrainingConfig(configPath string) (*PQTrainingConfig, error) {
 
 	// 如果配置路径为空，使用默认配置
 	if configPath == "" {
-		log.Warning("未指定PQ训练配置文件路径，使用默认配置")
+		logger.Warning("未指定PQ训练配置文件路径，使用默认配置")
 		return &config, nil
 	}
 
 	// 从YAML文件读取配置
 	err := confType.ReadYAML(configPath, &config)
 	if err != nil {
-		log.Error("读取PQ训练配置文件失败: %v，将使用默认配置", err)
+		logger.Error("读取PQ训练配置文件失败: %v，将使用默认配置", err)
 		return &config, err
 	}
 
-	log.Info("成功从 %s 加载PQ训练配置", configPath)
+	logger.Info("成功从 %s 加载PQ训练配置", configPath)
 	return &config, nil
 }
 
@@ -85,7 +85,7 @@ func NewPQTrainingScheduler(vectorDB *vector.VectorDB) (*PQTrainingScheduler, er
 	// 加载配置
 	config, err := LoadPQTrainingConfig("")
 	if err != nil {
-		log.Warning("加载PQ训练配置文件失败: %v，将使用默认配置", err)
+		logger.Warning("加载PQ训练配置文件失败: %v，将使用默认配置", err)
 	}
 	s := &PQTrainingScheduler{
 		vectorDB: vectorDB,
@@ -109,7 +109,7 @@ func (s *PQTrainingScheduler) GetTrainingStatus() map[string]interface{} {
 
 // Run 实现 ScheduledTask 接口的 Run 方法，执行 PQ 训练任务
 func (s *PQTrainingScheduler) Run() error {
-	log.Info("开始执行PQ码本定时训练任务...")
+	logger.Info("开始执行PQ码本定时训练任务...")
 
 	s.mutex.Lock()
 	s.trainingStatus = "running"
@@ -135,7 +135,7 @@ func (s *PQTrainingScheduler) Run() error {
 	s.lastTrainingTime = time.Now()
 
 	if trainingErr != nil {
-		log.Error("PQ码本训练失败: %v", trainingErr)
+		logger.Error("PQ码本训练失败: %v", trainingErr)
 		s.trainingStatus = "failed"
 		s.trainingErrors = append(s.trainingErrors, trainingErr.Error())
 		// 保持错误记录在合理范围内
@@ -145,21 +145,21 @@ func (s *PQTrainingScheduler) Run() error {
 		return trainingErr // 训练失败，返回错误
 	}
 
-	log.Info("PQ码本训练成功完成。")
+	logger.Info("PQ码本训练成功完成。")
 	s.trainingStatus = "completed"
 
 	// 码本热加载/更新机制
 	if s.vectorDB.IsPQCompressionEnabled() {
-		log.Info("尝试热加载新的PQ码本: %s", s.config.CodebookFilePath)
+		logger.Info("尝试热加载新的PQ码本: %s", s.config.CodebookFilePath)
 		if loadErr := s.vectorDB.LoadPQCodebookFromFile(s.config.CodebookFilePath); loadErr != nil {
-			log.Error("热加载新码本失败: %v", loadErr)
+			logger.Error("热加载新码本失败: %v", loadErr)
 			s.trainingErrors = append(s.trainingErrors, fmt.Sprintf("热加载失败: %v", loadErr))
 			return loadErr
 		} else {
-			log.Info("新码本热加载成功。")
+			logger.Info("新码本热加载成功。")
 		}
 	} else {
-		log.Info("PQ压缩未在VectorDB中启用，跳过热加载码本。")
+		logger.Info("PQ压缩未在VectorDB中启用，跳过热加载码本。")
 	}
 
 	return nil
@@ -177,11 +177,11 @@ func (s *PQTrainingScheduler) GetName() string {
 
 // Init 实现 ScheduledTask 接口的 Init 方法
 func (s *PQTrainingScheduler) Init() error {
-	log.Info("初始化 PQ 训练任务: %s", s.taskName)
+	logger.Info("初始化 PQ 训练任务: %s", s.taskName)
 
 	// 验证配置
 	if !s.config.Enable {
-		log.Info("PQ 定时训练未启用，任务将不会执行。")
+		logger.Info("PQ 定时训练未启用，任务将不会执行。")
 		return nil
 	}
 
@@ -193,13 +193,13 @@ func (s *PQTrainingScheduler) Init() error {
 		return fmt.Errorf("PQ训练的码本保存路径未配置")
 	}
 
-	log.Info("PQ训练任务初始化成功，Cron表达式: '%s'", s.config.CronSpec)
+	logger.Info("PQ训练任务初始化成功，Cron表达式: '%s'", s.config.CronSpec)
 	return nil
 }
 
 // Stop 实现 ScheduledTask 接口的 Stop 方法
 func (s *PQTrainingScheduler) Stop() error {
-	log.Info("停止 PQ 训练任务: %s", s.taskName)
+	logger.Info("停止 PQ 训练任务: %s", s.taskName)
 	return nil
 }
 

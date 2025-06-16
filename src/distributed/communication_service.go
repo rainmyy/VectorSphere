@@ -1,7 +1,7 @@
 package distributed
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/server"
 	"context"
 	"fmt"
@@ -55,7 +55,7 @@ func (cs *CommunicationService) createSlaveConnection(slaveAddr string) (server.
 		return client, nil
 	}
 
-	log.Info("Creating connection to slave: %s", slaveAddr)
+	logger.Info("Creating connection to slave: %s", slaveAddr)
 
 	// 创建gRPC连接
 	conn, err := grpc.Dial(slaveAddr,
@@ -81,7 +81,7 @@ func (cs *CommunicationService) createSlaveConnection(slaveAddr string) (server.
 	cs.connections[slaveAddr] = conn
 	cs.clients[slaveAddr] = client
 
-	log.Info("Successfully connected to slave: %s", slaveAddr)
+	logger.Info("Successfully connected to slave: %s", slaveAddr)
 	return client, nil
 }
 
@@ -94,7 +94,7 @@ func (cs *CommunicationService) RemoveSlaveConnection(slaveAddr string) {
 		conn.Close()
 		delete(cs.connections, slaveAddr)
 		delete(cs.clients, slaveAddr)
-		log.Info("Removed connection to slave: %s", slaveAddr)
+		logger.Info("Removed connection to slave: %s", slaveAddr)
 	}
 }
 
@@ -130,7 +130,7 @@ func (cs *CommunicationService) BroadcastToSlaves(ctx context.Context, slaveAddr
 
 			// 如果请求失败，移除连接以便下次重新建立
 			if err != nil {
-				log.Warning("Request to slave %s failed: %v", slaveAddr, err)
+				logger.Warning("Request to slave %s failed: %v", slaveAddr, err)
 				cs.RemoveSlaveConnection(slaveAddr)
 			}
 		}(addr)
@@ -154,7 +154,7 @@ func (cs *CommunicationService) SendToSlave(ctx context.Context, slaveAddr strin
 	// 执行请求
 	err = requestFunc(client)
 	if err != nil {
-		log.Warning("Request to slave %s failed: %v", slaveAddr, err)
+		logger.Warning("Request to slave %s failed: %v", slaveAddr, err)
 		cs.RemoveSlaveConnection(slaveAddr)
 		return err
 	}
@@ -207,7 +207,7 @@ func (cs *CommunicationService) SearchOnSlaves(ctx context.Context, slaveAddrs [
 
 			client, err := cs.GetSlaveClient(slaveAddr)
 			if err != nil {
-				log.Error("获取slave客户端失败 %s: %v", slaveAddr, err)
+				logger.Error("获取slave客户端失败 %s: %v", slaveAddr, err)
 				return
 			}
 
@@ -218,7 +218,7 @@ func (cs *CommunicationService) SearchOnSlaves(ctx context.Context, slaveAddrs [
 			// 执行搜索
 			result, err := client.SearchTable(requestCtx, request)
 			if err != nil {
-				log.Error("Search on slave %s failed: %v", slaveAddr, err)
+				logger.Error("Search on slave %s failed: %v", slaveAddr, err)
 				cs.RemoveSlaveConnection(slaveAddr)
 				return
 			}
@@ -280,7 +280,7 @@ func (cs *CommunicationService) Close() {
 
 	for addr, conn := range cs.connections {
 		conn.Close()
-		log.Info("Closed connection to slave: %s", addr)
+		logger.Info("Closed connection to slave: %s", addr)
 	}
 
 	cs.connections = make(map[string]*grpc.ClientConn)

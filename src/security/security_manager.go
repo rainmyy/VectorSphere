@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"github.com/golang-jwt/jwt/v4"
 )
 
@@ -558,7 +558,7 @@ func (esm *EnhancedSecurityManager) LogAuditEvent(event *AuditEvent) error {
 	}
 
 	// 写入审计日志文件
-	log.Info("[AUDIT] %s", string(logData))
+	logger.Info("[AUDIT] %s", string(logData))
 
 	return nil
 }
@@ -724,7 +724,7 @@ func (esm *EnhancedSecurityManager) RotateEncryptionKey() error {
 	esm.encryptionKey = newKey
 	esm.encryptionCipher = gcm
 
-	log.Info("Encryption key rotated successfully")
+	logger.Info("Encryption key rotated successfully")
 	return nil
 }
 

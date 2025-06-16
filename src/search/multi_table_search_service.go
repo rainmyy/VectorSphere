@@ -4,7 +4,7 @@ import (
 	"VectorSphere/src/index"
 	"VectorSphere/src/library/acceler"
 	"VectorSphere/src/library/entity"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/library/tree"
 	"VectorSphere/src/messages"
 	"VectorSphere/src/vector"
@@ -463,7 +463,7 @@ func (mts *MultiTableSearchService) Search(tableName string, query *messages.Ter
 	defer func(TxMgr *tree.TransactionManager, tx *tree.Transaction) {
 		err := TxMgr.Commit(tx)
 		if err != nil {
-			log.Error("tx commit has error:%v", err.Error())
+			logger.Error("tx commit has error:%v", err.Error())
 		}
 	}(mts.TxMgr, tx)
 
@@ -1017,12 +1017,12 @@ func (mts *MultiTableSearchService) AdaptiveOptimize() {
 
 // 封装错误处理函数
 func (mts *MultiTableSearchService) logError(operation string, err error) {
-	log.Error("[ERROR] %s: %v", operation, err)
+	logger.Error("[ERROR] %s: %v", operation, err)
 }
 
 // 封装日志记录函数
 func (mts *MultiTableSearchService) logInfo(format string, args ...interface{}) {
-	log.Info("[INFO] "+format, args...)
+	logger.Info("[INFO] "+format, args...)
 }
 
 // 事务重试函数

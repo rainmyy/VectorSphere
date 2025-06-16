@@ -22,7 +22,7 @@ import (
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/messages"
 )
 
@@ -118,7 +118,7 @@ func (m *MasterService) rateLimitMiddleware(next http.Handler) http.Handler {
 
 // --- 主从切换通知Webhook ---
 func (m *MasterService) sendMasterNotify(msg string) {
-	log.Info("Master notify: %s", msg)
+	logger.Info("Master notify: %s", msg)
 	go func() {
 		webhookUrl := os.Getenv("MASTER_WEBHOOK")
 		if webhookUrl == "" {
@@ -150,10 +150,10 @@ func (m *MasterService) startHTTPServer() error {
 		Addr:    fmt.Sprintf(":%d", m.httpServerPort),
 		Handler: mux,
 	}
-	log.Info("HTTP 服务器启动，监听端口: %d", m.httpServerPort)
+	logger.Info("HTTP 服务器启动，监听端口: %d", m.httpServerPort)
 	go func() {
 		if err := m.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Error("HTTP 服务器启动失败: %v", err)
+			logger.Error("HTTP 服务器启动失败: %v", err)
 		}
 	}()
 	return nil
@@ -296,7 +296,7 @@ func (m *MasterService) ScheduleTask(task scheduler2.ScheduledTask) error {
 
 // Start 启动 MasterService
 func (m *MasterService) Start(ctx context.Context) error {
-	log.Info("Starting MasterService...")
+	logger.Info("Starting MasterService...")
 
 	// 尝试成为主节点
 	go m.runElection(ctx) // 使用传递的上下文
@@ -304,14 +304,14 @@ func (m *MasterService) Start(ctx context.Context) error {
 	// 等待成为主节点或上下文取消
 	select {
 	case <-m.appCtx.Done(): // 使用 appCtx 检查应用是否关闭
-		log.Info("MasterService startup cancelled as application is shutting down.")
+		logger.Info("MasterService startup cancelled as application is shutting down.")
 		return m.appCtx.Err()
 	case <-time.After(30 * time.Second): // 等待一段时间成为 master
 		m.masterMutex.RLock()
 		isMaster := m.isMaster
 		m.masterMutex.RUnlock()
 		if !isMaster {
-			log.Warning("Failed to become master within timeout, proceeding with limited functionality or retrying based on election logic.")
+			logger.Warning("Failed to become master within timeout, proceeding with limited functionality or retrying based on election logic.")
 			// 根据实际需求，这里可以返回错误，或者允许服务以非 master 模式启动（如果支持）
 			// return errors.New("failed to become master within timeout")
 		}
@@ -322,11 +322,11 @@ func (m *MasterService) Start(ctx context.Context) error {
 	m.masterMutex.RUnlock()
 
 	if becameMaster {
-		log.Info("Successfully became master. Initializing master functionalities.")
+		logger.Info("Successfully became master. Initializing master functionalities.")
 		// 启动 HTTP 服务器 (仅当是主节点时)
 		go func() {
 			if err := m.startHTTPServer(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				log.Error("Failed to start HTTP server: %v", err)
+				logger.Error("Failed to start HTTP server: %v", err)
 			}
 		}()
 
@@ -339,22 +339,22 @@ func (m *MasterService) Start(ctx context.Context) error {
 			return err
 		}
 	} else {
-		log.Info("Node is not master. Master functionalities (HTTP server, health checks) will not be started by this instance.")
+		logger.Info("Node is not master. Master functionalities (HTTP server, health checks) will not be started by this instance.")
 	}
 
-	log.Info("MasterService started.")
+	logger.Info("MasterService started.")
 
 	// 监听停止信号
 	go func() {
 		select {
 		case <-m.stopCh:
-			log.Info("MasterService received stop signal.")
+			logger.Info("MasterService received stop signal.")
 			// 执行清理操作
 		case <-ctx.Done(): // 监听任务池传递的上下文
-			log.Info("MasterService context cancelled.")
+			logger.Info("MasterService context cancelled.")
 			m.Stop(context.Background()) // 调用 Stop 进行清理
 		case <-m.appCtx.Done(): // 监听应用全局上下文
-			log.Info("Application context cancelled, stopping MasterService.")
+			logger.Info("Application context cancelled, stopping MasterService.")
 			m.Stop(context.Background()) // 调用 Stop 进行清理
 		}
 	}()
@@ -371,7 +371,7 @@ func (m *MasterService) performHealthChecks() {
 		go func(ip string) {
 			conn, err := m.getOrCreateGRPCConn(ip) // 获取或创建 gRPC 连接
 			if err != nil {
-				log.Warning("Failed to connect to slave %s for health check: %v", ip, err)
+				logger.Warning("Failed to connect to slave %s for health check: %v", ip, err)
 				m.slaveStatus.Store(ip, "unhealthy")
 				return
 			}
@@ -382,7 +382,7 @@ func (m *MasterService) performHealthChecks() {
 
 			healthStatus, err := client.HealthCheck(ctx, &HealthCheckRequest{}) // 假设 HealthCheckRequest 是空的
 			if err != nil {
-				log.Warning("Health check failed for slave %s: %v", ip, err)
+				logger.Warning("Health check failed for slave %s: %v", ip, err)
 				m.slaveStatus.Store(ip, "unhealthy")
 				// 考虑关闭不健康的连接
 				conn.Close()
@@ -397,7 +397,7 @@ func (m *MasterService) performHealthChecks() {
 			} else {
 				m.slaveStatus.Store(ip, "unhealthy")
 			}
-			log.Trace("Health check for slave %s: %s", ip, healthStatus.Status)
+			logger.Trace("Health check for slave %s: %s", ip, healthStatus.Status)
 		}(slaveIP)
 	}
 }
@@ -453,14 +453,14 @@ func (m *MasterService) startHealthChecks(ctx context.Context) {
 			isMasterNode := m.isMaster
 			m.masterMutex.RUnlock()
 			if isMasterNode {
-				log.Trace("Running health checks for slave nodes...") // 可以取消注释以进行调试
+				logger.Trace("Running health checks for slave nodes...") // 可以取消注释以进行调试
 				m.performHealthChecks()
 			}
 		case <-ctx.Done():
-			log.Info("Health check process cancelled by context.")
+			logger.Info("Health check process cancelled by context.")
 			return
 		case <-m.stopCh:
-			log.Info("Health check process stopped by service stop signal.")
+			logger.Info("Health check process stopped by service stop signal.")
 			return
 		}
 	}
@@ -476,12 +476,12 @@ func (m *MasterService) GetTaskSpec() *scheduler2.TaskSpec {
 
 func (m *MasterService) ToPoolTask() *pool.Queue {
 	startWrapper := func() error {
-		log.Info("ServiceTask for MasterService: %s is about to run Start()", m.GetName())
+		logger.Info("ServiceTask for MasterService: %s is about to run Start()", m.GetName())
 		// 与 SlaveService 类似，Start 需要 context.Context。
 		// 我们使用 m.appCtx。
 		err := m.Start(m.appCtx)
 		if err != nil {
-			log.Error("ServiceTask for MasterService: %s failed to Start: %v", m.GetName(), err)
+			logger.Error("ServiceTask for MasterService: %s failed to Start: %v", m.GetName(), err)
 		}
 		return err
 	}
@@ -501,12 +501,12 @@ func (m *MasterService) runElection(ctx context.Context) {
 	// 例如: go m.startHTTPServer() // 确保这个方法是幂等的或者在之前没有启动
 	//       go m.startHealthChecks()
 	// 在失去 master 身份或服务停止时，设置 m.isMaster = false 并停止相关服务
-	log.Info("Attempting to become master...")
+	logger.Info("Attempting to become master...")
 
 	// 创建一个新的会话
 	sess, err := concurrency.NewSession(m.client, concurrency.WithTTL(15)) // TTL 设置为15秒
 	if err != nil {
-		log.Error("Failed to create etcd session: %v", err)
+		logger.Error("Failed to create etcd session: %v", err)
 		return
 	}
 	m.session = sess
@@ -519,22 +519,22 @@ func (m *MasterService) runElection(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done(): // 检查外部上下文是否已取消
-			log.Info("Election process cancelled by context.")
+			logger.Info("Election process cancelled by context.")
 			m.resignLeadership()
 			return
 		case <-m.stopCh: // 检查服务是否已停止
-			log.Info("Election process stopped by service stop signal.")
+			logger.Info("Election process stopped by service stop signal.")
 			m.resignLeadership()
 			return
 		default:
 			if err := e.Campaign(ctx, m.localhost); err != nil {
-				log.Warning("Error during election campaign: %v. Retrying in 5 seconds...", err)
+				logger.Warning("Error during election campaign: %v. Retrying in 5 seconds...", err)
 				time.Sleep(5 * time.Second)
 				continue
 			}
 
 			// 成为主节点
-			log.Info("Successfully elected as master: %s", m.localhost)
+			logger.Info("Successfully elected as master: %s", m.localhost)
 			m.masterMutex.Lock()
 			m.isMaster = true
 			m.masterMutex.Unlock()
@@ -546,15 +546,15 @@ func (m *MasterService) runElection(ctx context.Context) {
 			// 监听会话是否结束，如果结束则重新选举
 			select {
 			case <-ctx.Done():
-				log.Info("Master leadership cancelled by context.")
+				logger.Info("Master leadership cancelled by context.")
 				m.resignLeadership()
 				return
 			case <-m.stopCh:
-				log.Info("Master leadership stopped by service stop signal.")
+				logger.Info("Master leadership stopped by service stop signal.")
 				m.resignLeadership()
 				return
 			case <-sess.Done():
-				log.Warning("Etcd session lost. Resigning leadership and attempting re-election.")
+				logger.Warning("Etcd session lost. Resigning leadership and attempting re-election.")
 				m.masterMutex.Lock()
 				m.isMaster = false
 				m.masterMutex.Unlock()
@@ -570,10 +570,10 @@ func (m *MasterService) resignLeadership() {
 	m.masterMutex.Lock()
 	defer m.masterMutex.Unlock()
 	if m.isMaster {
-		log.Info("Resigning master leadership.")
+		logger.Info("Resigning master leadership.")
 		if m.election != nil {
 			if err := m.election.Resign(context.Background()); err != nil {
-				log.Warning("Error resigning leadership: %v", err)
+				logger.Warning("Error resigning leadership: %v", err)
 			}
 		}
 		m.isMaster = false
@@ -591,7 +591,7 @@ func (m *MasterService) campaignMaster() {
 	for {
 		select {
 		case <-m.stopCh: // 检查服务是否已停止
-			log.Info("campaignMaster: Stop signal received, exiting campaign loop.")
+			logger.Info("campaignMaster: Stop signal received, exiting campaign loop.")
 			return
 		default:
 			// 尝试成为主节点
@@ -600,12 +600,12 @@ func (m *MasterService) campaignMaster() {
 			cancel()
 
 			if err != nil {
-				log.Error("竞选主节点失败: %v", err)
+				logger.Error("竞选主节点失败: %v", err)
 				// 在重试前检查停止信号
 				select {
 				case <-time.After(3 * time.Second):
 				case <-m.stopCh:
-					log.Info("campaignMaster: Stop signal received during retry wait, exiting.")
+					logger.Info("campaignMaster: Stop signal received during retry wait, exiting.")
 					return
 				}
 				continue
@@ -616,7 +616,7 @@ func (m *MasterService) campaignMaster() {
 			m.isMaster = true
 			m.masterMutex.Unlock()
 
-			log.Info("成为主节点: %s", m.localhost)
+			logger.Info("成为主节点: %s", m.localhost)
 
 			// 监听主节点变化
 			observeCtx, observeCancel := context.WithCancel(context.Background())
@@ -632,7 +632,7 @@ func (m *MasterService) campaignMaster() {
 			keepLeadership := true
 			for resp := range ch {
 				if len(resp.Kvs) == 0 || string(resp.Kvs[0].Value) != m.localhost {
-					log.Info("主节点变更为其他节点或键被删除，当前节点 %s 不再是主节点", m.localhost)
+					logger.Info("主节点变更为其他节点或键被删除，当前节点 %s 不再是主节点", m.localhost)
 					m.masterMutex.Lock()
 					m.isMaster = false
 					m.masterMutex.Unlock()
@@ -644,17 +644,17 @@ func (m *MasterService) campaignMaster() {
 			observeCancel() // 确保 observeCancel 在循环结束后被调用
 
 			if !keepLeadership {
-				log.Info("不再是主节点，重新竞选")
+				logger.Info("不再是主节点，重新竞选")
 				// 不需要 continue，循环会自动进行下一次迭代
 			} else {
 				// 如果是因为 observeCtx 被取消 (例如 m.stopCh 关闭) 而退出 observe 循环，则这里也应该退出 campaignMaster
 				select {
 				case <-m.stopCh:
-					log.Info("campaignMaster: Stop signal detected after leadership observation, exiting.")
+					logger.Info("campaignMaster: Stop signal detected after leadership observation, exiting.")
 					return
 				default:
 					// 如果通道未关闭，但领导权仍然保持（例如，etcd连接问题导致Observe通道关闭），则重新竞选
-					log.Info("Leadership observation ended, but still master or stop signal not received. Re-evaluating leadership.")
+					logger.Info("Leadership observation ended, but still master or stop signal not received. Re-evaluating leadership.")
 				}
 			}
 		}
@@ -689,7 +689,7 @@ func (m *MasterService) registerService() error {
 		case <-m.stopCh:
 			<-ch
 		case <-m.appCtx.Done(): // 监听应用全局上下文
-			log.Info("Application context cancelled, stopping MasterService.")
+			logger.Info("Application context cancelled, stopping MasterService.")
 			m.Stop(context.Background()) // 调用 Stop 进行清理
 		}
 	}()
@@ -706,7 +706,7 @@ func (m *MasterService) healthCheck() {
 	for {
 		select {
 		case <-m.stopCh:
-			log.Info("healthCheck: Stop signal received, exiting health check loop.")
+			logger.Info("healthCheck: Stop signal received, exiting health check loop.")
 			return
 		default:
 			// 检查是否是主节点
@@ -734,7 +734,7 @@ func (m *MasterService) getSlaveEndpoints() []EndPoint {
 	prefix := fmt.Sprintf("%s/%s/", ServiceRootPath, m.serviceName)
 	resp, err := m.client.Get(context.Background(), prefix, clientv3.WithPrefix())
 	if err != nil {
-		log.Error("获取从节点失败: %v", err)
+		logger.Error("获取从节点失败: %v", err)
 		return nil
 	}
 
@@ -756,7 +756,7 @@ func (m *MasterService) checkSlaveHealth(slave EndPoint) {
 	if conn == nil {
 		// 连接失败，标记为不可用
 		m.slaveStatus.Store(slave.Ip, false)
-		log.Error("从节点不可用: %s", slave.Ip)
+		logger.Error("从节点不可用: %s", slave.Ip)
 		return
 	}
 
@@ -774,7 +774,7 @@ func (m *MasterService) checkSlaveHealth(slave EndPoint) {
 	if err != nil {
 		// 健康检查失败，标记为不可用
 		m.slaveStatus.Store(slave.Ip, false)
-		log.Error("从节点健康检查失败: %s, %v", slave.Ip, err)
+		logger.Error("从节点健康检查失败: %s, %v", slave.Ip, err)
 		return
 	}
 
@@ -814,7 +814,7 @@ func (m *MasterService) getGrpcConn(point EndPoint) *grpc.ClientConn {
 
 	grpcConn, err := grpc.DialContext(ctx, point.Ip, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
 	if err != nil {
-		log.Error("连接从节点失败: %s, %v", point.Ip, err)
+		logger.Error("连接从节点失败: %s, %v", point.Ip, err)
 		return nil
 	}
 
@@ -893,7 +893,7 @@ func (m *MasterService) cleanupTaskResults() {
 
 // Stop 停止 MasterService
 func (m *MasterService) Stop(ctx context.Context) error {
-	log.Info("Stopping MasterService...")
+	logger.Info("Stopping MasterService...")
 	close(m.stopCh) // 发送停止信号
 
 	// 关闭 HTTP 服务器
@@ -901,7 +901,7 @@ func (m *MasterService) Stop(ctx context.Context) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := m.httpServer.Shutdown(shutdownCtx); err != nil {
-			log.Warning("HTTP server shutdown error: %v", err)
+			logger.Warning("HTTP server shutdown error: %v", err)
 		}
 	}
 
@@ -912,7 +912,7 @@ func (m *MasterService) Stop(ctx context.Context) error {
 		m.masterMutex.RUnlock()
 		if isMaster {
 			if err := m.election.Resign(context.Background()); err != nil {
-				log.Warning("Failed to resign master leadership: %v", err)
+				logger.Warning("Failed to resign master leadership: %v", err)
 			}
 		}
 	}
@@ -920,12 +920,12 @@ func (m *MasterService) Stop(ctx context.Context) error {
 	// 关闭 etcd 会话和客户端
 	if m.session != nil {
 		if err := m.session.Close(); err != nil {
-			log.Warning("Failed to close etcd session: %v", err)
+			logger.Warning("Failed to close etcd session: %v", err)
 		}
 	}
 	if m.client != nil {
 		if err := m.client.Close(); err != nil {
-			log.Warning("Failed to close etcd client: %v", err)
+			logger.Warning("Failed to close etcd client: %v", err)
 		}
 	}
 
@@ -937,7 +937,7 @@ func (m *MasterService) Stop(ctx context.Context) error {
 		return true
 	})
 
-	log.Info("MasterService stopped.")
+	logger.Info("MasterService stopped.")
 	return nil
 }
 
@@ -980,7 +980,7 @@ func (m *MasterService) DelDoc(ctx context.Context, docId *DocId) (*ResCount, er
 			// 发送删除请求
 			resp, err := client.DelDoc(ctx, docId)
 			if err != nil {
-				log.Error("从节点删除文档失败: %s, %v", endpoint.Ip, err)
+				logger.Error("从节点删除文档失败: %s, %v", endpoint.Ip, err)
 				return
 			}
 
@@ -1061,7 +1061,7 @@ func (m *MasterService) Search(ctx context.Context, request *Request) (*Result, 
 			// 发送搜索请求
 			resp, err := client.Search(ctx, request)
 			if err != nil {
-				log.Error("从节点搜索失败: %s, %v", endpoint.Ip, err)
+				logger.Error("从节点搜索失败: %s, %v", endpoint.Ip, err)
 				return
 			}
 
@@ -1142,7 +1142,7 @@ func (m *MasterService) Count(ctx context.Context, request *CountRequest) (*ResC
 			// 发送计数请求
 			resp, err := client.Count(ctx, request)
 			if err != nil {
-				log.Error("从节点计数失败: %s, %v", endpoint.Ip, err)
+				logger.Error("从节点计数失败: %s, %v", endpoint.Ip, err)
 				return
 			}
 
@@ -1263,7 +1263,7 @@ func (m *MasterService) processTaskResults(taskID string) {
 	taskInfo.ResultsLock.RUnlock()
 
 	// 记录任务执行情况
-	log.Info("任务 %s 执行完成: 成功 %d, 失败 %d", taskID, successCount, failureCount)
+	logger.Info("任务 %s 执行完成: 成功 %d, 失败 %d", taskID, successCount, failureCount)
 
 	// 清理任务信息
 	m.tasksMutex.Lock()

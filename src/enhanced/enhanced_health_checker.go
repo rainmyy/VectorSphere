@@ -1,7 +1,7 @@
 package enhanced
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"context"
 	"fmt"
 	"math"
@@ -266,7 +266,7 @@ func NewEnhancedHealthChecker(client *clientv3.Client, config *HealthCheckConfig
 		hc.workerPool <- struct{}{}
 	}
 
-	log.Info("Enhanced health checker created")
+	logger.Info("Enhanced health checker created")
 	return hc
 }
 
@@ -276,7 +276,7 @@ func (hc *EnhancedHealthChecker) Start() error {
 		return fmt.Errorf("health checker is already running")
 	}
 
-	log.Info("Starting enhanced health checker")
+	logger.Info("Starting enhanced health checker")
 
 	// 启动结果处理器
 	go hc.resultProcessor()
@@ -297,7 +297,7 @@ func (hc *EnhancedHealthChecker) Start() error {
 		go hc.predictionTrainer()
 	}
 
-	log.Info("Enhanced health checker started successfully")
+	logger.Info("Enhanced health checker started successfully")
 	return nil
 }
 
@@ -307,7 +307,7 @@ func (hc *EnhancedHealthChecker) Stop() error {
 		return fmt.Errorf("health checker is not running")
 	}
 
-	log.Info("Stopping enhanced health checker")
+	logger.Info("Stopping enhanced health checker")
 
 	// 停止所有检查
 	hc.mu.Lock()
@@ -331,7 +331,7 @@ func (hc *EnhancedHealthChecker) Stop() error {
 	// 取消上下文
 	hc.cancel()
 
-	log.Info("Enhanced health checker stopped")
+	logger.Info("Enhanced health checker stopped")
 	return nil
 }
 
@@ -381,7 +381,7 @@ func (hc *EnhancedHealthChecker) RegisterCheck(check *HealthCheck) error {
 		go hc.runCheck(check)
 	}
 
-	log.Info("Health check registered: %s (%s)", check.ID, check.Name)
+	logger.Info("Health check registered: %s (%s)", check.ID, check.Name)
 	return nil
 }
 
@@ -399,7 +399,7 @@ func (hc *EnhancedHealthChecker) UnregisterCheck(checkID string) error {
 		return fmt.Errorf("health check not found: %s", checkID)
 	}
 
-	log.Info("Health check unregistered: %s", checkID)
+	logger.Info("Health check unregistered: %s", checkID)
 	return nil
 }
 
@@ -449,7 +449,7 @@ func (hc *EnhancedHealthChecker) UpdateCheckInterval(checkID string, interval ti
 	check.Interval = interval
 	check.LastModified = time.Now()
 
-	log.Info("Updated check interval for %s: %v", checkID, interval)
+	logger.Info("Updated check interval for %s: %v", checkID, interval)
 	return nil
 }
 
@@ -472,7 +472,7 @@ func (hc *EnhancedHealthChecker) EnableCheck(checkID string) error {
 		go hc.runCheck(check)
 	}
 
-	log.Info("Health check enabled: %s", checkID)
+	logger.Info("Health check enabled: %s", checkID)
 	return nil
 }
 
@@ -490,7 +490,7 @@ func (hc *EnhancedHealthChecker) DisableCheck(checkID string) error {
 		return fmt.Errorf("health check not found: %s", checkID)
 	}
 
-	log.Info("Health check disabled: %s", checkID)
+	logger.Info("Health check disabled: %s", checkID)
 	return nil
 }
 
@@ -498,7 +498,7 @@ func (hc *EnhancedHealthChecker) DisableCheck(checkID string) error {
 
 // runCheck 运行单个健康检查
 func (hc *EnhancedHealthChecker) runCheck(check *HealthCheck) {
-	log.Debug("Starting health check: %s", check.ID)
+	logger.Debug("Starting health check: %s", check.ID)
 
 	// 计算初始间隔
 	interval := check.Interval
@@ -515,11 +515,11 @@ func (hc *EnhancedHealthChecker) runCheck(check *HealthCheck) {
 	for {
 		select {
 		case <-hc.ctx.Done():
-			log.Debug("Health check stopped: %s", check.ID)
+			logger.Debug("Health check stopped: %s", check.ID)
 			return
 		case <-ticker.C:
 			if !check.Enabled {
-				log.Debug("Health check disabled: %s", check.ID)
+				logger.Debug("Health check disabled: %s", check.ID)
 				return
 			}
 
@@ -532,7 +532,7 @@ func (hc *EnhancedHealthChecker) runCheck(check *HealthCheck) {
 				if newInterval != interval {
 					interval = newInterval
 					ticker.Reset(interval)
-					log.Debug("Adaptive interval updated for %s: %v", check.ID, interval)
+					logger.Debug("Adaptive interval updated for %s: %v", check.ID, interval)
 				}
 			}
 		}
@@ -549,7 +549,7 @@ func (hc *EnhancedHealthChecker) executeCheck(check *HealthCheck) {
 		}()
 	case <-time.After(1 * time.Second):
 		// 工作者池满，跳过此次检查
-		log.Warning("Worker pool full, skipping check: %s", check.ID)
+		logger.Warning("Worker pool full, skipping check: %s", check.ID)
 		return
 	}
 
@@ -588,7 +588,7 @@ func (hc *EnhancedHealthChecker) executeCheck(check *HealthCheck) {
 	select {
 	case hc.resultChan <- result:
 	default:
-		log.Warning("Result channel full, dropping result for check: %s", check.ID)
+		logger.Warning("Result channel full, dropping result for check: %s", check.ID)
 	}
 }
 
@@ -802,13 +802,13 @@ func (hc *EnhancedHealthChecker) calculateAdaptiveInterval(check *HealthCheck) t
 
 // resultProcessor 结果处理器
 func (hc *EnhancedHealthChecker) resultProcessor() {
-	log.Info("Starting health check result processor")
+	logger.Info("Starting health check result processor")
 
 	for result := range hc.resultChan {
 		hc.processResult(result)
 	}
 
-	log.Info("Health check result processor stopped")
+	logger.Info("Health check result processor stopped")
 }
 
 // processResult 处理检查结果
@@ -818,7 +818,7 @@ func (hc *EnhancedHealthChecker) processResult(result *HealthResult) {
 	hc.mu.Unlock()
 
 	if check == nil {
-		log.Warning("Received result for unknown check: %s", result.CheckID)
+		logger.Warning("Received result for unknown check: %s", result.CheckID)
 		return
 	}
 
@@ -868,7 +868,7 @@ func (hc *EnhancedHealthChecker) processResult(result *HealthResult) {
 	// 触发回调
 	hc.triggerCallbacks(serviceHealth)
 
-	log.Debug("Processed health check result: %s, status: %d, score: %.2f",
+	logger.Debug("Processed health check result: %s, status: %d, score: %.2f",
 		result.CheckID, result.Status, result.Score)
 }
 
@@ -991,7 +991,7 @@ func (hc *EnhancedHealthChecker) checkAlerts(serviceHealth *ServiceHealth, resul
 		select {
 		case hc.alertChan <- alert:
 		default:
-			log.Warning("Alert channel full, dropping alert: %s", alert.ID)
+			logger.Warning("Alert channel full, dropping alert: %s", alert.ID)
 		}
 	}
 
@@ -1015,7 +1015,7 @@ func (hc *EnhancedHealthChecker) checkAlerts(serviceHealth *ServiceHealth, resul
 		select {
 		case hc.alertChan <- alert:
 		default:
-			log.Warning("Alert channel full, dropping latency alert: %s", alert.ID)
+			logger.Warning("Alert channel full, dropping latency alert: %s", alert.ID)
 		}
 	}
 }
@@ -1052,19 +1052,19 @@ func (hc *EnhancedHealthChecker) updatePredictionData(serviceName string, result
 
 // alertProcessor 告警处理器
 func (hc *EnhancedHealthChecker) alertProcessor() {
-	log.Info("Starting health check alert processor")
+	logger.Info("Starting health check alert processor")
 
 	for alert := range hc.alertChan {
 		hc.processAlert(alert)
 	}
 
-	log.Info("Health check alert processor stopped")
+	logger.Info("Health check alert processor stopped")
 }
 
 // processAlert 处理告警
 func (hc *EnhancedHealthChecker) processAlert(alert *HealthAlert) {
 	// 这里可以集成告警系统，如发送邮件、短信、Slack通知等
-	log.Warning("Health alert: [%s] %s (Check: %s)", alert.Level, alert.Message, alert.CheckID)
+	logger.Warning("Health alert: [%s] %s (Check: %s)", alert.Level, alert.Message, alert.CheckID)
 
 	// 将告警添加到服务健康状态中
 	hc.mu.Lock()
@@ -1082,12 +1082,12 @@ func (hc *EnhancedHealthChecker) processAlert(alert *HealthAlert) {
 
 // metricsCollector 指标收集器
 func (hc *EnhancedHealthChecker) metricsCollector() {
-	log.Info("Starting health check metrics collector")
+	logger.Info("Starting health check metrics collector")
 
 	for {
 		select {
 		case <-hc.ctx.Done():
-			log.Info("Health check metrics collector stopped")
+			logger.Info("Health check metrics collector stopped")
 			return
 		case <-hc.metricsTicker.C:
 			hc.collectMetrics()
@@ -1102,19 +1102,19 @@ func (hc *EnhancedHealthChecker) collectMetrics() {
 	serviceCount := len(hc.serviceHealth)
 	hc.mu.RUnlock()
 
-	log.Debug("Health check metrics: checks=%d, services=%d", checkCount, serviceCount)
+	logger.Debug("Health check metrics: checks=%d, services=%d", checkCount, serviceCount)
 
 	// 这里可以将指标发送到监控系统
 }
 
 // cleaner 清理器
 func (hc *EnhancedHealthChecker) cleaner() {
-	log.Info("Starting health check cleaner")
+	logger.Info("Starting health check cleaner")
 
 	for {
 		select {
 		case <-hc.ctx.Done():
-			log.Info("Health check cleaner stopped")
+			logger.Info("Health check cleaner stopped")
 			return
 		case <-hc.cleanupTicker.C:
 			hc.cleanup()
@@ -1141,12 +1141,12 @@ func (hc *EnhancedHealthChecker) cleanup() {
 		serviceHealth.Alerts = validAlerts
 	}
 
-	log.Debug("Health check cleanup completed")
+	logger.Debug("Health check cleanup completed")
 }
 
 // predictionTrainer 预测模型训练器
 func (hc *EnhancedHealthChecker) predictionTrainer() {
-	log.Info("Starting health prediction trainer")
+	logger.Info("Starting health prediction trainer")
 
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
@@ -1154,7 +1154,7 @@ func (hc *EnhancedHealthChecker) predictionTrainer() {
 	for {
 		select {
 		case <-hc.ctx.Done():
-			log.Info("Health prediction trainer stopped")
+			logger.Info("Health prediction trainer stopped")
 			return
 		case <-ticker.C:
 			hc.trainPredictionModels()
@@ -1182,7 +1182,7 @@ func (hc *EnhancedHealthChecker) trainPredictionModels() {
 		}
 
 		hc.predictionModel.models[serviceName] = model
-		log.Debug("Trained prediction model for service: %s (data points: %d)", serviceName, len(history))
+		logger.Debug("Trained prediction model for service: %s (data points: %d)", serviceName, len(history))
 	}
 }
 
@@ -1200,7 +1200,7 @@ func (hc *EnhancedHealthChecker) triggerCallbacks(serviceHealth *ServiceHealth) 
 				try := func() {
 					defer func() {
 						if r := recover(); r != nil {
-							log.Error("Health check callback panic: %v", r)
+							logger.Error("Health check callback panic: %v", r)
 						}
 					}()
 					callback(serviceHealth)

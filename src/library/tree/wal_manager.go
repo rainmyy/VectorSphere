@@ -1,7 +1,7 @@
 package tree
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -181,7 +181,7 @@ func (w *WALManager) flushBatch() {
 		for _, entry := range batch {
 			data, err := json.Marshal(entry)
 			if err != nil {
-				log.Error("Error marshaling WALEntry:", err)
+				logger.Error("Error marshaling WALEntry:", err)
 				continue
 			}
 
@@ -189,11 +189,11 @@ func (w *WALManager) flushBatch() {
 			binary.BigEndian.PutUint32(lenBuf, uint32(len(data)))
 
 			if _, err := w.file.Write(lenBuf); err != nil {
-				log.Error("Error writing length to WAL file:", err)
+				logger.Error("Error writing length to WAL file:", err)
 				continue
 			}
 			if _, err := w.file.Write(data); err != nil {
-				log.Error("Error writing data to WAL file:", err)
+				logger.Error("Error writing data to WAL file:", err)
 				continue
 			}
 		}

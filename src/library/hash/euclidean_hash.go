@@ -2,7 +2,7 @@ package hash
 
 import (
 	"VectorSphere/src/library/enum"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"fmt"
 	"math"
 )
@@ -18,7 +18,7 @@ type EuclideanHash struct {
 // Hash 计算欧几里得哈希值
 func (eh *EuclideanHash) Hash(vector []float64) (uint64, error) {
 	if len(vector) != len(eh.RandomVector) {
-		log.Warning("Vector dimension mismatch: expected %d, got %d", len(eh.RandomVector), len(vector))
+		logger.Warning("Vector dimension mismatch: expected %d, got %d", len(eh.RandomVector), len(vector))
 		return 0, fmt.Errorf("vector dimension mismatch: expected %d, got %d", eh.RandomVector, len(vector))
 	}
 

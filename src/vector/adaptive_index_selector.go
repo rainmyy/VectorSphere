@@ -2,7 +2,7 @@ package vector
 
 import (
 	"VectorSphere/src/library/entity"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"math"
 	"sync"
 	"time"
@@ -96,7 +96,7 @@ func (ais *AdaptiveIndexSelector) optimizeStrategySelection() {
 		avgLatency := totalLatency / time.Duration(len(records))
 		avgQuality := totalQuality / float64(len(records))
 
-		log.Info("策略 %v 性能统计: 平均延迟=%v, 平均质量=%.3f, 样本数=%d",
+		logger.Info("策略 %v 性能统计: 平均延迟=%v, 平均质量=%.3f, 样本数=%d",
 			strategy, avgLatency, avgQuality, len(records))
 	}
 
@@ -107,7 +107,7 @@ func (ais *AdaptiveIndexSelector) optimizeStrategySelection() {
 func (db *VectorDB) InitializeAdaptiveSelector() {
 	if db.adaptiveSelector == nil {
 		db.adaptiveSelector = NewAdaptiveIndexSelector(db)
-		log.Info("自适应索引选择器已初始化")
+		logger.Info("自适应索引选择器已初始化")
 	}
 }
 
@@ -158,7 +158,7 @@ func (db *VectorDB) selectOptimalStrategyWithAdaptive(ctx SearchContext) IndexSt
 	// 如果自适应选择器可用，优先使用其建议
 	if db.adaptiveSelector != nil {
 		if suggestion := db.adaptiveSelector.GetOptimalStrategy(ctx); suggestion != -1 {
-			log.Trace("自适应选择器建议策略: %v", suggestion)
+			logger.Trace("自适应选择器建议策略: %v", suggestion)
 			return suggestion
 		}
 	}
@@ -212,17 +212,17 @@ func (db *VectorDB) recordContextualPerformance(strategy IndexStrategy, latency 
 	}
 
 	// 记录详细的性能日志
-	log.Debug("上下文性能记录 - 策略: %v, 延迟: %v, 质量: %.3f, 质量等级: %s, 数据规模: %s(%d), 维度: %d",
+	logger.Debug("上下文性能记录 - 策略: %v, 延迟: %v, 质量: %.3f, 质量等级: %s, 数据规模: %s(%d), 维度: %d",
 		strategy, latency, quality, qualityLevel, scaleLevel, vectorCount, len(ctx.QueryVector))
 
 	// 可以在这里添加更多的性能分析逻辑
 	// 例如：异常检测、性能趋势分析等
 	if latency > 5*time.Second {
-		log.Warning("检测到异常长的查询延迟: %v, 策略: %v, 数据量: %d", latency, strategy, vectorCount)
+		logger.Warning("检测到异常长的查询延迟: %v, 策略: %v, 数据量: %d", latency, strategy, vectorCount)
 	}
 
 	if quality < 0.3 {
-		log.Warning("检测到低质量搜索结果: %.3f, 策略: %v, 质量要求: %.2f", quality, strategy, ctx.QualityLevel)
+		logger.Warning("检测到低质量搜索结果: %.3f, 策略: %v, 质量要求: %.2f", quality, strategy, ctx.QualityLevel)
 	}
 }
 

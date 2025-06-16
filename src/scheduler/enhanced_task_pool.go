@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 
 	"github.com/robfig/cron/v3"
 )
@@ -16,9 +16,9 @@ import (
 type TaskPriority int
 
 const (
-	PriorityLow    TaskPriority = 0
-	PriorityNormal TaskPriority = 50
-	PriorityHigh   TaskPriority = 100
+	PriorityLow      TaskPriority = 0
+	PriorityNormal   TaskPriority = 50
+	PriorityHigh     TaskPriority = 100
 	PriorityCritical TaskPriority = 200
 )
 
@@ -76,57 +76,57 @@ func DefaultTaskConfig() *EnhancedTaskConfig {
 // EnhancedTaskPoolManager 增强型任务池管理器
 type EnhancedTaskPoolManager struct {
 	// 基础组件
-	tasks        map[string]ScheduledTask // 存储已注册的任务
-	cron         *cron.Cron               // Cron调度器实例
-	config       *EnhancedTaskConfig      // 任务池配置
+	tasks  map[string]ScheduledTask // 存储已注册的任务
+	cron   *cron.Cron               // Cron调度器实例
+	config *EnhancedTaskConfig      // 任务池配置
 
 	// 并发控制
-	taskQueue    chan taskWrapper         // 任务队列
-	workerPool   chan struct{}            // 工作池信号量
-	runningTasks int32                    // 当前运行的任务数量
+	taskQueue    chan taskWrapper // 任务队列
+	workerPool   chan struct{}    // 工作池信号量
+	runningTasks int32            // 当前运行的任务数量
 
 	// 状态管理
-	executionHistory []TaskExecutionInfo   // 任务执行历史
-	taskStatus     map[string]TaskExecutionInfo // 任务状态映射
-	taskDependencies map[string][]string   // 任务依赖关系
+	executionHistory []TaskExecutionInfo          // 任务执行历史
+	taskStatus       map[string]TaskExecutionInfo // 任务状态映射
+	taskDependencies map[string][]string          // 任务依赖关系
 
 	// 同步和控制
-	mu           sync.RWMutex             // 读写锁
-	stopCh       chan struct{}            // 停止信号
-	ctx          context.Context          // 上下文
-	cancel       context.CancelFunc       // 取消函数
-	isRunning    bool                     // 运行状态
+	mu        sync.RWMutex       // 读写锁
+	stopCh    chan struct{}      // 停止信号
+	ctx       context.Context    // 上下文
+	cancel    context.CancelFunc // 取消函数
+	isRunning bool               // 运行状态
 
 	// 指标收集
-	metrics      *TaskPoolMetrics         // 任务池指标
+	metrics *TaskPoolMetrics // 任务池指标
 }
 
 // TaskPoolMetrics 任务池指标
 type TaskPoolMetrics struct {
-	TotalTasksSubmitted   int64         // 提交的任务总数
-	TotalTasksCompleted   int64         // 完成的任务总数
-	TotalTasksFailed      int64         // 失败的任务总数
-	TotalTasksCancelled   int64         // 取消的任务总数
-	TotalTasksRetried     int64         // 重试的任务总数
-	AverageExecutionTime  time.Duration // 平均执行时间
-	MaxExecutionTime      time.Duration // 最长执行时间
-	MinExecutionTime      time.Duration // 最短执行时间
-	TotalExecutionTime    time.Duration // 总执行时间
-	LastExecutionTime     time.Time     // 最后执行时间
-	mu                    sync.Mutex    // 指标锁
+	TotalTasksSubmitted  int64         // 提交的任务总数
+	TotalTasksCompleted  int64         // 完成的任务总数
+	TotalTasksFailed     int64         // 失败的任务总数
+	TotalTasksCancelled  int64         // 取消的任务总数
+	TotalTasksRetried    int64         // 重试的任务总数
+	AverageExecutionTime time.Duration // 平均执行时间
+	MaxExecutionTime     time.Duration // 最长执行时间
+	MinExecutionTime     time.Duration // 最短执行时间
+	TotalExecutionTime   time.Duration // 总执行时间
+	LastExecutionTime    time.Time     // 最后执行时间
+	mu                   sync.Mutex    // 指标锁
 }
 
 // taskWrapper 任务包装器，添加了优先级和上下文
 type taskWrapper struct {
-	task      ScheduledTask
-	priority  TaskPriority
-	ctx       context.Context
-	cancel    context.CancelFunc
-	taskID    string
-	taskName  string
+	task       ScheduledTask
+	priority   TaskPriority
+	ctx        context.Context
+	cancel     context.CancelFunc
+	taskID     string
+	taskName   string
 	retryCount int
 	retryLimit int
-	dependsOn []string
+	dependsOn  []string
 }
 
 // NewEnhancedTaskPoolManager 创建一个新的增强型任务池管理器
@@ -164,10 +164,10 @@ func (pm *EnhancedTaskPoolManager) RegisterTasks(tasks ...ScheduledTask) error {
 	for _, task := range tasks {
 		taskName := task.GetName()
 		if _, exists := pm.tasks[taskName]; exists {
-			log.Warning("任务 '%s' 已经注册，将被覆盖", taskName)
+			logger.Warning("任务 '%s' 已经注册，将被覆盖", taskName)
 		}
 		pm.tasks[taskName] = task
-		log.Info("任务 '%s' 已注册，Cron表达式: %s", taskName, task.GetCronSpec())
+		logger.Info("任务 '%s' 已注册，Cron表达式: %s", taskName, task.GetCronSpec())
 	}
 	return nil
 }
@@ -230,7 +230,7 @@ func (pm *EnhancedTaskPoolManager) SetTaskDependencies(taskName string, dependsO
 
 	// 确认依赖关系
 	pm.taskDependencies[taskName] = dependsOn
-	log.Info("任务 '%s' 的依赖关系已设置: %v", taskName, dependsOn)
+	logger.Info("任务 '%s' 的依赖关系已设置: %v", taskName, dependsOn)
 	return nil
 }
 
@@ -239,20 +239,20 @@ func (pm *EnhancedTaskPoolManager) InitializeTasks() error {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
-	log.Info("开始初始化所有已注册的任务...")
+	logger.Info("开始初始化所有已注册的任务...")
 	for name, task := range pm.tasks {
 		// 检查是否实现了 Init() error 方法
 		if initializer, ok := task.(interface{ Init() error }); ok {
 			if err := initializer.Init(); err != nil {
-				log.Error("初始化任务 '%s' 失败: %v", name, err)
+				logger.Error("初始化任务 '%s' 失败: %v", name, err)
 				return fmt.Errorf("初始化任务 '%s' 失败: %w", name, err)
 			}
-			log.Info("任务 '%s' 初始化成功", name)
+			logger.Info("任务 '%s' 初始化成功", name)
 		} else {
-			log.Info("任务 '%s' 没有 Init 方法，跳过初始化", name)
+			logger.Info("任务 '%s' 没有 Init 方法，跳过初始化", name)
 		}
 	}
-	log.Info("所有已注册任务初始化完成。")
+	logger.Info("所有已注册任务初始化完成。")
 	return nil
 }
 
@@ -266,14 +266,14 @@ func (pm *EnhancedTaskPoolManager) Start() error {
 	}
 
 	if len(pm.tasks) == 0 {
-		log.Info("没有已注册的任务，任务池未启动。")
+		logger.Info("没有已注册的任务，任务池未启动。")
 		return nil
 	}
 
 	// 初始化cron调度器，添加秒级支持
 	pm.cron = cron.New(cron.WithSeconds())
 
-	log.Info("开始将任务添加到调度器...")
+	logger.Info("开始将任务添加到调度器...")
 	for name, task := range pm.tasks {
 		// 使用闭包来捕获正确的task实例
 		currentTask := task
@@ -282,7 +282,7 @@ func (pm *EnhancedTaskPoolManager) Start() error {
 			// 创建任务包装器
 			taskCtx, taskCancel := context.WithTimeout(pm.ctx, currentTask.Timeout())
 			taskID := fmt.Sprintf("%s-%d", currentName, time.Now().UnixNano())
-			
+
 			wrapper := taskWrapper{
 				task:       currentTask,
 				priority:   PriorityNormal, // 默认优先级
@@ -299,12 +299,12 @@ func (pm *EnhancedTaskPoolManager) Start() error {
 			pm.submitTaskWrapper(wrapper)
 		})
 		if err != nil {
-			log.Error("添加任务 '%s' 到调度器失败: %v", currentName, err)
+			logger.Error("添加任务 '%s' 到调度器失败: %v", currentName, err)
 			// 如果一个任务添加失败，停止所有已启动的
 			pm.cron.Stop() // 停止已经部分启动的cron
 			return fmt.Errorf("添加任务 '%s' 到调度器失败: %w", currentName, err)
 		}
-		log.Info("任务 '%s' (EntryID: %d) 已成功添加到调度器，Cron: %s", currentName, entryID, currentTask.GetCronSpec())
+		logger.Info("任务 '%s' (EntryID: %d) 已成功添加到调度器，Cron: %s", currentName, entryID, currentTask.GetCronSpec())
 	}
 
 	// 启动工作池
@@ -314,46 +314,46 @@ func (pm *EnhancedTaskPoolManager) Start() error {
 
 	pm.cron.Start()
 	pm.isRunning = true
-	log.Info("任务池已启动，所有定时任务开始调度执行。最大并发任务数: %d", pm.config.MaxConcurrentTasks)
+	logger.Info("任务池已启动，所有定时任务开始调度执行。最大并发任务数: %d", pm.config.MaxConcurrentTasks)
 
 	// 启动一个goroutine监听停止信号
 	go func() {
 		<-pm.stopCh
-		log.Info("接收到停止信号，开始停止任务池...")
-		
+		logger.Info("接收到停止信号，开始停止任务池...")
+
 		// 创建一个带超时的上下文
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), pm.config.ShutdownTimeout)
 		defer shutdownCancel()
-		
+
 		// 取消所有正在运行的任务
 		pm.cancel()
-		
+
 		// 停止接收新任务
 		ctx := pm.cron.Stop() // 优雅地停止cron调度器
-		
+
 		// 等待所有任务完成或超时
 		select {
 		case <-ctx.Done():
-			log.Info("所有定时任务已停止。")
+			logger.Info("所有定时任务已停止。")
 		case <-shutdownCtx.Done():
-			log.Warning("等待任务完成超时，强制停止。")
+			logger.Warning("等待任务完成超时，强制停止。")
 		}
-		
+
 		// 等待工作池中的任务完成或超时
 		pm.waitForWorkers(shutdownCtx)
-		
+
 		// 调用所有任务的Stop方法
 		pm.mu.RLock()
 		for name, task := range pm.tasks {
 			if stopper, ok := task.(interface{ Stop() error }); ok {
 				if err := stopper.Stop(); err != nil {
-					log.Error("停止任务 '%s' 时发生错误: %v", name, err)
+					logger.Error("停止任务 '%s' 时发生错误: %v", name, err)
 				}
 			}
 		}
 		pm.mu.RUnlock()
-		
-		log.Info("所有任务已尝试停止，任务池已完全关闭。")
+
+		logger.Info("所有任务已尝试停止，任务池已完全关闭。")
 		pm.mu.Lock()
 		pm.isRunning = false
 		pm.mu.Unlock()
@@ -365,7 +365,7 @@ func (pm *EnhancedTaskPoolManager) Start() error {
 // waitForWorkers 等待工作池中的任务完成
 func (pm *EnhancedTaskPoolManager) waitForWorkers(ctx context.Context) {
 	done := make(chan struct{})
-	
+
 	go func() {
 		for {
 			running := atomic.LoadInt32(&pm.runningTasks)
@@ -373,16 +373,16 @@ func (pm *EnhancedTaskPoolManager) waitForWorkers(ctx context.Context) {
 				close(done)
 				return
 			}
-			log.Info("等待 %d 个正在运行的任务完成...", running)
+			logger.Info("等待 %d 个正在运行的任务完成...", running)
 			time.Sleep(500 * time.Millisecond)
 		}
 	}()
-	
+
 	select {
 	case <-done:
-		log.Info("所有工作池任务已完成。")
+		logger.Info("所有工作池任务已完成。")
 	case <-ctx.Done():
-		log.Warning("等待工作池任务完成超时。")
+		logger.Warning("等待工作池任务完成超时。")
 	}
 }
 
@@ -396,13 +396,13 @@ func (pm *EnhancedTaskPoolManager) worker() {
 		case wrapper := <-pm.taskQueue:
 			// 获取工作池信号量
 			pm.workerPool <- struct{}{}
-			
+
 			// 检查任务上下文是否已取消
 			if wrapper.ctx.Err() != nil {
 				<-pm.workerPool // 释放工作池信号量
 				continue
 			}
-			
+
 			// 检查依赖任务是否已完成
 			if !pm.checkDependencies(wrapper) {
 				<-pm.workerPool // 释放工作池信号量
@@ -413,26 +413,26 @@ func (pm *EnhancedTaskPoolManager) worker() {
 				}()
 				continue
 			}
-			
+
 			// 执行任务
 			atomic.AddInt32(&pm.runningTasks, 1)
 			go func(w taskWrapper) {
 				defer func() {
 					atomic.AddInt32(&pm.runningTasks, -1)
 					<-pm.workerPool // 释放工作池信号量
-					
+
 					// 恢复可能的panic
 					if r := recover(); r != nil {
-						log.Error("任务 '%s' (ID: %s) 执行时发生panic: %v", w.taskName, w.taskID, r)
-						
+						logger.Error("任务 '%s' (ID: %s) 执行时发生panic: %v", w.taskName, w.taskID, r)
+
 						// 记录失败状态
 						pm.recordTaskExecution(w, TaskStatusFailed, fmt.Errorf("任务panic: %v", r))
-						
+
 						// 尝试重试任务
 						pm.retryTaskIfNeeded(w)
 					}
 				}()
-				
+
 				// 记录任务开始执行
 				startTime := time.Now()
 				pm.updateTaskStatus(w.taskID, TaskExecutionInfo{
@@ -443,18 +443,18 @@ func (pm *EnhancedTaskPoolManager) worker() {
 					RetryCount: w.retryCount,
 					RetryLimit: w.retryLimit,
 				})
-				
-				log.Info("开始执行任务: %s (ID: %s)", w.taskName, w.taskID)
-				
+
+				logger.Info("开始执行任务: %s (ID: %s)", w.taskName, w.taskID)
+
 				// 执行任务，捕获错误
 				var err error
 				done := make(chan struct{})
-				
+
 				go func() {
 					defer close(done)
 					err = w.task.Run()
 				}()
-				
+
 				// 等待任务完成或上下文取消
 				select {
 				case <-done:
@@ -463,22 +463,22 @@ func (pm *EnhancedTaskPoolManager) worker() {
 					// 任务超时或被取消
 					err = w.ctx.Err()
 				}
-				
+
 				endTime := time.Now()
 				duration := endTime.Sub(startTime)
-				
+
 				// 根据执行结果更新状态
 				if err != nil {
-					log.Error("执行任务 '%s' (ID: %s) 失败: %v", w.taskName, w.taskID, err)
-					
+					logger.Error("执行任务 '%s' (ID: %s) 失败: %v", w.taskName, w.taskID, err)
+
 					// 记录失败状态
 					pm.recordTaskExecution(w, TaskStatusFailed, err)
-					
+
 					// 尝试重试任务
 					pm.retryTaskIfNeeded(w)
 				} else {
-					log.Info("任务 '%s' (ID: %s) 执行完成，耗时: %v", w.taskName, w.taskID, duration)
-					
+					logger.Info("任务 '%s' (ID: %s) 执行完成，耗时: %v", w.taskName, w.taskID, duration)
+
 					// 记录成功状态
 					pm.recordTaskExecution(w, TaskStatusCompleted, nil)
 				}
@@ -492,10 +492,10 @@ func (pm *EnhancedTaskPoolManager) checkDependencies(wrapper taskWrapper) bool {
 	if len(wrapper.dependsOn) == 0 {
 		return true
 	}
-	
+
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
-	
+
 	for _, depTask := range wrapper.dependsOn {
 		// 检查依赖任务的最新状态
 		found := false
@@ -510,41 +510,41 @@ func (pm *EnhancedTaskPoolManager) checkDependencies(wrapper taskWrapper) bool {
 				break
 			}
 		}
-		
+
 		if !found {
 			// 依赖任务尚未执行
 			return false
 		}
 	}
-	
+
 	return true
 }
 
 // retryTaskIfNeeded 根据需要重试任务
 func (pm *EnhancedTaskPoolManager) retryTaskIfNeeded(wrapper taskWrapper) {
 	if wrapper.retryCount >= wrapper.retryLimit {
-		log.Warning("任务 '%s' (ID: %s) 已达到最大重试次数 %d，不再重试", 
+		logger.Warning("任务 '%s' (ID: %s) 已达到最大重试次数 %d，不再重试",
 			wrapper.taskName, wrapper.taskID, wrapper.retryLimit)
 		return
 	}
-	
+
 	// 增加重试计数
 	wrapper.retryCount++
-	
+
 	// 计算退避时间
 	backoff := time.Duration(wrapper.retryCount) * pm.config.RetryBackoff
-	
-	log.Info("计划在 %v 后重试任务 '%s' (ID: %s)，这是第 %d 次重试", 
+
+	logger.Info("计划在 %v 后重试任务 '%s' (ID: %s)，这是第 %d 次重试",
 		backoff, wrapper.taskName, wrapper.taskID, wrapper.retryCount)
-	
+
 	// 更新指标
 	pm.metrics.mu.Lock()
 	pm.metrics.TotalTasksRetried++
 	pm.metrics.mu.Unlock()
-	
+
 	// 创建新的上下文
 	newCtx, newCancel := context.WithTimeout(pm.ctx, wrapper.task.Timeout())
-	
+
 	// 创建新的包装器
 	newWrapper := taskWrapper{
 		task:       wrapper.task,
@@ -557,7 +557,7 @@ func (pm *EnhancedTaskPoolManager) retryTaskIfNeeded(wrapper taskWrapper) {
 		retryLimit: wrapper.retryLimit,
 		dependsOn:  wrapper.dependsOn,
 	}
-	
+
 	// 延迟提交重试任务
 	go func() {
 		time.Sleep(backoff)
@@ -569,17 +569,17 @@ func (pm *EnhancedTaskPoolManager) retryTaskIfNeeded(wrapper taskWrapper) {
 func (pm *EnhancedTaskPoolManager) recordTaskExecution(wrapper taskWrapper, status TaskStatus, err error) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
-	
+
 	endTime := time.Now()
-	
+
 	// 获取开始时间
 	startTime := endTime
 	if info, exists := pm.taskStatus[wrapper.taskID]; exists {
 		startTime = info.StartTime
 	}
-	
+
 	duration := endTime.Sub(startTime)
-	
+
 	// 创建执行信息
 	execInfo := TaskExecutionInfo{
 		TaskID:     wrapper.taskID,
@@ -592,21 +592,21 @@ func (pm *EnhancedTaskPoolManager) recordTaskExecution(wrapper taskWrapper, stat
 		RetryCount: wrapper.retryCount,
 		RetryLimit: wrapper.retryLimit,
 	}
-	
+
 	// 更新任务状态
 	pm.taskStatus[wrapper.taskID] = execInfo
-	
+
 	// 添加到历史记录
 	if pm.config.EnableTaskHistory {
 		pm.executionHistory = append(pm.executionHistory, execInfo)
-		
+
 		// 如果历史记录超过限制，删除最旧的记录
 		if len(pm.executionHistory) > pm.config.HistorySize {
 			excess := len(pm.executionHistory) - pm.config.HistorySize
 			pm.executionHistory = pm.executionHistory[excess:]
 		}
 	}
-	
+
 	// 更新指标
 	if pm.config.EnableMetrics {
 		pm.updateMetrics(execInfo)
@@ -617,7 +617,7 @@ func (pm *EnhancedTaskPoolManager) recordTaskExecution(wrapper taskWrapper, stat
 func (pm *EnhancedTaskPoolManager) updateTaskStatus(taskID string, info TaskExecutionInfo) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
-	
+
 	pm.taskStatus[taskID] = info
 }
 
@@ -625,7 +625,7 @@ func (pm *EnhancedTaskPoolManager) updateTaskStatus(taskID string, info TaskExec
 func (pm *EnhancedTaskPoolManager) updateMetrics(info TaskExecutionInfo) {
 	pm.metrics.mu.Lock()
 	defer pm.metrics.mu.Unlock()
-	
+
 	// 更新总计数
 	switch info.Status {
 	case TaskStatusCompleted:
@@ -635,20 +635,20 @@ func (pm *EnhancedTaskPoolManager) updateMetrics(info TaskExecutionInfo) {
 	case TaskStatusCancelled:
 		pm.metrics.TotalTasksCancelled++
 	}
-	
+
 	// 更新执行时间统计
 	pm.metrics.TotalExecutionTime += info.Duration
 	pm.metrics.LastExecutionTime = info.EndTime
-	
+
 	// 更新最大/最小执行时间
 	if info.Duration > pm.metrics.MaxExecutionTime {
 		pm.metrics.MaxExecutionTime = info.Duration
 	}
-	
+
 	if pm.metrics.MinExecutionTime == 0 || info.Duration < pm.metrics.MinExecutionTime {
 		pm.metrics.MinExecutionTime = info.Duration
 	}
-	
+
 	// 计算平均执行时间
 	totalTasks := pm.metrics.TotalTasksCompleted + pm.metrics.TotalTasksFailed + pm.metrics.TotalTasksCancelled
 	if totalTasks > 0 {
@@ -662,7 +662,7 @@ func (pm *EnhancedTaskPoolManager) submitTaskWrapper(wrapper taskWrapper) {
 	pm.metrics.mu.Lock()
 	pm.metrics.TotalTasksSubmitted++
 	pm.metrics.mu.Unlock()
-	
+
 	// 提交到队列
 	select {
 	case pm.taskQueue <- wrapper:
@@ -670,7 +670,7 @@ func (pm *EnhancedTaskPoolManager) submitTaskWrapper(wrapper taskWrapper) {
 	case <-pm.ctx.Done():
 		// 任务池已停止
 		wrapper.cancel() // 取消任务
-		log.Warning("任务池已停止，无法提交任务 '%s'", wrapper.taskName)
+		logger.Warning("任务池已停止，无法提交任务 '%s'", wrapper.taskName)
 	}
 }
 
@@ -679,10 +679,10 @@ func (pm *EnhancedTaskPoolManager) Submit(task ScheduledTask, priority TaskPrior
 	if !pm.isRunning {
 		return fmt.Errorf("任务池未运行，无法提交任务")
 	}
-	
+
 	taskID := fmt.Sprintf("%s-%d", task.GetName(), time.Now().UnixNano())
 	taskCtx, taskCancel := context.WithTimeout(pm.ctx, task.Timeout())
-	
+
 	// 创建任务包装器
 	wrapper := taskWrapper{
 		task:       task,
@@ -694,12 +694,12 @@ func (pm *EnhancedTaskPoolManager) Submit(task ScheduledTask, priority TaskPrior
 		retryCount: 0,
 		retryLimit: pm.config.DefaultRetryLimit,
 	}
-	
-	log.Info("提交任务 '%s' (ID: %s) 到任务池执行，优先级: %d", task.GetName(), taskID, priority)
-	
+
+	logger.Info("提交任务 '%s' (ID: %s) 到任务池执行，优先级: %d", task.GetName(), taskID, priority)
+
 	// 提交任务到队列
 	pm.submitTaskWrapper(wrapper)
-	
+
 	return nil
 }
 
@@ -708,10 +708,10 @@ func (pm *EnhancedTaskPoolManager) Stop() {
 	pm.mu.Lock()
 	if !pm.isRunning {
 		pm.mu.Unlock()
-		log.Info("任务池未运行，无需停止。")
+		logger.Info("任务池未运行，无需停止。")
 		return
 	}
-	
+
 	// 避免重复关闭stopCh
 	select {
 	case <-pm.stopCh:
@@ -721,8 +721,8 @@ func (pm *EnhancedTaskPoolManager) Stop() {
 	default:
 	}
 	pm.mu.Unlock() // 在关闭通道前解锁，避免与监听stopCh的goroutine死锁
-	
-	log.Info("正在发送停止信号给任务池...")
+
+	logger.Info("正在发送停止信号给任务池...")
 	close(pm.stopCh) // 发送停止信号
 }
 
@@ -730,7 +730,7 @@ func (pm *EnhancedTaskPoolManager) Stop() {
 func (pm *EnhancedTaskPoolManager) GetTaskStatus(taskID string) (TaskExecutionInfo, bool) {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
-	
+
 	info, exists := pm.taskStatus[taskID]
 	return info, exists
 }
@@ -739,25 +739,25 @@ func (pm *EnhancedTaskPoolManager) GetTaskStatus(taskID string) (TaskExecutionIn
 func (pm *EnhancedTaskPoolManager) GetTaskHistory(taskName string, limit int) []TaskExecutionInfo {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
-	
+
 	if !pm.config.EnableTaskHistory {
 		return nil
 	}
-	
+
 	result := make([]TaskExecutionInfo, 0)
-	
+
 	// 从最新的记录开始查找
 	for i := len(pm.executionHistory) - 1; i >= 0; i-- {
 		info := pm.executionHistory[i]
 		if info.TaskName == taskName {
 			result = append(result, info)
-			
+
 			if limit > 0 && len(result) >= limit {
 				break
 			}
 		}
 	}
-	
+
 	return result
 }
 
@@ -765,7 +765,7 @@ func (pm *EnhancedTaskPoolManager) GetTaskHistory(taskName string, limit int) []
 func (pm *EnhancedTaskPoolManager) GetMetrics() *TaskPoolMetrics {
 	pm.metrics.mu.Lock()
 	defer pm.metrics.mu.Unlock()
-	
+
 	// 返回指标的副本
 	copy := *pm.metrics
 	return &copy
@@ -775,7 +775,7 @@ func (pm *EnhancedTaskPoolManager) GetMetrics() *TaskPoolMetrics {
 func (pm *EnhancedTaskPoolManager) GetTask(name string) (ScheduledTask, bool) {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
-	
+
 	task, exists := pm.tasks[name]
 	return task, exists
 }
@@ -784,7 +784,7 @@ func (pm *EnhancedTaskPoolManager) GetTask(name string) (ScheduledTask, bool) {
 func (pm *EnhancedTaskPoolManager) ListTasks() []string {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
-	
+
 	names := make([]string, 0, len(pm.tasks))
 	for name := range pm.tasks {
 		names = append(names, name)
@@ -796,42 +796,42 @@ func (pm *EnhancedTaskPoolManager) ListTasks() []string {
 func (pm *EnhancedTaskPoolManager) CancelTask(taskID string) bool {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
-	
+
 	// 查找任务状态
 	info, exists := pm.taskStatus[taskID]
 	if !exists || info.Status != TaskStatusRunning {
 		return false
 	}
-	
+
 	// 遍历所有工作协程中的任务
 	for _, wrapper := range pm.getRunningTasks() {
 		if wrapper.taskID == taskID {
 			// 取消任务
 			wrapper.cancel()
-			
+
 			// 更新状态
 			info.Status = TaskStatusCancelled
 			info.EndTime = time.Now()
 			info.Duration = info.EndTime.Sub(info.StartTime)
 			pm.taskStatus[taskID] = info
-			
+
 			// 添加到历史记录
 			if pm.config.EnableTaskHistory {
 				pm.executionHistory = append(pm.executionHistory, info)
 			}
-			
+
 			// 更新指标
 			if pm.config.EnableMetrics {
 				pm.metrics.mu.Lock()
 				pm.metrics.TotalTasksCancelled++
 				pm.metrics.mu.Unlock()
 			}
-			
-			log.Info("已取消任务 '%s' (ID: %s)", info.TaskName, taskID)
+
+			logger.Info("已取消任务 '%s' (ID: %s)", info.TaskName, taskID)
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -847,15 +847,15 @@ func (pm *EnhancedTaskPoolManager) getRunningTasks() []taskWrapper {
 func (pm *EnhancedTaskPoolManager) SetTaskRetryLimit(taskName string, retryLimit int) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
-	
+
 	// 验证任务是否存在
 	if _, exists := pm.tasks[taskName]; !exists {
 		return fmt.Errorf("任务 '%s' 不存在", taskName)
 	}
-	
+
 	// 在实际实现中，这里应该设置任务的重试限制
-	log.Info("设置任务 '%s' 的重试限制为 %d", taskName, retryLimit)
-	
+	logger.Info("设置任务 '%s' 的重试限制为 %d", taskName, retryLimit)
+
 	return nil
 }
 

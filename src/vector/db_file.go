@@ -4,7 +4,7 @@ import (
 	"VectorSphere/src/library/acceler"
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/graph"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/library/storage"
 	"bytes"
 	"encoding/gob"
@@ -40,13 +40,13 @@ func (db *VectorDB) SaveToFileWithMmap(filePath string) error {
 	// 创建 mmap 文件
 	mmapFile, err := storage.NewMmap(db.backupPath, storage.MODE_CREATE)
 	if err != nil {
-		log.Warning("mmap 创建失败，回退到标准方式: %v", err)
+		logger.Warning("mmap 创建失败，回退到标准方式: %v", err)
 		return db.SaveToFile(filePath) // 回退到原方法
 	}
 	defer func(mmapFile *storage.Mmap) {
 		err := mmapFile.Unmap()
 		if err != nil {
-			log.Error("unmap file has error:%v", err.Error())
+			logger.Error("unmap file has error:%v", err.Error())
 		}
 	}(mmapFile)
 
@@ -118,7 +118,7 @@ func (db *VectorDB) SaveToFileWithMmap(filePath string) error {
 		}
 	}
 
-	log.Info("VectorDB 数据成功通过 mmap 保存到 %s", db.backupPath)
+	logger.Info("VectorDB 数据成功通过 mmap 保存到 %s", db.backupPath)
 	return nil
 }
 
@@ -130,7 +130,7 @@ func (db *VectorDB) SaveToFile(filePath string) error {
 	// 大于 10MB 的文件使用 mmap 优化
 	if estimatedSize > 10*1024*1024 {
 		if err := db.SaveToFileWithMmap(filePath); err != nil {
-			log.Warning("mmap 保存失败，回退到标准方式: %v", err)
+			logger.Warning("mmap 保存失败，回退到标准方式: %v", err)
 			return db.saveToFileStandard(filePath)
 		}
 		return nil
@@ -155,7 +155,7 @@ func (db *VectorDB) saveToFileStandard(filePath string) error {
 	defer func(file *os.File) {
 		err := file.Close()
 		if err != nil {
-			log.Error("close file failed: %v", err)
+			logger.Error("close file failed: %v", err)
 		}
 	}(file)
 
@@ -219,7 +219,7 @@ func (db *VectorDB) saveToFileStandard(filePath string) error {
 			return fmt.Errorf("保存 HNSW 图结构失败: %w", err)
 		}
 	}
-	log.Info("VectorDB 数据成功保存到 %s", db.filePath)
+	logger.Info("VectorDB 数据成功保存到 %s", db.filePath)
 
 	return nil
 }
@@ -235,7 +235,7 @@ func (db *VectorDB) LoadFromFileWithMmap(filePath string) error {
 
 	// 检查文件是否存在
 	if _, err := os.Stat(db.filePath); os.IsNotExist(err) {
-		log.Info("数据库文件 %s 不存在，将创建一个新的空数据库。", db.filePath)
+		logger.Info("数据库文件 %s 不存在，将创建一个新的空数据库。", db.filePath)
 		db.initializeEmptyDB()
 		return nil
 	}
@@ -243,13 +243,13 @@ func (db *VectorDB) LoadFromFileWithMmap(filePath string) error {
 	// 创建 mmap 文件映射
 	mmapFile, err := storage.NewMmap(db.filePath, storage.MODE_APPEND)
 	if err != nil {
-		log.Warning("mmap 打开失败，回退到标准方式: %v", err)
+		logger.Warning("mmap 打开失败，回退到标准方式: %v", err)
 		return db.LoadFromFile(filePath) // 回退到原方法
 	}
 	defer func(mmapFile *storage.Mmap) {
 		err := mmapFile.Unmap()
 		if err != nil {
-			log.Error("unmap file has error:%v", err.Error())
+			logger.Error("unmap file has error:%v", err.Error())
 		}
 	}(mmapFile)
 
@@ -291,7 +291,7 @@ func (db *VectorDB) LoadFromFileWithMmap(filePath string) error {
 	}{}
 
 	if err := decoder.Decode(&data); err != nil {
-		log.Error("从 mmap 反序列化数据库失败: %v。将使用空数据库启动。", err)
+		logger.Error("从 mmap 反序列化数据库失败: %v。将使用空数据库启动。", err)
 		db.initializeEmptyDB()
 		return nil
 	}
@@ -305,14 +305,14 @@ func (db *VectorDB) LoadFromFileWithMmap(filePath string) error {
 		if _, err := os.Stat(hnswFilePath); err == nil {
 			db.hnsw = graph.NewHNSWGraph(db.maxConnections, db.efConstruction, db.efSearch)
 			if err := db.hnsw.LoadFromFile(hnswFilePath); err != nil {
-				log.Warning("加载 HNSW 图结构失败: %v", err)
+				logger.Warning("加载 HNSW 图结构失败: %v", err)
 				db.useHNSWIndex = false
 				db.hnsw = nil
 			}
 		}
 	}
 
-	log.Info("VectorDB 数据成功通过 mmap 从 %s 加载，向量数量: %d", db.filePath, len(db.vectors))
+	logger.Info("VectorDB 数据成功通过 mmap 从 %s 加载，向量数量: %d", db.filePath, len(db.vectors))
 	return nil
 }
 
@@ -325,7 +325,7 @@ func (db *VectorDB) LoadFromFile(filePath string) error {
 		// 大于 10MB 的文件使用 mmap 优化
 		if fileSize > 10*1024*1024 {
 			if err := db.LoadFromFileWithMmap(filePath); err != nil {
-				log.Warning("mmap 加载失败，回退到标准方式: %v", err)
+				logger.Warning("mmap 加载失败，回退到标准方式: %v", err)
 				return db.loadFromFileStandard(filePath)
 			}
 			return nil
@@ -347,7 +347,7 @@ func (db *VectorDB) loadFromFileStandard(filePath string) error {
 	file, err := os.Open(db.filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Info("数据库文件 %s 不存在，将创建一个新的空数据库。", db.filePath)
+			logger.Info("数据库文件 %s 不存在，将创建一个新的空数据库。", db.filePath)
 			// 初始化为空数据库状态，确保所有 map 都已创建
 			db.vectors = make(map[string][]float64)
 			db.clusters = make([]Cluster, 0)
@@ -363,7 +363,7 @@ func (db *VectorDB) loadFromFileStandard(filePath string) error {
 	defer func(file *os.File) {
 		err := file.Close()
 		if err != nil {
-			log.Error("close file has error: %v", err.Error())
+			logger.Error("close file has error: %v", err.Error())
 		}
 	}(file)
 
@@ -394,7 +394,7 @@ func (db *VectorDB) loadFromFileStandard(filePath string) error {
 	if err := decoder.Decode(&data); err != nil {
 		// 如果解码失败，可能是文件损坏或格式不兼容
 		// 记录错误，并以空数据库启动，避免程序崩溃
-		log.Error("从 %s 反序列化数据库失败: %v。将使用空数据库启动。", db.filePath, err)
+		logger.Error("从 %s 反序列化数据库失败: %v。将使用空数据库启动。", db.filePath, err)
 		db.vectors = make(map[string][]float64)
 		db.clusters = make([]Cluster, 0)
 		db.indexed = false
@@ -452,7 +452,7 @@ func (db *VectorDB) loadFromFileStandard(filePath string) error {
 		db.mu.Lock() // 重新获取锁
 
 		if errLoadCodebook != nil {
-			log.Error("从 %s 加载数据库后，尝试加载 PQ 码本 %s 失败: %v。PQ 压缩将禁用。", db.filePath, tempPath, errLoadCodebook)
+			logger.Error("从 %s 加载数据库后，尝试加载 PQ 码本 %s 失败: %v。PQ 压缩将禁用。", db.filePath, tempPath, errLoadCodebook)
 			db.usePQCompression = false
 			db.pqCodebook = nil
 		} else {
@@ -470,7 +470,7 @@ func (db *VectorDB) loadFromFileStandard(filePath string) error {
 		// 实际上，我们应该信任 LoadPQCodebookFromFile 设置的 usePQCompression
 		// 所以，如果 tempUsePQ 为 true 但加载失败，usePQCompression 会是 false，这是正确的
 	} else if db.usePQCompression && db.pqCodebookFilePath == "" {
-		log.Warning("数据库配置为使用 PQ 压缩，但未指定码本文件路径。PQ 压缩将禁用。")
+		logger.Warning("数据库配置为使用 PQ 压缩，但未指定码本文件路径。PQ 压缩将禁用。")
 		db.usePQCompression = false
 		db.pqCodebook = nil
 	}
@@ -489,13 +489,13 @@ func (db *VectorDB) loadFromFileStandard(filePath string) error {
 		})
 
 		if err != nil {
-			log.Warning("加载 HNSW 图结构失败: %v，将重新构建索引。", err)
+			logger.Warning("加载 HNSW 图结构失败: %v，将重新构建索引。", err)
 			db.indexed = false
 		}
 	}
 	// 设置备份路径
 	db.backupPath = filePath + ".bat"
-	log.Info("VectorDB 数据成功从 %s 加载。向量数: %d, 是否已索引: %t, PQ压缩: %t", db.filePath, len(db.vectors), db.indexed, db.usePQCompression)
+	logger.Info("VectorDB 数据成功从 %s 加载。向量数: %d, 是否已索引: %t, PQ压缩: %t", db.filePath, len(db.vectors), db.indexed, db.usePQCompression)
 	return nil
 }
 
@@ -519,7 +519,7 @@ func (db *VectorDB) LoadPQCodebookFromFile(filePath string) error {
 	defer db.mu.Unlock()
 
 	if filePath == "" {
-		log.Warning("PQ 码本文件路径为空，跳过加载。")
+		logger.Warning("PQ 码本文件路径为空，跳过加载。")
 		db.pqCodebook = nil
 		db.usePQCompression = false // 如果码本路径为空，则禁用PQ
 		return nil
@@ -528,7 +528,7 @@ func (db *VectorDB) LoadPQCodebookFromFile(filePath string) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Warning("PQ 码本文件 %s 不存在，PQ 压缩将不可用。", filePath)
+			logger.Warning("PQ 码本文件 %s 不存在，PQ 压缩将不可用。", filePath)
 			db.pqCodebook = nil
 			db.usePQCompression = false
 			return nil // 文件不存在不是致命错误，只是PQ不可用
@@ -538,7 +538,7 @@ func (db *VectorDB) LoadPQCodebookFromFile(filePath string) error {
 	defer func(file *os.File) {
 		err := file.Close()
 		if err != nil {
-			log.Error("close file has error:%v", err.Error())
+			logger.Error("close file has error:%v", err.Error())
 		}
 	}(file)
 
@@ -556,15 +556,15 @@ func (db *VectorDB) LoadPQCodebookFromFile(filePath string) error {
 		if len(codebook[0]) > 0 {
 			db.numCentroidsPerSubVector = len(codebook[0])
 		} else {
-			log.Warning("加载的 PQ 码本子空间为空，PQ 参数可能不正确。")
+			logger.Warning("加载的 PQ 码本子空间为空，PQ 参数可能不正确。")
 			db.numCentroidsPerSubVector = 0
 		}
 	} else {
-		log.Warning("加载的 PQ 码本为空，PQ 参数可能不正确。")
+		logger.Warning("加载的 PQ 码本为空，PQ 参数可能不正确。")
 		db.numSubVectors = 0
 		db.numCentroidsPerSubVector = 0
 	}
 
-	log.Info("成功从 %s 加载 PQ 码本。子空间数: %d, 每子空间质心数: %d", filePath, db.numSubVectors, db.numCentroidsPerSubVector)
+	logger.Info("成功从 %s 加载 PQ 码本。子空间数: %d, 每子空间质心数: %d", filePath, db.numSubVectors, db.numCentroidsPerSubVector)
 	return nil
 }

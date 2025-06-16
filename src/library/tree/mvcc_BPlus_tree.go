@@ -1,7 +1,7 @@
 package tree
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"errors"
 	"fmt"
 	"sync"
@@ -272,7 +272,7 @@ func (t *MVCCBPlusTree) Optimize() error {
 		// 空树，无需优化
 		return nil
 	}
-	log.Info("开始优化B+树，共有 %d 个叶子节点", len(leaves))
+	logger.Info("开始优化B+树，共有 %d 个叶子节点", len(leaves))
 
 	// 3. 清理每个叶子节点中的无效版本
 	cleanedNodes := 0
@@ -330,7 +330,7 @@ func (t *MVCCBPlusTree) Optimize() error {
 		t.root = t.rebuildInternalNodes(leaves, 0, len(leaves)-1)
 	}
 	optimizeTime := time.Since(startTime)
-	log.Info("B+树优化完成，耗时 %v, 清理了 %d 个节点的版本链，合并了 %d 个稀疏节点", optimizeTime, cleanedNodes, mergedNodes)
+	logger.Info("B+树优化完成，耗时 %v, 清理了 %d 个节点的版本链，合并了 %d 个稀疏节点", optimizeTime, cleanedNodes, mergedNodes)
 	return nil
 }
 
@@ -1126,7 +1126,7 @@ func (t *MVCCBPlusTree) rollbackTransaction(tx *Transaction) error {
 	}
 
 	// 记录回滚日志
-	log.Info("Transaction %d rolled back\n", tx.txID)
+	logger.Info("Transaction %d rolled back\n", tx.txID)
 	return nil
 }
 

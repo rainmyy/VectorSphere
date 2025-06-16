@@ -2,7 +2,7 @@ package bootstrap
 
 import (
 	"VectorSphere/src/enhanced"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"context"
 	"fmt"
 	"net"
@@ -50,7 +50,15 @@ type AppConfig struct {
 
 // InitEtcdClient 初始化etcd客户端
 func InitEtcdClient(config *AppConfig) (*clientv3.Client, error) {
-	log.Info("Initializing etcd client with endpoints: %v", config.EtcdEndpoints)
+	if config == nil {
+		return nil, fmt.Errorf("config cannot be nil")
+	}
+
+	if len(config.EtcdEndpoints) == 0 {
+		return nil, fmt.Errorf("etcd endpoints cannot be empty")
+	}
+
+	logger.Info("Initializing etcd client with endpoints: %v", config.EtcdEndpoints)
 
 	client, err := clientv3.New(clientv3.Config{
 		Endpoints:   config.EtcdEndpoints,
@@ -71,13 +79,13 @@ func InitEtcdClient(config *AppConfig) (*clientv3.Client, error) {
 		return nil, fmt.Errorf("failed to connect to etcd: %v", err)
 	}
 
-	log.Info("Etcd client initialized successfully")
+	logger.Info("Etcd client initialized successfully")
 	return client, nil
 }
 
 // InitServiceRegistry 初始化服务注册
 func InitServiceRegistry(client *clientv3.Client, config *AppConfig) (*enhanced.EnhancedServiceRegistry, error) {
-	log.Info("Initializing enhanced service registry")
+	logger.Info("Initializing enhanced service registry")
 
 	// 创建服务注册配置
 	registryConfig := &enhanced.ServiceRegistryConfig{
@@ -97,13 +105,13 @@ func InitServiceRegistry(client *clientv3.Client, config *AppConfig) (*enhanced.
 	// 创建服务注册实例
 	registry := enhanced.NewEnhancedServiceRegistry(client, registryConfig)
 
-	log.Info("Enhanced service registry initialized successfully")
+	logger.Info("Enhanced service registry initialized successfully")
 	return registry, nil
 }
 
 // RegisterService 注册服务
 func RegisterService(ctx context.Context, registry *enhanced.EnhancedServiceRegistry, config *AppConfig) error {
-	log.Info("Registering service: %s, type: %s, address: %s:%d", config.ServiceName, config.NodeType, config.Address, config.Port)
+	logger.Info("Registering service: %s, type: %s, address: %s:%d", config.ServiceName, config.NodeType, config.Address, config.Port)
 
 	// 如果地址为空，尝试获取本地IP
 	address := config.Address
@@ -114,7 +122,7 @@ func RegisterService(ctx context.Context, registry *enhanced.EnhancedServiceRegi
 		}
 		address = ip
 	}
-
+	timeNow := time.Now()
 	// 创建服务元数据
 	metadata := &enhanced.ServiceMetadata{
 		ServiceName:   config.ServiceName,
@@ -130,8 +138,8 @@ func RegisterService(ctx context.Context, registry *enhanced.EnhancedServiceRegi
 		Capabilities:  []string{"search", "index", "config"},
 		Load:          0.0,
 		HealthScore:   1.0,
-		LastHeartbeat: time.Now(),
-		StartTime:     time.Now(),
+		LastHeartbeat: timeNow,
+		StartTime:     timeNow,
 		Metrics:       make(map[string]interface{}),
 		CustomData: map[string]string{
 			"health_check_endpoint": config.HealthCheckEndpoint,
@@ -145,13 +153,13 @@ func RegisterService(ctx context.Context, registry *enhanced.EnhancedServiceRegi
 		return fmt.Errorf("failed to register service: %v", err)
 	}
 
-	log.Info("Service registered successfully")
+	logger.Info("Service registered successfully")
 	return nil
 }
 
 // InitLoadBalancer 初始化负载均衡器
 func InitLoadBalancer(client *clientv3.Client, registry *enhanced.EnhancedServiceRegistry, config *AppConfig) (*enhanced.EnhancedLoadBalancer, error) {
-	log.Info("Initializing enhanced load balancer")
+	logger.Info("Initializing enhanced load balancer")
 
 	// 确定负载均衡算法
 	var algorithm enhanced.LoadBalancingAlgorithm
@@ -210,13 +218,13 @@ func InitLoadBalancer(client *clientv3.Client, registry *enhanced.EnhancedServic
 		return nil, fmt.Errorf("failed to set service discovery source: %v", err)
 	}
 
-	log.Info("Enhanced load balancer initialized successfully")
+	logger.Info("Enhanced load balancer initialized successfully")
 	return lb, nil
 }
 
 // InitConfigManager 初始化配置管理器
 func InitConfigManager(client *clientv3.Client, config *AppConfig) (*enhanced.EnhancedConfigManager, error) {
-	log.Info("Initializing enhanced config manager")
+	logger.Info("Initializing enhanced config manager")
 
 	// 创建配置管理器实例
 	configManager, err := enhanced.NewEnhancedConfigManager(client, nil)
@@ -228,11 +236,11 @@ func InitConfigManager(client *clientv3.Client, config *AppConfig) (*enhanced.En
 	if config.ConfigNamespace != "" {
 		err = configManager.InitNamespace(context.Background(), config.ConfigNamespace, config.ConfigEnv)
 		if err != nil {
-			log.Warning("Failed to initialize config namespace: %v", err)
+			logger.Warning("Failed to initialize config namespace: %v", err)
 		}
 	}
 
-	log.Info("Enhanced config manager initialized successfully")
+	logger.Info("Enhanced config manager initialized successfully")
 	return configManager, nil
 }
 

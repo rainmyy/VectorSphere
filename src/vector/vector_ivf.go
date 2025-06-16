@@ -4,7 +4,7 @@ import (
 	"VectorSphere/src/library/acceler"
 	"VectorSphere/src/library/algorithm"
 	"VectorSphere/src/library/entity"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"fmt"
 	"math"
 	"math/rand"
@@ -99,7 +99,7 @@ const (
 func (db *VectorDB) sampleTrainingData(trainingRatio float64) ([][]float64, []string) {
 	if trainingRatio <= 0 || trainingRatio > 1.0 {
 		trainingRatio = 0.1 // 默认采样10%的数据进行训练
-		log.Warning("Invalid trainingRatio, defaulting to 0.1")
+		logger.Warning("Invalid trainingRatio, defaulting to 0.1")
 	}
 
 	db.mu.RLock() // Read lock for accessing db.vectors
@@ -139,7 +139,7 @@ func (db *VectorDB) sampleTrainingData(trainingRatio float64) ([][]float64, []st
 		}
 	}
 
-	log.Info("Sampled %d vectors for training (%.2f%% of total %d vectors)", len(trainingVectors), trainingRatio*100, len(db.vectors))
+	logger.Info("Sampled %d vectors for training (%.2f%% of total %d vectors)", len(trainingVectors), trainingRatio*100, len(db.vectors))
 	return trainingVectors, trainingIDs
 }
 
@@ -165,14 +165,14 @@ func (db *VectorDB) BuildEnhancedIVFIndex(config *IVFConfig) error {
 			MaxClusterSize:     10000,
 			MinClusterSize:     10,
 		}
-		log.Info("No IVFConfig provided, using default configuration: %+v", *config)
+		logger.Info("No IVFConfig provided, using default configuration: %+v", *config)
 	}
 
 	db.ivfConfig = config
 
 	// 0. 检查向量数据是否为空
 	if len(db.vectors) == 0 {
-		log.Warning("Cannot build Enhanced IVF Index: no vectors in the database.")
+		logger.Warning("Cannot build Enhanced IVF Index: no vectors in the database.")
 		db.indexed = false // 标记为未索引
 		return fmt.Errorf("cannot build Enhanced IVF Index: no vectors in the database")
 	}
@@ -180,29 +180,29 @@ func (db *VectorDB) BuildEnhancedIVFIndex(config *IVFConfig) error {
 	// 1. 采样训练数据
 	trainingVectors, _ := db.sampleTrainingData(config.TrainingRatio) // trainingIDs 暂时未使用
 	if len(trainingVectors) == 0 {
-		log.Warning("Cannot build Enhanced IVF Index: no training data sampled.")
+		logger.Warning("Cannot build Enhanced IVF Index: no training data sampled.")
 		db.indexed = false
 		return fmt.Errorf("cannot build Enhanced IVF Index: no training data sampled")
 	}
 
 	// 确保聚类数量不超过训练样本数量
 	if config.NumClusters > len(trainingVectors) {
-		log.Warning("Number of clusters (%d) exceeds number of training samples (%d). Adjusting NumClusters to %d.", config.NumClusters, len(trainingVectors), len(trainingVectors))
+		logger.Warning("Number of clusters (%d) exceeds number of training samples (%d). Adjusting NumClusters to %d.", config.NumClusters, len(trainingVectors), len(trainingVectors))
 		config.NumClusters = len(trainingVectors)
 	}
 	if config.NumClusters <= 0 {
-		log.Warning("Number of clusters must be positive. Setting to 1.")
+		logger.Warning("Number of clusters must be positive. Setting to 1.")
 		config.NumClusters = 1
 	}
 
 	// 2. 执行聚类
-	log.Info("Starting KMeans clustering with %d training vectors and %d clusters.", len(trainingVectors), config.NumClusters)
+	logger.Info("Starting KMeans clustering with %d training vectors and %d clusters.", len(trainingVectors), config.NumClusters)
 	centroids, _, err := algorithm.KMeans(algorithm.ConvertToPoints(trainingVectors), config.NumClusters, 100, 0.001)
 	if err != nil {
 		db.indexed = false
 		return fmt.Errorf("KMeans 聚类失败: %w", err)
 	}
-	log.Info("KMeans clustering completed. Generated %d centroids.", len(centroids))
+	logger.Info("KMeans clustering completed. Generated %d centroids.", len(centroids))
 
 	// 3. 构建增强聚类
 	enhancedClusters := make([]EnhancedCluster, config.NumClusters)
@@ -228,7 +228,7 @@ func (db *VectorDB) BuildEnhancedIVFIndex(config *IVFConfig) error {
 	// 5. 构建 PQ 压缩（如果启用）
 	if config.UsePQCompression {
 		if err := db.BuildIVFPQIndex(enhancedClusters, config); err != nil {
-			log.Warning("构建 IVF-PQ 索引失败: %v", err)
+			logger.Warning("构建 IVF-PQ 索引失败: %v", err)
 			// 根据策略，这里可以选择是否因为PQ构建失败而整体失败
 			// return fmt.Errorf("构建 IVF-PQ 索引失败: %w", err)
 		}
@@ -257,18 +257,18 @@ func (db *VectorDB) BuildEnhancedIVFIndex(config *IVFConfig) error {
 	}
 
 	db.indexed = true
-	log.Info("增强 IVF 索引构建完成，共 %d 个聚类", config.NumClusters)
+	logger.Info("增强 IVF 索引构建完成，共 %d 个聚类", config.NumClusters)
 	return nil
 }
 
 // StartDynamicClusterUpdates 启动后台 goroutine 以进行动态聚类更新
 func (db *VectorDB) StartDynamicClusterUpdates() {
 	if db.ivfIndex == nil || !db.ivfConfig.EnableDynamic {
-		log.Info("Dynamic cluster updates are not enabled or IVF index is not built.")
+		logger.Info("Dynamic cluster updates are not enabled or IVF index is not built.")
 		return
 	}
 
-	log.Info("Starting dynamic cluster updates goroutine...")
+	logger.Info("Starting dynamic cluster updates goroutine...")
 	go func() {
 		// TODO: 从配置中读取更新间隔
 		ticker := time.NewTicker(1 * time.Minute) // 例如，每分钟检查一次
@@ -295,14 +295,14 @@ func (db *VectorDB) performClusterMaintenance() {
 	db.ivfIndex.mu.Lock()
 	defer db.ivfIndex.mu.Unlock()
 
-	log.Info("Performing cluster maintenance...")
+	logger.Info("Performing cluster maintenance...")
 	var needsRebuild bool = false
 	for i := range db.ivfIndex.Clusters {
 		cluster := &db.ivfIndex.Clusters[i]
 		// 检查是否需要重平衡
 		// 例如：如果聚类大小超出阈值，或者长时间未访问等
 		if len(cluster.VectorIDs) > db.ivfConfig.MaxClusterSize || len(cluster.VectorIDs) < db.ivfConfig.MinClusterSize && len(cluster.VectorIDs) > 0 {
-			log.Info("Cluster %d (size: %d) needs rebalancing (max: %d, min: %d). Triggering index rebuild.", i, len(cluster.VectorIDs), db.ivfConfig.MaxClusterSize, db.ivfConfig.MinClusterSize)
+			logger.Info("Cluster %d (size: %d) needs rebalancing (max: %d, min: %d). Triggering index rebuild.", i, len(cluster.VectorIDs), db.ivfConfig.MaxClusterSize, db.ivfConfig.MinClusterSize)
 			// 标记需要重建索引，实际的重平衡可能需要更复杂的逻辑
 			// 例如，分裂过大的簇，合并过小的簇，或者完全重建索引
 			needsRebuild = true
@@ -315,23 +315,23 @@ func (db *VectorDB) performClusterMaintenance() {
 	}
 
 	if needsRebuild {
-		log.Info("Triggering full IVF index rebuild due to cluster maintenance requirements.")
+		logger.Info("Triggering full IVF index rebuild due to cluster maintenance requirements.")
 		// 注意：直接在后台 goroutine 中调用 BuildEnhancedIVFIndex 可能需要小心处理并发和锁
 		// 最好是通过一个任务队列或者其他机制来触发重建
 		// 简单的示例是直接调用，但这在生产环境中可能需要更健壮的处理
 		go func() {
 			if err := db.BuildEnhancedIVFIndex(db.ivfConfig); err != nil {
-				log.Error("Error during background IVF index rebuild: %v", err)
+				logger.Error("Error during background IVF index rebuild: %v", err)
 			}
 		}()
 	}
-	log.Info("Cluster maintenance check completed.")
+	logger.Info("Cluster maintenance check completed.")
 }
 
 // CalculateClusterMetrics 计算并更新给定增强聚类的指标
 func (db *VectorDB) CalculateClusterMetrics(cluster *EnhancedCluster) {
 	if cluster == nil {
-		log.Warning("calculateClusterMetrics called with nil cluster")
+		logger.Warning("calculateClusterMetrics called with nil cluster")
 		return
 	}
 
@@ -354,12 +354,12 @@ func (db *VectorDB) CalculateClusterMetrics(cluster *EnhancedCluster) {
 		if vec, ok := db.vectors[cluster.VectorIDs[0]]; ok {
 			dimension = len(vec)
 		} else {
-			log.Warning("Cannot determine dimension for cluster metric calculation as centroid is empty and first vector %s not found.", cluster.VectorIDs[0])
+			logger.Warning("Cannot determine dimension for cluster metric calculation as centroid is empty and first vector %s not found.", cluster.VectorIDs[0])
 			return
 		}
 	}
 	if dimension == 0 {
-		log.Warning("Cannot calculate metrics for zero-dimension vectors.")
+		logger.Warning("Cannot calculate metrics for zero-dimension vectors.")
 		return
 	}
 
@@ -372,7 +372,7 @@ func (db *VectorDB) CalculateClusterMetrics(cluster *EnhancedCluster) {
 		if vector, ok := db.vectors[vecID]; ok {
 			distSq, err := algorithm.EuclideanDistanceSquared(vector, cluster.Centroid)
 			if err != nil {
-				log.Warning("Error calculating distance for variance/radius for vector %s: %v", vecID, err)
+				logger.Warning("Error calculating distance for variance/radius for vector %s: %v", vecID, err)
 				continue
 			}
 			sumSquaredDist += distSq
@@ -385,7 +385,7 @@ func (db *VectorDB) CalculateClusterMetrics(cluster *EnhancedCluster) {
 				meanVector[i] += vector[i]
 			}
 		} else {
-			log.Warning("Vector ID %s not found in db.vectors during metric calculation.", vecID)
+			logger.Warning("Vector ID %s not found in db.vectors during metric calculation.", vecID)
 		}
 	}
 
@@ -412,7 +412,7 @@ func (db *VectorDB) CalculateClusterMetrics(cluster *EnhancedCluster) {
 	// cluster.Metrics.QueryFrequency = ... (由查询逻辑更新)
 	// cluster.Metrics.LastRebalance = ... (由重平衡逻辑更新)
 
-	log.Trace("Calculated metrics for cluster with %d vectors: Variance=%.4f, Radius=%.4f, Density=%.4f",
+	logger.Trace("Calculated metrics for cluster with %d vectors: Variance=%.4f, Radius=%.4f, Density=%.4f",
 		numVectors, cluster.Metrics.Variance, cluster.Metrics.Radius, cluster.Metrics.Density)
 }
 
@@ -421,11 +421,11 @@ func (db *VectorDB) CalculateClusterMetrics(cluster *EnhancedCluster) {
 // config: IVF 配置
 func (db *VectorDB) BuildIVFPQIndex(enhancedClusters []EnhancedCluster, config *IVFConfig) error {
 	if !config.UsePQCompression || config.PQSubVectors <= 0 || config.PQCentroids <= 0 {
-		log.Info("PQ Compression is not enabled or configuration is invalid. Skipping PQ index build.")
+		logger.Info("PQ Compression is not enabled or configuration is invalid. Skipping PQ index build.")
 		return nil
 	}
 
-	log.Info("Starting to build PQ index for %d clusters. PQSubVectors: %d, PQCentroids: %d", len(enhancedClusters), config.PQSubVectors, config.PQCentroids)
+	logger.Info("Starting to build PQ index for %d clusters. PQSubVectors: %d, PQCentroids: %d", len(enhancedClusters), config.PQSubVectors, config.PQCentroids)
 
 	db.ivfPQIndex = &IVFPQIndex{
 		IVFIndex:      db.ivfIndex, // db.ivfIndex 此时可能还未完全初始化，但其引用是需要的
@@ -453,7 +453,7 @@ func (db *VectorDB) BuildIVFPQIndex(enhancedClusters []EnhancedCluster, config *
 
 	db.ivfPQIndex.SubVectorDim = originalVectorDimension / config.PQSubVectors
 	if originalVectorDimension%config.PQSubVectors != 0 {
-		log.Warning("Original vector dimension %d is not perfectly divisible by PQSubVectors %d. SubVectorDim will be %d. Some parts of vectors might be ignored or padded.",
+		logger.Warning("Original vector dimension %d is not perfectly divisible by PQSubVectors %d. SubVectorDim will be %d. Some parts of vectors might be ignored or padded.",
 			originalVectorDimension, config.PQSubVectors, db.ivfPQIndex.SubVectorDim)
 		// 实际应用中可能需要更复杂的处理，例如填充或报错
 		if db.ivfPQIndex.SubVectorDim == 0 && originalVectorDimension > 0 { // 确保子维度至少为1
@@ -461,13 +461,13 @@ func (db *VectorDB) BuildIVFPQIndex(enhancedClusters []EnhancedCluster, config *
 		}
 	}
 	if db.ivfPQIndex.SubVectorDim == 0 && originalVectorDimension > 0 { // 再次检查，如果除法结果为0但原始维度不为0
-		log.Error("SubVectorDim is 0 even though original dimension is %d and PQSubVectors is %d. This indicates a problem.", originalVectorDimension, config.PQSubVectors)
+		logger.Error("SubVectorDim is 0 even though original dimension is %d and PQSubVectors is %d. This indicates a problem.", originalVectorDimension, config.PQSubVectors)
 		return fmt.Errorf("calculated SubVectorDim is 0, PQSubVectors might be too large for the dimension")
 	}
 
 	for i, cluster := range enhancedClusters {
 		if len(cluster.VectorIDs) == 0 {
-			log.Info("Cluster %d has no vectors, skipping PQ codebook generation.", i)
+			logger.Info("Cluster %d has no vectors, skipping PQ codebook generation.", i)
 			db.ivfPQIndex.PQCodebooks[i] = make([][][]float64, 0) // 初始化为空码本
 			continue
 		}
@@ -478,12 +478,12 @@ func (db *VectorDB) BuildIVFPQIndex(enhancedClusters []EnhancedCluster, config *
 			if vec, ok := db.vectors[vecID]; ok {
 				clusterVectors = append(clusterVectors, vec)
 			} else {
-				log.Warning("Vector ID %s not found in db.vectors while building PQ for cluster %d", vecID, i)
+				logger.Warning("Vector ID %s not found in db.vectors while building PQ for cluster %d", vecID, i)
 			}
 		}
 
 		if len(clusterVectors) == 0 {
-			log.Info("No valid vectors found for cluster %d after lookup, skipping PQ codebook generation.", i)
+			logger.Info("No valid vectors found for cluster %d after lookup, skipping PQ codebook generation.", i)
 			db.ivfPQIndex.PQCodebooks[i] = make([][][]float64, 0)
 			continue
 		}
@@ -501,7 +501,7 @@ func (db *VectorDB) BuildIVFPQIndex(enhancedClusters []EnhancedCluster, config *
 			}
 			// 如果 startDim 已经等于或超过 originalVectorDimension，说明子向量划分有问题
 			if startDim >= originalVectorDimension {
-				log.Warning("Subvector start dimension %d is out of bounds for original dimension %d in cluster %d, subvector %d. Skipping this subvector.", startDim, originalVectorDimension, i, subVecIdx)
+				logger.Warning("Subvector start dimension %d is out of bounds for original dimension %d in cluster %d, subvector %d. Skipping this subvector.", startDim, originalVectorDimension, i, subVecIdx)
 				codebookForCluster[subVecIdx] = make([][]float64, 0) // 空码本
 				continue
 			}
@@ -510,31 +510,31 @@ func (db *VectorDB) BuildIVFPQIndex(enhancedClusters []EnhancedCluster, config *
 				if len(vec) >= endDim {
 					subVectorTrainingData = append(subVectorTrainingData, vec[startDim:endDim])
 				} else {
-					log.Warning("Vector dimension mismatch for PQ. Expected at least %d, got %d for a vector in cluster %d. Skipping this vector for subvector %d.", endDim, len(vec), i, subVecIdx)
+					logger.Warning("Vector dimension mismatch for PQ. Expected at least %d, got %d for a vector in cluster %d. Skipping this vector for subvector %d.", endDim, len(vec), i, subVecIdx)
 				}
 			}
 
 			if len(subVectorTrainingData) == 0 {
-				log.Warning("No training data for subvector %d in cluster %d. Skipping codebook generation for this subvector.", subVecIdx, i)
+				logger.Warning("No training data for subvector %d in cluster %d. Skipping codebook generation for this subvector.", subVecIdx, i)
 				codebookForCluster[subVecIdx] = make([][]float64, 0) // 空码本
 				continue
 			}
 
 			numPqCentroids := config.PQCentroids
 			if numPqCentroids > len(subVectorTrainingData) {
-				log.Warning("Number of PQ centroids (%d) for subvector %d in cluster %d exceeds training samples (%d). Adjusting to %d.",
+				logger.Warning("Number of PQ centroids (%d) for subvector %d in cluster %d exceeds training samples (%d). Adjusting to %d.",
 					numPqCentroids, subVecIdx, i, len(subVectorTrainingData), len(subVectorTrainingData))
 				numPqCentroids = len(subVectorTrainingData)
 			}
 			if numPqCentroids <= 0 { // 确保至少有一个质心
-				log.Warning("Number of PQ centroids is %d for subvector %d in cluster %d. Setting to 1.", numPqCentroids, subVecIdx, i)
+				logger.Warning("Number of PQ centroids is %d for subvector %d in cluster %d. Setting to 1.", numPqCentroids, subVecIdx, i)
 				numPqCentroids = 1
 			}
 
-			log.Info("Training PQ codebook for cluster %d, subvector %d with %d samples and %d centroids.", i, subVecIdx, len(subVectorTrainingData), numPqCentroids)
+			logger.Info("Training PQ codebook for cluster %d, subvector %d with %d samples and %d centroids.", i, subVecIdx, len(subVectorTrainingData), numPqCentroids)
 			pqCentroids, _, err := algorithm.KMeans(algorithm.ConvertToPoints(subVectorTrainingData), numPqCentroids, 50, 0.0001) // 使用较少的迭代次数和较小的容差
 			if err != nil {
-				log.Error("Failed to train PQ codebook for cluster %d, subvector %d: %v", i, subVecIdx, err)
+				logger.Error("Failed to train PQ codebook for cluster %d, subvector %d: %v", i, subVecIdx, err)
 				codebookForCluster[subVecIdx] = make([][]float64, 0) // 错误时设置为空码本
 				continue
 			}
@@ -555,7 +555,7 @@ func (db *VectorDB) BuildIVFPQIndex(enhancedClusters []EnhancedCluster, config *
 					}
 					if startDim >= originalVectorDimension || len(db.ivfPQIndex.PQCodebooks[i]) <= subVecIdx || len(db.ivfPQIndex.PQCodebooks[i][subVecIdx]) == 0 {
 						// 如果子向量超出边界，或者该子向量的码本为空，则无法编码
-						log.Warning("Cannot generate PQ code for vector %s, subvector %d in cluster %d due to out-of-bounds or empty codebook. Assigning default code (0).", vecID, subVecIdx, i)
+						logger.Warning("Cannot generate PQ code for vector %s, subvector %d in cluster %d due to out-of-bounds or empty codebook. Assigning default code (0).", vecID, subVecIdx, i)
 						pqCode[subVecIdx] = 0 // 或者其他默认值/错误处理
 						continue
 					}
@@ -565,20 +565,20 @@ func (db *VectorDB) BuildIVFPQIndex(enhancedClusters []EnhancedCluster, config *
 						nearestCentroidIdx := findNearestPQCentroid(subVec, db.ivfPQIndex.PQCodebooks[i][subVecIdx])
 						pqCode[subVecIdx] = byte(nearestCentroidIdx)
 					} else {
-						log.Warning("Vector %s dimension mismatch for PQ encoding. Expected at least %d, got %d for subvector %d in cluster %d. Assigning default code (0).", vecID, endDim, len(vec), subVecIdx, i)
+						logger.Warning("Vector %s dimension mismatch for PQ encoding. Expected at least %d, got %d for subvector %d in cluster %d. Assigning default code (0).", vecID, endDim, len(vec), subVecIdx, i)
 						pqCode[subVecIdx] = 0 // 默认编码
 					}
 				}
 				db.ivfPQIndex.PQCodes[vecID] = pqCode
 				enhancedClusters[i].PQCodes = append(enhancedClusters[i].PQCodes, pqCode) // 同时存储在 EnhancedCluster 中
 			} else {
-				log.Warning("Vector ID %s not found in db.vectors while generating PQ codes for cluster %d", vecID, i)
+				logger.Warning("Vector ID %s not found in db.vectors while generating PQ codes for cluster %d", vecID, i)
 			}
 		}
-		log.Info("Finished PQ processing for cluster %d. Generated %d PQ codes.", i, len(enhancedClusters[i].PQCodes))
+		logger.Info("Finished PQ processing for cluster %d. Generated %d PQ codes.", i, len(enhancedClusters[i].PQCodes))
 	}
 
-	log.Info("IVF-PQ index build completed.")
+	logger.Info("IVF-PQ index build completed.")
 	return nil
 }
 
@@ -588,7 +588,7 @@ func (db *VectorDB) BuildIVFPQIndex(enhancedClusters []EnhancedCluster, config *
 // 返回: 最近的PQ质心的索引
 func findNearestPQCentroid(subVector []float64, pqCodebookForSubVector [][]float64) int {
 	if len(pqCodebookForSubVector) == 0 {
-		log.Warning("findNearestPQCentroid called with empty PQ codebook for subvector.")
+		logger.Warning("findNearestPQCentroid called with empty PQ codebook for subvector.")
 		return 0 // 或者一个特殊的错误指示值
 	}
 	minDist := math.MaxFloat64
@@ -596,7 +596,7 @@ func findNearestPQCentroid(subVector []float64, pqCodebookForSubVector [][]float
 	for idx, centroid := range pqCodebookForSubVector {
 		dist, err := algorithm.EuclideanDistanceSquared(subVector, centroid)
 		if err != nil {
-			log.Warning("Error calculating distance for PQ centroid %d: %v", idx, err)
+			logger.Warning("Error calculating distance for PQ centroid %d: %v", idx, err)
 			continue
 		}
 		if dist < minDist {
@@ -614,7 +614,7 @@ func findNearestPQCentroid(subVector []float64, pqCodebookForSubVector [][]float
 func (db *VectorDB) findNearestCluster(vector []float64, centroids []entity.Point) int {
 	if len(centroids) == 0 {
 		// 应该在调用此函数之前处理这种情况，但作为安全措施
-		log.Error("findNearestCluster called with no centroids")
+		logger.Error("findNearestCluster called with no centroids")
 		return -1 // 或者 panic，取决于错误处理策略
 	}
 
@@ -625,7 +625,7 @@ func (db *VectorDB) findNearestCluster(vector []float64, centroids []entity.Poin
 		// entity.Point 内部存储的是 []float64
 		dist, err := algorithm.EuclideanDistanceSquared(vector, centroidPoint) // entity.Point 可以直接用于距离计算
 		if err != nil {
-			log.Warning("Error calculating distance between vector and centroid %d: %v", i, err)
+			logger.Warning("Error calculating distance between vector and centroid %d: %v", i, err)
 			continue // 跳过这个质心或采取其他错误处理
 		}
 
@@ -744,7 +744,7 @@ func (db *VectorDB) SearchInCluster(query []float64, k int, clusterID int) ([]en
 	}
 
 	if clusterID < 0 || clusterID >= len(db.ivfIndex.Clusters) {
-		log.Warning("searchInCluster called with invalid clusterID (%d) or nil IVF index.", clusterID)
+		logger.Warning("searchInCluster called with invalid clusterID (%d) or nil IVF index.", clusterID)
 		return nil, fmt.Errorf("invalid clusterID: %d", clusterID)
 	}
 
@@ -770,7 +770,7 @@ func (db *VectorDB) SearchInCluster(query []float64, k int, clusterID int) ([]en
 				// PQ code 不存在或长度不匹配，回退到精确计算
 				originalVec, vecExists := db.vectors[vecID]
 				if !vecExists {
-					log.Warning("Vector ID %s not found in db.vectors during PQ fallback in SearchInCluster for cluster %d", vecID, clusterID)
+					logger.Warning("Vector ID %s not found in db.vectors during PQ fallback in SearchInCluster for cluster %d", vecID, clusterID)
 					continue
 				}
 				dist, err = algorithm.EuclideanDistanceSquared(query, originalVec)
@@ -781,14 +781,14 @@ func (db *VectorDB) SearchInCluster(query []float64, k int, clusterID int) ([]en
 			// 精确距离计算
 			originalVec, vecExists := db.vectors[vecID]
 			if !vecExists {
-				log.Warning("Vector ID %s not found in db.vectors during exact search in SearchInCluster for cluster %d", vecID, clusterID)
+				logger.Warning("Vector ID %s not found in db.vectors during exact search in SearchInCluster for cluster %d", vecID, clusterID)
 				continue
 			}
 			dist, err = algorithm.EuclideanDistanceSquared(query, originalVec)
 		}
 
 		if err != nil {
-			log.Warning("Error calculating distance for vector %s in cluster %d: %v", vecID, clusterID, err)
+			logger.Warning("Error calculating distance for vector %s in cluster %d: %v", vecID, clusterID, err)
 			continue
 		}
 		results = append(results, entity.Result{Id: vecID, Distance: dist})
@@ -859,7 +859,7 @@ func (db *VectorDB) calculateADCDistance(query []float64, clusterID int, pqCode 
 // 返回: 候选聚类的 ID 列表
 func (db *VectorDB) SelectCandidateClusters(query []float64, nprobe int) []int {
 	if db.ivfIndex == nil || len(db.ivfIndex.ClusterCentroids) == 0 {
-		log.Warning("selectCandidateClusters called with nil or empty IVF index.")
+		logger.Warning("selectCandidateClusters called with nil or empty IVF index.")
 		return []int{}
 	}
 
@@ -888,7 +888,7 @@ func (db *VectorDB) SelectCandidateClusters(query []float64, nprobe int) []int {
 	for i, centroid := range db.ivfIndex.ClusterCentroids {
 		dist, err := algorithm.EuclideanDistanceSquared(query, centroid)
 		if err != nil {
-			log.Warning("Error calculating distance to centroid %d for candidate selection: %v", i, err)
+			logger.Warning("Error calculating distance to centroid %d for candidate selection: %v", i, err)
 			continue // 跳过计算错误的质心
 		}
 		metrics := ClusterMetrics{} // 默认空指标
@@ -951,7 +951,7 @@ func (db *VectorDB) SelectCandidateClusters(query []float64, nprobe int) []int {
 		}
 	}
 
-	log.Trace("Selected %d candidate clusters for query: %v", len(selectedClusterIDs), selectedClusterIDs)
+	logger.Trace("Selected %d candidate clusters for query: %v", len(selectedClusterIDs), selectedClusterIDs)
 	return selectedClusterIDs
 }
 
@@ -978,7 +978,7 @@ func (db *VectorDB) CalculateAdaptiveNprobe(query []float64, baseNprobe int) int
 	for i, centroid := range db.ivfIndex.ClusterCentroids {
 		dist, err := algorithm.EuclideanDistanceSquared(query, centroid)
 		if err != nil {
-			log.Warning("Error calculating distance to centroid %d: %v", i, err)
+			logger.Warning("Error calculating distance to centroid %d: %v", i, err)
 			continue
 		}
 		distances[i] = struct {
@@ -1048,7 +1048,7 @@ func (db *VectorDB) CalculateAdaptiveNprobe(query []float64, baseNprobe int) int
 		adjustedNprobe = maxNprobe
 	}
 
-	log.Trace("Adaptive nprobe calculation: base=%d, distance_adj=%.2f, size_adj=%.2f, freq_adj=%.2f, final=%d",
+	logger.Trace("Adaptive nprobe calculation: base=%d, distance_adj=%.2f, size_adj=%.2f, freq_adj=%.2f, final=%d",
 		baseNprobe, distanceAdjustment, sizeAdjustment, frequencyAdjustment, adjustedNprobe)
 
 	return adjustedNprobe

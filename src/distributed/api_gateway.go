@@ -1,7 +1,7 @@
 package distributed
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/messages"
 	"VectorSphere/src/server"
 	"context"
@@ -45,7 +45,7 @@ func NewAPIGateway(dm *DistributedManager, commSvc *CommunicationService, sd *Se
 
 // Start 启动API网关
 func (gw *APIGateway) Start(ctx context.Context) error {
-	log.Info("Starting API Gateway on port %d...", gw.port)
+	logger.Info("Starting API Gateway on port %d...", gw.port)
 
 	mux := http.NewServeMux()
 
@@ -62,11 +62,11 @@ func (gw *APIGateway) Start(ctx context.Context) error {
 
 	go func() {
 		if err := gw.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Error("API Gateway server error: %v", err)
+			logger.Error("API Gateway server error: %v", err)
 		}
 	}()
 
-	log.Info("API Gateway started successfully")
+	logger.Info("API Gateway started successfully")
 	return nil
 }
 
@@ -424,7 +424,7 @@ func (gw *APIGateway) handleSearchTable(w http.ResponseWriter, r *http.Request) 
 	for addr, result := range results {
 		if result != nil {
 			allDocIDs = append(allDocIDs, result.DocIds...)
-			log.Info("Search result from %s: %d docs", addr, len(result.DocIds))
+			logger.Info("Search result from %s: %d docs", addr, len(result.DocIds))
 		}
 	}
 

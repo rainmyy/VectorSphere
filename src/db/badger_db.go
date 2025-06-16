@@ -1,7 +1,7 @@
 package db
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"errors"
 	"github.com/dgraph-io/badger/v4"
 	"os"
@@ -45,9 +45,9 @@ func (b *BadgerDB) CheckAndGc() {
 	}
 	lsmSizeAfter, vlogSizeAfter := b.db.Size()
 	if vlogSizeAfter < vlogSizeBefore {
-		log.Info("badger before GC, LSM %d, vlog %d, after GC, LSM %d, vlog %d", lsmSizeBefore, vlogSizeBefore, lsmSizeAfter, vlogSizeAfter)
+		logger.Info("badger before GC, LSM %d, vlog %d, after GC, LSM %d, vlog %d", lsmSizeBefore, vlogSizeBefore, lsmSizeAfter, vlogSizeAfter)
 	} else {
-		log.Info("collect zero badger")
+		logger.Info("collect zero badger")
 	}
 }
 func (b *BadgerDB) GetDbPath() string {

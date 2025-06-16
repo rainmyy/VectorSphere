@@ -3,7 +3,7 @@ package distributed
 import (
 	"VectorSphere/src/enhanced"
 	"VectorSphere/src/library/common"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/library/pool"
 	"VectorSphere/src/scheduler"
 	"VectorSphere/src/server"
@@ -112,7 +112,7 @@ func (dm *DistributedManager) Start() error {
 		return fmt.Errorf("distributed manager is already running")
 	}
 
-	log.Info("Starting distributed manager...")
+	logger.Info("Starting distributed manager...")
 
 	// 1. 初始化etcd连接
 	if err := dm.initEtcdClient(); err != nil {
@@ -133,7 +133,7 @@ func (dm *DistributedManager) Start() error {
 	}
 
 	dm.isRunning = true
-	log.Info("Distributed manager started successfully")
+	logger.Info("Distributed manager started successfully")
 	return nil
 }
 
@@ -146,7 +146,7 @@ func (dm *DistributedManager) Stop() error {
 		return nil
 	}
 
-	log.Info("Stopping distributed manager...")
+	logger.Info("Stopping distributed manager...")
 
 	// 停止服务
 	close(dm.stopCh)
@@ -154,14 +154,14 @@ func (dm *DistributedManager) Stop() error {
 	// 停止master服务
 	if dm.masterService != nil {
 		if err := dm.masterService.Stop(dm.ctx); err != nil {
-			log.Error("停止master服务失败: %v", err)
+			logger.Error("停止master服务失败: %v", err)
 		}
 	}
 
 	// 停止slave服务
 	if dm.slaveService != nil {
 		if err := dm.slaveService.Stop(dm.ctx); err != nil {
-			log.Error("停止slave服务失败: %v", err)
+			logger.Error("停止slave服务失败: %v", err)
 		}
 	}
 
@@ -177,13 +177,13 @@ func (dm *DistributedManager) Stop() error {
 	dm.cancel()
 
 	dm.isRunning = false
-	log.Info("Distributed manager stopped")
+	logger.Info("Distributed manager stopped")
 	return nil
 }
 
 // initEtcdClient 初始化etcd客户端
 func (dm *DistributedManager) initEtcdClient() error {
-	log.Info("Initializing etcd client...")
+	logger.Info("Initializing etcd client...")
 
 	client, err := clientv3.New(clientv3.Config{
 		Endpoints:   dm.config.Etcd.Endpoints,
@@ -194,13 +194,13 @@ func (dm *DistributedManager) initEtcdClient() error {
 	}
 
 	dm.etcdClient = client
-	log.Info("Etcd client initialized successfully")
+	logger.Info("Etcd client initialized successfully")
 	return nil
 }
 
 // initLeaderElection 初始化leader选举
 func (dm *DistributedManager) initLeaderElection() error {
-	log.Info("Initializing leader election...")
+	logger.Info("Initializing leader election...")
 
 	// 创建session
 	session, err := concurrency.NewSession(dm.etcdClient, concurrency.WithTTL(dm.config.Heartbeat))
@@ -214,37 +214,37 @@ func (dm *DistributedManager) initLeaderElection() error {
 	electionKey := fmt.Sprintf("/vector_sphere/election/%s", dm.config.ServiceName)
 	dm.election = concurrency.NewElection(session, electionKey)
 
-	log.Info("Leader election initialized successfully")
+	logger.Info("Leader election initialized successfully")
 	return nil
 }
 
 // runLeaderElection 运行leader选举
 func (dm *DistributedManager) runLeaderElection() {
-	log.Info("Starting leader election...")
+	logger.Info("Starting leader election...")
 
 	for {
 		select {
 		case <-dm.stopCh:
-			log.Info("Leader election stopped")
+			logger.Info("Leader election stopped")
 			return
 		default:
 			// 尝试成为leader
 			if err := dm.election.Campaign(dm.ctx, dm.localhost); err != nil {
-				log.Error("Leader election campaign failed: %v", err)
+				logger.Error("Leader election campaign failed: %v", err)
 				time.Sleep(time.Second)
 				continue
 			}
 
-			log.Info("Became leader: %s", dm.localhost)
+			logger.Info("Became leader: %s", dm.localhost)
 			dm.onBecomeLeader()
 
 			// 等待失去leadership
 			select {
 			case <-dm.session.Done():
-				log.Info("Lost leadership due to session expiry")
+				logger.Info("Lost leadership due to session expiry")
 				dm.onLoseLeader()
 			case <-dm.stopCh:
-				log.Info("Leader election stopped")
+				logger.Info("Leader election stopped")
 				return
 			}
 		}
@@ -257,19 +257,19 @@ func (dm *DistributedManager) onBecomeLeader() {
 	defer dm.mutex.Unlock()
 
 	dm.isMaster = true
-	log.Info("Node became master")
+	logger.Info("Node became master")
 
 	// 启动master服务
 	if dm.masterService == nil {
 		if err := dm.startMasterService(); err != nil {
-			log.Error("启动master服务失败: %v", err)
+			logger.Error("启动master服务失败: %v", err)
 		}
 	}
 
 	// 停止slave服务（如果正在运行）
 	if dm.slaveService != nil {
 		if err := dm.slaveService.Stop(dm.ctx); err != nil {
-			log.Error("停止slave服务失败: %v", err)
+			logger.Error("停止slave服务失败: %v", err)
 		}
 		dm.slaveService = nil
 	}
@@ -281,12 +281,12 @@ func (dm *DistributedManager) onLoseLeader() {
 	defer dm.mutex.Unlock()
 
 	dm.isMaster = false
-	log.Info("Node lost master status")
+	logger.Info("Node lost master status")
 
 	// 停止master服务
 	if dm.masterService != nil {
 		if err := dm.masterService.Stop(dm.ctx); err != nil {
-			log.Error("停止master服务失败: %v", err)
+			logger.Error("停止master服务失败: %v", err)
 		}
 		dm.masterService = nil
 	}
@@ -294,7 +294,7 @@ func (dm *DistributedManager) onLoseLeader() {
 	// 启动slave服务
 	if dm.slaveService == nil {
 		if err := dm.startSlaveService(); err != nil {
-			log.Error("启动slave服务失败: %v", err)
+			logger.Error("启动slave服务失败: %v", err)
 		}
 	}
 }
@@ -315,7 +315,7 @@ func (dm *DistributedManager) startServices() error {
 
 // startMasterService 启动master服务
 func (dm *DistributedManager) startMasterService() error {
-	log.Info("Starting master service...")
+	logger.Info("Starting master service...")
 
 	// 转换endpoints
 	var endpoints []server.EndPoint
@@ -341,13 +341,13 @@ func (dm *DistributedManager) startMasterService() error {
 	}
 
 	dm.masterService = masterService
-	log.Info("Master service started successfully")
+	logger.Info("Master service started successfully")
 	return nil
 }
 
 // startSlaveService 启动slave服务
 func (dm *DistributedManager) startSlaveService() error {
-	log.Info("Starting slave service...")
+	logger.Info("Starting slave service...")
 
 	// 转换endpoints
 	var endpoints []server.EndPoint
@@ -370,7 +370,7 @@ func (dm *DistributedManager) startSlaveService() error {
 	}
 
 	dm.slaveService = slaveService
-	log.Info("Slave service started successfully")
+	logger.Info("Slave service started successfully")
 	return nil
 }
 

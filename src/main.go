@@ -3,7 +3,7 @@ package main
 import (
 	"VectorSphere/src/bootstrap"
 	"VectorSphere/src/distributed"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/server"
 	"context"
 	"flag"
@@ -27,7 +27,7 @@ func main() {
 	// 加载配置
 	config, err := bootstrap.LoadConfig(*configPath)
 	if err != nil {
-		log.Info("Failed to load config from file, using default and command line parameters")
+		logger.Info("Failed to load config from file, using default and command line parameters")
 		// 使用默认配置
 		config = &bootstrap.AppConfig{
 			ServiceName:           *serviceName,
@@ -77,32 +77,32 @@ func main() {
 	// 初始化etcd客户端
 	etcdClient, err := bootstrap.InitEtcdClient(config)
 	if err != nil {
-		log.Fatal("Failed to initialize etcd client: %v", err)
+		logger.Fatal("Failed to initialize etcd client: %v", err)
 	}
 	defer etcdClient.Close()
 
 	// 初始化服务注册
 	serviceRegistry, err := bootstrap.InitServiceRegistry(etcdClient, config)
 	if err != nil {
-		log.Fatal("Failed to initialize service registry: %v", err)
+		logger.Fatal("Failed to initialize service registry: %v", err)
 	}
 
 	// 注册服务
 	err = bootstrap.RegisterService(ctx, serviceRegistry, config)
 	if err != nil {
-		log.Fatal("Failed to register service: %v", err)
+		logger.Fatal("Failed to register service: %v", err)
 	}
 
 	// 初始化负载均衡器
 	loadBalancer, err := bootstrap.InitLoadBalancer(etcdClient, serviceRegistry, config)
 	if err != nil {
-		log.Fatal("Failed to initialize load balancer: %v", err)
+		logger.Fatal("Failed to initialize load balancer: %v", err)
 	}
 
 	// 初始化配置管理器
 	configManager, err := bootstrap.InitConfigManager(etcdClient, config)
 	if err != nil {
-		log.Fatal("Failed to initialize config manager: %v", err)
+		logger.Fatal("Failed to initialize config manager: %v", err)
 	}
 
 	// 创建分布式管理器配置
@@ -128,13 +128,13 @@ func main() {
 	// 创建分布式管理器
 	dm, err := distributed.NewDistributedManager(dmConfig)
 	if err != nil {
-		log.Fatal("Failed to create distributed manager: %v", err)
+		logger.Fatal("Failed to create distributed manager: %v", err)
 	}
 
 	// 启动分布式管理器
 	err = dm.Start()
 	if err != nil {
-		log.Fatal("Failed to start distributed manager: %v", err)
+		logger.Fatal("Failed to start distributed manager: %v", err)
 	}
 
 	// 创建API网关
@@ -144,7 +144,7 @@ func main() {
 	if apiGateway != nil {
 		err = apiGateway.Start(ctx)
 		if err != nil {
-			log.Fatal("Failed to start API gateway: %v", err)
+			logger.Fatal("Failed to start API gateway: %v", err)
 		}
 	}
 
@@ -157,7 +157,7 @@ func main() {
 
 	// 等待退出信号
 	<-sigCh
-	log.Info("Received shutdown signal, gracefully shutting down...")
+	logger.Info("Received shutdown signal, gracefully shutting down...")
 
 	// 优雅关闭
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -166,16 +166,16 @@ func main() {
 	// 停止API网关
 	if apiGateway != nil {
 		if err := apiGateway.Stop(shutdownCtx); err != nil {
-			log.Error("Failed to stop API gateway: %v", err)
+			logger.Error("Failed to stop API gateway: %v", err)
 		}
 	}
 
 	// 停止分布式管理器
 	if err := dm.Stop(); err != nil {
-		log.Error("Failed to stop distributed manager: %v", err)
+		logger.Error("Failed to stop distributed manager: %v", err)
 	}
 
-	log.Info("Shutdown complete")
+	logger.Info("Shutdown complete")
 }
 
 // parseEtcdEndpoints 解析etcd端点

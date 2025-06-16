@@ -1,7 +1,7 @@
 package optimization
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/vector"
 	"math"
 	"math/rand"
@@ -184,7 +184,7 @@ func (io *IndexOptimizer) StartOptimizationScheduler() {
 		io.StartAdaptiveOptimization()
 	}
 
-	log.Info("索引优化调度器已启动")
+	logger.Info("索引优化调度器已启动")
 }
 
 // CheckAndOptimize 检查并优化索引
@@ -208,7 +208,7 @@ func (io *IndexOptimizer) CheckAndOptimize() {
 		return
 	}
 
-	log.Info("开始索引优化...")
+	logger.Info("开始索引优化...")
 
 	// 更新索引统计
 	io.updateIndexStats()
@@ -235,7 +235,7 @@ func (io *IndexOptimizer) CheckAndOptimize() {
 	io.lastOptimization = time.Now()
 	io.mu.Unlock()
 
-	log.Info("索引优化完成")
+	logger.Info("索引优化完成")
 }
 
 // shouldOptimize 是否应该优化
@@ -317,7 +317,7 @@ func (io *IndexOptimizer) updateIndexStats() {
 		io.indexStats.Parameters["num_centroids"] = 256
 	}
 
-	log.Info("索引统计: 类型=%s, 大小=%dMB, 质量=%.2f, 向量数=%d",
+	logger.Info("索引统计: 类型=%s, 大小=%dMB, 质量=%.2f, 向量数=%d",
 		io.indexStats.IndexType,
 		io.indexStats.IndexSize/1024/1024,
 		io.indexStats.Quality,
@@ -337,14 +337,14 @@ func (io *IndexOptimizer) shouldRebuildIndex() bool {
 	// 检查数据变化比例
 	changeRatio := float64(io.indexStats.DataChanges) / float64(io.indexStats.TotalVectors)
 	if changeRatio > io.config.ReindexThreshold {
-		log.Info("数据变化比例(%.2f%%)超过阈值(%.2f%%)，需要重建索引",
+		logger.Info("数据变化比例(%.2f%%)超过阈值(%.2f%%)，需要重建索引",
 			changeRatio*100, io.config.ReindexThreshold*100)
 		return true
 	}
 
 	// 检查索引质量
 	if io.indexStats.Quality < io.config.IndexQualityThreshold {
-		log.Info("索引质量(%.2f)低于阈值(%.2f)，需要重建索引",
+		logger.Info("索引质量(%.2f)低于阈值(%.2f)，需要重建索引",
 			io.indexStats.Quality, io.config.IndexQualityThreshold)
 		return true
 	}
@@ -365,7 +365,7 @@ func (io *IndexOptimizer) shouldIncrementalIndex() bool {
 	// 检查新增数据比例
 	changeRatio := float64(io.indexStats.DataChanges) / float64(io.indexStats.TotalVectors)
 	if changeRatio > io.config.IncrementalThreshold && changeRatio <= io.config.ReindexThreshold {
-		log.Info("数据变化比例(%.2f%%)适合增量索引", changeRatio*100)
+		logger.Info("数据变化比例(%.2f%%)适合增量索引", changeRatio*100)
 		return true
 	}
 
@@ -374,13 +374,13 @@ func (io *IndexOptimizer) shouldIncrementalIndex() bool {
 
 // rebuildIndex 重建索引
 func (io *IndexOptimizer) rebuildIndex() {
-	log.Info("开始重建索引...")
+	logger.Info("开始重建索引...")
 
 	startTime := time.Now()
 
 	// 选择最优索引类型
 	indexType := io.selectOptimalIndexType()
-	log.Info("选择索引类型: %s", indexType)
+	logger.Info("选择索引类型: %s", indexType)
 
 	// 设置索引参数
 	indexParams := io.getOptimalIndexParams(indexType)
@@ -388,7 +388,7 @@ func (io *IndexOptimizer) rebuildIndex() {
 	// 执行索引重建
 	err := io.vectorDB.RebuildIndex(indexType, indexParams)
 	if err != nil {
-		log.Error("重建索引失败: %v", err)
+		logger.Error("重建索引失败: %v", err)
 		return
 	}
 
@@ -411,19 +411,19 @@ func (io *IndexOptimizer) rebuildIndex() {
 	io.indexStats.Parameters = indexParams
 	io.mu.Unlock()
 
-	log.Info("索引重建完成，耗时: %v", buildTime)
+	logger.Info("索引重建完成，耗时: %v", buildTime)
 }
 
 // incrementalIndex 增量索引
 func (io *IndexOptimizer) incrementalIndex() {
-	log.Info("开始增量索引...")
+	logger.Info("开始增量索引...")
 
 	startTime := time.Now()
 
 	// 执行增量索引
 	err := io.vectorDB.IncrementalIndex()
 	if err != nil {
-		log.Error("增量索引失败: %v", err)
+		logger.Error("增量索引失败: %v", err)
 		return
 	}
 
@@ -432,23 +432,23 @@ func (io *IndexOptimizer) incrementalIndex() {
 	io.indexStats.DataChanges = 0
 	io.mu.Unlock()
 
-	log.Info("增量索引完成，耗时: %v", time.Since(startTime))
+	logger.Info("增量索引完成，耗时: %v", time.Since(startTime))
 }
 
 // optimizeIndex 优化索引
 func (io *IndexOptimizer) optimizeIndex() {
-	log.Info("开始优化索引...")
+	logger.Info("开始优化索引...")
 
 	startTime := time.Now()
 
 	// 执行索引优化
 	err := io.vectorDB.OptimizeIndex()
 	if err != nil {
-		log.Error("优化索引失败: %v", err)
+		logger.Error("优化索引失败: %v", err)
 		return
 	}
 
-	log.Info("索引优化完成，耗时: %v", time.Since(startTime))
+	logger.Info("索引优化完成，耗时: %v", time.Since(startTime))
 }
 
 // selectOptimalIndexType 选择最优索引类型
@@ -459,7 +459,7 @@ func (io *IndexOptimizer) selectOptimalIndexType() string {
 	// 如果启用了自适应索引选择，优先使用自适应方法
 	if io.config.EnableAdaptiveSelection && len(io.performanceWindow) >= 5 {
 		if indexType := io.selectAdaptiveIndexType(); indexType != "" {
-			log.Info("使用自适应索引选择: %s", indexType)
+			logger.Info("使用自适应索引选择: %s", indexType)
 			return indexType
 		}
 	}
@@ -552,7 +552,7 @@ func (io *IndexOptimizer) getOptimalIndexParams(indexType string) map[string]int
 	// 如果启用了自适应索引选择，尝试从历史记录中获取最佳参数
 	if io.config.EnableAdaptiveSelection && len(io.performanceWindow) >= 5 {
 		if bestParams := io.getBestHistoricalParams(indexType); len(bestParams) > 0 {
-			log.Info("使用历史最佳参数配置: %v", bestParams)
+			logger.Info("使用历史最佳参数配置: %v", bestParams)
 			return bestParams
 		}
 	}
@@ -779,7 +779,7 @@ func (io *IndexOptimizer) recordIndexPerformance(indexType string, latency time.
 		stats.MemoryUsage = uint64(float64(stats.MemoryUsage)*(1-alpha) + float64(m.Alloc)*alpha)
 	}
 
-	log.Info("记录索引性能: 类型=%s, 延迟=%v, 质量=%.2f, 向量数=%d, 维度=%d",
+	logger.Info("记录索引性能: 类型=%s, 延迟=%v, 质量=%.2f, 向量数=%d, 维度=%d",
 		indexType, latency, quality, io.indexStats.TotalVectors, vectorDim)
 }
 
@@ -949,7 +949,7 @@ func (io *IndexOptimizer) optimizeAdaptiveParams() {
 
 	// 更新最佳权重
 	io.similarityWeights = bestWeights
-	log.Info("优化自适应参数: 向量数权重=%.2f, 维度权重=%.2f, 时间权重=%.2f",
+	logger.Info("优化自适应参数: 向量数权重=%.2f, 维度权重=%.2f, 时间权重=%.2f",
 		io.similarityWeights["vectorCount"], io.similarityWeights["dimension"], io.similarityWeights["time"])
 }
 
@@ -1027,5 +1027,5 @@ func (io *IndexOptimizer) StartAdaptiveOptimization() {
 		}
 	}()
 
-	log.Info("自适应优化调度器已启动，间隔: %v", io.config.AdaptiveOptimizationInterval)
+	logger.Info("自适应优化调度器已启动，间隔: %v", io.config.AdaptiveOptimizationInterval)
 }

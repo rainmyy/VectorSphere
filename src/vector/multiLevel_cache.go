@@ -1,7 +1,7 @@
 package vector
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/library/storage"
 	"crypto/md5"
 	"encoding/json"
@@ -824,7 +824,7 @@ func (c *MultiLevelCache) PrewarmSystem() {
 	c.l2Mu.Lock()
 	c.l2SharedMem, err = storage.NewSharedMemory()
 	if err != nil {
-		log.Fatal("Error creating shared memory: %v\n", err)
+		logger.Fatal("Error creating shared memory: %v\n", err)
 	}
 	c.l2Mu.Unlock()
 
@@ -835,15 +835,15 @@ func (c *MultiLevelCache) PrewarmSystem() {
 
 	// 从历史查询日志中加载热门查询
 	if err := c.loadFromQueryLogs(); err != nil {
-		log.Error("从查询日志加载热门查询失败: %v", err)
+		logger.Error("从查询日志加载热门查询失败: %v", err)
 	}
 
 	// 从预定义的热门查询列表中加载数据
 	if err := c.loadFromPredefinedQueries(); err != nil {
-		log.Error("从预定义查询列表加载数据失败: %v", err)
+		logger.Error("从预定义查询列表加载数据失败: %v", err)
 	}
 
-	log.Info("缓存预热完成，已加载热门查询到缓存")
+	logger.Info("缓存预热完成，已加载热门查询到缓存")
 }
 
 // Prewarm 预热指定键值对的缓存
@@ -865,7 +865,7 @@ func (c *MultiLevelCache) loadFromQueryLogs() error {
 
 	// 检查文件是否存在
 	if _, err := os.Stat(queryLogPath); os.IsNotExist(err) {
-		log.Info("查询日志文件不存在: %s", queryLogPath)
+		logger.Info("查询日志文件不存在: %s", queryLogPath)
 		return nil // 文件不存在不视为错误
 	}
 
@@ -951,7 +951,7 @@ func (c *MultiLevelCache) loadFromQueryLogs() error {
 		}
 	}
 
-	log.Info("从查询日志加载了 %d 个热门查询到缓存", loadedCount)
+	logger.Info("从查询日志加载了 %d 个热门查询到缓存", loadedCount)
 	return nil
 }
 
@@ -962,7 +962,7 @@ func (c *MultiLevelCache) loadFromPredefinedQueries() error {
 
 	// 检查文件是否存在
 	if _, err := os.Stat(predefinedQueriesPath); os.IsNotExist(err) {
-		log.Info("预定义热门查询文件不存在: %s", predefinedQueriesPath)
+		logger.Info("预定义热门查询文件不存在: %s", predefinedQueriesPath)
 		return nil // 文件不存在不视为错误
 	}
 
@@ -1036,7 +1036,7 @@ func (c *MultiLevelCache) loadFromPredefinedQueries() error {
 		}
 	}
 
-	log.Info("从预定义列表加载了 %d 个热门查询到缓存", loadedCount)
+	logger.Info("从预定义列表加载了 %d 个热门查询到缓存", loadedCount)
 	return nil
 }
 

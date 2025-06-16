@@ -1,7 +1,7 @@
 package vector
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"fmt"
 )
 
@@ -83,6 +83,6 @@ func (db *VectorDB) ApplyPCA(targetDim int, varianceRatio float64) error {
 	db.vectorDim = targetDim
 	db.indexed = false // 需要重建索引
 
-	log.Info("PCA 降维完成：%d -> %d 维", dim, targetDim)
+	logger.Info("PCA 降维完成：%d -> %d 维", dim, targetDim)
 	return nil
 }

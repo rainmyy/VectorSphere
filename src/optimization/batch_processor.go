@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"VectorSphere/src/library/entity"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/vector"
 )
 
@@ -76,7 +76,7 @@ func (task *BatchSearchTask) Execute() {
 
 	// 记录批次完成时间
 	elapsed := time.Since(startTime)
-	log.Trace("批次 %d/%d 完成, 处理了 %d 个查询, 耗时: %v",
+	logger.Trace("批次 %d/%d 完成, 处理了 %d 个查询, 耗时: %v",
 		task.batchIndex+1, task.totalBatches, len(task.vectors), elapsed)
 }
 
@@ -177,7 +177,7 @@ func (wp *WorkerPool) Start() {
 		go worker.start(&wp.wg)
 	}
 
-	log.Info("工作池已启动，工作者数量: %d", len(wp.workers))
+	logger.Info("工作池已启动，工作者数量: %d", len(wp.workers))
 }
 
 // Stop 停止工作池
@@ -196,7 +196,7 @@ func (wp *WorkerPool) Stop() {
 	wp.wg.Wait()
 
 	wp.isRunning = false
-	log.Info("工作池已停止")
+	logger.Info("工作池已停止")
 }
 
 // SubmitTask 提交任务到工作池
@@ -234,7 +234,7 @@ func (wp *WorkerPool) GetStats() PoolStats {
 func (w *Worker) start(wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	log.Debug("工作者 %d 已启动", w.id)
+	logger.Debug("工作者 %d 已启动", w.id)
 
 	for {
 		select {
@@ -246,7 +246,7 @@ func (w *Worker) start(wg *sync.WaitGroup) {
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						log.Error("工作者 %d 执行任务 %s 时发生panic: %v", w.id, task.GetID(), r)
+						logger.Error("工作者 %d 执行任务 %s 时发生panic: %v", w.id, task.GetID(), r)
 
 						// 更新统计信息
 						w.pool.stats.mu.Lock()
@@ -267,11 +267,11 @@ func (w *Worker) start(wg *sync.WaitGroup) {
 				w.pool.stats.averageTaskTime = w.pool.stats.totalTaskTime / time.Duration(w.pool.stats.completedTasks)
 				w.pool.stats.mu.Unlock()
 
-				log.Trace("工作者 %d 完成任务 %s, 耗时: %v", w.id, task.GetID(), elapsed)
+				logger.Trace("工作者 %d 完成任务 %s, 耗时: %v", w.id, task.GetID(), elapsed)
 			}()
 
 		case <-w.shutdown:
-			log.Debug("工作者 %d 已停止", w.id)
+			logger.Debug("工作者 %d 已停止", w.id)
 			return
 		}
 	}

@@ -2,7 +2,7 @@ package optimization
 
 import (
 	"VectorSphere/src/library/entity"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/vector"
 	"context"
 	"sync"
@@ -135,7 +135,7 @@ func (c *Connector) Initialize() error {
 	}
 
 	c.isInitialized = true
-	log.Info("高吞吐量连接器初始化完成")
+	logger.Info("高吞吐量连接器初始化完成")
 	return nil
 }
 
@@ -288,6 +288,6 @@ func (c *Connector) Close() error {
 	}
 
 	c.isInitialized = false
-	log.Info("高吞吐量连接器已关闭")
+	logger.Info("高吞吐量连接器已关闭")
 	return nil
 }

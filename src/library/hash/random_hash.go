@@ -2,7 +2,7 @@ package hash
 
 import (
 	"VectorSphere/src/library/enum"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"fmt"
 	"math"
 )
@@ -18,7 +18,7 @@ type RandomProjectionHash struct {
 // Hash 计算随机投影哈希值
 func (rph *RandomProjectionHash) Hash(vector []float64) (uint64, error) {
 	if len(vector) != len(rph.ProjectionVector) {
-		log.Warning("Vector dimension mismatch: expected %d, got %d", len(rph.ProjectionVector), len(vector))
+		logger.Warning("Vector dimension mismatch: expected %d, got %d", len(rph.ProjectionVector), len(vector))
 		return 0, fmt.Errorf("vector dimension mismatch")
 	}
 

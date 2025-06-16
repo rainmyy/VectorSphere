@@ -1,7 +1,7 @@
 package healthCheck
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -30,7 +30,7 @@ func (hmc *HealthMetricsCollector) UpdateMetrics(newMetrics *HealthMetrics) {
 	hmc.mu.Lock()
 	defer hmc.mu.Unlock()
 	hmc.metrics = newMetrics
-	log.Debug("Health metrics updated: %+v", hmc.metrics)
+	logger.Debug("Health metrics updated: %+v", hmc.metrics)
 }
 
 // CollectHealthMetrics 收集健康指标
@@ -39,7 +39,7 @@ func (hmc *HealthMetricsCollector) CollectHealthMetrics() map[string]interface{}
 	defer hmc.mu.RUnlock()
 
 	if hmc.healthManager == nil {
-		log.Error("HealthCheckManager is not initialized in HealthMetricsCollector")
+		logger.Error("HealthCheckManager is not initialized in HealthMetricsCollector")
 		return map[string]interface{}{
 			"error": "HealthCheckManager not initialized",
 		}
@@ -123,8 +123,8 @@ func (hmc *HealthMetricsCollector) ExposeHealthMetrics(port int) {
 	})
 
 	addr := fmt.Sprintf(":%d", port)
-	log.Info("Health metrics server starting on http://localhost%s/metrics/health and http://localhost%s/health/services", addr, addr)
+	logger.Info("Health metrics server starting on http://localhost%s/metrics/health and http://localhost%s/health/services", addr, addr)
 	if err := http.ListenAndServe(addr, nil); err != nil {
-		log.Fatal("Failed to start health metrics server: %v", err)
+		logger.Fatal("Failed to start health metrics server: %v", err)
 	}
 }

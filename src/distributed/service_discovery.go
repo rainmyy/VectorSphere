@@ -1,7 +1,7 @@
 package distributed
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/server"
 	"context"
 	"encoding/json"
@@ -44,9 +44,9 @@ type ServiceDiscovery struct {
 	mutex       sync.RWMutex
 
 	// 服务缓存
-	masterInfo  *ServiceInfo
-	slaveInfos  map[string]*ServiceInfo // nodeID -> ServiceInfo
-	watchers    map[string]context.CancelFunc // 监听器取消函数
+	masterInfo *ServiceInfo
+	slaveInfos map[string]*ServiceInfo       // nodeID -> ServiceInfo
+	watchers   map[string]context.CancelFunc // 监听器取消函数
 
 	// 回调函数
 	onMasterChange func(*ServiceInfo)
@@ -68,7 +68,7 @@ func NewServiceDiscovery(client *clientv3.Client, serviceName string) *ServiceDi
 
 // RegisterService 注册服务
 func (sd *ServiceDiscovery) RegisterService(ctx context.Context, info *ServiceInfo, ttl int64) error {
-	log.Info("Registering service: %s, type: %s, address: %s", info.ServiceName, info.NodeType, info.Address)
+	logger.Info("Registering service: %s, type: %s, address: %s", info.ServiceName, info.NodeType, info.Address)
 
 	// 创建租约
 	leaseResp, err := sd.client.Grant(ctx, ttl)
@@ -100,7 +100,7 @@ func (sd *ServiceDiscovery) RegisterService(ctx context.Context, info *ServiceIn
 	// 启动租约续期
 	go sd.keepAlive(ctx)
 
-	log.Info("Service registered successfully: %s", key)
+	logger.Info("Service registered successfully: %s", key)
 	return nil
 }
 
@@ -123,7 +123,7 @@ func (sd *ServiceDiscovery) UnregisterService(ctx context.Context, nodeType, nod
 		sd.client.Revoke(ctx, sd.leaseID)
 	}
 
-	log.Info("Service unregistered: %s", key)
+	logger.Info("Service unregistered: %s", key)
 	return nil
 }
 
@@ -131,7 +131,7 @@ func (sd *ServiceDiscovery) UnregisterService(ctx context.Context, nodeType, nod
 func (sd *ServiceDiscovery) keepAlive(ctx context.Context) {
 	ch, kaerr := sd.client.KeepAlive(ctx, sd.leaseID)
 	if kaerr != nil {
-		log.Error("KeepAlive failed: %v", kaerr)
+		logger.Error("KeepAlive failed: %v", kaerr)
 		return
 	}
 
@@ -139,15 +139,15 @@ func (sd *ServiceDiscovery) keepAlive(ctx context.Context) {
 		select {
 		case ka := <-ch:
 			if ka == nil {
-				log.Warning("KeepAlive channel closed")
+				logger.Warning("KeepAlive channel closed")
 				return
 			}
 			// log.Debug("KeepAlive response: %v", ka)
 		case <-sd.stopCh:
-			log.Info("KeepAlive stopped")
+			logger.Info("KeepAlive stopped")
 			return
 		case <-ctx.Done():
-			log.Info("KeepAlive context cancelled")
+			logger.Info("KeepAlive context cancelled")
 			return
 		}
 	}
@@ -185,7 +185,7 @@ func (sd *ServiceDiscovery) DiscoverSlaves(ctx context.Context) (map[string]*Ser
 	for _, kv := range resp.Kvs {
 		var info ServiceInfo
 		if err := json.Unmarshal(kv.Value, &info); err != nil {
-			log.Warning("解析slave信息失败: %v", err)
+			logger.Warning("解析slave信息失败: %v", err)
 			continue
 		}
 		slaves[info.NodeID] = &info
@@ -210,7 +210,7 @@ func (sd *ServiceDiscovery) WatchMaster(ctx context.Context, callback func(*Serv
 			select {
 			case watchResp := <-watchCh:
 				if watchResp.Err() != nil {
-					log.Error("Watch master error: %v", watchResp.Err())
+					logger.Error("Watch master error: %v", watchResp.Err())
 					return
 				}
 
@@ -219,13 +219,13 @@ func (sd *ServiceDiscovery) WatchMaster(ctx context.Context, callback func(*Serv
 					case clientv3.EventTypePut:
 						var info ServiceInfo
 						if err := json.Unmarshal(event.Kv.Value, &info); err != nil {
-							log.Error("解析master信息失败: %v", err)
+							logger.Error("解析master信息失败: %v", err)
 							continue
 						}
 						sd.mutex.Lock()
 						sd.masterInfo = &info
 						sd.mutex.Unlock()
-						log.Info("Master changed: %s", info.Address)
+						logger.Info("Master changed: %s", info.Address)
 						if callback != nil {
 							callback(&info)
 						}
@@ -233,7 +233,7 @@ func (sd *ServiceDiscovery) WatchMaster(ctx context.Context, callback func(*Serv
 						sd.mutex.Lock()
 						sd.masterInfo = nil
 						sd.mutex.Unlock()
-						log.Info("Master removed")
+						logger.Info("Master removed")
 						if callback != nil {
 							callback(nil)
 						}
@@ -264,7 +264,7 @@ func (sd *ServiceDiscovery) WatchSlaves(ctx context.Context, callback func(map[s
 			select {
 			case watchResp := <-watchCh:
 				if watchResp.Err() != nil {
-					log.Error("Watch slaves error: %v", watchResp.Err())
+					logger.Error("Watch slaves error: %v", watchResp.Err())
 					return
 				}
 
@@ -274,11 +274,11 @@ func (sd *ServiceDiscovery) WatchSlaves(ctx context.Context, callback func(map[s
 					case clientv3.EventTypePut:
 						var info ServiceInfo
 						if err := json.Unmarshal(event.Kv.Value, &info); err != nil {
-							log.Error("解析slave信息失败: %v", err)
+							logger.Error("解析slave信息失败: %v", err)
 							continue
 						}
 						sd.slaveInfos[info.NodeID] = &info
-						log.Info("Slave added/updated: %s", info.Address)
+						logger.Info("Slave added/updated: %s", info.Address)
 					case clientv3.EventTypeDelete:
 						// 从key中提取nodeID
 						keyStr := string(event.Kv.Key)
@@ -286,7 +286,7 @@ func (sd *ServiceDiscovery) WatchSlaves(ctx context.Context, callback func(map[s
 						if len(parts) > 0 {
 							nodeID := parts[len(parts)-1]
 							delete(sd.slaveInfos, nodeID)
-							log.Info("Slave removed: %s", nodeID)
+							logger.Info("Slave removed: %s", nodeID)
 						}
 					}
 				}
@@ -402,7 +402,7 @@ func (sd *ServiceDiscovery) Stop() {
 	// 取消所有监听器
 	for name, cancel := range sd.watchers {
 		cancel()
-		log.Info("Stopped watcher: %s", name)
+		logger.Info("Stopped watcher: %s", name)
 	}
 
 	// 撤销租约
@@ -412,7 +412,7 @@ func (sd *ServiceDiscovery) Stop() {
 		sd.client.Revoke(ctx, sd.leaseID)
 	}
 
-	log.Info("Service discovery stopped")
+	logger.Info("Service discovery stopped")
 }
 
 // CreateServiceInfo 创建服务信息

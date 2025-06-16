@@ -2,7 +2,7 @@ package distributed
 
 import (
 	"VectorSphere/src/library/common"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"context"
 	"fmt"
 	"os"
@@ -40,14 +40,14 @@ func NewAppLauncher(configPath string) (*AppLauncher, error) {
 
 // Start 启动应用
 func (al *AppLauncher) Start() error {
-	log.Info("Starting VectorSphere distributed application...")
+	logger.Info("Starting VectorSphere distributed application...")
 
 	// 1. 加载配置
 	config, err := al.configManager.LoadConfig()
 	if err != nil {
 		return fmt.Errorf("加载配置失败: %v", err)
 	}
-	log.Info("Configuration loaded: %s", config.ServiceName)
+	logger.Info("Configuration loaded: %s", config.ServiceName)
 
 	// 2. 创建分布式管理器
 	al.distributedManager, err = NewDistributedManager(config)
@@ -65,7 +65,7 @@ func (al *AppLauncher) Start() error {
 
 	// 5. 注册当前节点
 	if err := al.registerCurrentNode(); err != nil {
-		log.Warning("注册当前节点失败: %v", err)
+		logger.Warning("注册当前节点失败: %v", err)
 	}
 
 	// 6. 创建通信服务
@@ -82,18 +82,18 @@ func (al *AppLauncher) Start() error {
 	// 9. 启动健康检查
 	go al.startHealthCheck()
 
-	log.Info("VectorSphere application started successfully")
+	logger.Info("VectorSphere application started successfully")
 	return nil
 }
 
 // Stop 停止应用
 func (al *AppLauncher) Stop() error {
-	log.Info("Stopping VectorSphere application...")
+	logger.Info("Stopping VectorSphere application...")
 
 	// 停止API网关
 	if al.apiGateway != nil {
 		if err := al.apiGateway.Stop(al.ctx); err != nil {
-			log.Error("停止API网关失败: %v", err)
+			logger.Error("停止API网关失败: %v", err)
 		}
 	}
 
@@ -110,14 +110,14 @@ func (al *AppLauncher) Stop() error {
 	// 停止分布式管理器
 	if al.distributedManager != nil {
 		if err := al.distributedManager.Stop(); err != nil {
-			log.Error("停止分布式管理器失败: %v", err)
+			logger.Error("停止分布式管理器失败: %v", err)
 		}
 	}
 
 	// 取消上下文
 	al.cancel()
 
-	log.Info("VectorSphere application stopped")
+	logger.Info("VectorSphere application stopped")
 	return nil
 }
 
@@ -179,17 +179,17 @@ func (al *AppLauncher) startServiceWatchers() {
 	// 监听master变化
 	al.serviceDiscovery.WatchMaster(al.ctx, func(masterInfo *ServiceInfo) {
 		if masterInfo != nil {
-			log.Info("Master changed: %s:%d", masterInfo.Address, masterInfo.Port)
+			logger.Info("Master changed: %s:%d", masterInfo.Address, masterInfo.Port)
 		} else {
-			log.Info("Master removed")
+			logger.Info("Master removed")
 		}
 	})
 
 	// 监听slave变化
 	al.serviceDiscovery.WatchSlaves(al.ctx, func(slaves map[string]*ServiceInfo) {
-		log.Info("Slaves updated, count: %d", len(slaves))
+		logger.Info("Slaves updated, count: %d", len(slaves))
 		for nodeID, info := range slaves {
-			log.Info("Slave: %s -> %s:%d (status: %s)", nodeID, info.Address, info.Port, info.Status)
+			logger.Info("Slave: %s -> %s:%d (status: %s)", nodeID, info.Address, info.Port, info.Status)
 		}
 	})
 }
@@ -223,15 +223,15 @@ func (al *AppLauncher) performHealthCheck() {
 				if healthy {
 					healthyCount++
 				} else {
-					log.Warning("Slave %s is unhealthy", addr)
+					logger.Warning("Slave %s is unhealthy", addr)
 				}
 			}
-			log.Info("Health check completed: %d/%d slaves healthy", healthyCount, len(slaveAddrs))
+			logger.Info("Health check completed: %d/%d slaves healthy", healthyCount, len(slaveAddrs))
 		}
 	} else {
 		// Slave节点更新自己的状态
 		if err := al.updateNodeStatus("active"); err != nil {
-			log.Warning("Failed to update node status: %v", err)
+			logger.Warning("Failed to update node status: %v", err)
 		}
 	}
 }
@@ -264,11 +264,11 @@ func (al *AppLauncher) Run() error {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	log.Info("Application is running. Press Ctrl+C to stop.")
+	logger.Info("Application is running. Press Ctrl+C to stop.")
 
 	// 阻塞等待信号
 	sig := <-sigChan
-	log.Info("Received signal: %v, shutting down...", sig)
+	logger.Info("Received signal: %v, shutting down...", sig)
 
 	// 优雅停止
 	return al.Stop()
@@ -327,7 +327,7 @@ func (al *AppLauncher) GetConfigManager() *ConfigManager {
 
 // ReloadConfig 重新加载配置
 func (al *AppLauncher) ReloadConfig() error {
-	log.Info("Reloading configuration...")
+	logger.Info("Reloading configuration...")
 
 	// 重新加载配置
 	newConfig, err := al.configManager.ReloadConfig()
@@ -341,7 +341,7 @@ func (al *AppLauncher) ReloadConfig() error {
 		al.apiGateway.SetRateLimit(100) // 示例：更新限流配置
 	}
 
-	log.Info("Configuration reloaded successfully: %s", newConfig.ServiceName)
+	logger.Info("Configuration reloaded successfully: %s", newConfig.ServiceName)
 	return nil
 }
 
@@ -353,8 +353,8 @@ func CreateAndRunApp(configPath string) error {
 	}
 
 	if err := ValidateConfigFile(configPath); err != nil {
-		log.Warning("Configuration file validation failed: %v", err)
-		log.Info("Creating default configuration file: %s", configPath)
+		logger.Warning("Configuration file validation failed: %v", err)
+		logger.Info("Creating default configuration file: %s", configPath)
 		if err := CreateDefaultConfig(configPath); err != nil {
 			return fmt.Errorf("创建默认配置文件失败: %v", err)
 		}

@@ -1,7 +1,7 @@
 package enhanced
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -213,7 +213,7 @@ func NewEnhancedLeaderElection(client *clientv3.Client, config *ElectionConfig, 
 		nodeInfo.Metadata = make(map[string]string)
 	}
 
-	log.Info("Enhanced leader election created for node %s", nodeInfo.NodeID)
+	logger.Info("Enhanced leader election created for node %s", nodeInfo.NodeID)
 	return ele, nil
 }
 
@@ -223,11 +223,11 @@ func (ele *EnhancedLeaderElection) Start() error {
 		return fmt.Errorf("election is already running")
 	}
 
-	log.Info("Starting enhanced leader election for node %s", ele.nodeInfo.NodeID)
+	logger.Info("Starting enhanced leader election for node %s", ele.nodeInfo.NodeID)
 
 	// 注册候选者
 	if err := ele.registerCandidate(); err != nil {
-		log.Error("Failed to register candidate: %v", err)
+		logger.Error("Failed to register candidate: %v", err)
 		return err
 	}
 
@@ -238,7 +238,7 @@ func (ele *EnhancedLeaderElection) Start() error {
 	go ele.monitorCandidates()
 	go ele.collectMetrics()
 
-	log.Info("Enhanced leader election started successfully")
+	logger.Info("Enhanced leader election started successfully")
 	return nil
 }
 
@@ -248,7 +248,7 @@ func (ele *EnhancedLeaderElection) Stop() error {
 		return fmt.Errorf("election is not running")
 	}
 
-	log.Info("Stopping enhanced leader election for node %s", ele.nodeInfo.NodeID)
+	logger.Info("Stopping enhanced leader election for node %s", ele.nodeInfo.NodeID)
 
 	// 发送停止信号
 	close(ele.stopChan)
@@ -279,13 +279,13 @@ func (ele *EnhancedLeaderElection) Stop() error {
 	// 取消上下文
 	ele.cancel()
 
-	log.Info("Enhanced leader election stopped")
+	logger.Info("Enhanced leader election stopped")
 	return nil
 }
 
 // Campaign 参与选举
 func (ele *EnhancedLeaderElection) Campaign() error {
-	log.Info("Node %s starting campaign for leadership", ele.nodeInfo.NodeID)
+	logger.Info("Node %s starting campaign for leadership", ele.nodeInfo.NodeID)
 
 	ele.mu.Lock()
 	ele.state = Candidate
@@ -305,7 +305,7 @@ func (ele *EnhancedLeaderElection) Campaign() error {
 
 	// 根据策略决定是否参与选举
 	if !ele.shouldCampaign() {
-		log.Info("Node %s decided not to campaign based on strategy", ele.nodeInfo.NodeID)
+		logger.Info("Node %s decided not to campaign based on strategy", ele.nodeInfo.NodeID)
 		return nil
 	}
 
@@ -331,7 +331,7 @@ func (ele *EnhancedLeaderElection) Campaign() error {
 	ele.mu.Unlock()
 
 	if err != nil {
-		log.Error("Campaign failed for node %s: %v", ele.nodeInfo.NodeID, err)
+		logger.Error("Campaign failed for node %s: %v", ele.nodeInfo.NodeID, err)
 		ele.mu.Lock()
 		ele.state = Follower
 		ele.metrics.FailedElections++
@@ -358,7 +358,7 @@ func (ele *EnhancedLeaderElection) Resign() error {
 		return fmt.Errorf("node is not a leader")
 	}
 
-	log.Info("Node %s resigning from leadership", ele.nodeInfo.NodeID)
+	logger.Info("Node %s resigning from leadership", ele.nodeInfo.NodeID)
 	return ele.resignLeadership()
 }
 
@@ -458,22 +458,22 @@ func (ele *EnhancedLeaderElection) UpdateHealthScore(score float64) {
 
 // runElection 运行选举主循环
 func (ele *EnhancedLeaderElection) runElection() {
-	log.Info("Starting election main loop for node %s", ele.nodeInfo.NodeID)
+	logger.Info("Starting election main loop for node %s", ele.nodeInfo.NodeID)
 
 	for {
 		select {
 		case <-ele.stopChan:
-			log.Info("Election main loop stopped")
+			logger.Info("Election main loop stopped")
 			return
 		case <-ele.ctx.Done():
-			log.Info("Election context cancelled")
+			logger.Info("Election context cancelled")
 			return
 		default:
 			// 检查是否需要重新选举
 			if ele.shouldStartElection() {
 				go func() {
 					if err := ele.Campaign(); err != nil {
-						log.Error("Campaign failed: %v", err)
+						logger.Error("Campaign failed: %v", err)
 						// 等待一段时间后重试
 						time.Sleep(ele.config.ElectionTimeout)
 					}
@@ -486,15 +486,15 @@ func (ele *EnhancedLeaderElection) runElection() {
 
 // watchLeadership 监控领导权变化
 func (ele *EnhancedLeaderElection) watchLeadership() {
-	log.Info("Starting leadership watch for node %s", ele.nodeInfo.NodeID)
+	logger.Info("Starting leadership watch for node %s", ele.nodeInfo.NodeID)
 
 	for {
 		select {
 		case <-ele.stopChan:
-			log.Info("Leadership watch stopped")
+			logger.Info("Leadership watch stopped")
 			return
 		case <-ele.ctx.Done():
-			log.Info("Leadership watch context cancelled")
+			logger.Info("Leadership watch context cancelled")
 			return
 		default:
 			// 观察领导者变化
@@ -520,7 +520,7 @@ func (ele *EnhancedLeaderElection) watchLeadership() {
 
 // startHeartbeat 启动心跳
 func (ele *EnhancedLeaderElection) startHeartbeat() {
-	log.Info("Starting heartbeat for node %s", ele.nodeInfo.NodeID)
+	logger.Info("Starting heartbeat for node %s", ele.nodeInfo.NodeID)
 
 	ele.heartbeatTicker = time.NewTicker(ele.config.HeartbeatInterval)
 	defer ele.heartbeatTicker.Stop()
@@ -528,10 +528,10 @@ func (ele *EnhancedLeaderElection) startHeartbeat() {
 	for {
 		select {
 		case <-ele.stopChan:
-			log.Info("Heartbeat stopped")
+			logger.Info("Heartbeat stopped")
 			return
 		case <-ele.ctx.Done():
-			log.Info("Heartbeat context cancelled")
+			logger.Info("Heartbeat context cancelled")
 			return
 		case <-ele.heartbeatTicker.C:
 			ele.sendHeartbeat()
@@ -543,7 +543,7 @@ func (ele *EnhancedLeaderElection) startHeartbeat() {
 
 // monitorCandidates 监控候选者
 func (ele *EnhancedLeaderElection) monitorCandidates() {
-	log.Info("Starting candidate monitoring for node %s", ele.nodeInfo.NodeID)
+	logger.Info("Starting candidate monitoring for node %s", ele.nodeInfo.NodeID)
 
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
@@ -551,10 +551,10 @@ func (ele *EnhancedLeaderElection) monitorCandidates() {
 	for {
 		select {
 		case <-ele.stopChan:
-			log.Info("Candidate monitoring stopped")
+			logger.Info("Candidate monitoring stopped")
 			return
 		case <-ele.ctx.Done():
-			log.Info("Candidate monitoring context cancelled")
+			logger.Info("Candidate monitoring context cancelled")
 			return
 		case <-ticker.C:
 			ele.updateCandidatesList()
@@ -565,7 +565,7 @@ func (ele *EnhancedLeaderElection) monitorCandidates() {
 
 // collectMetrics 收集指标
 func (ele *EnhancedLeaderElection) collectMetrics() {
-	log.Info("Starting metrics collection for node %s", ele.nodeInfo.NodeID)
+	logger.Info("Starting metrics collection for node %s", ele.nodeInfo.NodeID)
 
 	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
@@ -573,10 +573,10 @@ func (ele *EnhancedLeaderElection) collectMetrics() {
 	for {
 		select {
 		case <-ele.stopChan:
-			log.Info("Metrics collection stopped")
+			logger.Info("Metrics collection stopped")
 			return
 		case <-ele.ctx.Done():
-			log.Info("Metrics collection context cancelled")
+			logger.Info("Metrics collection context cancelled")
 			return
 		case <-ticker.C:
 			ele.updateMetrics()
@@ -586,7 +586,7 @@ func (ele *EnhancedLeaderElection) collectMetrics() {
 
 // becomeLeader 成为领导者
 func (ele *EnhancedLeaderElection) becomeLeader() {
-	log.Info("Node %s became leader", ele.nodeInfo.NodeID)
+	logger.Info("Node %s became leader", ele.nodeInfo.NodeID)
 
 	ele.mu.Lock()
 	ele.state = Leader
@@ -624,7 +624,7 @@ func (ele *EnhancedLeaderElection) becomeLeader() {
 
 // resignLeadership 放弃领导权
 func (ele *EnhancedLeaderElection) resignLeadership() error {
-	log.Info("Node %s resigning leadership", ele.nodeInfo.NodeID)
+	logger.Info("Node %s resigning leadership", ele.nodeInfo.NodeID)
 
 	ele.mu.Lock()
 	if ele.state == Leader {
@@ -652,7 +652,7 @@ func (ele *EnhancedLeaderElection) resignLeadership() error {
 func (ele *EnhancedLeaderElection) handleLeaderChange(leaderValue string) {
 	var newLeader LeaderInfo
 	if err := json.Unmarshal([]byte(leaderValue), &newLeader); err != nil {
-		log.Error("Failed to unmarshal leader info: %v", err)
+		logger.Error("Failed to unmarshal leader info: %v", err)
 		return
 	}
 
@@ -673,7 +673,7 @@ func (ele *EnhancedLeaderElection) handleLeaderChange(leaderValue string) {
 
 	// 检查是否是新的领导者
 	if oldLeader == nil || oldLeader.NodeID != newLeader.NodeID {
-		log.Info("New leader detected: %s (term: %d)", newLeader.NodeID, newLeader.Term)
+		logger.Info("New leader detected: %s (term: %d)", newLeader.NodeID, newLeader.Term)
 
 		ele.triggerEvent(&ElectionEvent{
 			Type:       "leader_changed",
@@ -688,7 +688,7 @@ func (ele *EnhancedLeaderElection) handleLeaderChange(leaderValue string) {
 
 // handleLeaderLoss 处理领导者丢失
 func (ele *EnhancedLeaderElection) handleLeaderLoss() {
-	log.Warning("Leader lost, no current leader")
+	logger.Warning("Leader lost, no current leader")
 
 	ele.mu.Lock()
 	oldLeader := ele.currentLeader
@@ -848,7 +848,7 @@ func (ele *EnhancedLeaderElection) registerCandidate() error {
 		return fmt.Errorf("failed to register candidate: %v", err)
 	}
 
-	log.Info("Candidate registered: %s", ele.nodeInfo.NodeID)
+	logger.Info("Candidate registered: %s", ele.nodeInfo.NodeID)
 	return nil
 }
 
@@ -857,9 +857,9 @@ func (ele *EnhancedLeaderElection) unregisterCandidate() {
 	key := fmt.Sprintf("%s/candidates/%s", ele.basePrefix, ele.nodeInfo.NodeID)
 	_, err := ele.client.Delete(ele.ctx, key)
 	if err != nil {
-		log.Error("Failed to unregister candidate: %v", err)
+		logger.Error("Failed to unregister candidate: %v", err)
 	} else {
-		log.Info("Candidate unregistered: %s", ele.nodeInfo.NodeID)
+		logger.Info("Candidate unregistered: %s", ele.nodeInfo.NodeID)
 	}
 }
 
@@ -884,14 +884,14 @@ func (ele *EnhancedLeaderElection) updateCandidateInfo() {
 
 	value, err := json.Marshal(candidateInfo)
 	if err != nil {
-		log.Error("Failed to marshal candidate info: %v", err)
+		logger.Error("Failed to marshal candidate info: %v", err)
 		return
 	}
 
 	key := fmt.Sprintf("%s/candidates/%s", ele.basePrefix, ele.nodeInfo.NodeID)
 	_, err = ele.client.Put(ele.ctx, key, string(value))
 	if err != nil {
-		log.Error("Failed to update candidate info: %v", err)
+		logger.Error("Failed to update candidate info: %v", err)
 	}
 }
 
@@ -900,7 +900,7 @@ func (ele *EnhancedLeaderElection) updateCandidatesList() {
 	key := fmt.Sprintf("%s/candidates/", ele.basePrefix)
 	resp, err := ele.client.Get(ele.ctx, key, clientv3.WithPrefix())
 	if err != nil {
-		log.Error("Failed to get candidates list: %v", err)
+		logger.Error("Failed to get candidates list: %v", err)
 		return
 	}
 
@@ -914,13 +914,13 @@ func (ele *EnhancedLeaderElection) updateCandidatesList() {
 	for _, kv := range resp.Kvs {
 		var candidate CandidateInfo
 		if err := json.Unmarshal(kv.Value, &candidate); err != nil {
-			log.Error("Failed to unmarshal candidate info: %v", err)
+			logger.Error("Failed to unmarshal candidate info: %v", err)
 			continue
 		}
 		ele.candidates[candidate.NodeID] = &candidate
 	}
 
-	log.Debug("Updated candidates list: %d candidates", len(ele.candidates))
+	logger.Debug("Updated candidates list: %d candidates", len(ele.candidates))
 }
 
 // cleanupStaleNodes 清理过期节点
@@ -933,7 +933,7 @@ func (ele *EnhancedLeaderElection) cleanupStaleNodes() {
 
 	for nodeID, candidate := range ele.candidates {
 		if now.Sub(candidate.LastSeen) > staleThreshold {
-			log.Warning("Removing stale candidate: %s", nodeID)
+			logger.Warning("Removing stale candidate: %s", nodeID)
 			delete(ele.candidates, nodeID)
 
 			// 从etcd中删除
@@ -941,7 +941,7 @@ func (ele *EnhancedLeaderElection) cleanupStaleNodes() {
 			go func(k string) {
 				_, err := ele.client.Delete(ele.ctx, k)
 				if err != nil {
-					log.Error("Failed to delete stale candidate: %v", err)
+					logger.Error("Failed to delete stale candidate: %v", err)
 				}
 			}(key)
 		}
@@ -963,7 +963,7 @@ func (ele *EnhancedLeaderElection) sendHeartbeat() {
 	// 更新候选者信息（包含心跳时间）
 	go ele.updateCandidateInfo()
 
-	log.Debug("Heartbeat sent by node %s", ele.nodeInfo.NodeID)
+	logger.Debug("Heartbeat sent by node %s", ele.nodeInfo.NodeID)
 }
 
 // monitorTermDuration 监控任期持续时间
@@ -974,7 +974,7 @@ func (ele *EnhancedLeaderElection) monitorTermDuration() {
 	select {
 	case <-timer.C:
 		if ele.IsLeader() {
-			log.Info("Maximum term duration reached, resigning leadership")
+			logger.Info("Maximum term duration reached, resigning leadership")
 			ele.resignLeadership()
 		}
 	case <-ele.stopChan:
@@ -995,10 +995,10 @@ func (ele *EnhancedLeaderElection) updateMetrics() {
 	// 如果是领导者，更新领导时间
 	if ele.state == Leader {
 		currentLeadershipDuration := time.Since(ele.leadershipStart)
-		log.Debug("Current leadership duration: %v", currentLeadershipDuration)
+		logger.Debug("Current leadership duration: %v", currentLeadershipDuration)
 	}
 
-	log.Debug("Election metrics updated: total_elections=%d, successful=%d, failed=%d, current_term=%d",
+	logger.Debug("Election metrics updated: total_elections=%d, successful=%d, failed=%d, current_term=%d",
 		ele.metrics.TotalElections, ele.metrics.SuccessfulElections, ele.metrics.FailedElections, ele.metrics.CurrentTerm)
 }
 
@@ -1016,7 +1016,7 @@ func (ele *EnhancedLeaderElection) triggerEvent(event *ElectionEvent) {
 				try := func() {
 					defer func() {
 						if r := recover(); r != nil {
-							log.Error("Election callback panic: %v", r)
+							logger.Error("Election callback panic: %v", r)
 						}
 					}()
 					callback(event)
@@ -1026,7 +1026,7 @@ func (ele *EnhancedLeaderElection) triggerEvent(event *ElectionEvent) {
 		}
 	}()
 
-	log.Info("Election event triggered: type=%s, node=%s, term=%d, message=%s",
+	logger.Info("Election event triggered: type=%s, node=%s, term=%d, message=%s",
 		event.Type, event.NodeID, event.Term, event.Message)
 }
 

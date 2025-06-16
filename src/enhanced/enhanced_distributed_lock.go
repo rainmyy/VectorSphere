@@ -1,7 +1,7 @@
 package enhanced
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"context"
 	"encoding/json"
 	"errors"
@@ -174,7 +174,7 @@ func NewEnhancedDistributedLock(client *clientv3.Client, config *EnhancedDistrib
 
 // AcquireLock 获取锁
 func (edl *EnhancedDistributedLock) AcquireLock(ctx context.Context, request *LockRequest) (string, error) {
-	log.Info("Acquiring lock: %s by %s", request.LockKey, request.Owner)
+	logger.Info("Acquiring lock: %s by %s", request.LockKey, request.Owner)
 
 	// 验证请求
 	if err := edl.validateLockRequest(request); err != nil {
@@ -202,7 +202,7 @@ func (edl *EnhancedDistributedLock) AcquireLock(ctx context.Context, request *Lo
 
 // ReleaseLock 释放锁
 func (edl *EnhancedDistributedLock) ReleaseLock(ctx context.Context, lockID string) error {
-	log.Info("Releasing lock: %s", lockID)
+	logger.Info("Releasing lock: %s", lockID)
 
 	edl.mu.Lock()
 	lockInfo, exists := edl.locks[lockID]
@@ -215,7 +215,7 @@ func (edl *EnhancedDistributedLock) ReleaseLock(ctx context.Context, lockID stri
 	if lockInfo.LockType == ReentrantLock && lockInfo.Reentrant > 1 {
 		lockInfo.Reentrant--
 		edl.mu.Unlock()
-		log.Debug("Reentrant lock count decreased to %d for %s", lockInfo.Reentrant, lockID)
+		logger.Debug("Reentrant lock count decreased to %d for %s", lockInfo.Reentrant, lockID)
 		return nil
 	}
 
@@ -232,7 +232,7 @@ func (edl *EnhancedDistributedLock) ReleaseLock(ctx context.Context, lockID stri
 
 	// 从etcd删除锁
 	if err := edl.deleteLockFromEtcd(ctx, lockInfo); err != nil {
-		log.Error("从etcd删除锁失败: %v", err)
+		logger.Error("从etcd删除锁失败: %v", err)
 	}
 
 	// 更新统计信息
@@ -254,7 +254,7 @@ func (edl *EnhancedDistributedLock) ReleaseLock(ctx context.Context, lockID stri
 		Duration:  time.Since(lockInfo.AcquiredAt),
 	})
 
-	log.Info("Lock released successfully: %s", lockID)
+	logger.Info("Lock released successfully: %s", lockID)
 	return nil
 }
 
@@ -277,7 +277,7 @@ func (edl *EnhancedDistributedLock) TryLock(ctx context.Context, request *LockRe
 
 // IsLocked 检查锁是否被占用
 func (edl *EnhancedDistributedLock) IsLocked(ctx context.Context, lockKey string) (bool, *LockInfo, error) {
-	log.Debug("Checking if lock is held: %s", lockKey)
+	logger.Debug("Checking if lock is held: %s", lockKey)
 
 	// 从etcd查询锁信息
 	lockPath := edl.buildLockPath(lockKey)
@@ -353,7 +353,7 @@ func (edl *EnhancedDistributedLock) AddLockEventListener(listenerID string) chan
 	ch := make(chan *LockEvent, 100)
 	edl.eventListeners[listenerID] = ch
 
-	log.Info("Added lock event listener: %s", listenerID)
+	logger.Info("Added lock event listener: %s", listenerID)
 	return ch
 }
 
@@ -365,7 +365,7 @@ func (edl *EnhancedDistributedLock) RemoveLockEventListener(listenerID string) {
 	if ch, exists := edl.eventListeners[listenerID]; exists {
 		close(ch)
 		delete(edl.eventListeners, listenerID)
-		log.Info("Removed lock event listener: %s", listenerID)
+		logger.Info("Removed lock event listener: %s", listenerID)
 	}
 }
 
@@ -425,7 +425,7 @@ func (edl *EnhancedDistributedLock) handleReentrantAcquire(lockID string, reques
 	}
 
 	lockInfo.Reentrant++
-	log.Debug("Reentrant lock count increased to %d for %s", lockInfo.Reentrant, lockID)
+	logger.Debug("Reentrant lock count increased to %d for %s", lockInfo.Reentrant, lockID)
 
 	return lockID, nil
 }
@@ -512,7 +512,7 @@ func (edl *EnhancedDistributedLock) acquireMutexLock(ctx context.Context, reques
 
 	// 存储到etcd
 	if err := edl.storeLockToEtcd(ctx, lockInfo); err != nil {
-		log.Error("存储锁信息到etcd失败: %v", err)
+		logger.Error("存储锁信息到etcd失败: %v", err)
 	}
 
 	// 更新统计信息
@@ -531,7 +531,7 @@ func (edl *EnhancedDistributedLock) acquireMutexLock(ctx context.Context, reques
 		Duration:  time.Since(start),
 	})
 
-	log.Info("Mutex lock acquired successfully: %s", lockID)
+	logger.Info("Mutex lock acquired successfully: %s", lockID)
 	return lockID, nil
 }
 
@@ -583,7 +583,7 @@ func (edl *EnhancedDistributedLock) createReadLock(ctx context.Context, request 
 	edl.locks[lockID] = lockInfo
 	edl.mu.Unlock()
 
-	log.Info("Read lock acquired: %s", lockID)
+	logger.Info("Read lock acquired: %s", lockID)
 	return lockID, nil
 }
 
@@ -607,7 +607,7 @@ func (edl *EnhancedDistributedLock) createWriteLock(ctx context.Context, request
 	edl.locks[lockID] = lockInfo
 	edl.mu.Unlock()
 
-	log.Info("Write lock acquired: %s", lockID)
+	logger.Info("Write lock acquired: %s", lockID)
 	return lockID, nil
 }
 
@@ -739,7 +739,7 @@ func (edl *EnhancedDistributedLock) processWaitingQueue(lockKey string) {
 	edl.mu.RUnlock()
 
 	// 通知等待的请求
-	log.Debug("Processing waiting queue for lock: %s, queue length: %d", lockKey, len(queue))
+	logger.Debug("Processing waiting queue for lock: %s, queue length: %d", lockKey, len(queue))
 }
 
 // buildLockPath 构建锁路径
@@ -825,9 +825,9 @@ func (edl *EnhancedDistributedLock) sendLockEvent(event *LockEvent) {
 	for listenerID, ch := range edl.eventListeners {
 		select {
 		case ch <- event:
-			log.Debug("Sent lock event to listener %s", listenerID)
+			logger.Debug("Sent lock event to listener %s", listenerID)
 		default:
-			log.Warning("Failed to send lock event to listener %s (channel full)", listenerID)
+			logger.Warning("Failed to send lock event to listener %s (channel full)", listenerID)
 		}
 	}
 
@@ -839,13 +839,13 @@ func (edl *EnhancedDistributedLock) sendLockEvent(event *LockEvent) {
 
 // auditLockEvent 审计锁事件
 func (edl *EnhancedDistributedLock) auditLockEvent(event *LockEvent) {
-	log.Info("Lock audit: type=%s, key=%s, owner=%s, ownerID=%s, duration=%v, time=%s",
+	logger.Info("Lock audit: type=%s, key=%s, owner=%s, ownerID=%s, duration=%v, time=%s",
 		event.Type, event.LockKey, event.Owner, event.OwnerID, event.Duration, event.Timestamp.Format(time.RFC3339))
 }
 
 // cleanupExpiredLock 清理过期锁
 func (edl *EnhancedDistributedLock) cleanupExpiredLock(ctx context.Context, lockInfo *LockInfo) {
-	log.Info("Cleaning up expired lock: %s", lockInfo.LockID)
+	logger.Info("Cleaning up expired lock: %s", lockInfo.LockID)
 
 	// 从内存删除
 	edl.mu.Lock()
@@ -854,7 +854,7 @@ func (edl *EnhancedDistributedLock) cleanupExpiredLock(ctx context.Context, lock
 
 	// 从etcd删除
 	if err := edl.deleteLockFromEtcd(ctx, lockInfo); err != nil {
-		log.Error("删除过期锁失败: %v", err)
+		logger.Error("删除过期锁失败: %v", err)
 	}
 
 	// 处理等待队列
@@ -863,7 +863,7 @@ func (edl *EnhancedDistributedLock) cleanupExpiredLock(ctx context.Context, lock
 
 // startMonitoring 启动监控
 func (edl *EnhancedDistributedLock) startMonitoring() {
-	log.Info("Starting lock monitoring")
+	logger.Info("Starting lock monitoring")
 
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -873,7 +873,7 @@ func (edl *EnhancedDistributedLock) startMonitoring() {
 		case <-ticker.C:
 			edl.monitorLocks()
 		case <-edl.ctx.Done():
-			log.Info("Lock monitoring stopped")
+			logger.Info("Lock monitoring stopped")
 			return
 		}
 	}
@@ -890,13 +890,13 @@ func (edl *EnhancedDistributedLock) monitorLocks() {
 	}
 	edl.mu.RUnlock()
 
-	log.Debug("Lock monitoring: active_locks=%d, stats_entries=%d, waiting_requests=%d",
+	logger.Debug("Lock monitoring: active_locks=%d, stats_entries=%d, waiting_requests=%d",
 		lockCount, statsCount, waitingCount)
 }
 
 // startCleanup 启动清理
 func (edl *EnhancedDistributedLock) startCleanup() {
-	log.Info("Starting lock cleanup")
+	logger.Info("Starting lock cleanup")
 
 	ticker := time.NewTicker(edl.cleanupInterval)
 	defer ticker.Stop()
@@ -906,7 +906,7 @@ func (edl *EnhancedDistributedLock) startCleanup() {
 		case <-ticker.C:
 			edl.cleanupExpiredLocks()
 		case <-edl.ctx.Done():
-			log.Info("Lock cleanup stopped")
+			logger.Info("Lock cleanup stopped")
 			return
 		}
 	}
@@ -930,13 +930,13 @@ func (edl *EnhancedDistributedLock) cleanupExpiredLocks() {
 	}
 
 	if len(expiredLocks) > 0 {
-		log.Info("Cleaned up %d expired locks", len(expiredLocks))
+		logger.Info("Cleaned up %d expired locks", len(expiredLocks))
 	}
 }
 
 // StartDeadlockDetection 启动死锁检测
 func (edl *EnhancedDistributedLock) StartDeadlockDetection() {
-	log.Info("Starting deadlock detection")
+	logger.Info("Starting deadlock detection")
 
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
@@ -945,11 +945,11 @@ func (edl *EnhancedDistributedLock) StartDeadlockDetection() {
 		select {
 		case <-ticker.C:
 			if edl.deadlockDetector.detectDeadlock() {
-				log.Warning("Deadlock detected!")
+				logger.Warning("Deadlock detected!")
 				edl.HandleDeadlock()
 			}
 		case <-edl.ctx.Done():
-			log.Info("Deadlock detection stopped")
+			logger.Info("Deadlock detection stopped")
 			return
 		}
 	}
@@ -957,7 +957,7 @@ func (edl *EnhancedDistributedLock) StartDeadlockDetection() {
 
 // handleDeadlock 处理死锁
 func (edl *EnhancedDistributedLock) HandleDeadlock() {
-	log.Warning("Handling deadlock situation")
+	logger.Warning("Handling deadlock situation")
 
 	// 发送死锁事件
 	edl.sendLockEvent(&LockEvent{
@@ -1058,7 +1058,7 @@ func (dd *DeadlockDetector) dfsHasCycle(node string, visited, recStack map[strin
 
 // Close 关闭增强分布式锁
 func (edl *EnhancedDistributedLock) Close() error {
-	log.Info("Closing enhanced distributed lock")
+	logger.Info("Closing enhanced distributed lock")
 
 	edl.cancel()
 
@@ -1072,14 +1072,14 @@ func (edl *EnhancedDistributedLock) Close() error {
 
 	for _, lockID := range lockIDs {
 		if err := edl.ReleaseLock(context.Background(), lockID); err != nil {
-			log.Error("释放锁失败 %s: %v", lockID, err)
+			logger.Error("释放锁失败 %s: %v", lockID, err)
 		}
 	}
 
 	// 关闭会话
 	if edl.session != nil {
 		if err := edl.session.Close(); err != nil {
-			log.Error("关闭etcd会话失败: %v", err)
+			logger.Error("关闭etcd会话失败: %v", err)
 		}
 	}
 

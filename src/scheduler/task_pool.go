@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 
 	"github.com/robfig/cron/v3"
 )
@@ -49,15 +49,15 @@ func (pm *TaskPoolManager) Submit(task ScheduledTask) error {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	log.Info("提交任务 '%s' 到任务池执行", task.GetName())
+	logger.Info("提交任务 '%s' 到任务池执行", task.GetName())
 
 	// 直接执行任务，不进行调度
 	go func() {
-		log.Info("开始执行任务: %s", task.GetName())
+		logger.Info("开始执行任务: %s", task.GetName())
 		if err := task.Run(); err != nil {
-			log.Error("执行任务 '%s' 失败: %v", task.GetName(), err)
+			logger.Error("执行任务 '%s' 失败: %v", task.GetName(), err)
 		} else {
-			log.Info("任务 '%s' 执行完成", task.GetName())
+			logger.Info("任务 '%s' 执行完成", task.GetName())
 		}
 	}()
 
@@ -84,10 +84,10 @@ func (pm *TaskPoolManager) RegisterTasks(tasks ...ScheduledTask) error {
 	for _, task := range tasks {
 		taskName := task.GetName()
 		if _, exists := pm.tasks[taskName]; exists {
-			log.Warning("任务 '%s' 已经注册，将被覆盖", taskName)
+			logger.Warning("任务 '%s' 已经注册，将被覆盖", taskName)
 		}
 		pm.tasks[taskName] = task
-		log.Info("任务 '%s' 已注册，Cron表达式: %s", taskName, task.GetCronSpec())
+		logger.Info("任务 '%s' 已注册，Cron表达式: %s", taskName, task.GetCronSpec())
 	}
 	return nil
 }
@@ -97,20 +97,20 @@ func (pm *TaskPoolManager) InitializeTasks() error {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
-	log.Info("开始初始化所有已注册的任务...")
+	logger.Info("开始初始化所有已注册的任务...")
 	for name, task := range pm.tasks {
 		// 检查是否实现了 Init() error 方法
 		if initializer, ok := task.(interface{ Init() error }); ok {
 			if err := initializer.Init(); err != nil {
-				log.Error("初始化任务 '%s' 失败: %v", name, err)
+				logger.Error("初始化任务 '%s' 失败: %v", name, err)
 				return fmt.Errorf("初始化任务 '%s' 失败: %w", name, err)
 			}
-			log.Info("任务 '%s' 初始化成功", name)
+			logger.Info("任务 '%s' 初始化成功", name)
 		} else {
-			log.Info("任务 '%s' 没有 Init 方法，跳过初始化", name)
+			logger.Info("任务 '%s' 没有 Init 方法，跳过初始化", name)
 		}
 	}
-	log.Info("所有已注册任务初始化完成。")
+	logger.Info("所有已注册任务初始化完成。")
 	return nil
 }
 
@@ -124,7 +124,7 @@ func (pm *TaskPoolManager) Start() error {
 	}
 
 	if len(pm.tasks) == 0 {
-		log.Info("没有已注册的任务，任务池未启动。")
+		logger.Info("没有已注册的任务，任务池未启动。")
 		return nil
 	}
 
@@ -132,53 +132,53 @@ func (pm *TaskPoolManager) Start() error {
 	// pm.cron = cron.New(cron.WithSeconds())
 	pm.cron = cron.New()
 
-	log.Info("开始将任务添加到调度器...")
+	logger.Info("开始将任务添加到调度器...")
 	for name, task := range pm.tasks {
 		// 使用闭包来捕获正确的task实例
 		currentTask := task
 		currentName := name
 		entryID, err := pm.cron.AddFunc(currentTask.GetCronSpec(), func() {
-			log.Info("开始执行定时任务: %s", currentName)
+			logger.Info("开始执行定时任务: %s", currentName)
 			if err := currentTask.Run(); err != nil {
-				log.Error("执行定时任务 '%s' 失败: %v", currentName, err)
+				logger.Error("执行定时任务 '%s' 失败: %v", currentName, err)
 			} else {
-				log.Info("定时任务 '%s' 执行完成", currentName)
+				logger.Info("定时任务 '%s' 执行完成", currentName)
 			}
 		})
 		if err != nil {
-			log.Error("添加任务 '%s' 到调度器失败: %v", currentName, err)
+			logger.Error("添加任务 '%s' 到调度器失败: %v", currentName, err)
 			// 如果一个任务添加失败，可以选择停止所有已启动的，或者继续尝试其他任务
 			// 这里选择停止并返回错误
 			pm.cron.Stop() // 停止已经部分启动的cron
 			return fmt.Errorf("添加任务 '%s' 到调度器失败: %w", currentName, err)
 		}
 		pm.runningTasks++
-		log.Info("任务 '%s' (EntryID: %d) 已成功添加到调度器，Cron: %s", currentName, entryID, currentTask.GetCronSpec())
+		logger.Info("任务 '%s' (EntryID: %d) 已成功添加到调度器，Cron: %s", currentName, entryID, currentTask.GetCronSpec())
 	}
 
 	pm.cron.Start()
 	pm.IsRunning = true
-	log.Info("任务池已启动，所有定时任务开始调度执行。")
+	logger.Info("任务池已启动，所有定时任务开始调度执行。")
 
 	// 启动一个goroutine监听停止信号
 	go func() {
 		<-pm.stopCh
-		log.Info("接收到停止信号，开始停止任务池...")
+		logger.Info("接收到停止信号，开始停止任务池...")
 		ctx := pm.cron.Stop() // 优雅地停止cron调度器，等待正在执行的任务完成
 		<-ctx.Done()          // 等待所有任务完成
-		log.Info("Cron调度器已停止。")
+		logger.Info("Cron调度器已停止。")
 
 		// 可选：调用所有任务的Stop方法
 		pm.mu.RLock()
 		for name, task := range pm.tasks {
 			if stopper, ok := task.(interface{ Stop() error }); ok {
 				if err := stopper.Stop(); err != nil {
-					log.Error("停止任务 '%s' 时发生错误: %v", name, err)
+					logger.Error("停止任务 '%s' 时发生错误: %v", name, err)
 				}
 			}
 		}
 		pm.mu.RUnlock()
-		log.Info("所有任务已尝试停止，任务池已完全关闭。")
+		logger.Info("所有任务已尝试停止，任务池已完全关闭。")
 		pm.mu.Lock()
 		pm.IsRunning = false
 		pm.mu.Unlock()
@@ -192,7 +192,7 @@ func (pm *TaskPoolManager) Stop() {
 	pm.mu.Lock()
 	if !pm.IsRunning {
 		pm.mu.Unlock()
-		log.Info("任务池未运行，无需停止。")
+		logger.Info("任务池未运行，无需停止。")
 		return
 	}
 	// 避免重复关闭stopCh
@@ -205,7 +205,7 @@ func (pm *TaskPoolManager) Stop() {
 	}
 	pm.mu.Unlock() // Unlock before a closing channel to avoid deadlock with the goroutine listening on stopCh
 
-	log.Info("正在发送停止信号给任务池...")
+	logger.Info("正在发送停止信号给任务池...")
 	close(pm.stopCh) // 发送停止信号
 }
 

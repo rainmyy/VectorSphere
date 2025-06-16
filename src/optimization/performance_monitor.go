@@ -1,7 +1,7 @@
 package optimization
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"fmt"
 	"runtime"
 	"sort"
@@ -199,7 +199,7 @@ func (pm *PerformanceMonitor) Stop() {
 	// 关闭监控通道
 	close(pm.monitoringChan)
 
-	log.Info("性能监控器已停止")
+	logger.Info("性能监控器已停止")
 }
 
 // startMonitoring 开始监控
@@ -210,7 +210,7 @@ func (pm *PerformanceMonitor) startMonitoring() {
 	// 处理性能事件
 	go pm.processEvents()
 
-	log.Info("性能监控器已启动")
+	logger.Info("性能监控器已启动")
 }
 
 // collectMetrics 收集性能指标
@@ -245,7 +245,7 @@ func (pm *PerformanceMonitor) collectSystemMetrics() {
 	// 更新时间戳
 	pm.metrics.LastUpdated = time.Now()
 
-	log.Trace("系统指标: 内存=%dMB, CPU=%.1f%%",
+	logger.Trace("系统指标: 内存=%dMB, CPU=%.1f%%",
 		pm.metrics.MemoryUsage/1024/1024,
 		pm.metrics.CPUUsage*100)
 }
@@ -321,9 +321,9 @@ func (pm *PerformanceMonitor) createAlert(alertType, message, severity string) {
 	// 发送到事件通道
 	select {
 	case pm.monitoringChan <- event:
-		log.Warning("性能告警: %s - %s", severity, message)
+		logger.Warning("性能告警: %s - %s", severity, message)
 	default:
-		log.Error("告警通道已满，丢弃告警: %s", message)
+		logger.Error("告警通道已满，丢弃告警: %s", message)
 	}
 }
 
@@ -412,7 +412,7 @@ func (am *AlertManager) handleAlert(alert Alert) {
 	// 遍历所有处理器
 	for _, handler := range am.handlers {
 		if err := handler.Handle(alert); err != nil {
-			log.Error("处理告警失败: %v", err)
+			logger.Error("处理告警失败: %v", err)
 		}
 	}
 }
@@ -423,7 +423,7 @@ func (am *AlertManager) RegisterHandler(name string, handler AlertHandler) {
 	defer am.mu.Unlock()
 
 	am.handlers[name] = handler
-	log.Info("注册告警处理器: %s", name)
+	logger.Info("注册告警处理器: %s", name)
 }
 
 // GetActiveAlerts 获取活跃告警
@@ -449,7 +449,7 @@ func (am *AlertManager) ResolveAlert(alertID string) bool {
 	for i, alert := range am.alerts {
 		if alert.ID == alertID {
 			am.alerts[i].Resolved = true
-			log.Info("告警已解决: %s - %s", alert.Severity, alert.Message)
+			logger.Info("告警已解决: %s - %s", alert.Severity, alert.Message)
 			return true
 		}
 	}
@@ -567,7 +567,7 @@ func (pm *PerformanceMonitor) LogPerformanceStats() {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
-	log.Info("性能统计: 吞吐量=%.2f QPS, 平均延迟=%.2fms, P95延迟=%.2fms, 错误率=%.2f%%, 缓存命中率=%.2f%%",
+	logger.Info("性能统计: 吞吐量=%.2f QPS, 平均延迟=%.2fms, P95延迟=%.2fms, 错误率=%.2f%%, 缓存命中率=%.2f%%",
 		pm.metrics.ThroughputQPS,
 		float64(pm.metrics.AvgLatency)/float64(time.Millisecond),
 		float64(pm.metrics.P95Latency)/float64(time.Millisecond),

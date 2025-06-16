@@ -3,7 +3,7 @@ package healthCheck
 import (
 	"VectorSphere/src/email"
 	"VectorSphere/src/library/config"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/server"
 	"context"
 	"encoding/json"
@@ -149,7 +149,7 @@ func (am *AlertManager) sendEmailAlert(serviceName string, info *ServiceHealthIn
 	defer am.mu.RUnlock()
 
 	if am.emailConfig == nil || !am.emailConfig.Enabled {
-		log.Info("Email notifications are disabled or not configured.")
+		logger.Info("Email notifications are disabled or not configured.")
 		return nil // 如果邮件配置未启用或不存在，则不执行任何操作
 	}
 
@@ -170,14 +170,14 @@ func (am *AlertManager) sendEmailAlert(serviceName string, info *ServiceHealthIn
 
 	// 这里需要一个实际的邮件发送函数，例如使用 net/smtp 包
 	// 以下是一个占位符，您需要替换为实际的邮件发送实现
-	log.Info("Attempting to send email alert: Subject: %s, To: %s", subject, am.emailConfig.To)
+	logger.Info("Attempting to send email alert: Subject: %s, To: %s", subject, am.emailConfig.To)
 	err := am.emailSender.SendEmail(am.emailConfig.To, subject, body)
 	if err != nil {
-		log.Error("Failed to send email alert for service %s, rule %s: %v", serviceName, ruleName, err)
+		logger.Error("Failed to send email alert for service %s, rule %s: %v", serviceName, ruleName, err)
 		return err
 	}
 
-	log.Info("Email alert sent successfully for service %s, rule %s", serviceName, ruleName)
+	logger.Info("Email alert sent successfully for service %s, rule %s", serviceName, ruleName)
 	return nil
 }
 
@@ -196,18 +196,18 @@ func (hm *HealthCheckManager) triggerAlert(serviceName string, info *ServiceHeal
 		if rule.Condition(info) {
 			hm.alertManager.mu.Lock() // 加锁以安全地更新 LastTriggered
 			if time.Since(rule.LastTriggered) > rule.Cooldown {
-				log.Warning("Alert triggered for service %s: %s", serviceName, rule.Name)
+				logger.Warning("Alert triggered for service %s: %s", serviceName, rule.Name)
 				// 优先使用规则中定义的 Action
 				if rule.Action != nil {
 					err := rule.Action(info)
 					if err != nil {
-						log.Error("Failed to execute alert action for %s: %v", serviceName, err)
+						logger.Error("Failed to execute alert action for %s: %v", serviceName, err)
 					}
 				} else {
 					// 如果没有定义 Action，则尝试发送邮件告警
 					err := hm.alertManager.sendEmailAlert(serviceName, info, rule.Name)
 					if err != nil {
-						log.Error("Failed to send email alert via AlertManager for service %s, rule %s: %v", serviceName, rule.Name, err)
+						logger.Error("Failed to send email alert via AlertManager for service %s, rule %s: %v", serviceName, rule.Name, err)
 					}
 				}
 				rule.LastTriggered = time.Now()
@@ -254,7 +254,7 @@ func (hm *HealthCheckManager) updateEtcdServiceStatus(serviceName string, info *
 	// 序列化状态信息
 	statusData, err := json.Marshal(statusInfo)
 	if err != nil {
-		log.Error("Failed to marshal service status: %v", err)
+		logger.Error("Failed to marshal service status: %v", err)
 		return
 	}
 
@@ -262,7 +262,7 @@ func (hm *HealthCheckManager) updateEtcdServiceStatus(serviceName string, info *
 	key := fmt.Sprintf("/services/%s/%s:%d/status", serviceName, info.Endpoint.Ip, info.Endpoint.Port)
 	_, err = hm.etcdClient.Put(context.Background(), key, string(statusData), etcdv3.WithLease(etcdv3.LeaseID(info.LeaseID)))
 	if err != nil {
-		log.Error("Failed to update service status in etcd: %v", err)
+		logger.Error("Failed to update service status in etcd: %v", err)
 	}
 }
 
@@ -418,7 +418,7 @@ func (hm *HealthCheckManager) performHealthCheck(ctx context.Context, serviceNam
 		grpc.WithBlock(),    // 使用 Block 来确保 Dial 在超时前完成或失败
 	)
 	if err != nil {
-		log.Debug("Health check DialContext failed for %s (%s:%d): %v", serviceName, info.Endpoint.Ip, info.Endpoint.Port, err)
+		logger.Debug("Health check DialContext failed for %s (%s:%d): %v", serviceName, info.Endpoint.Ip, info.Endpoint.Port, err)
 		return fmt.Errorf("failed to connect to service %s: %w", serviceName, err)
 	}
 	defer conn.Close()
@@ -431,7 +431,7 @@ func (hm *HealthCheckManager) performHealthCheck(ctx context.Context, serviceNam
 
 	resp, err := client.Check(healthCheckCtx, &grpc_health_v1.HealthCheckRequest{Service: serviceName})
 	if err != nil {
-		log.Debug("Health check RPC failed for %s (%s:%d): %v", serviceName, info.Endpoint.Ip, info.Endpoint.Port, err)
+		logger.Debug("Health check RPC failed for %s (%s:%d): %v", serviceName, info.Endpoint.Ip, info.Endpoint.Port, err)
 		// 根据 gRPC 错误码判断是否可重试，或者直接返回错误由 RetryableOperation 处理
 		return fmt.Errorf("health check failed for service %s: %w", serviceName, err)
 	}
@@ -467,7 +467,7 @@ func (hm *HealthCheckManager) handleHealthCheckFailure(serviceName string, info 
 		// 状态变化回调的触发移到 checkServiceHealth 的末尾，以确保在所有状态更新后进行
 	}
 
-	log.Warning("Health check failed for service %s (%s:%d) after retries: %v (failure count: %d, status: %s)",
+	logger.Warning("Health check failed for service %s (%s:%d) after retries: %v (failure count: %d, status: %s)",
 		serviceName, info.Endpoint.Ip, info.Endpoint.Port, err, info.FailureCount, info.Status.String())
 }
 
@@ -626,10 +626,10 @@ func (hm *HealthCheckManager) checkAlerts() {
 		for serviceName, info := range hm.Services {
 			if rule.Condition(info) {
 				if time.Since(rule.LastTriggered) > rule.Cooldown {
-					log.Warning("Alert triggered for service %s: %s", serviceName, rule.Name)
+					logger.Warning("Alert triggered for service %s: %s", serviceName, rule.Name)
 					err := rule.Action(info)
 					if err != nil {
-						log.Error("Failed to execute alert action for %s: %v", serviceName, err)
+						logger.Error("Failed to execute alert action for %s: %v", serviceName, err)
 					}
 					rule.LastTriggered = time.Now()
 				}

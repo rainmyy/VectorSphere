@@ -3,15 +3,15 @@ package vector
 import (
 	"VectorSphere/src/library/acceler"
 	"VectorSphere/src/library/entity"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 )
 
 func (db *VectorDB) WarmupIndex() {
-	log.Info("开始预热索引...")
+	logger.Info("开始预热索引...")
 
 	// 检查数据库是否已索引
 	if !db.IsIndexed() {
-		log.Warning("数据库未索引，跳过预热")
+		logger.Warning("数据库未索引，跳过预热")
 		return
 	}
 
@@ -27,7 +27,7 @@ func (db *VectorDB) WarmupIndex() {
 	db.mu.RUnlock()
 
 	if vectorDim == 0 {
-		log.Warning("无法确定向量维度，跳过预热")
+		logger.Warning("无法确定向量维度，跳过预热")
 		return
 	}
 
@@ -73,11 +73,11 @@ func (db *VectorDB) WarmupIndex() {
 		}
 
 		if !canUse {
-			log.Trace("跳过预热索引类型 %s (不可用)", ws.name)
+			logger.Trace("跳过预热索引类型 %s (不可用)", ws.name)
 			continue
 		}
 
-		log.Info("开始预热索引类型: %s", ws.name)
+		logger.Info("开始预热索引类型: %s", ws.name)
 
 		// 对每个样本查询执行搜索
 		for i, query := range sampleQueries {
@@ -109,7 +109,7 @@ func (db *VectorDB) WarmupIndex() {
 				// 预热增强IVF索引
 				results, err = db.EnhancedIVFSearch(query, 5, 10)
 				if err != nil {
-					log.Warning("增强IVF索引预热失败，尝试预热IVF组件: %v", err)
+					logger.Warning("增强IVF索引预热失败，尝试预热IVF组件: %v", err)
 					// 预热IVF索引的各个组件
 					//db.warmupEnhancedIVFComponents(query, ctx)
 				}
@@ -117,16 +117,16 @@ func (db *VectorDB) WarmupIndex() {
 				// 预热增强LSH索引
 				results, err = db.EnhancedLSHSearch(query, 5)
 				if err != nil {
-					log.Warning("增强LSH索引预热失败，尝试预热LSH组件: %v", err)
+					logger.Warning("增强LSH索引预热失败，尝试预热LSH组件: %v", err)
 					// 预热LSH索引的各个组件
 					//db.warmupEnhancedLSHComponents(query, ctx)
 				}
 			}
 
 			if err != nil {
-				log.Warning("预热索引类型 %s 查询 %d 失败: %v", ws.name, i, err)
+				logger.Warning("预热索引类型 %s 查询 %d 失败: %v", ws.name, i, err)
 			} else {
-				log.Trace("预热索引类型 %s 查询 %d 成功，返回 %d 个结果", ws.name, i, len(results))
+				logger.Trace("预热索引类型 %s 查询 %d 成功，返回 %d 个结果", ws.name, i, len(results))
 			}
 		}
 
@@ -141,7 +141,7 @@ func (db *VectorDB) WarmupIndex() {
 
 	// 预热不同的计算策略
 	if hwCaps.HasGPU || hwCaps.HasAVX512 || hwCaps.HasAVX2 {
-		log.Info("开始预热计算策略...")
+		logger.Info("开始预热计算策略...")
 
 		// 预热每种计算策略
 		strategies := []struct {
@@ -157,11 +157,11 @@ func (db *VectorDB) WarmupIndex() {
 
 		for _, s := range strategies {
 			if !s.available {
-				log.Trace("跳过预热计算策略 %s (不可用)", s.name)
+				logger.Trace("跳过预热计算策略 %s (不可用)", s.name)
 				continue
 			}
 
-			log.Info("开始预热计算策略: %s", s.name)
+			logger.Info("开始预热计算策略: %s", s.name)
 
 			// 对每个样本查询执行余弦相似度计算
 			for i, query := range sampleQueries {
@@ -176,28 +176,28 @@ func (db *VectorDB) WarmupIndex() {
 					_ = acceler.AdaptiveCosineSimilarity(query, target, s.strategy)
 				}
 
-				log.Trace("预热计算策略 %s 查询 %d 完成", s.name, i)
+				logger.Trace("预热计算策略 %s 查询 %d 完成", s.name, i)
 			}
 		}
 	}
 
 	// 预热GPU加速器（如果可用）
 	if hwCaps.HasGPU && db.gpuAccelerator != nil {
-		log.Info("开始预热GPU加速器...")
+		logger.Info("开始预热GPU加速器...")
 
 		// 随机选择一些向量进行批量计算
 		targets := db.getRandomVectors(100)
 		if len(targets) > 0 {
 			_, err := db.gpuBatchCosineSimilarity(sampleQueries, targets)
 			if err != nil {
-				log.Warning("预热GPU加速器失败: %v", err)
+				logger.Warning("预热GPU加速器失败: %v", err)
 			} else {
-				log.Info("GPU加速器预热成功")
+				logger.Info("GPU加速器预热成功")
 			}
 		}
 	}
 
-	log.Info("索引预热完成")
+	logger.Info("索引预热完成")
 }
 
 // warmupEnhancedIVFComponents 预热增强IVF索引组件

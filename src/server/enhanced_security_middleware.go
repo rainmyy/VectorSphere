@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 )
 
 // SecurityMiddleware 安全中间件
@@ -42,7 +42,7 @@ func (sm *SecurityMiddleware) EnhancedAuthMiddleware(next http.Handler) http.Han
 		if err := sm.securityManager.EnhancedAuthenticateAndAuthorize(
 			r.Context(), token, clientIP, userAgent, action, resource,
 		); err != nil {
-			log.Warning("Security check failed for %s from %s: %v", resource, clientIP, err)
+			logger.Warning("Security check failed for %s from %s: %v", resource, clientIP, err)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}

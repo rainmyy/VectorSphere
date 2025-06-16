@@ -55,7 +55,7 @@ int faiss_gpu_set_device(int device_id);
 import "C"
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"fmt"
 	"unsafe"
 )
@@ -78,7 +78,7 @@ func (c *FAISSAccelerator) Initialize() error {
 
 	// 检测 GPU 硬件能力
 	if err := c.checkAndSetDevice(); err != nil {
-		log.Error("GPU device check/set failed: %v", err)
+		logger.Error("GPU device check/set failed: %v", err)
 		return err
 	}
 
@@ -90,20 +90,20 @@ func (c *FAISSAccelerator) Initialize() error {
 	if C.cudaGetDeviceProperties(&props, C.int(c.deviceID)) == C.cudaSuccess {
 		// 根据 GPU 计算能力选择最佳策略
 		c.currentStrategy = StrategyGPU
-		log.Info("GPU 加速器初始化: 设备 %d (%s), 计算能力 %d.%d",
+		logger.Info("GPU 加速器初始化: 设备 %d (%s), 计算能力 %d.%d",
 			c.deviceID, C.GoString(&props.name[0]), props.major, props.minor)
 	} else {
-		log.Warning("无法获取 GPU 属性，使用默认策略")
+		logger.Warning("无法获取 GPU 属性，使用默认策略")
 		c.currentStrategy = StrategyGPU
 	}
 
 	if err := c.initFaissWrapper(); err != nil {
-		log.Error("FAISS wrapper init failed: %v", err)
+		logger.Error("FAISS wrapper init failed: %v", err)
 		return err
 	}
 
 	c.initialized = true
-	log.Info("FAISS GPU Accelerator initialized: device %d, type %s", c.deviceID, c.indexType)
+	logger.Info("FAISS GPU Accelerator initialized: device %d, type %s", c.deviceID, c.indexType)
 	return nil
 }
 
@@ -177,7 +177,7 @@ func (c *FAISSAccelerator) BatchSearch(queries [][]float64, database [][]float64
 	// 尝试 GPU 计算，如果失败则回退到 CPU
 	results, gpuErr := c.batchSearchGPU(queries, database, k)
 	if gpuErr != nil {
-		log.Warning("GPU search failed, falling back to CPU: %v", gpuErr)
+		logger.Warning("GPU search failed, falling back to CPU: %v", gpuErr)
 
 		// 回退到 CPU 实现
 		return c.batchSearchCPUFallback(queries, database, k)
@@ -397,11 +397,11 @@ func (c *FAISSAccelerator) Cleanup() error {
 
 	// 清理 CUDA 上下文
 	if C.cudaDeviceReset() != C.cudaSuccess {
-		log.Warning("CUDA device reset failed")
+		logger.Warning("CUDA device reset failed")
 	}
 
 	c.initialized = false
-	log.Info("FAISS GPU Accelerator resources cleaned up")
+	logger.Info("FAISS GPU Accelerator resources cleaned up")
 	return nil
 }
 
@@ -434,27 +434,27 @@ func (c *FAISSAccelerator) ResetGPUDevice() error {
 		return fmt.Errorf("重新初始化 FAISS 包装器失败: %w", err)
 	}
 
-	log.Info("GPU 设备 %d 已重置并重新初始化", c.deviceID)
+	logger.Info("GPU 设备 %d 已重置并重新初始化", c.deviceID)
 	return nil
 }
 
 // checkGPUAvailability 检查 GPU 可用性
 func (c *FAISSAccelerator) CheckGPUAvailability() error {
-	log.Info("检查 GPU 设备 %d 的可用性...", c.deviceID)
+	logger.Info("检查 GPU 设备 %d 的可用性...", c.deviceID)
 
 	// 1. 首先检查 CUDA 驱动是否可用
 	var driverVersion C.int
 	if C.cudaDriverGetVersion(&driverVersion) != C.cudaSuccess {
 		return fmt.Errorf("CUDA 驱动不可用或未正确安装")
 	}
-	log.Info("CUDA 驱动版本: %d", int(driverVersion))
+	logger.Info("CUDA 驱动版本: %d", int(driverVersion))
 
 	// 2. 检查 CUDA Runtime 版本
 	var runtimeVersion C.int
 	if C.cudaRuntimeGetVersion(&runtimeVersion) != C.cudaSuccess {
 		return fmt.Errorf("CUDA Runtime 不可用")
 	}
-	log.Info("CUDA Runtime 版本: %d", int(runtimeVersion))
+	logger.Info("CUDA Runtime 版本: %d", int(runtimeVersion))
 
 	// 3. 检查驱动和运行时版本兼容性
 	if driverVersion < runtimeVersion {
@@ -484,7 +484,7 @@ func (c *FAISSAccelerator) CheckGPUAvailability() error {
 
 	// 6. 验证设备名称（确保设备存在且可访问）
 	deviceName := C.GoString(&props.name[0])
-	log.Info("GPU 设备 %d 名称: %s", c.deviceID, deviceName)
+	logger.Info("GPU 设备 %d 名称: %s", c.deviceID, deviceName)
 
 	// 7. 检查计算能力（FAISS 需要 3.0 以上）
 	if props.major < 3 {
@@ -500,7 +500,7 @@ func (c *FAISSAccelerator) CheckGPUAvailability() error {
 
 	// 9. 检查设备是否支持统一内存
 	if props.unifiedAddressing == 0 {
-		log.Warning("GPU 设备 %d 不支持统一内存寻址，性能可能受影响", c.deviceID)
+		logger.Warning("GPU 设备 %d 不支持统一内存寻址，性能可能受影响", c.deviceID)
 	}
 
 	// 10. 尝试在设备上分配少量内存进行可用性测试
@@ -510,10 +510,10 @@ func (c *FAISSAccelerator) CheckGPUAvailability() error {
 
 	// 11. 检查设备是否被其他进程占用
 	if err := c.checkDeviceExclusivity(); err != nil {
-		log.Warning("GPU 设备 %d 可能被其他进程使用: %v", c.deviceID, err)
+		logger.Warning("GPU 设备 %d 可能被其他进程使用: %v", c.deviceID, err)
 	}
 
-	log.Info("GPU 设备 %d (%s) 可用性检查通过 - 计算能力: %d.%d, 内存: %d MB",
+	logger.Info("GPU 设备 %d (%s) 可用性检查通过 - 计算能力: %d.%d, 内存: %d MB",
 		c.deviceID, deviceName, props.major, props.minor, props.totalGlobalMem/(1024*1024))
 	return c.checkGPUAvailability()
 }
@@ -574,7 +574,7 @@ func (c *FAISSAccelerator) checkDeviceExclusivity() error {
 
 // initializeCUDAContext 初始化 CUDA 上下文
 func (c *FAISSAccelerator) initializeCUDAContext() error {
-	log.Info("初始化 CUDA 上下文...")
+	logger.Info("初始化 CUDA 上下文...")
 
 	// 实际的 CUDA 上下文初始化（需要 CGO）
 	// 设置当前设备
@@ -593,13 +593,13 @@ func (c *FAISSAccelerator) initializeCUDAContext() error {
 		return fmt.Errorf("无法设置 CUDA 上下文为当前")
 	}
 
-	log.Info("CUDA 上下文初始化完成")
+	logger.Info("CUDA 上下文初始化完成")
 	return nil
 }
 
 // setupMemoryPool 设置 GPU 内存池
 func (c *FAISSAccelerator) setupMemoryPool() error {
-	log.Info("设置 GPU 内存池...")
+	logger.Info("设置 GPU 内存池...")
 
 	// 实际的内存池设置（需要 CGO）
 	// 获取 GPU 内存信息
@@ -608,7 +608,7 @@ func (c *FAISSAccelerator) setupMemoryPool() error {
 		return fmt.Errorf("无法获取 GPU 内存信息")
 	}
 
-	log.Info("GPU 内存信息: 可用 %d MB, 总计 %d MB",
+	logger.Info("GPU 内存信息: 可用 %d MB, 总计 %d MB",
 		free/(1024*1024), total/(1024*1024))
 
 	// 计算内存池大小（使用 80% 的可用内存）
@@ -630,21 +630,21 @@ func (c *FAISSAccelerator) setupMemoryPool() error {
 	// 设置内存池阈值
 	threshold := C.uint64_t(poolSize)
 	if C.cudaMemPoolSetAttribute(memPool, C.cudaMemPoolAttrReleaseThreshold, &threshold) != C.cudaSuccess {
-		log.Warning("设置内存池释放阈值失败")
+		logger.Warning("设置内存池释放阈值失败")
 	}
 
 	// 启用内存池
 	if C.cudaDeviceSetMemPool(C.int(c.deviceID), memPool) != C.cudaSuccess {
-		log.Warning("启用内存池失败")
+		logger.Warning("启用内存池失败")
 	}
 
-	log.Info("GPU 内存池设置完成")
+	logger.Info("GPU 内存池设置完成")
 	return nil
 }
 
 // initializeFAISSResources 初始化 FAISS GPU 资源
 func (c *FAISSAccelerator) initializeFAISSResources() error {
-	log.Info("初始化 FAISS GPU 资源...")
+	logger.Info("初始化 FAISS GPU 资源...")
 
 	// 实际的 FAISS GPU 资源初始化（需要 FAISS C++ 绑定）
 	// 1. 创建 GPU 资源对象
@@ -661,30 +661,30 @@ func (c *FAISSAccelerator) initializeFAISSResources() error {
 
 	// 3. 设置内存管理策略
 	if C.faiss_StandardGpuResources_setMemoryFraction(gpuRes, 0.8) != 0 {
-		log.Warning("设置 FAISS GPU 内存比例失败")
+		logger.Warning("设置 FAISS GPU 内存比例失败")
 	}
 
 	// 4. 设置临时内存大小
 	tempMemSize := C.size_t(512 * 1024 * 1024) // 512MB
 	if C.faiss_StandardGpuResources_setTempMemory(gpuRes, tempMemSize) != 0 {
-		log.Warning("设置 FAISS GPU 临时内存失败")
+		logger.Warning("设置 FAISS GPU 临时内存失败")
 	}
 
 	// 根据索引类型进行不同的初始化
 	switch c.indexType {
 	case "IVF":
-		log.Info("初始化 IVF GPU 索引配置")
+		logger.Info("初始化 IVF GPU 索引配置")
 		// IVF 索引特定配置
 		// 设置 nprobe 参数
 		// 配置量化器
 
 	case "HNSW":
-		log.Info("初始化 HNSW GPU 索引配置")
+		logger.Info("初始化 HNSW GPU 索引配置")
 		// HNSW 主要在 CPU 上运行，GPU 用于距离计算加速
 		// 设置连接数和搜索参数
 
 	case "Flat":
-		log.Info("初始化 Flat GPU 索引配置")
+		logger.Info("初始化 Flat GPU 索引配置")
 		// Flat 索引配置
 		// 设置距离度量类型
 
@@ -692,13 +692,13 @@ func (c *FAISSAccelerator) initializeFAISSResources() error {
 		return fmt.Errorf("不支持的索引类型: %s", c.indexType)
 	}
 
-	log.Info("FAISS GPU 资源初始化完成")
+	logger.Info("FAISS GPU 资源初始化完成")
 	return nil
 }
 
 // validateInitialization 验证初始化结果
 func (c *FAISSAccelerator) validateInitialization() error {
-	log.Info("验证 GPU 初始化结果...")
+	logger.Info("验证 GPU 初始化结果...")
 
 	// 1. 测试 GPU 内存分配
 	var testPtr unsafe.Pointer
@@ -730,16 +730,16 @@ func (c *FAISSAccelerator) validateInitialization() error {
 
 	// 4. 性能基准测试
 	if err := c.performanceBenchmark(); err != nil {
-		log.Warning("性能基准测试失败: %v", err)
+		logger.Warning("性能基准测试失败: %v", err)
 	}
 
-	log.Info("GPU 初始化验证通过")
+	logger.Info("GPU 初始化验证通过")
 	return nil
 }
 
 // 优化 performanceBenchmark 方法
 func (c *FAISSAccelerator) performanceBenchmark() error {
-	log.Info("执行 GPU 性能基准测试...")
+	logger.Info("执行 GPU 性能基准测试...")
 
 	// 测试不同维度和数据量
 	dimensions := []int{128, 256, 512, 1024}
@@ -779,14 +779,14 @@ func (c *FAISSAccelerator) performanceBenchmark() error {
 				"error":          err != nil,
 			}
 
-			log.Info("测试 %s: %d ms", testKey, duration.Milliseconds())
+			logger.Info("测试 %s: %d ms", testKey, duration.Milliseconds())
 		}
 	}
 
 	// 保存结果
 	c.benchmarkResults = results
 
-	log.Info("性能基准测试完成")
+	logger.Info("性能基准测试完成")
 	return nil
 }
 
@@ -843,6 +843,6 @@ func (c *FAISSAccelerator) SetMemoryFraction(fraction float64) error {
 		}
 	}
 
-	log.Info("GPU 内存使用比例设置为: %.2f", fraction)
+	logger.Info("GPU 内存使用比例设置为: %.2f", fraction)
 	return nil
 }

@@ -1,7 +1,7 @@
 package enhanced
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"context"
 	"fmt"
 	"hash/fnv"
@@ -236,7 +236,7 @@ func NewEnhancedLoadBalancer(client *clientv3.Client, config *LoadBalancerConfig
 		lb.healthChecker = NewEnhancedHealthChecker(client, healthConfig)
 	}
 
-	log.Info("Enhanced load balancer created with algorithm: %d", config.Algorithm)
+	logger.Info("Enhanced load balancer created with algorithm: %d", config.Algorithm)
 	return lb
 }
 
@@ -246,12 +246,12 @@ func (lb *EnhancedLoadBalancer) Start() error {
 		return fmt.Errorf("load balancer is already running")
 	}
 
-	log.Info("Starting enhanced load balancer")
+	logger.Info("Starting enhanced load balancer")
 
 	// 启动健康检查器
 	if lb.healthChecker != nil {
 		if err := lb.healthChecker.Start(); err != nil {
-			log.Error("Failed to start health checker: %v", err)
+			logger.Error("Failed to start health checker: %v", err)
 			return err
 		}
 	}
@@ -269,7 +269,7 @@ func (lb *EnhancedLoadBalancer) Start() error {
 	// 启动后端监控
 	go lb.backendMonitor()
 
-	log.Info("Enhanced load balancer started successfully")
+	logger.Info("Enhanced load balancer started successfully")
 	return nil
 }
 
@@ -279,7 +279,7 @@ func (lb *EnhancedLoadBalancer) Stop() error {
 		return fmt.Errorf("load balancer is not running")
 	}
 
-	log.Info("Stopping enhanced load balancer")
+	logger.Info("Stopping enhanced load balancer")
 
 	// 停止健康检查器
 	if lb.healthChecker != nil {
@@ -297,7 +297,7 @@ func (lb *EnhancedLoadBalancer) Stop() error {
 	// 取消上下文
 	lb.cancel()
 
-	log.Info("Enhanced load balancer stopped")
+	logger.Info("Enhanced load balancer stopped")
 	return nil
 }
 
@@ -345,7 +345,7 @@ func (lb *EnhancedLoadBalancer) AddBackend(backend *Backend) error {
 		lb.registerCircuitBreaker(backend)
 	}
 
-	log.Info("Backend added: %s (%s:%d)", backend.ID, backend.Address, backend.Port)
+	logger.Info("Backend added: %s (%s:%d)", backend.ID, backend.Address, backend.Port)
 	return nil
 }
 
@@ -374,7 +374,7 @@ func (lb *EnhancedLoadBalancer) RemoveBackend(backendID string) error {
 	// 移除熔断器
 	delete(lb.circuitBreakers, backendID)
 
-	log.Info("Backend removed: %s", backendID)
+	logger.Info("Backend removed: %s", backendID)
 	return nil
 }
 
@@ -409,7 +409,7 @@ func (lb *EnhancedLoadBalancer) UpdateBackend(backend *Backend) error {
 	// 更新一致性哈希环
 	lb.consistentHash.UpdateBackend(existingBackend)
 
-	log.Info("Backend updated: %s", backend.ID)
+	logger.Info("Backend updated: %s", backend.ID)
 	return nil
 }
 
@@ -482,7 +482,7 @@ func (lb *EnhancedLoadBalancer) SelectBackend(ctx *RequestContext) *LoadBalancin
 		if cb, exists := lb.circuitBreakers[backend.ID]; exists {
 			if !cb.allowRequest() {
 				// 熔断器打开，尝试选择其他后端
-				log.Warning("Circuit breaker open for backend %s, selecting alternative", backend.ID)
+				logger.Warning("Circuit breaker open for backend %s, selecting alternative", backend.ID)
 				backend = lb.selectAlternativeBackend(healthyBackends, backend.ID)
 				if backend == nil {
 					result.Error = fmt.Errorf("all backends circuit breaker open")
@@ -495,7 +495,7 @@ func (lb *EnhancedLoadBalancer) SelectBackend(ctx *RequestContext) *LoadBalancin
 
 	// 检查连接数限制
 	if backend.Connections >= backend.MaxConnections {
-		log.Warning("Backend %s reached max connections, selecting alternative", backend.ID)
+		logger.Warning("Backend %s reached max connections, selecting alternative", backend.ID)
 		backend = lb.selectAlternativeBackend(healthyBackends, backend.ID)
 		if backend == nil {
 			result.Error = fmt.Errorf("all backends reached max connections")
@@ -520,7 +520,7 @@ func (lb *EnhancedLoadBalancer) SelectBackend(ctx *RequestContext) *LoadBalancin
 	result.Backend = backend
 	result.Latency = time.Since(start)
 
-	log.Debug("Selected backend: %s (algorithm: %s, latency: %v)", backend.ID, result.Algorithm, result.Latency)
+	logger.Debug("Selected backend: %s (algorithm: %s, latency: %v)", backend.ID, result.Algorithm, result.Latency)
 	return result
 }
 
@@ -531,7 +531,7 @@ func (lb *EnhancedLoadBalancer) ReleaseBackend(backendID string, success bool, r
 	lb.mu.RUnlock()
 
 	if !exists {
-		log.Warning("Attempted to release unknown backend: %s", backendID)
+		logger.Warning("Attempted to release unknown backend: %s", backendID)
 		return
 	}
 
@@ -575,7 +575,7 @@ func (lb *EnhancedLoadBalancer) ReleaseBackend(backendID string, success bool, r
 		}
 	}
 
-	log.Debug("Released backend: %s (success: %t, response_time: %v)", backendID, success, responseTime)
+	logger.Debug("Released backend: %s (success: %t, response_time: %v)", backendID, success, responseTime)
 }
 
 // GetBackends 获取所有后端
@@ -941,7 +941,7 @@ func (lb *EnhancedLoadBalancer) markBackendUnhealthy(backendID string) {
 	if backend, exists := lb.backends[backendID]; exists {
 		backend.Status = BackendUnhealthy
 		lb.updateHealthyBackends()
-		log.Warning("Backend marked as unhealthy: %s", backendID)
+		logger.Warning("Backend marked as unhealthy: %s", backendID)
 	}
 }
 
@@ -954,7 +954,7 @@ func (lb *EnhancedLoadBalancer) markBackendHealthy(backendID string) {
 		backend.Status = BackendHealthy
 		atomic.StoreInt64(&backend.FailureCount, 0)
 		lb.updateHealthyBackends()
-		log.Info("Backend marked as healthy: %s", backendID)
+		logger.Info("Backend marked as healthy: %s", backendID)
 	}
 }
 
@@ -1137,7 +1137,7 @@ func (lb *EnhancedLoadBalancer) updateBackendHealth(backendID string, serviceHea
 	// 如果状态发生变化，更新健康后端列表
 	if oldStatus != backend.Status {
 		lb.updateHealthyBackends()
-		log.Info("Backend %s status changed from %d to %d", backendID, oldStatus, backend.Status)
+		logger.Info("Backend %s status changed from %d to %d", backendID, oldStatus, backend.Status)
 	}
 
 	lb.mu.Unlock()
@@ -1175,7 +1175,7 @@ func (lb *EnhancedLoadBalancer) registerCircuitBreaker(backend *Backend) {
 
 // backendMonitor 后端监控
 func (lb *EnhancedLoadBalancer) backendMonitor() {
-	log.Info("Starting backend monitor")
+	logger.Info("Starting backend monitor")
 
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -1183,7 +1183,7 @@ func (lb *EnhancedLoadBalancer) backendMonitor() {
 	for {
 		select {
 		case <-lb.ctx.Done():
-			log.Info("Backend monitor stopped")
+			logger.Info("Backend monitor stopped")
 			return
 		case <-ticker.C:
 			lb.monitorBackends()
@@ -1260,12 +1260,12 @@ func (lb *EnhancedLoadBalancer) checkRecovery(backend *Backend) {
 
 // metricsCollector 指标收集器
 func (lb *EnhancedLoadBalancer) metricsCollector() {
-	log.Info("Starting load balancer metrics collector")
+	logger.Info("Starting load balancer metrics collector")
 
 	for {
 		select {
 		case <-lb.ctx.Done():
-			log.Info("Load balancer metrics collector stopped")
+			logger.Info("Load balancer metrics collector stopped")
 			return
 		case <-lb.metricsTicker.C:
 			lb.collectMetrics()
@@ -1284,7 +1284,7 @@ func (lb *EnhancedLoadBalancer) collectMetrics() {
 	activeSessions := len(lb.sessions)
 	lb.sessionMu.RUnlock()
 
-	log.Debug("Load balancer metrics: total_backends=%d, healthy_backends=%d, active_sessions=%d",
+	logger.Debug("Load balancer metrics: total_backends=%d, healthy_backends=%d, active_sessions=%d",
 		totalBackends, healthyBackends, activeSessions)
 
 	// 更新指标
@@ -1296,12 +1296,12 @@ func (lb *EnhancedLoadBalancer) collectMetrics() {
 
 // cleaner 清理器
 func (lb *EnhancedLoadBalancer) cleaner() {
-	log.Info("Starting load balancer cleaner")
+	logger.Info("Starting load balancer cleaner")
 
 	for {
 		select {
 		case <-lb.ctx.Done():
-			log.Info("Load balancer cleaner stopped")
+			logger.Info("Load balancer cleaner stopped")
 			return
 		case <-lb.cleanupTicker.C:
 			lb.cleanup()
@@ -1322,7 +1322,7 @@ func (lb *EnhancedLoadBalancer) cleanup() {
 	}
 	lb.sessionMu.Unlock()
 
-	log.Debug("Load balancer cleanup completed")
+	logger.Debug("Load balancer cleanup completed")
 }
 
 // 一致性哈希环实现
@@ -1418,12 +1418,12 @@ func (lb *EnhancedLoadBalancer) SetServiceDiscoverySource(source ServiceDiscover
 
 	// 获取源类型信息，用于日志和验证
 	sourceType := fmt.Sprintf("%T", source)
-	log.Info("Validating service discovery source: %s", sourceType)
+	logger.Info("Validating service discovery source: %s", sourceType)
 
 	// 类型断言检查 - 检查是否为EnhancedServiceRegistry类型
 	// 这是一个可选的检查，如果有其他实现ServiceDiscoverySource接口的类型，可以移除此检查
 	if _, ok := source.(*EnhancedServiceRegistry); !ok {
-		log.Warning("Service discovery source is not an EnhancedServiceRegistry, but %s", sourceType)
+		logger.Warning("Service discovery source is not an EnhancedServiceRegistry, but %s", sourceType)
 		// 注意：这里只是警告，不返回错误，因为任何实现了ServiceDiscoverySource接口的类型都应该可以使用
 	}
 
@@ -1448,14 +1448,14 @@ func (lb *EnhancedLoadBalancer) SetServiceDiscoverySource(source ServiceDiscover
 			!strings.Contains(err.Error(), "not exist") {
 			return fmt.Errorf("service discovery source validation failed: %v", err)
 		}
-		log.Info("Service discovery test returned expected 'not found' error for test service")
+		logger.Info("Service discovery test returned expected 'not found' error for test service")
 	} else {
-		log.Info("Service discovery test found %d services for test service", len(services))
+		logger.Info("Service discovery test found %d services for test service", len(services))
 	}
 
 	// 清理之前的服务发现源（如果存在）
 	if lb.serviceDiscovery != nil {
-		log.Info("Replacing existing service discovery source of type %T", lb.serviceDiscovery)
+		logger.Info("Replacing existing service discovery source of type %T", lb.serviceDiscovery)
 	}
 
 	// 存储服务发现源
@@ -1464,7 +1464,7 @@ func (lb *EnhancedLoadBalancer) SetServiceDiscoverySource(source ServiceDiscover
 	lb.mu.Unlock()
 
 	// 记录设置成功
-	log.Info("Service discovery source set successfully: %s", sourceType)
+	logger.Info("Service discovery source set successfully: %s", sourceType)
 	return nil
 }
 
@@ -1537,7 +1537,7 @@ func (lb *EnhancedLoadBalancer) UpdateBackendsFromService(ctx context.Context, s
 // StartServiceDiscoverySync 启动服务发现同步
 func (lb *EnhancedLoadBalancer) StartServiceDiscoverySync(serviceName string, interval time.Duration) {
 	if lb.serviceDiscovery == nil {
-		log.Error("Cannot start service discovery sync: service discovery source not set")
+		logger.Error("Cannot start service discovery sync: service discovery source not set")
 		return
 	}
 
@@ -1553,12 +1553,12 @@ func (lb *EnhancedLoadBalancer) StartServiceDiscoverySync(serviceName string, in
 				ctx, cancel := context.WithTimeout(lb.ctx, 5*time.Second)
 				err := lb.UpdateBackendsFromService(ctx, serviceName)
 				if err != nil {
-					log.Error("Failed to update backends from service discovery: %v", err)
+					logger.Error("Failed to update backends from service discovery: %v", err)
 				}
 				cancel()
 			}
 		}
 	}()
 
-	log.Info("Started service discovery sync for service %s with interval %v", serviceName, interval)
+	logger.Info("Started service discovery sync for service %s with interval %v", serviceName, interval)
 }

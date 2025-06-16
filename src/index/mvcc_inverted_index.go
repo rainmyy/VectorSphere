@@ -2,7 +2,7 @@ package index
 
 import (
 	"VectorSphere/src/library/entity"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/library/tree"
 	"VectorSphere/src/messages"
 	"VectorSphere/src/vector"
@@ -157,7 +157,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) Optimize() error {
 	idx.AdjustConfig()
 
 	// 输出优化结果
-	log.Info("倒排索引优化完成，耗时 %v，关键词数量: %d -> %d",
+	logger.Info("倒排索引优化完成，耗时 %v，关键词数量: %d -> %d",
 		optimizeTime, beforeKeywordCount, idx.stats.KeywordCount)
 
 	return nil

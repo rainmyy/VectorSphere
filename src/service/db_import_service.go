@@ -1,7 +1,7 @@
 package service
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/search"
 	"context"
 	"database/sql"
@@ -150,7 +150,7 @@ func (m *MemoryMonitor) CheckMemoryUsage() {
 
 	m.currentUsage = int64(memStats.Alloc)
 	if m.currentUsage > m.maxMemoryUsage {
-		log.Warning("内存使用超过阈值: 当前 %d MB, 最大 %d MB", m.currentUsage/(1024*1024), m.maxMemoryUsage/(1024*1024))
+		logger.Warning("内存使用超过阈值: 当前 %d MB, 最大 %d MB", m.currentUsage/(1024*1024), m.maxMemoryUsage/(1024*1024))
 		m.cancel() // 取消相关操作
 	}
 }
@@ -191,7 +191,7 @@ func (s *DBImportService) ImportTableIncremental(tableName string, sqlQuery stri
 	}
 
 	// 执行增量导入
-	log.Info("执行增量导入，表: %s，上次导入时间: %s", tableName, lastImportTime.Format("2006-01-02 15:04:05"))
+	logger.Info("执行增量导入，表: %s，上次导入时间: %s", tableName, lastImportTime.Format("2006-01-02 15:04:05"))
 	err := s.ImportTable(tableName, incrementalQuery)
 	if err == nil {
 		// 更新上次导入时间
@@ -222,7 +222,7 @@ func (s *DBImportService) retryOperationWithBackoff(operation func() error) erro
 		}
 
 		if attempt < s.config.RetryStrategy.MaxRetries-1 {
-			log.Warning("操作失败，将在 %v 后重试 (尝试 %d/%d): %v",
+			logger.Warning("操作失败，将在 %v 后重试 (尝试 %d/%d): %v",
 				delay, attempt+1, s.config.RetryStrategy.MaxRetries, err)
 
 			// 添加抖动以避免惊群效应
@@ -332,7 +332,7 @@ func NewDBImportService(searchService *search.MultiTableSearchService, config *D
 		} else if config.BatchSize > 1000 {
 			config.BatchSize = 1000 // 最大批处理大小
 		}
-		log.Info("根据系统内存自动设置批处理大小: %d", config.BatchSize)
+		logger.Info("根据系统内存自动设置批处理大小: %d", config.BatchSize)
 	}
 
 	if config.WorkerCount <= 0 {
@@ -433,7 +433,7 @@ func (s *DBImportService) UpdateProgress(processed, total int, stage string) {
 	s.importStats.StageInfo = stage
 
 	// 记录日志
-	log.Info("导入进度: %.2f%%, 阶段: %s, 预计剩余时间: %v",
+	logger.Info("导入进度: %.2f%%, 阶段: %s, 预计剩余时间: %v",
 		s.importStats.Progress, stage, s.importStats.EstimatedTimeLeft)
 }
 
@@ -558,7 +558,7 @@ func (s *DBImportService) ImportTable(tableName string, sqlQuery string) error {
 			s.importStats.mu.Lock()
 			s.importStats.Errors = append(s.importStats.Errors, err.Error())
 			s.importStats.mu.Unlock()
-			log.Error("导入错误: %v", err)
+			logger.Error("导入错误: %v", err)
 
 			// 如果是严重错误，取消所有操作
 			cancel()
@@ -611,7 +611,7 @@ func (s *DBImportService) ImportTable(tableName string, sqlQuery string) error {
 			s.importStats.FailedDocuments++
 			s.importStats.Errors = append(s.importStats.Errors, fmt.Sprintf("创建文档失败: %v", err))
 			s.importStats.mu.Unlock()
-			log.Warning("创建文档失败: %v", err)
+			logger.Warning("创建文档失败: %v", err)
 			continue
 		}
 
@@ -690,7 +690,7 @@ func (s *DBImportService) ImportTable(tableName string, sqlQuery string) error {
 
 	s.importStats.mu.Unlock()
 
-	log.Info("成功导入表 %s 的数据: 总计 %d 条，成功 %d 条，失败 %d 条，内存使用 %d MB",
+	logger.Info("成功导入表 %s 的数据: 总计 %d 条，成功 %d 条，失败 %d 条，内存使用 %d MB",
 		tableName, totalRows, s.importStats.SuccessDocuments, s.importStats.FailedDocuments, s.importStats.MemoryUsage/(1024*1024))
 
 	return nil
@@ -757,7 +757,7 @@ func (s *DBImportService) adjustBatchSize(avgProcessTime time.Duration) {
 			newSize = 1000 // 最大批处理大小
 		}
 		if newSize != s.config.BatchSize {
-			log.Info("动态调整批处理大小: %d -> %d (处理时间: %v)", s.config.BatchSize, newSize, avgProcessTime)
+			logger.Info("动态调整批处理大小: %d -> %d (处理时间: %v)", s.config.BatchSize, newSize, avgProcessTime)
 			s.config.BatchSize = newSize
 		}
 	} else if avgProcessTime > targetMaxTime && s.config.BatchSize > 50 {
@@ -767,7 +767,7 @@ func (s *DBImportService) adjustBatchSize(avgProcessTime time.Duration) {
 			newSize = 50 // 最小批处理大小
 		}
 		if newSize != s.config.BatchSize {
-			log.Info("动态调整批处理大小: %d -> %d (处理时间: %v)", s.config.BatchSize, newSize, avgProcessTime)
+			logger.Info("动态调整批处理大小: %d -> %d (处理时间: %v)", s.config.BatchSize, newSize, avgProcessTime)
 			s.config.BatchSize = newSize
 		}
 	}
@@ -869,7 +869,7 @@ func (s *DBImportService) retryOperation(operation func() error, maxRetries int,
 		}
 
 		if attempt < maxRetries-1 {
-			log.Warning("操作失败，将在 %v 后重试 (尝试 %d/%d): %v", delay, attempt+1, maxRetries, err)
+			logger.Warning("操作失败，将在 %v 后重试 (尝试 %d/%d): %v", delay, attempt+1, maxRetries, err)
 			time.Sleep(delay)
 			// 指数退避
 			delay *= 2
@@ -1008,7 +1008,7 @@ func (s *DBImportService) createDocument(columns []string, rowValues []interface
 // ImportFromMultipleTables 从多个表导入数据
 func (s *DBImportService) ImportFromMultipleTables(tableMapping map[string]string) error {
 	for tableName, sqlQuery := range tableMapping {
-		log.Info("开始导入表 %s 的数据", tableName)
+		logger.Info("开始导入表 %s 的数据", tableName)
 		if err := s.ImportTable(tableName, sqlQuery); err != nil {
 			return fmt.Errorf("导入表 %s 失败: %w", tableName, err)
 		}
@@ -1073,7 +1073,7 @@ func (s *ImportScheduler) AddSchedule(tableName, sqlQuery string, interval time.
 		Enabled:     true,
 	}
 
-	log.Info("已添加导入计划: 表=%s, 间隔=%v, 增量=%v", tableName, interval, incremental)
+	logger.Info("已添加导入计划: 表=%s, 间隔=%v, 增量=%v", tableName, interval, incremental)
 }
 
 // RemoveSchedule 移除导入计划
@@ -1082,21 +1082,21 @@ func (s *ImportScheduler) RemoveSchedule(tableName string) {
 	defer s.mu.Unlock()
 
 	delete(s.schedules, tableName)
-	log.Info("已移除导入计划: 表=%s", tableName)
+	logger.Info("已移除导入计划: 表=%s", tableName)
 }
 
 // Start 启动调度器
 func (s *ImportScheduler) Start() {
 	s.wg.Add(1)
 	go s.run()
-	log.Info("导入调度器已启动")
+	logger.Info("导入调度器已启动")
 }
 
 // Stop 停止调度器
 func (s *ImportScheduler) Stop() {
 	close(s.stopChan)
 	s.wg.Wait()
-	log.Info("导入调度器已停止")
+	logger.Info("导入调度器已停止")
 }
 
 // run 运行调度器
@@ -1142,7 +1142,7 @@ func (s *ImportScheduler) checkSchedules() {
 					s.mu.Unlock()
 				}()
 
-				log.Info("执行计划导入: 表=%s, 增量=%v", tableName, schedule.Incremental)
+				logger.Info("执行计划导入: 表=%s, 增量=%v", tableName, schedule.Incremental)
 
 				var err error
 				if schedule.Incremental {
@@ -1152,9 +1152,9 @@ func (s *ImportScheduler) checkSchedules() {
 				}
 
 				if err != nil {
-					log.Error("计划导入失败: 表=%s, 错误=%v", tableName, err)
+					logger.Error("计划导入失败: 表=%s, 错误=%v", tableName, err)
 				} else {
-					log.Info("计划导入成功: 表=%s", tableName)
+					logger.Info("计划导入成功: 表=%s", tableName)
 				}
 			}(tableName, schedule)
 		}

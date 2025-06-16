@@ -2,7 +2,7 @@ package distributed
 
 import (
 	confType "VectorSphere/src/library/confType"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/server"
 	"fmt"
 	"os"
@@ -26,7 +26,7 @@ func NewConfigManager(configPath string) *ConfigManager {
 
 // LoadConfig 加载配置
 func (cm *ConfigManager) LoadConfig() (*DistributedConfig, error) {
-	log.Info("Loading configuration from: %s", cm.configPath)
+	logger.Info("Loading configuration from: %s", cm.configPath)
 
 	var config DistributedConfig
 
@@ -48,7 +48,7 @@ func (cm *ConfigManager) LoadConfig() (*DistributedConfig, error) {
 	cm.setDefaults(&config)
 
 	cm.config = &config
-	log.Info("Configuration loaded successfully")
+	logger.Info("Configuration loaded successfully")
 	return &config, nil
 }
 
@@ -86,7 +86,7 @@ func (cm *ConfigManager) applyEnvOverrides(config *DistributedConfig) {
 	// 服务名称
 	if serviceName := os.Getenv("VECTOR_SPHERE_SERVICE_NAME"); serviceName != "" {
 		config.ServiceName = serviceName
-		log.Info("Override serviceName from env: %s", serviceName)
+		logger.Info("Override serviceName from env: %s", serviceName)
 	}
 
 	// 节点类型
@@ -97,7 +97,7 @@ func (cm *ConfigManager) applyEnvOverrides(config *DistributedConfig) {
 		case "slave":
 			config.NodeType = SlaveNode
 		default:
-			log.Warning("Invalid node type in env: %s, using default", nodeType)
+			logger.Warning("Invalid node type in env: %s, using default", nodeType)
 		}
 	}
 
@@ -105,14 +105,14 @@ func (cm *ConfigManager) applyEnvOverrides(config *DistributedConfig) {
 	if port := os.Getenv("VECTOR_SPHERE_PORT"); port != "" {
 		if p, err := strconv.Atoi(port); err == nil {
 			config.DefaultPort = p
-			log.Info("Override defaultPort from env: %d", p)
+			logger.Info("Override defaultPort from env: %d", p)
 		}
 	}
 
 	if httpPort := os.Getenv("VECTOR_SPHERE_HTTP_PORT"); httpPort != "" {
 		if p, err := strconv.Atoi(httpPort); err == nil {
 			config.HttpPort = p
-			log.Info("Override httpPort from env: %d", p)
+			logger.Info("Override httpPort from env: %d", p)
 		}
 	}
 
@@ -123,20 +123,20 @@ func (cm *ConfigManager) applyEnvOverrides(config *DistributedConfig) {
 			endpoints[i] = strings.TrimSpace(ep)
 		}
 		config.Etcd.Endpoints = endpoints
-		log.Info("Override etcd endpoints from env: %v", endpoints)
+		logger.Info("Override etcd endpoints from env: %v", endpoints)
 	}
 
 	// 数据目录
 	if dataDir := os.Getenv("VECTOR_SPHERE_DATA_DIR"); dataDir != "" {
 		config.DataDir = dataDir
-		log.Info("Override dataDir from env: %s", dataDir)
+		logger.Info("Override dataDir from env: %s", dataDir)
 	}
 
 	// 超时配置
 	if timeout := os.Getenv("VECTOR_SPHERE_TIMEOUT"); timeout != "" {
 		if t, err := strconv.Atoi(timeout); err == nil {
 			config.TimeOut = t
-			log.Info("Override timeout from env: %d", t)
+			logger.Info("Override timeout from env: %d", t)
 		}
 	}
 
@@ -144,7 +144,7 @@ func (cm *ConfigManager) applyEnvOverrides(config *DistributedConfig) {
 	if heartbeat := os.Getenv("VECTOR_SPHERE_HEARTBEAT"); heartbeat != "" {
 		if h, err := strconv.Atoi(heartbeat); err == nil {
 			config.Heartbeat = h
-			log.Info("Override heartbeat from env: %d", h)
+			logger.Info("Override heartbeat from env: %d", h)
 		}
 	}
 
@@ -152,7 +152,7 @@ func (cm *ConfigManager) applyEnvOverrides(config *DistributedConfig) {
 	if workerCount := os.Getenv("VECTOR_SPHERE_WORKER_COUNT"); workerCount != "" {
 		if w, err := strconv.Atoi(workerCount); err == nil {
 			config.SchedulerWorkerCount = w
-			log.Info("Override schedulerWorkerCount from env: %d", w)
+			logger.Info("Override schedulerWorkerCount from env: %d", w)
 		}
 	}
 
@@ -160,7 +160,7 @@ func (cm *ConfigManager) applyEnvOverrides(config *DistributedConfig) {
 	if taskTimeout := os.Getenv("VECTOR_SPHERE_TASK_TIMEOUT"); taskTimeout != "" {
 		if t, err := strconv.Atoi(taskTimeout); err == nil {
 			config.TaskTimeout = t
-			log.Info("Override taskTimeout from env: %d", t)
+			logger.Info("Override taskTimeout from env: %d", t)
 		}
 	}
 
@@ -168,7 +168,7 @@ func (cm *ConfigManager) applyEnvOverrides(config *DistributedConfig) {
 	if healthInterval := os.Getenv("VECTOR_SPHERE_HEALTH_INTERVAL"); healthInterval != "" {
 		if h, err := strconv.Atoi(healthInterval); err == nil {
 			config.HealthCheckInterval = h
-			log.Info("Override healthCheckInterval from env: %d", h)
+			logger.Info("Override healthCheckInterval from env: %d", h)
 		}
 	}
 }
@@ -201,7 +201,7 @@ func (cm *ConfigManager) setDefaults(config *DistributedConfig) {
 
 	// 确保数据目录存在
 	if err := os.MkdirAll(config.DataDir, 0755); err != nil {
-		log.Warning("Failed to create data directory %s: %v", config.DataDir, err)
+		logger.Warning("Failed to create data directory %s: %v", config.DataDir, err)
 	}
 
 	// 设置默认endpoints（如果为空）
@@ -209,7 +209,7 @@ func (cm *ConfigManager) setDefaults(config *DistributedConfig) {
 		config.Endpoints = make(map[string]server.EndPoint)
 	}
 
-	log.Info("Applied default configuration values")
+	logger.Info("Applied default configuration values")
 }
 
 // GetConfig 获取当前配置
@@ -219,7 +219,7 @@ func (cm *ConfigManager) GetConfig() *DistributedConfig {
 
 // ReloadConfig 重新加载配置
 func (cm *ConfigManager) ReloadConfig() (*DistributedConfig, error) {
-	log.Info("Reloading configuration...")
+	logger.Info("Reloading configuration...")
 	return cm.LoadConfig()
 }
 
@@ -366,7 +366,7 @@ func (cm *ConfigManager) UpdateConfig(updates map[string]interface{}) error {
 				cm.config.DataDir = v
 			}
 		default:
-			log.Warning("Unknown config key: %s", key)
+			logger.Warning("Unknown config key: %s", key)
 		}
 	}
 
@@ -375,6 +375,6 @@ func (cm *ConfigManager) UpdateConfig(updates map[string]interface{}) error {
 		return fmt.Errorf("配置更新后验证失败: %v", err)
 	}
 
-	log.Info("Configuration updated successfully")
+	logger.Info("Configuration updated successfully")
 	return nil
 }

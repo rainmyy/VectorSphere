@@ -5,7 +5,7 @@ import (
 	"VectorSphere/src/library/algorithm"
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/graph"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/library/tree"
 	"container/heap"
 	"encoding/binary"
@@ -195,7 +195,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 		if ivfIndexReady && db.ivfConfig != nil {
 			// IVF适合精确搜索和中高维数据
 			if ctx.QualityLevel > 0.8 || (vectorDim >= 128 && vectorDim <= 2048) {
-				log.Trace("选择EnhancedIVF策略：数据量=%d，质量要求=%.2f，维度=%d", vectorCount, ctx.QualityLevel, vectorDim)
+				logger.Trace("选择EnhancedIVF策略：数据量=%d，质量要求=%.2f，维度=%d", vectorCount, ctx.QualityLevel, vectorDim)
 				return StrategyEnhancedIVF
 			}
 		}
@@ -203,7 +203,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 		if lshIndexReady && db.LshConfig != nil {
 			// LSH适合高维数据和快速近似搜索
 			if vectorDim > 512 || (ctx.QualityLevel < 0.85 && ctx.Timeout > 0 && ctx.Timeout < 50*time.Millisecond) {
-				log.Trace("选择EnhancedLSH策略：数据量=%d，维度=%d，质量要求=%.2f", vectorCount, vectorDim, ctx.QualityLevel)
+				logger.Trace("选择EnhancedLSH策略：数据量=%d，维度=%d，质量要求=%.2f", vectorCount, vectorDim, ctx.QualityLevel)
 				return StrategyEnhancedLSH
 			}
 		}
@@ -225,7 +225,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 	if vectorDim > 2048 {
 		// 超高维数据优先考虑LSH
 		if lshIndexReady && db.LshConfig != nil {
-			log.Trace("超高维数据选择EnhancedLSH策略：维度=%d", vectorDim)
+			logger.Trace("超高维数据选择EnhancedLSH策略：维度=%d", vectorDim)
 			return StrategyEnhancedLSH
 		}
 		// 其次考虑PQ压缩
@@ -242,7 +242,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 	if ctx.QualityLevel > 0.9 {
 		// 高质量要求，优先精确搜索
 		if ivfIndexReady && db.ivfConfig != nil {
-			log.Trace("高质量要求选择EnhancedIVF策略：质量要求=%.2f", ctx.QualityLevel)
+			logger.Trace("高质量要求选择EnhancedIVF策略：质量要求=%.2f", ctx.QualityLevel)
 			return StrategyEnhancedIVF
 		}
 		if vectorCount < 100000 {
@@ -260,7 +260,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 	if ctx.Timeout > 0 && ctx.Timeout < 10*time.Millisecond {
 		// 低延迟要求，优先快速策略
 		if lshIndexReady && db.LshConfig != nil {
-			log.Trace("低延迟要求选择EnhancedLSH策略：超时限制=%v", ctx.Timeout)
+			logger.Trace("低延迟要求选择EnhancedLSH策略：超时限制=%v", ctx.Timeout)
 			return StrategyEnhancedLSH
 		}
 		if db.usePQCompression && db.pqCodebook != nil {
@@ -271,7 +271,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 	// 7. 中等延迟要求判断
 	if ctx.Timeout > 0 && ctx.Timeout < 100*time.Millisecond {
 		if ivfIndexReady && db.ivfConfig != nil && ctx.QualityLevel > 0.7 {
-			log.Trace("中等延迟要求选择EnhancedIVF策略：超时限制=%v，质量要求=%.2f", ctx.Timeout, ctx.QualityLevel)
+			logger.Trace("中等延迟要求选择EnhancedIVF策略：超时限制=%v，质量要求=%.2f", ctx.Timeout, ctx.QualityLevel)
 			return StrategyEnhancedIVF
 		}
 	}
@@ -284,12 +284,12 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 	// 9. 默认策略选择（按优先级）
 	// 优先选择增强型索引
 	if ivfIndexReady && db.ivfConfig != nil {
-		log.Trace("默认选择EnhancedIVF策略")
+		logger.Trace("默认选择EnhancedIVF策略")
 		return StrategyEnhancedIVF
 	}
 
 	if lshIndexReady && db.LshConfig != nil {
-		log.Trace("默认选择EnhancedLSH策略")
+		logger.Trace("默认选择EnhancedLSH策略")
 		return StrategyEnhancedLSH
 	}
 
@@ -324,7 +324,7 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOption
 	// 使用自适应选择器优化策略选择
 	indexStrategy := db.selectOptimalStrategyWithAdaptive(ctx)
 
-	log.Trace("选择搜索策略: %v, 数据量: %d, 维度: %d, 质量要求: %.2f",
+	logger.Trace("选择搜索策略: %v, 数据量: %d, 维度: %d, 质量要求: %.2f",
 		indexStrategy, len(db.vectors), len(query), ctx.QualityLevel)
 
 	startTime := time.Now()
@@ -345,13 +345,13 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOption
 	case StrategyEnhancedIVF:
 		results, err = db.EnhancedIVFSearch(query, k, ctx.Nprobe)
 		if err != nil {
-			log.Warning("EnhancedIVF搜索失败，回退到传统IVF: %v", err)
+			logger.Warning("EnhancedIVF搜索失败，回退到传统IVF: %v", err)
 			results, err = db.ivfSearchWithScores(query, k, ctx.Nprobe, db.GetOptimalStrategy(query))
 		}
 	case StrategyEnhancedLSH:
 		results, err = db.EnhancedLSHSearch(query, k)
 		if err != nil {
-			log.Warning("EnhancedLSH搜索失败，回退到传统搜索: %v", err)
+			logger.Warning("EnhancedLSH搜索失败，回退到传统搜索: %v", err)
 			// 根据数据规模选择回退策略
 			if len(db.vectors) > 10000 {
 				results, err = db.ivfSearchWithScores(query, k, ctx.Nprobe, db.GetOptimalStrategy(query))
@@ -384,7 +384,7 @@ func (db *VectorDB) MonitorGPUHealth() {
 		select {
 		case <-ticker.C:
 			if err := db.CheckGPUStatus(); err != nil {
-				log.Warning("GPU健康检查失败: %v", err)
+				logger.Warning("GPU健康检查失败: %v", err)
 				// 可以在这里实现自动禁用GPU加速的逻辑
 				db.HardwareCaps.HasGPU = false
 			}
@@ -407,7 +407,7 @@ func (db *VectorDB) InitializeGPUAccelerator(deviceID int, indexType string) err
 	}
 
 	db.gpuAccelerator = gpuAccel
-	log.Info("GPU加速器初始化成功，设备ID: %d, 索引类型: %s", deviceID, indexType)
+	logger.Info("GPU加速器初始化成功，设备ID: %d, 索引类型: %s", deviceID, indexType)
 
 	// 启动GPU健康监控
 	go db.MonitorGPUHealth()
@@ -440,7 +440,7 @@ func (db *VectorDB) CheckGPUStatus() error {
 			return fmt.Errorf("获取GPU内存信息失败: %w", err)
 		}
 
-		log.Info("GPU状态检查通过 - 可用内存: %d MB, 总内存: %d MB",
+		logger.Info("GPU状态检查通过 - 可用内存: %d MB, 总内存: %d MB",
 			free/(1024*1024), total/(1024*1024))
 	}
 
@@ -626,7 +626,7 @@ func (db *VectorDB) hybridSearchWithScores(query []float64, k int, ctx SearchCon
 	if db.usePQCompression && db.pqCodebook != nil {
 		candidates, err = db.pqSearchWithScores(query, coarseK)
 		if err != nil {
-			log.Warning("PQ粗排失败，回退到IVF: %v", err)
+			logger.Warning("PQ粗排失败，回退到IVF: %v", err)
 			candidates, err = db.ivfSearchWithScores(query, coarseK, ctx.Nprobe, db.GetOptimalStrategy(query))
 		}
 	} else {
@@ -720,7 +720,7 @@ func (db *VectorDB) updatePerformanceMetrics(strategy IndexStrategy, latency tim
 	}
 
 	// 记录详细日志（可选，用于调试）
-	log.Trace("性能指标更新 - 策略: %v, 延迟: %v, 结果数: %d, 总查询数: %d, 平均延迟: %v, 内存使用: %d bytes",
+	logger.Trace("性能指标更新 - 策略: %v, 延迟: %v, 结果数: %d, 总查询数: %d, 平均延迟: %v, 内存使用: %d bytes",
 		strategy, latency, resultCount, db.stats.TotalQueries, db.stats.AvgQueryTime, db.stats.MemoryUsage)
 
 	// 定期输出性能摘要（每1000次查询）
@@ -731,17 +731,17 @@ func (db *VectorDB) updatePerformanceMetrics(strategy IndexStrategy, latency tim
 
 // logPerformanceSummary 输出性能摘要
 func (db *VectorDB) logPerformanceSummary() {
-	log.Info("=== 性能摘要 (查询数: %d) ===", db.stats.TotalQueries)
-	log.Info("平均查询时间: %v", db.stats.AvgQueryTime)
-	log.Info("内存使用: %.2f MB", float64(db.stats.MemoryUsage)/1024/1024)
-	log.Info("缓存命中率: %.2f%%", float64(db.stats.CacheHits)*100/float64(db.stats.TotalQueries))
+	logger.Info("=== 性能摘要 (查询数: %d) ===", db.stats.TotalQueries)
+	logger.Info("平均查询时间: %v", db.stats.AvgQueryTime)
+	logger.Info("内存使用: %.2f MB", float64(db.stats.MemoryUsage)/1024/1024)
+	logger.Info("缓存命中率: %.2f%%", float64(db.stats.CacheHits)*100/float64(db.stats.TotalQueries))
 
 	// 输出各策略的性能表现
 	if db.strategySelector != nil && db.strategySelector.performance != nil {
-		log.Info("各策略性能表现:")
+		logger.Info("各策略性能表现:")
 		for indexStrategy, metrics := range db.strategySelector.performance {
 			strategyName := db.getStrategyName(indexStrategy)
-			log.Info("  %s: 延迟=%v, QPS=%.2f, 召回率=%.2f%%, 内存=%d bytes",
+			logger.Info("  %s: 延迟=%v, QPS=%.2f, 召回率=%.2f%%, 内存=%d bytes",
 				strategyName, metrics.AvgLatency, metrics.ThroughputQPS,
 				metrics.Recall*100, metrics.MemoryUsage)
 		}
@@ -835,14 +835,14 @@ func (db *VectorDB) AdaptiveReindex() error {
 		if !db.useHNSWIndex {
 			db.useHNSWIndex = true
 			if err := db.BuildHNSWIndex(); err != nil {
-				log.Warning("构建HNSW索引失败: %v", err)
+				logger.Warning("构建HNSW索引失败: %v", err)
 			}
 		}
 
 		if !db.usePQCompression && db.pqCodebook != nil {
 			db.usePQCompression = true
 			if err := db.CompressExistingVectors(); err != nil {
-				log.Warning("PQ压缩失败: %v", err)
+				logger.Warning("PQ压缩失败: %v", err)
 			}
 		}
 	} else if vectorCount > 100000 {
@@ -850,7 +850,7 @@ func (db *VectorDB) AdaptiveReindex() error {
 		if !db.useHNSWIndex {
 			db.useHNSWIndex = true
 			if err := db.BuildHNSWIndex(); err != nil {
-				log.Warning("构建HNSW索引失败: %v", err)
+				logger.Warning("构建HNSW索引失败: %v", err)
 			}
 		}
 	}
@@ -870,7 +870,7 @@ func (db *VectorDB) AdaptiveReindex() error {
 		return fmt.Errorf("重建IVF索引失败: %v", err)
 	}
 
-	log.Info("自适应重建索引完成，数据量: %d", vectorCount)
+	logger.Info("自适应重建索引完成，数据量: %d", vectorCount)
 	return nil
 }
 
@@ -890,17 +890,17 @@ func (db *VectorDB) Close() {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
-	log.Info("Closing VectorDB...")
+	logger.Info("Closing VectorDB...")
 	// 发送停止信号给后台任务
 	if db.stopCh != nil {
 		close(db.stopCh) // 关闭channel以通知goroutine停止
-		log.Info("Stop signal sent to background tasks.")
+		logger.Info("Stop signal sent to background tasks.")
 	}
 	// 尝试保存数据到文件
 	if db.backupPath != "" {
-		log.Info("Attempting to save VectorDB data to %s before closing...", db.filePath)
+		logger.Info("Attempting to save VectorDB data to %s before closing...", db.filePath)
 		if err := db.SaveToFile(db.backupPath); err != nil {
-			log.Error("Error saving VectorDB data to %s: %v", db.filePath, err)
+			logger.Error("Error saving VectorDB data to %s: %v", db.filePath, err)
 		}
 	}
 
@@ -919,7 +919,7 @@ func (db *VectorDB) Close() {
 	// 重置其他可能的状态字段
 	db.vectorDim = 0
 
-	log.Info("VectorDB closed successfully.")
+	logger.Info("VectorDB closed successfully.")
 }
 
 func (db *VectorDB) IsIndexed() bool {
@@ -961,7 +961,7 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 	}
 	// 检测硬件能力
 	db.HardwareCaps = db.strategyComputeSelector.GetHardwareCapabilities()
-	log.Info("硬件检测结果: AVX2=%v, AVX512=%v, GPU=%v, CPU核心=%d",
+	logger.Info("硬件检测结果: AVX2=%v, AVX512=%v, GPU=%v, CPU核心=%d",
 		db.HardwareCaps.HasAVX2, db.HardwareCaps.HasAVX512,
 		db.HardwareCaps.HasGPU, db.HardwareCaps.CPUCores)
 
@@ -972,13 +972,13 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 		// 先检查GPU可用性，再进行初始化
 		if gpuAccel, ok := db.gpuAccelerator.(*acceler.FAISSAccelerator); ok {
 			if err := gpuAccel.CheckGPUAvailability(); err != nil {
-				log.Warning("GPU可用性检查失败: %v", err)
+				logger.Warning("GPU可用性检查失败: %v", err)
 				db.HardwareCaps.HasGPU = false
 				db.gpuAccelerator = nil
 			} else {
 				// GPU可用性检查通过，进行初始化
 				if err := db.gpuAccelerator.Initialize(); err != nil {
-					log.Warning("GPU加速器初始化失败: %v", err)
+					logger.Warning("GPU加速器初始化失败: %v", err)
 					db.HardwareCaps.HasGPU = false
 					db.gpuAccelerator = nil
 				}
@@ -986,7 +986,7 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 		} else {
 			// 如果类型断言失败，直接尝试初始化
 			if err := db.gpuAccelerator.Initialize(); err != nil {
-				log.Warning("GPU加速器初始化失败: %v", err)
+				logger.Warning("GPU加速器初始化失败: %v", err)
 				db.HardwareCaps.HasGPU = false
 				db.gpuAccelerator = nil
 			}
@@ -994,7 +994,7 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 	}
 	if filePath != "" {
 		if err := db.LoadFromFile(filePath); err != nil {
-			log.Warning("警告: 从 %s 加载向量数据库时出错: %v。将使用空数据库启动。\n", filePath, err)
+			logger.Warning("警告: 从 %s 加载向量数据库时出错: %v。将使用空数据库启动。\n", filePath, err)
 			db.vectors = make(map[string][]float64)
 			db.clusters = make([]Cluster, 0)
 			db.indexed = false
@@ -1019,7 +1019,7 @@ func (db *VectorDB) AdaptiveCosineSimilarityBatch(queries [][]float64, targets [
 	vectorDim := len(queries[0])
 	optimalStrategy := db.strategyComputeSelector.SelectOptimalStrategy(dataSize, vectorDim)
 
-	log.Trace("选择计算策略: %v, 数据量: %d, 向量维度: %d", optimalStrategy, dataSize, vectorDim)
+	logger.Trace("选择计算策略: %v, 数据量: %d, 向量维度: %d", optimalStrategy, dataSize, vectorDim)
 
 	switch optimalStrategy {
 	case acceler.StrategyGPU:
@@ -1118,7 +1118,7 @@ func (db *VectorDB) gpuBatchCosineSimilarity(queries [][]float64, targets [][]fl
 	results, err := db.gpuAccelerator.BatchCosineSimilarity(queries, targets)
 	if err != nil {
 		// GPU计算失败，回退到CPU
-		log.Warning("GPU计算失败，回退到CPU: %v", err)
+		logger.Warning("GPU计算失败，回退到CPU: %v", err)
 		return db.standardBatchCosineSimilarity(queries, targets)
 	}
 
@@ -1223,7 +1223,7 @@ func (db *VectorDB) AdaptiveFindNearest(query []float64, k int, nprobe int) ([]e
 	vectorDim := len(query)
 	optimalStrategy := db.strategyComputeSelector.SelectOptimalStrategy(dataSize, vectorDim)
 
-	log.Trace("自适应搜索策略: %v", optimalStrategy)
+	logger.Trace("自适应搜索策略: %v", optimalStrategy)
 
 	// 如果启用了HNSW索引，优先使用
 	if db.useHNSWIndex && db.indexed && db.hnsw != nil {
@@ -1441,7 +1441,7 @@ func (db *VectorDB) SetComputeStrategy(strategy acceler.ComputeStrategy) error {
 	}
 
 	db.currentStrategy = strategy
-	log.Info("手动设置计算策略为: %v", strategy)
+	logger.Info("手动设置计算策略为: %v", strategy)
 	return nil
 }
 
@@ -1496,14 +1496,14 @@ func (db *VectorDB) BatchAddToHNSWIndex(ids []string, vectors [][]float64, numWo
 
 	// 使用 HNSW 图的并行添加节点方法
 	startTime := time.Now()
-	log.Info("开始批量添加 %d 个向量到 HNSW 索引...", len(ids))
+	logger.Info("开始批量添加 %d 个向量到 HNSW 索引...", len(ids))
 
 	err := db.hnsw.ParallelAddNodes(ids, processedVectors, numWorkers)
 	if err != nil {
 		return fmt.Errorf("批量添加节点失败: %w", err)
 	}
 
-	log.Info("成功批量添加 %d 个向量到 HNSW 索引，耗时 %v", len(ids), time.Since(startTime))
+	logger.Info("成功批量添加 %d 个向量到 HNSW 索引，耗时 %v", len(ids), time.Since(startTime))
 	return nil
 }
 
@@ -1527,7 +1527,7 @@ func (db *VectorDB) BuildHNSWIndexParallel(numWorkers int) error {
 	defer db.mu.Unlock()
 
 	startTime := time.Now()
-	log.Info("开始并行构建 HNSW 索引...")
+	logger.Info("开始并行构建 HNSW 索引...")
 
 	// 重置索引状态
 	db.indexed = false
@@ -1569,7 +1569,7 @@ func (db *VectorDB) BuildHNSWIndexParallel(numWorkers int) error {
 	db.stats.IndexBuildTime = time.Since(startTime)
 	db.stats.LastReindexTime = time.Now()
 
-	log.Info("HNSW 索引并行构建完成，耗时 %v，包含 %d 个向量。", db.stats.IndexBuildTime, len(db.vectors))
+	logger.Info("HNSW 索引并行构建完成，耗时 %v，包含 %d 个向量。", db.stats.IndexBuildTime, len(db.vectors))
 	return nil
 }
 
@@ -1604,7 +1604,7 @@ func (db *VectorDB) BatchFindNearest(queryVectors [][]float64, k int, numWorkers
 
 	// 如果启用了 HNSW 索引，使用 HNSW 批量搜索
 	if db.useHNSWIndex && db.indexed && db.hnsw != nil {
-		log.Trace("使用 HNSW 索引进行批量搜索，查询数量: %d", len(queryVectors))
+		logger.Trace("使用 HNSW 索引进行批量搜索，查询数量: %d", len(queryVectors))
 
 		// 预处理查询向量（归一化）
 		normalizedQueries := make([][]float64, len(queryVectors))
@@ -1718,7 +1718,7 @@ func (db *VectorDB) BatchFindNearestWithScores(queryVectors [][]float64, k int, 
 
 	// 如果启用了 HNSW 索引，使用 HNSW 批量搜索
 	if db.useHNSWIndex && db.indexed && db.hnsw != nil {
-		log.Trace("使用 HNSW 索引进行批量搜索（带分数），查询数量: %d", len(queryVectors))
+		logger.Trace("使用 HNSW 索引进行批量搜索（带分数），查询数量: %d", len(queryVectors))
 
 		// 预处理查询向量（归一化）
 		normalizedQueries := make([][]float64, len(queryVectors))
@@ -1804,7 +1804,7 @@ func (db *VectorDB) EnableHNSWIndex(maxConnections int, efConstruction, efSearch
 	// 如果已有向量数据，立即构建索引
 	if len(db.vectors) > 0 {
 		db.indexed = false
-		log.Info("启用 HNSW 索引，需要重建索引。请调用 BuildIndex() 方法。")
+		logger.Info("启用 HNSW 索引，需要重建索引。请调用 BuildIndex() 方法。")
 	}
 }
 
@@ -1814,7 +1814,7 @@ func (db *VectorDB) BuildHNSWIndex() error {
 	defer db.mu.Unlock()
 
 	startTime := time.Now()
-	log.Info("开始构建 HNSW 索引...")
+	logger.Info("开始构建 HNSW 索引...")
 
 	// 重置索引状态
 	db.indexed = false
@@ -1849,7 +1849,7 @@ func (db *VectorDB) BuildHNSWIndex() error {
 	db.stats.IndexBuildTime = time.Since(startTime)
 	db.stats.LastReindexTime = time.Now()
 
-	log.Info("HNSW 索引构建完成，耗时 %v，包含 %d 个向量。", db.stats.IndexBuildTime, len(db.vectors))
+	logger.Info("HNSW 索引构建完成，耗时 %v，包含 %d 个向量。", db.stats.IndexBuildTime, len(db.vectors))
 	return nil
 }
 
@@ -1867,7 +1867,7 @@ func (db *VectorDB) GetVectorDimension() (int, error) {
 			db.vectorDim = len(v) // 设置维度
 			db.mu.Unlock()
 			db.mu.RLock() // 重新获取读锁
-			log.Info("Vector dimension was not initialized, inferred as %d from existing vectors.", db.vectorDim)
+			logger.Info("Vector dimension was not initialized, inferred as %d from existing vectors.", db.vectorDim)
 			break
 		}
 	}
@@ -1929,7 +1929,7 @@ func (db *VectorDB) GetTrainingVectors(sampleRate float64, maxVectors int) ([][]
 		sampledVectors = append(sampledVectors, vecCopy)
 	}
 
-	log.Info("从 VectorDB 采样了 %d 个向量用于训练", len(sampledVectors))
+	logger.Info("从 VectorDB 采样了 %d 个向量用于训练", len(sampledVectors))
 	return sampledVectors, nil
 }
 
@@ -2064,7 +2064,7 @@ func (db *VectorDB) EnablePQCompression(codebookPath string, numSubVectors int, 
 
 	if pathToLoad == "" {
 		db.mu.Lock()
-		log.Warning("未提供 PQ 码本文件路径，且之前未配置，PQ 压缩将禁用。")
+		logger.Warning("未提供 PQ 码本文件路径，且之前未配置，PQ 压缩将禁用。")
 		db.usePQCompression = false
 		db.pqCodebook = nil
 		db.numSubVectors = 0
@@ -2100,7 +2100,7 @@ func (db *VectorDB) EnablePQCompression(codebookPath string, numSubVectors int, 
 		} else {
 			db.numCentroidsPerSubVector = 0 // 或者报错，取决于策略
 		}
-		log.Info("PQ 压缩已启用。码本路径: %s, 子向量数: %d, 每子空间质心数: %d", db.pqCodebookFilePath, db.numSubVectors, db.numCentroidsPerSubVector)
+		logger.Info("PQ 压缩已启用。码本路径: %s, 子向量数: %d, 每子空间质心数: %d", db.pqCodebookFilePath, db.numSubVectors, db.numCentroidsPerSubVector)
 
 		// 提示用户可能需要压缩现有向量
 		if len(db.vectors) > 0 && len(db.compressedVectors) < len(db.vectors) {
@@ -2111,7 +2111,7 @@ func (db *VectorDB) EnablePQCompression(codebookPath string, numSubVectors int, 
 		}
 	} else {
 		db.usePQCompression = false
-		log.Warning("PQ 码本加载后为空或加载失败，PQ 压缩已禁用。")
+		logger.Warning("PQ 码本加载后为空或加载失败，PQ 压缩已禁用。")
 	}
 	db.mu.Unlock()
 
@@ -2127,7 +2127,7 @@ func (db *VectorDB) CompressExistingVectors() error {
 		return fmt.Errorf("PQ 压缩未启用或码本未设置")
 	}
 
-	log.Info("开始压缩现有向量...")
+	logger.Info("开始压缩现有向量...")
 	// 收集需要压缩的向量
 	vectorsToCompress := make([][]float64, 0)
 	idsToCompress := make([]string, 0)
@@ -2141,15 +2141,15 @@ func (db *VectorDB) CompressExistingVectors() error {
 
 	totalVectors := len(vectorsToCompress)
 	if totalVectors == 0 {
-		log.Info("没有需要压缩的向量。")
+		logger.Info("没有需要压缩的向量。")
 		return nil
 	}
 
-	log.Info("发现 %d 个未压缩向量，开始批量压缩处理...", totalVectors)
+	logger.Info("发现 %d 个未压缩向量，开始批量压缩处理...", totalVectors)
 
 	// 使用批量压缩函数
 	numWorkers := runtime.NumCPU() // 使用所有可用CPU核心
-	log.Info("使用 %d 个工作协程进行并行压缩", numWorkers)
+	logger.Info("使用 %d 个工作协程进行并行压缩", numWorkers)
 
 	startTime := time.Now()
 	compressedVectors, err := acceler.BatchCompressByPQ(
@@ -2161,7 +2161,7 @@ func (db *VectorDB) CompressExistingVectors() error {
 	)
 
 	if err != nil {
-		log.Error("批量压缩向量失败: %v", err)
+		logger.Error("批量压缩向量失败: %v", err)
 		return fmt.Errorf("批量压缩向量失败: %w", err)
 	}
 
@@ -2171,7 +2171,7 @@ func (db *VectorDB) CompressExistingVectors() error {
 	}
 
 	elapsedTime := time.Since(startTime)
-	log.Info("现有向量批量压缩完成，共压缩了 %d 个向量，耗时 %v，平均每个向量 %.2f 毫秒。",
+	logger.Info("现有向量批量压缩完成，共压缩了 %d 个向量，耗时 %v，平均每个向量 %.2f 毫秒。",
 		totalVectors,
 		elapsedTime,
 		float64(elapsedTime.Milliseconds())/float64(totalVectors))
@@ -2223,7 +2223,7 @@ func (db *VectorDB) AddDocument(id string, doc string, vectorizedType int) error
 		compressedVec, err := acceler.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubVectors, db.numCentroidsPerSubVector)
 		if err != nil {
 			// 即使压缩失败，原始向量也已添加，这里只记录错误
-			log.Error("为文档 %s 添加时压缩向量失败: %v", id, err)
+			logger.Error("为文档 %s 添加时压缩向量失败: %v", id, err)
 		} else {
 			db.compressedVectors[id] = compressedVec
 		}
@@ -2251,7 +2251,7 @@ func (db *VectorDB) AddDocument(id string, doc string, vectorizedType int) error
 
 	if db.indexed {
 		db.indexed = false // 索引失效，需要重建
-		log.Info("提示: 添加新文档向量后，索引已失效，请重新调用 BuildIndex()。")
+		logger.Info("提示: 添加新文档向量后，索引已失效，请重新调用 BuildIndex()。")
 	}
 	return nil
 }
@@ -2278,7 +2278,7 @@ func (db *VectorDB) RebuildIndex() error {
 
 	// 更新性能统计信息
 	if err != nil {
-		log.Error("索引重建失败: %v", err)
+		logger.Error("索引重建失败: %v", err)
 	}
 	db.statsMu.Lock()
 	db.stats.IndexBuildTime = time.Since(start)
@@ -2289,7 +2289,7 @@ func (db *VectorDB) RebuildIndex() error {
 	runtime.ReadMemStats(&m)
 	db.stats.MemoryUsage = m.Alloc
 	db.statsMu.Unlock()
-	log.Info("索引重建完成，耗时: %v", time.Since(start))
+	logger.Info("索引重建完成，耗时: %v", time.Since(start))
 
 	return err
 }
@@ -2365,7 +2365,7 @@ func (db *VectorDB) Add(id string, vector []float64) {
 	if db.vectorDim == 0 && len(vector) > 0 {
 		db.vectorDim = len(vector)
 	} else if len(vector) != db.vectorDim && db.vectorDim > 0 {
-		log.Fatal("向量维度不匹配: 期望 %d, 实际 %d", db.vectorDim, len(vector))
+		logger.Fatal("向量维度不匹配: 期望 %d, 实际 %d", db.vectorDim, len(vector))
 	}
 
 	db.vectors[id] = vector
@@ -2375,20 +2375,20 @@ func (db *VectorDB) Add(id string, vector []float64) {
 	if db.usePQCompression && db.pqCodebook != nil {
 		compressedVec, err := acceler.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubVectors, db.numCentroidsPerSubVector)
 		if err != nil {
-			log.Error("向量 %s 压缩失败: %v。该向量将只以原始形式存储。", id, err)
+			logger.Error("向量 %s 压缩失败: %v。该向量将只以原始形式存储。", id, err)
 			// 根据策略，可以选择是否回滚添加操作或仅记录错误
 		} else {
 			if db.compressedVectors == nil {
 				db.compressedVectors = make(map[string]entity.CompressedVector)
 			}
 			db.compressedVectors[id] = compressedVec
-			log.Trace("向量 %s 已压缩并存储。", id)
+			logger.Trace("向量 %s 已压缩并存储。", id)
 		}
 	}
 
 	if db.indexed {
 		db.indexed = false // 索引失效，需要重建
-		log.Info("提示: 添加新向量后，索引已失效，请重新调用 BuildIndex()。")
+		logger.Info("提示: 添加新向量后，索引已失效，请重新调用 BuildIndex()。")
 	}
 
 	// 如果启用了 HNSW 索引，增量更新 HNSW 图
@@ -2403,11 +2403,11 @@ func (db *VectorDB) Add(id string, vector []float64) {
 
 		err := db.hnsw.AddNode(id, vectorToAdd)
 		if err != nil {
-			log.Warning("增量添加向量 %s 到 HNSW 图失败: %v，索引可能不一致。", id, err)
+			logger.Warning("增量添加向量 %s 到 HNSW 图失败: %v，索引可能不一致。", id, err)
 		}
 	} else if db.indexed {
 		db.indexed = false // 索引失效，需要重建
-		log.Info("提示: 添加新向量后，索引已失效，请重新调用 BuildIndex()。")
+		logger.Info("提示: 添加新向量后，索引已失效，请重新调用 BuildIndex()。")
 	}
 }
 
@@ -2437,7 +2437,7 @@ func (db *VectorDB) DeleteVector(id string) error {
 		}
 	}
 
-	log.Info("Vector with id %s deleted successfully.", id)
+	logger.Info("Vector with id %s deleted successfully.", id)
 	return nil
 }
 
@@ -2501,10 +2501,10 @@ func (db *VectorDB) UpdateIndexIncrementally(id string, vector []float64) error 
 		}
 		if !found {
 			db.clusters[nearestClusterIndex].VectorIDs = append(db.clusters[nearestClusterIndex].VectorIDs, id)
-			log.Info("向量 %s 已增量添加到簇 %d。", id, nearestClusterIndex)
+			logger.Info("向量 %s 已增量添加到簇 %d。", id, nearestClusterIndex)
 		}
 	} else {
-		log.Warning("未能为向量 %s 找到最近的簇进行增量更新。", id)
+		logger.Warning("未能为向量 %s 找到最近的簇进行增量更新。", id)
 	}
 
 	return nil
@@ -2553,11 +2553,11 @@ func (db *VectorDB) recalculateClusterCentroid(clusterIndex int) error {
 		}
 
 		if !ok {
-			log.Warning("重新计算簇 %d 中心时，向量 %s 未找到，跳过此向量。", clusterIndex, vecID)
+			logger.Warning("重新计算簇 %d 中心时，向量 %s 未找到，跳过此向量。", clusterIndex, vecID)
 			continue
 		}
 		if len(vecData) != db.vectorDim {
-			log.Warning("向量 %s 的维度 (%d) 与期望维度 (%d) 不符，跳过此向量。", vecID, len(vecData), db.vectorDim)
+			logger.Warning("向量 %s 的维度 (%d) 与期望维度 (%d) 不符，跳过此向量。", vecID, len(vecData), db.vectorDim)
 			continue
 		}
 
@@ -2568,7 +2568,7 @@ func (db *VectorDB) recalculateClusterCentroid(clusterIndex int) error {
 	}
 
 	if validVectorsCount == 0 {
-		log.Warning("簇 %d 中没有有效的向量来计算新的中心点，保留旧中心点。", clusterIndex)
+		logger.Warning("簇 %d 中没有有效的向量来计算新的中心点，保留旧中心点。", clusterIndex)
 		return nil
 	}
 
@@ -2577,7 +2577,7 @@ func (db *VectorDB) recalculateClusterCentroid(clusterIndex int) error {
 	}
 
 	cluster.Centroid = newCentroid
-	log.Info("簇 %d 的中心点已重新计算。", clusterIndex)
+	logger.Info("簇 %d 的中心点已重新计算。", clusterIndex)
 	return nil
 }
 
@@ -2585,34 +2585,34 @@ func (db *VectorDB) recalculateClusterCentroid(clusterIndex int) error {
 // updateInterval: 更新间隔，例如 time.Minute * 5 表示每5分钟更新一次
 func (db *VectorDB) StartClusterCentroidUpdater(interval time.Duration) {
 	if !db.indexed || db.numClusters <= 0 {
-		log.Info("索引未启用或簇数量未设置，不启动簇中心更新器。")
+		logger.Info("索引未启用或簇数量未设置，不启动簇中心更新器。")
 		return
 	}
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 
-		log.Info("簇中心定期更新器已启动，更新间隔: %s", interval.String())
+		logger.Info("簇中心定期更新器已启动，更新间隔: %s", interval.String())
 
 		for {
 			select {
 			case <-ticker.C:
-				log.Info("开始定期重新计算所有簇中心...")
+				logger.Info("开始定期重新计算所有簇中心...")
 				db.mu.Lock() // 获取写锁以更新簇中心
 				if len(db.clusters) == 0 {
 					db.mu.Unlock()
-					log.Info("当前没有簇，跳过簇中心重新计算。")
+					logger.Info("当前没有簇，跳过簇中心重新计算。")
 					continue
 				}
 				for i := range db.clusters {
 					if err := db.recalculateClusterCentroid(i); err != nil {
-						log.Error("重新计算簇 %d 的中心失败: %v", i, err)
+						logger.Error("重新计算簇 %d 的中心失败: %v", i, err)
 					}
 				}
 				db.mu.Unlock()
-				log.Info("所有簇中心重新计算完成。")
+				logger.Info("所有簇中心重新计算完成。")
 			case <-db.stopCh: // 监听停止信号
-				log.Info("接收到停止信号，簇中心更新器正在关闭...")
+				logger.Info("接收到停止信号，簇中心更新器正在关闭...")
 				return // 退出goroutine
 			}
 		}
@@ -2647,7 +2647,7 @@ func (db *VectorDB) Update(id string, vector []float64) error {
 	if db.usePQCompression && db.pqCodebook != nil {
 		compressedVec, err := acceler.OptimizedCompressByPQ(vector, db.pqCodebook, db.numSubVectors, db.numCentroidsPerSubVector)
 		if err != nil {
-			log.Error("为向量 %s 更新时压缩向量失败: %v", id, err)
+			logger.Error("为向量 %s 更新时压缩向量失败: %v", id, err)
 			// 即使压缩失败，原始向量也已更新
 			delete(db.compressedVectors, id) // 删除旧地压缩向量，因为它不再有效
 		} else {
@@ -2657,7 +2657,7 @@ func (db *VectorDB) Update(id string, vector []float64) error {
 
 	if db.indexed {
 		db.indexed = false // 索引失效，需要重建
-		log.Info("提示: 更新向量后，索引已失效，请重新调用 BuildIndex()。")
+		logger.Info("提示: 更新向量后，索引已失效，请重新调用 BuildIndex()。")
 	}
 	return nil
 }
@@ -2692,18 +2692,18 @@ func (db *VectorDB) Delete(id string) error {
 
 	if db.indexed {
 		db.indexed = false // 索引失效，需要重建
-		log.Info("提示: 删除向量后，索引已失效，请重新调用 BuildIndex()。")
+		logger.Info("提示: 删除向量后，索引已失效，请重新调用 BuildIndex()。")
 	}
 
 	// 如果启用了 HNSW 索引，从 HNSW 图中删除节点
 	if db.useHNSWIndex && db.indexed && db.hnsw != nil {
 		err := db.hnsw.DeleteNode(id)
 		if err != nil {
-			log.Warning("从 HNSW 图中删除向量 %s 失败: %v，索引可能不一致。", id, err)
+			logger.Warning("从 HNSW 图中删除向量 %s 失败: %v，索引可能不一致。", id, err)
 		}
 	} else if db.indexed {
 		db.indexed = false // 索引失效，需要重建
-		log.Info("提示: 删除向量后，索引已失效，请重新调用 BuildIndex()。")
+		logger.Info("提示: 删除向量后，索引已失效，请重新调用 BuildIndex()。")
 	}
 
 	return nil
@@ -2852,7 +2852,7 @@ func (db *VectorDB) BuildIndex(maxIterations int, tolerance float64) error {
 		return fmt.Errorf("向量数量 (%d) 少于簇数量 (%d)，无法构建有效索引", len(db.vectors), db.numClusters)
 	}
 
-	log.Info("开始构建索引...")
+	logger.Info("开始构建索引...")
 	// 1. 收集所有向量及其ID
 	var allVectorsData []entity.Point
 	var vectorIDs []string // 保持与allVectorsData顺序一致的ID
@@ -2880,13 +2880,13 @@ func (db *VectorDB) BuildIndex(maxIterations int, tolerance float64) error {
 		if clusterIndex >= 0 && clusterIndex < db.numClusters { // 确保索引有效
 			db.clusters[clusterIndex].VectorIDs = append(db.clusters[clusterIndex].VectorIDs, vectorIDs[i])
 		} else {
-			log.Warning("警告: 向量 %s 被分配到无效的簇索引 %d\n", vectorIDs[i], clusterIndex)
+			logger.Warning("警告: 向量 %s 被分配到无效的簇索引 %d\n", vectorIDs[i], clusterIndex)
 		}
 	}
 
 	db.indexed = true
 
-	log.Info("索引构建完成，共 %d 个簇。\n", db.numClusters)
+	logger.Info("索引构建完成，共 %d 个簇。\n", db.numClusters)
 	return nil
 }
 
@@ -3125,7 +3125,7 @@ func (db *VectorDB) BatchNormalizeVectors() error {
 		db.normalizedVectors[result.id] = result.normalized
 	}
 
-	log.Info("批量归一化完成，处理了 %d 个向量", len(db.vectors))
+	logger.Info("批量归一化完成，处理了 %d 个向量", len(db.vectors))
 	return nil
 }
 
@@ -3143,7 +3143,7 @@ func (db *VectorDB) EnableGPUAcceleration(gpuID int, indexType string) error {
 		return fmt.Errorf("初始化 GPU 加速器失败: %w", err)
 	}
 
-	log.Info("GPU 加速已启用，GPU ID: %d, 索引类型: %s", gpuID, indexType)
+	logger.Info("GPU 加速已启用，GPU ID: %d, 索引类型: %s", gpuID, indexType)
 	return nil
 }
 
@@ -3157,7 +3157,7 @@ func (db *VectorDB) TwoStageSearch(query []float64, config TwoStageSearchConfig)
 		return nil, fmt.Errorf("粗筛阶段失败: %w", err)
 	}
 
-	log.Trace("粗筛阶段完成，获得 %d 个候选", len(coarseCandidates))
+	logger.Trace("粗筛阶段完成，获得 %d 个候选", len(coarseCandidates))
 
 	// 第二阶段：精排
 	finalResults, err := db.fineRanking(query, coarseCandidates, config)
@@ -3172,7 +3172,7 @@ func (db *VectorDB) TwoStageSearch(query []float64, config TwoStageSearchConfig)
 	db.stats.AvgQueryTime = time.Duration((db.stats.AvgQueryTime.Nanoseconds()*9 + queryTime.Nanoseconds()) / 10)
 	db.statsMu.Unlock()
 
-	log.Trace("两阶段搜索完成，耗时 %v", queryTime)
+	logger.Trace("两阶段搜索完成，耗时 %v", queryTime)
 	return finalResults, nil
 }
 
@@ -3941,7 +3941,7 @@ func (db *VectorDB) lshSearch(query []float64, k int, numTables int) ([]entity.R
 	lshTables, err := db.buildLSHIndex(numTables)
 	if err != nil {
 		// 如果构建LSH索引失败，回退到暴力搜索
-		log.Error("构建LSH索引失败: %v，回退到暴力搜索\n", err)
+		logger.Error("构建LSH索引失败: %v，回退到暴力搜索\n", err)
 		return db.bruteForceSearch(query, k)
 	}
 
@@ -4088,7 +4088,7 @@ func (db *VectorDB) multiIndexSearch(query []float64, k int, nprobe int) ([]enti
 	defer db.mu.RUnlock()
 
 	var results *entity.ResultHeap
-	log.Trace("Using Multi-Level Index for FindNearest.")
+	logger.Trace("Using Multi-Level Index for FindNearest.")
 	// 1. 找到 nprobe 个最近的簇中心 (与之前逻辑类似)
 	clusterDist := make([]struct {
 		Index int
@@ -4125,7 +4125,7 @@ func (db *VectorDB) multiIndexSearch(query []float64, k int, nprobe int) ([]enti
 		selectedCluster := db.multiIndex.clusters[clusterIdx]
 
 		if clusterIdx >= len(db.multiIndex.subIndices) || db.multiIndex.subIndices[clusterIdx] == nil {
-			log.Warning("Sub-index for cluster %d not found or nil. Performing brute-force in this cluster.", clusterIdx)
+			logger.Warning("Sub-index for cluster %d not found or nil. Performing brute-force in this cluster.", clusterIdx)
 			// 回退到暴力搜索该簇内的向量
 			for _, id := range selectedCluster.VectorIDs {
 				if vec, exists := db.vectors[id]; exists {
@@ -4142,7 +4142,7 @@ func (db *VectorDB) multiIndexSearch(query []float64, k int, nprobe int) ([]enti
 		// 假设二级索引是 KDTree，并且有 FindNearest 方法
 		kdTree, ok := db.multiIndex.subIndices[clusterIdx].(*tree.KDTree) // 类型断言
 		if !ok || kdTree == nil {
-			log.Warning("Sub-index for cluster %d is not a KDTree or is nil. Performing brute-force.", clusterIdx)
+			logger.Warning("Sub-index for cluster %d is not a KDTree or is nil. Performing brute-force.", clusterIdx)
 			for _, id := range selectedCluster.VectorIDs {
 				if vec, exists := db.vectors[id]; exists {
 					dist, _ := acceler.AdaptiveEuclideanDistanceSquared(query, vec, selectedStrategy)
@@ -4157,7 +4157,7 @@ func (db *VectorDB) multiIndexSearch(query []float64, k int, nprobe int) ([]enti
 
 		kdResults := kdTree.FindNearest(query, k) // 在KD树中搜索K个最近的，或者一个合理的数量
 		if kdResults == nil {
-			log.Error("Error searching in KDTree for cluster %d. Skipping this sub-index.", clusterIdx)
+			logger.Error("Error searching in KDTree for cluster %d. Skipping this sub-index.", clusterIdx)
 			continue
 		}
 
@@ -4196,7 +4196,7 @@ func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]entity.Resu
 	// 检查索引状态
 	if !db.indexed || len(db.clusters) == 0 || db.numClusters <= 0 {
 		// 如果索引未构建，回退到暴力搜索
-		log.Warning("索引未构建，回退到暴力搜索")
+		logger.Warning("索引未构建，回退到暴力搜索")
 		return db.bruteForceSearch(query, k)
 	}
 
@@ -4558,7 +4558,7 @@ func (db *VectorDB) EnableMultiLevelCache(l1Size, l2Size, l3Size int, l3Path str
 	defer db.mu.Unlock()
 
 	db.MultiCache = NewMultiLevelCache(l1Size, l2Size, l3Size, l3Path)
-	log.Info("多级缓存已启用：L1=%d, L2=%d, L3=%s", l1Size, l2Size, l3Path)
+	logger.Info("多级缓存已启用：L1=%d, L2=%d, L3=%s", l1Size, l2Size, l3Path)
 }
 
 // CachedSearch 带缓存的搜索
@@ -4577,7 +4577,7 @@ func (db *VectorDB) CachedSearch(query []float64, k int) ([]entity.Result, error
 					// 重新计算相似度（或从缓存中获取）
 					similarity, err := db.CalculateCosineSimilarity(id, query)
 					if err != nil {
-						log.Warning("计算向量 %s 的相似度失败: %v", id, err)
+						logger.Warning("计算向量 %s 的相似度失败: %v", id, err)
 						continue
 					}
 					results[i] = entity.Result{
@@ -4594,7 +4594,7 @@ func (db *VectorDB) CachedSearch(query []float64, k int) ([]entity.Result, error
 				}
 				return validResults, nil
 			} else {
-				log.Warning("缓存数据类型断言失败，预期[]string，实际%T", cachedData)
+				logger.Warning("缓存数据类型断言失败，预期[]string，实际%T", cachedData)
 				// 类型断言失败，继续执行搜索
 			}
 		}
@@ -4666,12 +4666,12 @@ func (db *VectorDB) OptimizedBatchSearch(queries [][]float64, k int, options Sea
 
 	// 检查是否可以使用GPU加速
 	if db.shouldUseGPUBatchSearch(len(queries), len(db.vectors)) {
-		log.Info("使用GPU加速批量搜索，查询数量: %d, 数据库大小: %d", len(queries), len(db.vectors))
+		logger.Info("使用GPU加速批量搜索，查询数量: %d, 数据库大小: %d", len(queries), len(db.vectors))
 		return db.gpuBatchSearch(queries, k, options)
 	}
 
 	// 回退到传统批量搜索方法
-	log.Trace("使用传统批量搜索方法")
+	logger.Trace("使用传统批量搜索方法")
 	return db.fallbackBatchSearch(queries, k, options)
 }
 
@@ -4685,7 +4685,7 @@ func (db *VectorDB) shouldUseGPUBatchSearch(queryCount, dbSize int) bool {
 	// 检查GPU加速器是否已初始化
 	if gpuAccel, ok := db.gpuAccelerator.(*acceler.FAISSAccelerator); ok {
 		if err := gpuAccel.CheckGPUAvailability(); err != nil {
-			log.Warning("GPU不可用，回退到CPU搜索: %v", err)
+			logger.Warning("GPU不可用，回退到CPU搜索: %v", err)
 			return false
 		}
 	} else {
@@ -4764,7 +4764,7 @@ func (db *VectorDB) IncrementalIndex() error {
 	db.mu.Lock()
 	if !db.indexed {
 		db.mu.Unlock()
-		log.Warning("索引尚未构建，无法执行增量索引更新")
+		logger.Warning("索引尚未构建，无法执行增量索引更新")
 		return fmt.Errorf("索引尚未构建，请先调用 BuildIndex() 或 RebuildIndex()")
 	}
 
@@ -4775,7 +4775,7 @@ func (db *VectorDB) IncrementalIndex() error {
 	}
 	db.mu.Unlock()
 
-	log.Info("开始执行增量索引更新，共 %d 个向量...", len(vectorIDs))
+	logger.Info("开始执行增量索引更新，共 %d 个向量...", len(vectorIDs))
 
 	// 根据索引类型选择不同的增量更新方法
 	if db.useHNSWIndex {
@@ -4791,7 +4791,7 @@ func (db *VectorDB) IncrementalIndex() error {
 
 			err := db.UpdateHNSWIndexIncrementally(id, vector)
 			if err != nil {
-				log.Warning("向量 %s 的HNSW增量更新失败: %v", id, err)
+				logger.Warning("向量 %s 的HNSW增量更新失败: %v", id, err)
 			}
 		}
 	} else {
@@ -4807,7 +4807,7 @@ func (db *VectorDB) IncrementalIndex() error {
 
 			err := db.UpdateIndexIncrementally(id, vector)
 			if err != nil {
-				log.Warning("向量 %s 的IVF增量更新失败: %v", id, err)
+				logger.Warning("向量 %s 的IVF增量更新失败: %v", id, err)
 			}
 		}
 	}
@@ -4822,7 +4822,7 @@ func (db *VectorDB) IncrementalIndex() error {
 	db.stats.MemoryUsage = m.Alloc
 	db.statsMu.Unlock()
 
-	log.Info("增量索引更新完成，耗时: %v", time.Since(start))
+	logger.Info("增量索引更新完成，耗时: %v", time.Since(start))
 	return nil
 }
 
@@ -4837,19 +4837,19 @@ func (db *VectorDB) OptimizeIndex() error {
 	// 根据索引类型执行不同的优化策略
 	if indexHealth["hnsw"] {
 		// 优化HNSW索引参数
-		log.Info("优化HNSW索引参数...")
+		logger.Info("优化HNSW索引参数...")
 		db.OptimizeHNSWParameters()
 	}
 
 	// 如果启用了增强型LSH索引，执行LSH参数调优
 	if indexHealth["enhanced_lsh"] {
-		log.Info("优化LSH索引参数...")
+		logger.Info("优化LSH索引参数...")
 		db.tuneAdaptiveLSH()
 	}
 
 	// 如果启用了增强型IVF索引，执行IVF参数调优
 	if indexHealth["enhanced_ivf"] {
-		log.Info("优化IVF索引参数...")
+		logger.Info("优化IVF索引参数...")
 		// 根据数据规模调整IVF参数
 		db.mu.Lock()
 		dataSize := len(db.vectors)
@@ -4867,13 +4867,13 @@ func (db *VectorDB) OptimizeIndex() error {
 				db.ivfConfig.NumClusters = 4096
 			}
 
-			log.Info("IVF参数已优化: NumClusters=%d", db.ivfConfig.NumClusters)
+			logger.Info("IVF参数已优化: NumClusters=%d", db.ivfConfig.NumClusters)
 		}
 	}
 
 	// 如果启用了PQ压缩，优化PQ参数
 	if indexHealth["pq"] {
-		log.Info("优化PQ压缩参数...")
+		logger.Info("优化PQ压缩参数...")
 		// 根据向量维度调整子向量数量
 		db.mu.Lock()
 		vectorDim := db.vectorDim
@@ -4899,7 +4899,7 @@ func (db *VectorDB) OptimizeIndex() error {
 			}
 		}
 
-		log.Info("PQ参数已优化: 子向量数量=%d", db.numSubVectors)
+		logger.Info("PQ参数已优化: 子向量数量=%d", db.numSubVectors)
 	}
 
 	// 调整全局配置参数
@@ -4913,6 +4913,6 @@ func (db *VectorDB) OptimizeIndex() error {
 	db.stats.MemoryUsage = m.Alloc
 	db.statsMu.Unlock()
 
-	log.Info("索引优化完成，耗时: %v", time.Since(start))
+	logger.Info("索引优化完成，耗时: %v", time.Since(start))
 	return nil
 }

@@ -4,7 +4,7 @@ package acceler
 
 import "C"
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"fmt"
 	"runtime"
 	"sort"
@@ -31,7 +31,7 @@ func (c *FAISSAccelerator) Initialize() error {
 
 	// 检测CPU硬件能力
 	caps := c.strategy.GetHardwareCapabilities()
-	log.Info("CPU加速器初始化: 检测到 %d 核心, AVX2: %v, AVX512: %v",
+	logger.Info("CPU加速器初始化: 检测到 %d 核心, AVX2: %v, AVX512: %v",
 		caps.CPUCores, caps.HasAVX2, caps.HasAVX512)
 
 	// 选择最佳计算策略
@@ -39,17 +39,17 @@ func (c *FAISSAccelerator) Initialize() error {
 
 	// 根据检测到的硬件能力设置最佳策略
 	if caps.HasAVX512 {
-		log.Info("启用 AVX512 加速")
+		logger.Info("启用 AVX512 加速")
 		c.currentStrategy = StrategyAVX512
 	} else if caps.HasAVX2 {
-		log.Info("启用 AVX2 加速")
+		logger.Info("启用 AVX2 加速")
 		c.currentStrategy = StrategyAVX2
 	} else {
-		log.Info("使用标准计算方法")
+		logger.Info("使用标准计算方法")
 		c.currentStrategy = StrategyStandard
 	}
 
-	log.Info("CPU加速器初始化完成，使用策略: %v", c.currentStrategy)
+	logger.Info("CPU加速器初始化完成，使用策略: %v", c.currentStrategy)
 	c.initialized = true
 	return nil
 }
@@ -280,7 +280,7 @@ func (c *FAISSAccelerator) Cleanup() error {
 	}
 
 	c.initialized = false
-	log.Info("CPU加速器资源已清理")
+	logger.Info("CPU加速器资源已清理")
 	return nil
 }
 
@@ -326,7 +326,7 @@ func (c *FAISSAccelerator) SetComputeStrategy(strategy ComputeStrategy) error {
 	}
 
 	c.currentStrategy = strategy
-	log.Info("计算策略已更新为: %v", strategy)
+	logger.Info("计算策略已更新为: %v", strategy)
 	return nil
 }
 

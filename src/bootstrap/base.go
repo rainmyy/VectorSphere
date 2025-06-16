@@ -3,7 +3,7 @@ package bootstrap
 import (
 	"VectorSphere/src/library/common"
 	confType "VectorSphere/src/library/confType"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/scheduler"
 	"VectorSphere/src/server"
 	"context"
@@ -115,11 +115,11 @@ func (t *EtcdReadyTask) Execute(ctx context.Context) error {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 	if t.connected {
-		log.Info("Etcd already connected.")
+		logger.Info("Etcd already connected.")
 		return nil
 	}
 
-	log.Info("Attempting to connect to Etcd...")
+	logger.Info("Attempting to connect to Etcd...")
 	cfg := t.appServer.config
 	if cfg == nil || len(cfg.Etcd.Endpoints) == 0 {
 		return fmt.Errorf("etcd endpoints not configured")
@@ -130,12 +130,12 @@ func (t *EtcdReadyTask) Execute(ctx context.Context) error {
 		DialTimeout: 5 * time.Second,
 	})
 	if err != nil {
-		log.Error("Failed to connect to Etcd: %v", err)
+		logger.Error("Failed to connect to Etcd: %v", err)
 		return err
 	}
 	t.appServer.etcdCli = cli
 	t.connected = true
-	log.Info("Successfully connected to Etcd.")
+	logger.Info("Successfully connected to Etcd.")
 	return nil
 }
 
@@ -166,7 +166,7 @@ func (t *MasterServiceDiscoveryReadyTask) Execute(ctx context.Context) error {
 	// 这个任务实际上不做任何操作，它的存在是为了作为依赖项
 	// MasterService 启动后，其他服务可以依赖此任务来确保 Master 已就绪
 	// 实际的发现逻辑在 SlaveService 的 watchMaster 中
-	log.Info("MasterService is considered ready for discovery.")
+	logger.Info("MasterService is considered ready for discovery.")
 	// 可以在这里添加一个检查，例如查询 etcd 中 master 的注册信息
 	// 但为了简化，我们假设 MasterService.Start() 成功即代表可发现
 	// 检查 MasterService 是否真的成为了 Master
@@ -181,11 +181,11 @@ func (t *MasterServiceDiscoveryReadyTask) Execute(ctx context.Context) error {
 			case <-ctx.Done():
 				return ctx.Err()
 			case <-timeout:
-				log.Warning("Timeout waiting for master election to complete for discovery readiness.")
+				logger.Warning("Timeout waiting for master election to complete for discovery readiness.")
 				return fmt.Errorf("master election did not complete in time for discovery readiness")
 			case <-checkInterval.C:
 				if t.appServer.masterService.IsMaster() { // 假设 MasterService 有 IsMaster() 方法
-					log.Info("MasterService confirmed as master and ready for discovery.")
+					logger.Info("MasterService confirmed as master and ready for discovery.")
 					return nil
 				}
 			}
@@ -245,7 +245,7 @@ func (app *AppServer) ConnectToMaster(masterAddr string) error {
 func (app *AppServer) RegisterService() {
 	err, config := app.ReadServiceConf()
 	if err != nil {
-		log.Error("read service conf failed, err:%v", err)
+		logger.Error("read service conf failed, err:%v", err)
 		return
 	}
 	var masterEndpoint []server.EndPoint
@@ -270,10 +270,10 @@ func (app *AppServer) RegisterService() {
 		masterServiceName := config.ServiceName
 		err := s.RegisterService(masterEndpoint, config.DefaultPort, masterServiceName)
 		if err != nil {
-			log.Error("Master注册失败:", err)
+			logger.Error("Master注册失败:", err)
 			return
 		}
-		log.Info("Master节点 %s 注册成功\n", masterServiceName)
+		logger.Info("Master节点 %s 注册成功\n", masterServiceName)
 		app.server = s
 	}
 
@@ -281,7 +281,7 @@ func (app *AppServer) RegisterService() {
 		sentinel := server.NewSentinel(sentinelEndpoint, int64(config.Heartbeat), 100, config.ServiceName, server.Slave)
 		err := sentinel.RegisterSentinel(int64(config.Heartbeat))
 		if err != nil {
-			log.Error("Sentinel注册失败:", err)
+			logger.Error("Sentinel注册失败:", err)
 			return
 		}
 
@@ -292,12 +292,12 @@ func (app *AppServer) RegisterService() {
 func (app *AppServer) DiscoverService() {
 	err, config := app.ReadServiceConf()
 	if err != nil {
-		log.Error("read service conf failed, err:%v", err)
+		logger.Error("read service conf failed, err:%v", err)
 		return
 	}
 
 	if config == nil || config.Endpoints == nil {
-		log.Error("endpoints is nil")
+		logger.Error("endpoints is nil")
 		return
 	}
 	var sentinelEndpoint []server.EndPoint
@@ -321,7 +321,7 @@ func (app *AppServer) DiscoverService() {
 		}
 
 		endpoints := app.sentinel.Hub.GetServiceEndpoints(config.ServiceName)
-		log.Info("Sentinel节点 %s 发现的master节点: %+v\n", config.ServiceName, endpoints)
+		logger.Info("Sentinel节点 %s 发现的master节点: %+v\n", config.ServiceName, endpoints)
 	}
 	//for name, ep := range config.Endpoints {
 	//	if !ep.IsMaster {
@@ -389,7 +389,7 @@ func (app *AppServer) Setup() error {
 			return fmt.Errorf("failed to submit master_service_discovery_ready task: %w", err)
 		}
 	} else {
-		log.Info("Master service is not enabled in the configuration.")
+		logger.Info("Master service is not enabled in the configuration.")
 	}
 
 	// 3. 初始化并添加 Slave 服务任务 (如果配置了 Slaves)
@@ -411,24 +411,24 @@ func (app *AppServer) Setup() error {
 				slavePort,
 			)
 			if err != nil {
-				log.Error("Failed to create slave service for port %d: %v", slavePort, err)
+				logger.Error("Failed to create slave service for port %d: %v", slavePort, err)
 				continue // 跳过这个 slave，继续其他的
 			}
 			sService.SetTaskPoolManager(sharedTaskManager) // 设置共享的 manager
 			// 初始化 SlaveService 的 Index 等组件
 			// 参数应从 slaveCfg 或全局配置中获取
 			if err := sService.Init(100000, 0, slaveCfg.DataDir, nil, nil, nil); err != nil {
-				log.Error("Failed to initialize slave service components for port %d: %v", slavePort, err)
+				logger.Error("Failed to initialize slave service components for port %d: %v", slavePort, err)
 				continue
 			}
 
 			app.slaveServices = append(app.slaveServices, sService)
 			if err := app.taskPool.Submit(sService.ToPoolTask()); err != nil {
-				log.Error("Failed to submit slave_service task for port %d: %v", slavePort, err)
+				logger.Error("Failed to submit slave_service task for port %d: %v", slavePort, err)
 				// 根据策略决定是否返回错误并停止启动
 			}
 		} else {
-			log.Info("Slave service at index %d (port %d) is not enabled.", i, slaveCfg.Port)
+			logger.Info("Slave service at index %d (port %d) is not enabled.", i, slaveCfg.Port)
 		}
 	}
 
@@ -539,50 +539,50 @@ func (app *AppServer) Register() {
 
 // Start 启动应用，开始执行任务池中的任务
 func (app *AppServer) Start() {
-	log.Info("Starting application server and task pool...")
+	logger.Info("Starting application server and task pool...")
 	app.taskPool.Run()
 
 	// 等待所有任务完成或应用关闭信号
 	// PoolLib.Pool 的 Run() 是阻塞的，直到所有任务完成或池关闭
 	// 如果 Run() 是非阻塞的，你可能需要一个等待机制
-	log.Info("All tasks in the pool have been processed or pool is shutting down.")
+	logger.Info("All tasks in the pool have been processed or pool is shutting down.")
 }
 
 // Stop 停止应用，释放资源
 func (app *AppServer) Stop() {
-	log.Info("Stopping application server...")
+	logger.Info("Stopping application server...")
 	app.Cancel() // 发送关闭信号给所有使用 app.Ctx 的组件
 
 	// 关闭任务池
 	if app.taskPool != nil {
 		app.taskPool.Release() // PoolLib.Pool 的关闭方法
-		log.Info("Task pool released.")
+		logger.Info("Task pool released.")
 	}
 
 	// 显式停止 MasterService (如果存在且 RunnableService.Stop 未被任务池自动调用)
 	if app.masterService != nil {
 		if err := app.masterService.Stop(context.Background()); err != nil {
-			log.Warning("Error stopping master service: %v", err)
+			logger.Warning("Error stopping master service: %v", err)
 		}
 	}
 
 	// 显式停止 SlaveServices
 	for _, slave := range app.slaveServices {
 		if err := slave.Stop(context.Background()); err != nil {
-			log.Warning("Error stopping slave service %s: %v", slave.GetName(), err)
+			logger.Warning("Error stopping slave service %s: %v", slave.GetName(), err)
 		}
 	}
 
 	// 关闭 etcd 客户端
 	if app.etcdCli != nil {
 		if err := app.etcdCli.Close(); err != nil {
-			log.Warning("Error closing etcd client: %v", err)
+			logger.Warning("Error closing etcd client: %v", err)
 		}
-		log.Info("Etcd client closed.")
+		logger.Info("Etcd client closed.")
 	}
 
 	app.mutex.Wait() // 等待所有可能的后台 goroutine 完成
-	log.Info("Application server stopped.")
+	logger.Info("Application server stopped.")
 }
 func GenInstance() *AppServer {
 	app := &AppServer{funcRegister: make(map[string]func())}

@@ -1,7 +1,7 @@
 package server
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/messages"
 	"context"
 	"encoding/json"
@@ -247,9 +247,9 @@ func (s *Sentinel) RegisterSentinel(ttl int64) error {
 		}
 		go func() {
 			for range ch {
-				log.Info("sentinel heartbeat success")
+				logger.Info("sentinel heartbeat success")
 			}
-			log.Warning("Etcd 连接中断，Sentinel 租约 ID: %d\n", s.leaseId)
+			logger.Warning("Etcd 连接中断，Sentinel 租约 ID: %d\n", s.leaseId)
 		}()
 		break
 	}
@@ -266,10 +266,10 @@ func (s *Sentinel) WatchServiceChanges() {
 				switch ev.Type {
 				case clientv3.EventTypePut:
 					// 有新的服务节点注册
-					log.Info("新的服务节点注册: %s\n", string(ev.Kv.Key))
+					logger.Info("新的服务节点注册: %s\n", string(ev.Kv.Key))
 				case clientv3.EventTypeDelete:
 					// 有服务节点注销
-					log.Info("服务节点注销: %s\n", string(ev.Kv.Key))
+					logger.Info("服务节点注销: %s\n", string(ev.Kv.Key))
 				}
 			}
 		}
@@ -323,7 +323,7 @@ func (s *Sentinel) StartMasterServer(port int) {
 	mux.Handle("/lb_switch", s.authMiddleware(http.HandlerFunc(s.handleLBSwitch)))
 	mux.Handle("/gray_route", s.authMiddleware(http.HandlerFunc(s.handleGrayRoute)))
 	go s.HealthCheckLoop()
-	log.Info("Master HTTP server started on :%d", port)
+	logger.Info("Master HTTP server started on :%d", port)
 	err := http.ListenAndServe(fmt.Sprintf(":%d", port), mux)
 	if err != nil {
 		return
@@ -524,7 +524,7 @@ func (s *Sentinel) ElectMaster() {
 }
 
 func (s *Sentinel) sendMasterNotify(msg string) {
-	log.Info("Master notify: %s", msg)
+	logger.Info("Master notify: %s", msg)
 	// 可扩展为Webhook/邮件/钉钉等
 }
 
@@ -552,7 +552,7 @@ func RunCLI() {
 		signalChan := make(chan os.Signal, 1)
 		signal.Notify(signalChan, os.Interrupt)
 		<-signalChan
-		log.Info("Master shutdown")
+		logger.Info("Master shutdown")
 	} else {
 		sentinel := NewSentinel(nil, 0, 0, "service", Slave)
 		sentinel.Balancer = balancer
@@ -566,6 +566,6 @@ func StartGRPCServer(port int) {
 	lis, _ := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	grpcServer := grpc.NewServer()
 	RegisterIndexServiceServer(grpcServer, &Sentinel{})
-	log.Info("gRPC server started on :%d", port)
+	logger.Info("gRPC server started on :%d", port)
 	grpcServer.Serve(lis)
 }

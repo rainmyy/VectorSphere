@@ -2,7 +2,7 @@ package hash
 
 import (
 	"VectorSphere/src/library/enum"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"fmt"
 	"math"
 	"math/rand"
@@ -60,7 +60,7 @@ func NewMinHash(numHashes int) *MinHash {
 // Hash 计算 MinHash 值
 func (mh *MinHash) Hash(vector []float64) (uint64, error) {
 	if len(vector) == 0 {
-		log.Warning("Empty vector provided for MinHash computation")
+		logger.Warning("Empty vector provided for MinHash computation")
 		return 0, fmt.Errorf("empty vector provided for MinHash computation")
 	}
 
@@ -75,7 +75,7 @@ func (mh *MinHash) Hash(vector []float64) (uint64, error) {
 	}
 
 	if len(features) == 0 {
-		log.Warning("No non-zero features found in vector")
+		logger.Warning("No non-zero features found in vector")
 		return 0, fmt.Errorf("no features found in vector")
 	}
 

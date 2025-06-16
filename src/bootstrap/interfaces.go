@@ -1,7 +1,7 @@
 package bootstrap
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	PoolLib "VectorSphere/src/library/pool"
 	scheduler2 "VectorSphere/src/scheduler"
 	"context"
@@ -68,19 +68,19 @@ func (st *ServiceTask) GetTimeout() time.Duration {
 
 // OnError 是一个可选方法，用于处理任务执行错误
 func (st *ServiceTask) OnError(err error) {
-	log.Error("Task %s failed: %v", st.GetName(), err)
+	logger.Error("Task %s failed: %v", st.GetName(), err)
 	// 这里可以添加更复杂的错误处理逻辑，例如通知、回滚等
 }
 
 // ToPoolTask 将 ServiceTask 转换为 PoolLib.Queue
 func (st *ServiceTask) ToPoolTask() *PoolLib.Queue {
 	startWrapper := func() error {
-		log.Info("ServiceTask for %s is about to run Execute()", st.GetName())
+		logger.Info("ServiceTask for %s is about to run Execute()", st.GetName())
 		// 创建一个新的上下文，或者使用背景上下文
 		ctx := context.Background()
 		err := st.Execute(ctx)
 		if err != nil {
-			log.Error("ServiceTask for %s failed to Execute: %v", st.GetName(), err)
+			logger.Error("ServiceTask for %s failed to Execute: %v", st.GetName(), err)
 			// 调用错误处理方法
 			st.OnError(err)
 		}

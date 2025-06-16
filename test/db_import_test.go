@@ -1,7 +1,7 @@
 package test
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/library/tree"
 	"VectorSphere/src/messages"
 	"VectorSphere/src/search"
@@ -58,7 +58,7 @@ func test_import() {
 	// 手动执行增量导入
 	err := importService.ImportTableIncremental("products", "SELECT * FROM products")
 	if err != nil {
-		log.Error("增量导入失败: %v", err)
+		logger.Error("增量导入失败: %v", err)
 	}
 
 	// 获取进度报告
@@ -83,9 +83,9 @@ func test_1() {
 	_, err := searchService.GetTable(tableName)
 	if err != nil {
 		// 表不存在，创建新表
-		log.Info("创建新表: %s", tableName)
+		logger.Info("创建新表: %s", tableName)
 		if err := searchService.CreateTable(tableName, "./vector_db/"+tableName, 10, 10); err != nil {
-			log.Fatal("创建表失败: %v", err)
+			logger.Fatal("创建表失败: %v", err)
 		}
 	}
 
@@ -115,9 +115,9 @@ func test_1() {
 		FROM products WHERE is_active = 1`
 
 	// 执行导入
-	log.Info("开始导入数据到表: %s", tableName)
+	logger.Info("开始导入数据到表: %s", tableName)
 	if err := importService.ImportTable(tableName, sqlQuery); err != nil {
-		log.Fatal("导入数据失败: %v", err)
+		logger.Fatal("导入数据失败: %v", err)
 	}
 
 	// 导入多个表
@@ -127,8 +127,8 @@ func test_1() {
 	}
 
 	if err := importService.ImportFromMultipleTables(tableMapping); err != nil {
-		log.Fatal("导入多表数据失败: %v", err)
+		logger.Fatal("导入多表数据失败: %v", err)
 	}
 
-	log.Info("数据导入完成")
+	logger.Info("数据导入完成")
 }

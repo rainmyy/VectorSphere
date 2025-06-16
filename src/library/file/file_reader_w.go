@@ -3,7 +3,7 @@
 package file
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"fmt"
 	"syscall"
 	"unsafe"
@@ -22,7 +22,7 @@ func MmapFile(fileName string, size int) ([]byte, error) {
 	defer func(handle syscall.Handle) {
 		err := syscall.CloseHandle(handle)
 		if err != nil {
-			log.Error("close handle error:", err)
+			logger.Error("close handle error:", err)
 		}
 	}(hFile)
 
@@ -39,7 +39,7 @@ func MmapFile(fileName string, size int) ([]byte, error) {
 	defer func(handle syscall.Handle) {
 		err := syscall.CloseHandle(handle)
 		if err != nil {
-			log.Error("close handle error:", err)
+			logger.Error("close handle error:", err)
 		}
 	}(h)
 
@@ -52,6 +52,6 @@ func MunmapFile(data []byte) {
 	addr := (uintptr)(unsafe.Pointer(&data[0]))
 	err := syscall.UnmapViewOfFile(addr)
 	if err != nil {
-		log.Error("UnmapViewOfFile failed:", err)
+		logger.Error("UnmapViewOfFile failed:", err)
 	}
 }

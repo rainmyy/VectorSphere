@@ -4,7 +4,7 @@ import (
 	db2 "VectorSphere/src/db"
 	"VectorSphere/src/index"
 	"VectorSphere/src/library/entity"
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"VectorSphere/src/vector"
 	"context"
 	"crypto/sha256"
@@ -547,7 +547,7 @@ func (s *AnalysisService) HandleAnalyzeWS(w http.ResponseWriter, r *http.Request
 	defer func(conn *websocket.Conn) {
 		err := conn.Close()
 		if err != nil {
-			log.Error("close conn has error:", err)
+			logger.Error("close conn has error:", err)
 		}
 	}(conn)
 
@@ -592,7 +592,7 @@ func (s *AnalysisService) HandleAnalyzeWS(w http.ResponseWriter, r *http.Request
 				chunk := answer[i:end]
 				err := conn.WriteJSON(map[string]string{"delta": chunk})
 				if err != nil {
-					log.Error("write json failed:", err)
+					logger.Error("write json failed:", err)
 				}
 				time.Sleep(50 * time.Millisecond) // 模拟流式传输的延迟
 			}
@@ -611,7 +611,7 @@ func (s *AnalysisService) HandleAnalyzeWS(w http.ResponseWriter, r *http.Request
 					case <-ctx.Done():
 						err := conn.WriteJSON(map[string]string{"error": "timeout getting embedding"})
 						if err != nil {
-							log.Error("write json failed:", err)
+							logger.Error("write json failed:", err)
 						}
 						cancel()
 						continue
@@ -630,7 +630,7 @@ func (s *AnalysisService) HandleAnalyzeWS(w http.ResponseWriter, r *http.Request
 				if embeddingErr != nil {
 					err := conn.WriteJSON(map[string]string{"error": embeddingErr.Error()})
 					if err != nil {
-						log.Error("write json failed:", err)
+						logger.Error("write json failed:", err)
 					}
 					cancel()
 					continue
@@ -642,7 +642,7 @@ func (s *AnalysisService) HandleAnalyzeWS(w http.ResponseWriter, r *http.Request
 			if err != nil {
 				conn.WriteJSON(map[string]string{"error": err.Error()})
 				if err != nil {
-					log.Error("write json failed:", err)
+					logger.Error("write json failed:", err)
 				}
 				cancel()
 				continue
@@ -703,7 +703,7 @@ func (s *AnalysisService) HandleAnalyzeWS(w http.ResponseWriter, r *http.Request
 				answer += chunk
 				err := conn.WriteJSON(map[string]string{"delta": chunk})
 				if err != nil {
-					log.Error("write json failed:", err)
+					logger.Error("write json failed:", err)
 				}
 			}
 
@@ -730,7 +730,7 @@ func (s *AnalysisService) HandleAnalyzeWS(w http.ResponseWriter, r *http.Request
 		if err != nil {
 			err := conn.WriteJSON(map[string]string{"error": "Failed to update session: " + err.Error()})
 			if err != nil {
-				log.Error("write json has error:", err)
+				logger.Error("write json has error:", err)
 			}
 		}
 
@@ -741,7 +741,7 @@ func (s *AnalysisService) HandleAnalyzeWS(w http.ResponseWriter, r *http.Request
 			"cached":  useCache,
 		})
 		if err != nil {
-			log.Error("write json has error:", err)
+			logger.Error("write json has error:", err)
 		}
 
 		// 取消上下文
@@ -789,7 +789,7 @@ func (s *AnalysisService) HandleAnalyze(w http.ResponseWriter, r *http.Request) 
 		"history": newHistory,
 	})
 	if err != nil {
-		log.Error("new json has error:", err)
+		logger.Error("new json has error:", err)
 	}
 }
 

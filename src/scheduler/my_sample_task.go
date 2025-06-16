@@ -1,7 +1,7 @@
 package scheduler
 
 import (
-	"VectorSphere/src/library/log"
+	"VectorSphere/src/library/logger"
 	"time"
 )
 
@@ -40,7 +40,7 @@ func (t *MySampleTask) SetTarget(target string) {
 }
 
 func (t *MySampleTask) Run() error {
-	log.Info("任务 '%s' 正在运行... Timestamp: %s", t.Name, time.Now().String())
+	logger.Info("任务 '%s' 正在运行... Timestamp: %s", t.Name, time.Now().String())
 	// 你的任务逻辑
 	return nil
 }
@@ -52,11 +52,11 @@ func (t *MySampleTask) GetCronSpec() string {
 }
 
 func (t *MySampleTask) Init() error {
-	log.Info("任务 '%s' 正在初始化...", t.Name)
+	logger.Info("任务 '%s' 正在初始化...", t.Name)
 	return nil
 }
 
 func (t *MySampleTask) Stop() error {
-	log.Info("任务 '%s' 正在停止...", t.Name)
+	logger.Info("任务 '%s' 正在停止...", t.Name)
 	return nil
 }
