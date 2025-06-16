@@ -448,11 +448,11 @@ func (gw *APIGateway) handleCount(w http.ResponseWriter, r *http.Request) {
 	slaveAddrs := gw.serviceDiscovery.GetHealthySlaveAddresses()
 	totalCount := 0
 
-	for _, addr := range slaveAddrs {
-		// 这里需要实现获取slave文档数量的逻辑
-		// 暂时返回模拟数据
-		totalCount += 1000 // 模拟数据
-	}
+	//for _, addr := range slaveAddrs {
+	//	// 这里需要实现获取slave文档数量的逻辑
+	//	// 暂时返回模拟数据
+	//	totalCount += 1000 // 模拟数据
+	//}
 
 	response := map[string]interface{}{
 		"total_count": totalCount,

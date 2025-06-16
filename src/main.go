@@ -17,7 +17,7 @@ import (
 func main() {
 	// 解析命令行参数
 	configPath := flag.String("config", "config.yaml", "配置文件路径")
-	nodeType := flag.String("mode", "slave", "节点类型 (master/slave)")
+	nodeType := flag.String("mode", "master", "节点类型 (master/slave)")
 	port := flag.Int("port", 8080, "服务端口")
 	httpPort := flag.Int("http-port", 8081, "HTTP服务端口")
 	etcdEndpoints := flag.String("etcd", "localhost:2379", "etcd端点，多个端点用逗号分隔")
@@ -115,12 +115,14 @@ func main() {
 		Etcd: distributed.EtcdConfig{
 			Endpoints: config.EtcdEndpoints,
 		},
-		SchedulerWorkerCount: 10,
-		HttpPort:             config.HttpPort,
-		TaskTimeout:          30,
-		HealthCheckInterval:  int(config.HealthCheckInterval.Seconds()),
-		Endpoints:            make(map[string]server.EndPoint),
-		DataDir:              "data",
+		SchedulerWorkerCount:  10,
+		HttpPort:              config.HttpPort,
+		TaskTimeout:           30,
+		HealthCheckInterval:   int(config.HealthCheckInterval.Seconds()),
+		Endpoints:             make(map[string]server.EndPoint),
+		DataDir:               "data",
+		LoadBalancerConfig:    loadBalancer,
+		EnhancedConfigManager: configManager,
 	}
 
 	// 创建分布式管理器

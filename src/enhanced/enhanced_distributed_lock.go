@@ -239,7 +239,7 @@ func (edl *EnhancedDistributedLock) ReleaseLock(ctx context.Context, lockID stri
 	edl.updateLockStats(lockKey, "release", time.Since(lockInfo.AcquiredAt))
 
 	// 更新死锁检测器
-	edl.deadlockDetector.removeLockOwner(lockKey)
+	edl.deadlockDetector.RemoveLockOwner(lockKey)
 
 	// 处理等待队列
 	go edl.processWaitingQueue(lockKey)

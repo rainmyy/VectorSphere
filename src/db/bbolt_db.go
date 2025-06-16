@@ -3,7 +3,7 @@ package db
 import (
 	"errors"
 	"fmt"
-	"github.com/coreos/bbolt"
+	"go.etcd.io/bbolt"
 	"sync/atomic"
 	"time"
 )

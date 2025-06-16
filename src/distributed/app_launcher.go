@@ -69,7 +69,7 @@ func (al *AppLauncher) Start() error {
 	}
 
 	// 6. 创建通信服务
-	al.communicationSvc = NewCommunicationService(time.Duration(config.TaskTimeout) * time.Second)
+	al.communicationSvc = NewCommunicationService(al.distributedManager.GetEtcdClient(), "test")
 
 	// 7. 启动API网关（仅master节点）
 	if err := al.startAPIGateway(); err != nil {
