@@ -98,7 +98,7 @@ endif
 ifeq ($(DETECTED_OS),Windows)
 build: faiss_wrapper
 	@echo "正在为 Windows 编译 Go 程序..."
-	$(SET_ENV) CGO_ENABLED=1 && go build $(BUILD_TAGS) -o VectorSphere$(EXE_EXT) .
+	$(SET_ENV) CGO_ENABLED=1 && go build ./src $(BUILD_TAGS) -o VectorSphere$(EXE_EXT) .
 	@echo "编译完成: VectorSphere$(EXE_EXT)"
 else
 build: faiss_wrapper
@@ -106,7 +106,7 @@ build: faiss_wrapper
 	@echo "LD_LIBRARY_PATH: $(CUDA_PATH)/lib64:$(FAISS_PATH)/lib:$$LD_LIBRARY_PATH"
 	$(SET_ENV) CGO_ENABLED=1 && \
 	$(SET_ENV) LD_LIBRARY_PATH=$(CUDA_PATH)/lib64:$(FAISS_PATH)/lib:$$LD_LIBRARY_PATH && \
-	go build $(BUILD_TAGS) -o VectorSphere$(EXE_EXT) .
+	go build ./src $(BUILD_TAGS) -o VectorSphere$(EXE_EXT) .
 	@echo "编译完成: VectorSphere$(EXE_EXT)"
 endif
 

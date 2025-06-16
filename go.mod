@@ -2,8 +2,6 @@ module VectorSphere
 
 go 1.24.1
 
-toolchain go1.24.4
-
 require (
 	github.com/PuerkitoBio/goquery v1.10.3
 	github.com/cenkalti/backoff/v4 v4.3.0
