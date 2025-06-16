@@ -2302,7 +2302,7 @@ func (db *VectorDB) GetVectorForTextWithCache(text string, vectorizedType int) (
 	// 检查MultiCache
 	if db.MultiCache != nil {
 		if cachedVector, found := db.MultiCache.Get(cacheKey); found {
-			return cachedVector, nil
+			return cachedVector.([]float64), nil
 		}
 	}
 
@@ -4568,18 +4568,35 @@ func (db *VectorDB) CachedSearch(query []float64, k int) ([]entity.Result, error
 
 	// 尝试从缓存获取
 	if db.MultiCache != nil {
-		if cachedIDs, found := db.MultiCache.Get(queryKey); found {
-			// 缓存命中，转换为 Result 格式
-			results := make([]entity.Result, len(cachedIDs))
-			for i, id := range cachedIDs {
-				// 重新计算相似度（或从缓存中获取）
-				similarity, _ := db.CalculateCosineSimilarity(id, query)
-				results[i] = entity.Result{
-					Id:         id,
-					Similarity: similarity,
+		if cachedData, found := db.MultiCache.Get(queryKey); found {
+			// 缓存命中，需要进行类型断言
+			if cachedIDs, ok := cachedData.([]string); ok {
+				// 类型断言成功，转换为 Result 格式
+				results := make([]entity.Result, len(cachedIDs))
+				for i, id := range cachedIDs {
+					// 重新计算相似度（或从缓存中获取）
+					similarity, err := db.CalculateCosineSimilarity(id, query)
+					if err != nil {
+						log.Warning("计算向量 %s 的相似度失败: %v", id, err)
+						continue
+					}
+					results[i] = entity.Result{
+						Id:         id,
+						Similarity: similarity,
+					}
 				}
+				// 过滤掉可能的空结果（由于相似度计算失败）
+				validResults := make([]entity.Result, 0, len(results))
+				for _, result := range results {
+					if result.Id != "" {
+						validResults = append(validResults, result)
+					}
+				}
+				return validResults, nil
+			} else {
+				log.Warning("缓存数据类型断言失败，预期[]string，实际%T", cachedData)
+				// 类型断言失败，继续执行搜索
 			}
-			return results, nil
 		}
 	}
 
