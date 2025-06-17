@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	_ "strconv"
 	"sync"
 	"time"
@@ -120,6 +122,125 @@ func (gw *APIGateway) registerRoutes(mux *http.ServeMux) {
 
 	// 系统管理接口
 	mux.Handle("/api/system/info", gw.registerFunc(http.MethodGet, gw.handleSystemInfo))
+
+	// 分布式文件存储
+	mux.Handle("/api/table/backup", gw.registerFunc(http.MethodPost, gw.handleBackupTable))
+	mux.Handle("/api/table/restore", gw.registerFunc(http.MethodPost, gw.handleRestoreTable))
+	mux.Handle("/api/table/backups", gw.registerFunc(http.MethodGet, gw.handleListBackups))
+}
+
+// handleBackupTable 处理表备份请求
+func (gw *APIGateway) handleBackupTable(w http.ResponseWriter, r *http.Request) {
+	// 解析请求
+	var req struct {
+		TableName string `json:"table_name"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("解析请求失败: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if req.TableName == "" {
+		http.Error(w, "表名不能为空", http.StatusBadRequest)
+		return
+	}
+
+	// 获取分布式文件服务
+	fileService, ok := gw.distributedManager.GetService("distributed_file_service").(*DistributedFileService)
+	if !ok {
+		http.Error(w, "分布式文件服务不可用", http.StatusInternalServerError)
+		return
+	}
+
+	// 获取表目录
+	tableDir := filepath.Join(gw.distributedManager.GetConfig().DataDir, "tables", req.TableName)
+	if _, err := os.Stat(tableDir); os.IsNotExist(err) {
+		http.Error(w, fmt.Sprintf("表 %s 不存在", req.TableName), http.StatusNotFound)
+		return
+	}
+
+	// 备份表
+	if err := fileService.StoreVectorDBTable(req.TableName, tableDir); err != nil {
+		http.Error(w, fmt.Sprintf("备份表失败: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// 返回成功
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("表 %s 备份成功", req.TableName),
+	})
+}
+
+// handleRestoreTable 处理表恢复请求
+func (gw *APIGateway) handleRestoreTable(w http.ResponseWriter, r *http.Request) {
+	// 解析请求
+	var req struct {
+		TableName string `json:"table_name"`
+		DestDir   string `json:"dest_dir,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, fmt.Sprintf("解析请求失败: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	if req.TableName == "" {
+		http.Error(w, "表名不能为空", http.StatusBadRequest)
+		return
+	}
+
+	// 获取分布式文件服务
+	fileService, ok := gw.distributedManager.GetService("distributed_file_service").(*DistributedFileService)
+	if !ok {
+		http.Error(w, "分布式文件服务不可用", http.StatusInternalServerError)
+		return
+	}
+
+	// 设置目标目录
+	destDir := req.DestDir
+	if destDir == "" {
+		destDir = filepath.Join(gw.distributedManager.GetConfig().DataDir, "tables", req.TableName)
+	}
+
+	// 恢复表
+	if err := fileService.RestoreVectorDBTable(req.TableName, destDir); err != nil {
+		http.Error(w, fmt.Sprintf("恢复表失败: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// 返回成功
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("表 %s 恢复成功到 %s", req.TableName, destDir),
+	})
+}
+
+// handleListBackups 处理列出备份请求
+func (gw *APIGateway) handleListBackups(w http.ResponseWriter, r *http.Request) {
+	// 获取分布式文件服务
+	fileService, ok := gw.distributedManager.GetService("distributed_file_service").(*DistributedFileService)
+	if !ok {
+		http.Error(w, "分布式文件服务不可用", http.StatusInternalServerError)
+		return
+	}
+
+	// 获取所有备份
+	tables, err := fileService.ListVectorDBTables()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("获取备份列表失败: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// 返回备份列表
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"tables":  tables,
+	})
 }
 
 // 中间件

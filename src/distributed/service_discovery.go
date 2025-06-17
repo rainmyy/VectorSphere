@@ -353,6 +353,19 @@ func (sd *ServiceDiscovery) GetHealthySlaveAddresses() []string {
 	return addresses
 }
 
+// GetSlaveInfo 获取指定slave节点的信息
+func (sd *ServiceDiscovery) GetSlaveInfo(nodeID string) (*ServiceInfo, error) {
+	sd.mutex.RLock()
+	defer sd.mutex.RUnlock()
+
+	info, exists := sd.slaveInfos[nodeID]
+	if !exists {
+		return nil, fmt.Errorf("slave节点 %s 不存在", nodeID)
+	}
+
+	return info, nil
+}
+
 // UpdateServiceStatus 更新服务状态
 func (sd *ServiceDiscovery) UpdateServiceStatus(ctx context.Context, nodeType, nodeID, status string) error {
 	var key string

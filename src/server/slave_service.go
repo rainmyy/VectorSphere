@@ -52,6 +52,9 @@ type SlaveService struct {
 	// 多表搜索服务
 	multiTableService *search.MultiTableSearchService
 
+	// 通信服务
+	communicationService interface{}
+
 	appCtx        context.Context // 用于传递应用的全局上下文
 	etcdEndpoints []EndPoint      // etcd 端点
 	port          int             // 服务端口
@@ -118,6 +121,11 @@ func NewSlaveService(appCtx context.Context, endpoints []EndPoint, serviceName s
 		etcdEndpoints: endpoints, // 保存 etcdEndpoints
 		port:          port,      // 保存 port
 	}, nil
+}
+
+// SetCommunicationService 设置通信服务
+func (s *SlaveService) SetCommunicationService(communicationService interface{}) {
+	s.communicationService = communicationService
 }
 
 // Init 初始化索引服务

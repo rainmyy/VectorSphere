@@ -67,10 +67,14 @@ type DistributedManager struct {
 	localhost     string
 	taskPool      *pool.Pool
 	taskScheduler *scheduler.TaskPoolManager
+	services      map[string]interface{} // 服务名称 -> 服务实例
 
 	// 节点服务
-	masterService *server.MasterService
-	slaveService  *server.SlaveService
+	masterService    *server.MasterService
+	slaveService     *server.SlaveService
+	serviceDiscovery *ServiceDiscovery
+	communicationSvc *CommunicationService
+	apiGateway       *APIGateway
 
 	// 状态管理
 	isMaster  bool
@@ -100,6 +104,7 @@ func NewDistributedManager(config *DistributedConfig) (*DistributedManager, erro
 		cancel:        cancel,
 		localhost:     localhost,
 		taskScheduler: taskScheduler,
+		services:      make(map[string]interface{}),
 		stopCh:        make(chan struct{}),
 	}
 
@@ -108,35 +113,27 @@ func NewDistributedManager(config *DistributedConfig) (*DistributedManager, erro
 
 // Start 启动分布式管理器
 func (dm *DistributedManager) Start() error {
-	dm.mutex.Lock()
-	defer dm.mutex.Unlock()
-
-	if dm.isRunning {
-		return fmt.Errorf("distributed manager is already running")
-	}
-
-	logger.Info("Starting distributed manager...")
-
-	// 1. 初始化etcd连接
+	// 初始化etcd客户端
 	if err := dm.initEtcdClient(); err != nil {
 		return fmt.Errorf("初始化etcd客户端失败: %v", err)
 	}
 
-	// 2. 创建session和election
+	// 初始化leader选举
 	if err := dm.initLeaderElection(); err != nil {
 		return fmt.Errorf("初始化leader选举失败: %v", err)
 	}
 
-	// 3. 启动leader选举
-	go dm.runLeaderElection()
-
-	// 4. 根据配置启动对应的服务
+	// 启动服务
 	if err := dm.startServices(); err != nil {
 		return fmt.Errorf("启动服务失败: %v", err)
 	}
 
+	// 如果配置为自动选举，启动leader选举
+	if dm.config.NodeType != MasterNode && dm.config.NodeType != SlaveNode {
+		go dm.runLeaderElection()
+	}
+
 	dm.isRunning = true
-	logger.Info("Distributed manager started successfully")
 	return nil
 }
 
@@ -273,7 +270,7 @@ func (dm *DistributedManager) onBecomeLeader() {
 
 	// 启动master服务
 	if dm.masterService == nil {
-		if err := dm.startMasterService(); err != nil {
+		if err := dm.startMasterService(dm.communicationSvc); err != nil {
 			logger.Error("启动master服务失败: %v", err)
 		}
 	}
@@ -305,7 +302,7 @@ func (dm *DistributedManager) onLoseLeader() {
 
 	// 启动slave服务
 	if dm.slaveService == nil {
-		if err := dm.startSlaveService(); err != nil {
+		if err := dm.startSlaveService(dm.communicationSvc); err != nil {
 			logger.Error("启动slave服务失败: %v", err)
 		}
 	}
@@ -313,20 +310,33 @@ func (dm *DistributedManager) onLoseLeader() {
 
 // startServices 启动服务
 func (dm *DistributedManager) startServices() error {
-	// 根据配置的节点类型启动对应服务
-	switch dm.config.NodeType {
-	case MasterNode:
-		return dm.startMasterService()
-	case SlaveNode:
-		return dm.startSlaveService()
-	default:
-		// 默认启动slave服务，等待选举结果
-		return dm.startSlaveService()
+	// 创建服务发现
+	dm.serviceDiscovery = NewServiceDiscovery(dm.etcdClient, dm.config.ServiceName)
+
+	// 创建通信服务
+	dm.communicationSvc = NewCommunicationService(dm.etcdClient, dm.config.ServiceName)
+
+	// 创建分布式文件服务
+	distributedFileService := NewDistributedFileService(dm, dm.serviceDiscovery, dm.communicationSvc, dm.config.DataDir)
+	if err := distributedFileService.Start(); err != nil {
+		return fmt.Errorf("启动分布式文件服务失败: %v", err)
 	}
+	// 注册分布式文件服务
+	dm.RegisterService("distributed_file_service", distributedFileService)
+
+	// 根据节点类型启动相应的服务
+	if dm.config.NodeType == MasterNode {
+		return dm.startMasterService(dm.communicationSvc)
+	} else if dm.config.NodeType == SlaveNode {
+		return dm.startSlaveService(dm.communicationSvc)
+	}
+
+	// 默认启动slave服务
+	return dm.startSlaveService(dm.communicationSvc)
 }
 
 // startMasterService 启动master服务
-func (dm *DistributedManager) startMasterService() error {
+func (dm *DistributedManager) startMasterService(communicationSvc *CommunicationService) error {
 	logger.Info("Starting master service...")
 
 	// 转换endpoints
@@ -348,6 +358,9 @@ func (dm *DistributedManager) startMasterService() error {
 		return fmt.Errorf("创建master服务失败: %v", err)
 	}
 
+	// 设置通信服务
+	masterService.SetCommunicationService(communicationSvc)
+
 	if err := masterService.Start(dm.ctx); err != nil {
 		return fmt.Errorf("启动master服务失败: %v", err)
 	}
@@ -358,7 +371,7 @@ func (dm *DistributedManager) startMasterService() error {
 }
 
 // startSlaveService 启动slave服务
-func (dm *DistributedManager) startSlaveService() error {
+func (dm *DistributedManager) startSlaveService(communicationSvc *CommunicationService) error {
 	logger.Info("Starting slave service...")
 
 	// 转换endpoints
@@ -376,6 +389,9 @@ func (dm *DistributedManager) startSlaveService() error {
 	if err != nil {
 		return fmt.Errorf("创建slave服务失败: %v", err)
 	}
+
+	// 设置通信服务
+	slaveService.SetCommunicationService(communicationSvc)
 
 	if err := slaveService.Start(dm.ctx); err != nil {
 		return fmt.Errorf("启动slave服务失败: %v", err)
@@ -410,4 +426,23 @@ func (dm *DistributedManager) GetSlaveService() *server.SlaveService {
 // GetEtcdClient 获取etcd客户端
 func (dm *DistributedManager) GetEtcdClient() *clientv3.Client {
 	return dm.etcdClient
+}
+
+// GetService 获取服务实例
+func (dm *DistributedManager) GetService(serviceName string) interface{} {
+	dm.mutex.RLock()
+	defer dm.mutex.RUnlock()
+	return dm.services[serviceName]
+}
+
+// RegisterService 注册服务
+func (dm *DistributedManager) RegisterService(serviceName string, service interface{}) {
+	dm.mutex.Lock()
+	defer dm.mutex.Unlock()
+	dm.services[serviceName] = service
+}
+
+// GetConfig 获取配置
+func (dm *DistributedManager) GetConfig() *DistributedConfig {
+	return dm.config
 }

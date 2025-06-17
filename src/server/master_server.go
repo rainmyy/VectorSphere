@@ -83,6 +83,9 @@ type MasterService struct {
 	httpServer     *http.Server
 	httpServerPort int
 
+	// 通信服务
+	communicationService interface{}
+
 	appCtx context.Context // 用于传递应用的全局上下文
 }
 
@@ -189,6 +192,11 @@ func (m *MasterService) GetName() string {
 // GetDependencies 返回服务依赖的任务名称列表
 func (m *MasterService) GetDependencies() []string {
 	return []string{"etcd_ready"} // 依赖 etcd 连接成功
+}
+
+// SetCommunicationService 设置通信服务
+func (m *MasterService) SetCommunicationService(communicationService interface{}) {
+	m.communicationService = communicationService
 }
 
 // ScheduleTask 调度任务
