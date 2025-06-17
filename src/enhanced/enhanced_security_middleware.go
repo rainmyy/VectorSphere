@@ -1,7 +1,8 @@
-package server
+package enhanced
 
 import (
 	"VectorSphere/src/security"
+	"VectorSphere/src/server"
 	"context"
 	"fmt"
 	"github.com/sony/gobreaker"
@@ -113,14 +114,14 @@ func setSecurityHeaders(w http.ResponseWriter) {
 }
 
 // LoadBalancingMiddleware 负载均衡中间件
-func LoadBalancingMiddleware(balancer Balancer) func(http.Handler) http.Handler {
+func LoadBalancingMiddleware(balancer server.Balancer) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// 获取客户端IP用于源IP哈希
 			clientIP := getClientIP(r)
 
 			// 如果是源IP哈希负载均衡器，传递客户端IP
-			if sipBalancer, ok := balancer.(*SourceIPHashBalancer); ok {
+			if sipBalancer, ok := balancer.(*server.SourceIPHashBalancer); ok {
 				endpoint := sipBalancer.TakeWithContext(clientIP)
 				// 将选中的端点信息添加到请求头
 				r.Header.Set("X-Target-Endpoint", fmt.Sprintf("%s:%d", endpoint.Ip, endpoint.Port))
@@ -144,13 +145,13 @@ func LoadBalancingMiddleware(balancer Balancer) func(http.Handler) http.Handler 
 			responseTime := time.Since(startTime)
 
 			// 如果是响应时间加权负载均衡器，记录响应时间
-			if rtBalancer, ok := balancer.(*ResponseTimeWeightedBalancer); ok {
+			if rtBalancer, ok := balancer.(*server.ResponseTimeWeightedBalancer); ok {
 				targetEndpoint := r.Header.Get("X-Target-Endpoint")
 				if targetEndpoint != "" {
 					parts := strings.Split(targetEndpoint, ":")
 					if len(parts) == 2 {
 						port, _ := strconv.Atoi(parts[1])
-						endpoint := EndPoint{Ip: parts[0], Port: port}
+						endpoint := server.EndPoint{Ip: parts[0], Port: port}
 						rtBalancer.RecordResponseTime(endpoint, responseTime)
 					}
 				}

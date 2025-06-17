@@ -81,32 +81,45 @@ func (gw *APIGateway) Stop(ctx context.Context) error {
 	return nil
 }
 
+func (gw *APIGateway) registerFunc(requestMethod string, handler func(http.ResponseWriter, *http.Request)) http.Handler {
+	fn := func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != requestMethod {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		handler(w, r)
+	}
+
+	httpHandle := gw.rateLimitMiddleware(http.HandlerFunc(fn))
+	return gw.authMiddleware(httpHandle)
+}
+
 // registerRoutes 注册路由
 func (gw *APIGateway) registerRoutes(mux *http.ServeMux) {
 	// 健康检查
 	mux.Handle("/health", gw.rateLimitMiddleware(http.HandlerFunc(gw.handleHealth)))
 
 	// 表管理接口
-	mux.Handle("/api/createTable", gw.authMiddleware(gw.rateLimitMiddleware(http.HandlerFunc(gw.handleCreateTable))))
-	mux.Handle("/api/deleteTable", gw.authMiddleware(gw.rateLimitMiddleware(http.HandlerFunc(gw.handleDeleteTable))))
+	mux.Handle("/api/createTable", gw.registerFunc(http.MethodPost, gw.handleCreateTable))
+	mux.Handle("/api/deleteTable", gw.registerFunc(http.MethodDelete, gw.handleDeleteTable))
 
 	// 文档管理接口
-	mux.Handle("/api/addDoc", gw.authMiddleware(gw.rateLimitMiddleware(http.HandlerFunc(gw.handleAddDocument))))
-	mux.Handle("/api/delDoc", gw.authMiddleware(gw.rateLimitMiddleware(http.HandlerFunc(gw.handleDeleteDocument))))
+	mux.Handle("/api/addDoc", gw.registerFunc(http.MethodPost, gw.handleAddDocument))
+	mux.Handle("/api/delDoc", gw.registerFunc(http.MethodDelete, gw.handleDeleteDocument))
 
 	// 搜索接口
-	mux.Handle("/api/search", gw.authMiddleware(gw.rateLimitMiddleware(http.HandlerFunc(gw.handleSearch))))
-	mux.Handle("/api/searchTable", gw.authMiddleware(gw.rateLimitMiddleware(http.HandlerFunc(gw.handleSearchTable))))
+	mux.Handle("/api/search", gw.registerFunc(http.MethodGet, gw.handleSearch))
+	mux.Handle("/api/searchTable", gw.registerFunc(http.MethodGet, gw.handleSearchTable))
 
 	// 统计接口
-	mux.Handle("/api/count", gw.authMiddleware(gw.rateLimitMiddleware(http.HandlerFunc(gw.handleCount))))
+	mux.Handle("/api/count", gw.registerFunc(http.MethodGet, gw.handleCount))
 
 	// 集群管理接口
-	mux.Handle("/api/cluster/status", gw.authMiddleware(http.HandlerFunc(gw.handleClusterStatus)))
-	mux.Handle("/api/cluster/slaves", gw.authMiddleware(http.HandlerFunc(gw.handleSlaveList)))
+	mux.Handle("/api/cluster/status", gw.registerFunc(http.MethodGet, gw.handleClusterStatus))
+	mux.Handle("/api/cluster/slaves", gw.registerFunc(http.MethodGet, gw.handleSlaveList))
 
 	// 系统管理接口
-	mux.Handle("/api/system/info", gw.authMiddleware(http.HandlerFunc(gw.handleSystemInfo)))
+	mux.Handle("/api/system/info", gw.registerFunc(http.MethodGet, gw.handleSystemInfo))
 }
 
 // 中间件
@@ -151,11 +164,6 @@ func (gw *APIGateway) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (gw *APIGateway) handleCreateTable(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	// 检查是否为master
 	if !gw.distributedManager.IsMaster() {
 		http.Error(w, "Only master can create tables", http.StatusForbidden)
@@ -222,11 +230,6 @@ func (gw *APIGateway) handleCreateTable(w http.ResponseWriter, r *http.Request) 
 }
 
 func (gw *APIGateway) handleDeleteTable(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	if !gw.distributedManager.IsMaster() {
 		http.Error(w, "Only master can delete tables", http.StatusForbidden)
 		return
@@ -274,11 +277,6 @@ func (gw *APIGateway) handleDeleteTable(w http.ResponseWriter, r *http.Request) 
 }
 
 func (gw *APIGateway) handleAddDocument(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	if !gw.distributedManager.IsMaster() {
 		http.Error(w, "Only master can add documents", http.StatusForbidden)
 		return
@@ -333,11 +331,6 @@ func (gw *APIGateway) handleAddDocument(w http.ResponseWriter, r *http.Request) 
 }
 
 func (gw *APIGateway) handleDeleteDocument(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	if !gw.distributedManager.IsMaster() {
 		http.Error(w, "Only master can delete documents", http.StatusForbidden)
 		return
@@ -392,10 +385,6 @@ func (gw *APIGateway) handleDeleteDocument(w http.ResponseWriter, r *http.Reques
 }
 
 func (gw *APIGateway) handleSearchTable(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
 
 	var req struct {
 		TableName      string              `json:"table_name"`
