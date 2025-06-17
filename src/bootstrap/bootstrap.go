@@ -259,7 +259,7 @@ func LoadConfig(configPath string) (*AppConfig, error) {
 		Port:                  8000,
 		HttpPort:              8080,
 		EtcdEndpoints:         []string{"localhost:2379"},
-		EtcdTimeout:           5,
+		EtcdTimeout:           50000000,
 		ServiceTTL:            60,
 		HeartbeatInterval:     time.Second * 30,
 		HealthCheckInterval:   time.Second * 60,

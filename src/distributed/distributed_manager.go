@@ -9,6 +9,8 @@ import (
 	"VectorSphere/src/server"
 	"context"
 	"fmt"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 	"strconv"
 	"sync"
 	"time"
@@ -79,13 +81,14 @@ type DistributedManager struct {
 // NewDistributedManager 创建分布式管理器
 func NewDistributedManager(config *DistributedConfig) (*DistributedManager, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	// 获取本地IP
 	localIP, err := common.GetLocalHost()
+
 	if err != nil {
+		defer cancel()
 		return nil, fmt.Errorf("获取本地IP失败: %v", err)
 	}
+
 	localhost := localIP + ":" + strconv.Itoa(config.DefaultPort)
 
 	// 创建任务调度器
@@ -188,6 +191,15 @@ func (dm *DistributedManager) initEtcdClient() error {
 	client, err := clientv3.New(clientv3.Config{
 		Endpoints:   dm.config.Etcd.Endpoints,
 		DialTimeout: time.Duration(dm.config.TimeOut) * time.Second,
+		// 添加自动重连选项
+		DialOptions: []grpc.DialOption{
+			grpc.WithBackoffMaxDelay(5 * time.Second),
+			grpc.WithKeepaliveParams(keepalive.ClientParameters{
+				Time:                10 * time.Second,
+				Timeout:             5 * time.Second,
+				PermitWithoutStream: true,
+			}),
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("创建etcd客户端失败: %v", err)

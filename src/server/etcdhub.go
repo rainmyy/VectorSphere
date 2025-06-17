@@ -228,7 +228,13 @@ func (etcd *EtcdServiceHub) updateServiceStatus(serviceName string, endpoint *En
 }
 
 // keepAliveWithRetry 带重试机制的心跳续约
-func (etcd *EtcdServiceHub) keepAliveWithRetry(ctx context.Context, lease etcdv3.Lease, leaseID etcdv3.LeaseID, serviceName string, endpoint *EndPoint) {
+func (etcd *EtcdServiceHub) keepAliveWithRetry(
+	ctx context.Context,
+	lease etcdv3.Lease,
+	leaseID etcdv3.LeaseID,
+	serviceName string,
+	endpoint *EndPoint,
+) {
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxElapsedTime = 0 // 无限重试
 	bo.MaxInterval = 30 * time.Second
@@ -238,23 +244,42 @@ func (etcd *EtcdServiceHub) keepAliveWithRetry(ctx context.Context, lease etcdv3
 		case <-ctx.Done():
 			return backoff.Permanent(ctx.Err())
 		default:
-		}
-
-		keepaliveResp, err := lease.KeepAlive(ctx, leaseID)
-		if err != nil {
-			return fmt.Errorf("keepalive failed: %w", err)
-		}
-
-		// 处理心跳响应
-		go func() {
-			for ka := range keepaliveResp {
-				if ka == nil {
-					logger.Warning("Lease %d expired for service %s", leaseID, serviceName)
-					return
-				}
-				logger.Info("Heartbeat success for service %s, TTL: %d", serviceName, ka.TTL)
+			ch, err := lease.KeepAlive(ctx, leaseID)
+			if err != nil {
+				logger.Warning("KeepAlive failed for lease %d: %v, retrying...", leaseID, err)
+				time.Sleep(3 * time.Second)
+				return backoff.Permanent(err)
 			}
-		}()
+
+			for ka := range ch {
+				if ka == nil {
+					logger.Warning("Lease %d expired, attempting to recreate...", leaseID)
+					// 尝试重新创建租约
+					break
+				}
+				logger.Debug("Lease %d renewed, TTL: %d", leaseID, ka.TTL)
+			}
+
+			// 如果到这里，说明 ch 已关闭，需要重试
+			logger.Warning("KeepAlive channel closed for lease %d", leaseID)
+			time.Sleep(1 * time.Second)
+		}
+
+		//keepaliveResp, err := lease.KeepAlive(ctx, leaseID)
+		//if err != nil {
+		//	return fmt.Errorf("keepalive failed: %w", err)
+		//}
+		//
+		//// 处理心跳响应
+		//go func() {
+		//	for ka := range keepaliveResp {
+		//		if ka == nil {
+		//			logger.Warning("Lease %d expired for service %s", leaseID, serviceName)
+		//			return
+		//		}
+		//		logger.Info("Heartbeat success for service %s, TTL: %d", serviceName, ka.TTL)
+		//	}
+		//}()
 
 		return nil
 	}, backoff.WithContext(bo, ctx), func(err error, duration time.Duration) {

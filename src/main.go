@@ -104,7 +104,8 @@ func main() {
 	if err != nil {
 		logger.Fatal("Failed to initialize config manager: %v", err)
 	}
-
+	endpoints := make(map[string]server.EndPoint)
+	endpoints["127.0.0.1"] = server.EndPoint{Ip: "127.0.0.1", Port: 2379}
 	// 创建分布式管理器配置
 	dmConfig := &distributed.DistributedConfig{
 		ServiceName: config.ServiceName,
@@ -117,9 +118,9 @@ func main() {
 		},
 		SchedulerWorkerCount:  10,
 		HttpPort:              config.HttpPort,
-		TaskTimeout:           30,
+		TaskTimeout:           30000000,
 		HealthCheckInterval:   int(config.HealthCheckInterval.Seconds()),
-		Endpoints:             make(map[string]server.EndPoint),
+		Endpoints:             endpoints,
 		DataDir:               "data",
 		LoadBalancerConfig:    loadBalancer,
 		EnhancedConfigManager: configManager,

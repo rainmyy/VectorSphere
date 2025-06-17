@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	// etcd路径前缀
+	// ServiceRootPath etcd路径前缀
 	ServiceRootPath = "/vector_sphere/services"
 	MasterPath      = "/vector_sphere/master"
 	SlavePath       = "/vector_sphere/slaves"

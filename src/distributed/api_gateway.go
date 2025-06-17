@@ -6,6 +6,7 @@ import (
 	"VectorSphere/src/server"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	_ "strconv"
@@ -61,7 +62,7 @@ func (gw *APIGateway) Start(ctx context.Context) error {
 	}
 
 	go func() {
-		if err := gw.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := gw.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("API Gateway server error: %v", err)
 		}
 	}()
@@ -143,7 +144,10 @@ func (gw *APIGateway) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error("encode handleHealth response: %v", err)
+	}
 }
 
 func (gw *APIGateway) handleCreateTable(w http.ResponseWriter, r *http.Request) {
@@ -190,19 +194,19 @@ func (gw *APIGateway) handleCreateTable(w http.ResponseWriter, r *http.Request) 
 
 	// 统计结果
 	successCount := 0
-	var errors []string
+	var errs []string
 	for addr, err := range results {
 		if err == nil {
 			successCount++
 		} else {
-			errors = append(errors, fmt.Sprintf("%s: %v", addr, err))
+			errs = append(errs, fmt.Sprintf("%s: %v", addr, err))
 		}
 	}
 
 	response := map[string]interface{}{
 		"success_count": successCount,
 		"total_slaves":  len(slaveAddrs),
-		"errors":        errors,
+		"errs":          errs,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -211,7 +215,10 @@ func (gw *APIGateway) handleCreateTable(w http.ResponseWriter, r *http.Request) 
 	} else {
 		w.WriteHeader(http.StatusPartialContent)
 	}
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error("encode handleCreateTable response: %v", err)
+	}
 }
 
 func (gw *APIGateway) handleDeleteTable(w http.ResponseWriter, r *http.Request) {
@@ -244,23 +251,26 @@ func (gw *APIGateway) handleDeleteTable(w http.ResponseWriter, r *http.Request) 
 	results := gw.communicationSvc.DeleteTableOnSlaves(r.Context(), slaveAddrs, deleteReq)
 
 	successCount := 0
-	var errors []string
+	var errs []string
 	for addr, err := range results {
 		if err == nil {
 			successCount++
 		} else {
-			errors = append(errors, fmt.Sprintf("%s: %v", addr, err))
+			errs = append(errs, fmt.Sprintf("%s: %v", addr, err))
 		}
 	}
 
 	response := map[string]interface{}{
 		"success_count": successCount,
 		"total_slaves":  len(slaveAddrs),
-		"errors":        errors,
+		"errs":          errs,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error("encode handleDeleteTable response: %v", err)
+	}
 }
 
 func (gw *APIGateway) handleAddDocument(w http.ResponseWriter, r *http.Request) {
@@ -300,23 +310,26 @@ func (gw *APIGateway) handleAddDocument(w http.ResponseWriter, r *http.Request) 
 	results := gw.communicationSvc.AddDocumentToSlaves(r.Context(), slaveAddrs, addReq)
 
 	successCount := 0
-	var errors []string
+	var errs []string
 	for addr, err := range results {
 		if err == nil {
 			successCount++
 		} else {
-			errors = append(errors, fmt.Sprintf("%s: %v", addr, err))
+			errs = append(errs, fmt.Sprintf("%s: %v", addr, err))
 		}
 	}
 
 	response := map[string]interface{}{
 		"success_count": successCount,
 		"total_slaves":  len(slaveAddrs),
-		"errors":        errors,
+		"errs":          errs,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error("encode handleAddDocument response: %v", err)
+	}
 }
 
 func (gw *APIGateway) handleDeleteDocument(w http.ResponseWriter, r *http.Request) {
@@ -356,23 +369,26 @@ func (gw *APIGateway) handleDeleteDocument(w http.ResponseWriter, r *http.Reques
 	results := gw.communicationSvc.DeleteDocumentFromSlaves(r.Context(), slaveAddrs, delReq)
 
 	successCount := 0
-	var errors []string
+	var errs []string
 	for addr, err := range results {
 		if err == nil {
 			successCount++
 		} else {
-			errors = append(errors, fmt.Sprintf("%s: %v", addr, err))
+			errs = append(errs, fmt.Sprintf("%s: %v", addr, err))
 		}
 	}
 
 	response := map[string]interface{}{
 		"success_count": successCount,
 		"total_slaves":  len(slaveAddrs),
-		"errors":        errors,
+		"errs":          errs,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error("encode handleDeleteDocument response: %v", err)
+	}
 }
 
 func (gw *APIGateway) handleSearchTable(w http.ResponseWriter, r *http.Request) {
@@ -435,7 +451,10 @@ func (gw *APIGateway) handleSearchTable(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error("encode handleSearchTable response: %v", err)
+	}
 }
 
 func (gw *APIGateway) handleSearch(w http.ResponseWriter, r *http.Request) {
@@ -460,7 +479,10 @@ func (gw *APIGateway) handleCount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error("encode handleCount response: %v", err)
+	}
 }
 
 func (gw *APIGateway) handleClusterStatus(w http.ResponseWriter, r *http.Request) {
@@ -479,7 +501,10 @@ func (gw *APIGateway) handleClusterStatus(w http.ResponseWriter, r *http.Request
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error("encode handleClusterStatus response: %v", err)
+	}
 }
 
 func (gw *APIGateway) handleSlaveList(w http.ResponseWriter, r *http.Request) {
@@ -496,7 +521,10 @@ func (gw *APIGateway) handleSlaveList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error("encode handleSlaveList response: %v", err)
+	}
 }
 
 func (gw *APIGateway) handleSystemInfo(w http.ResponseWriter, r *http.Request) {
