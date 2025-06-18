@@ -2,7 +2,7 @@
 flask>=2.2.5
 Flask-Cors>=6.0.0
 transformers==4.50.0
-torch==2.7.1
+torch==3.9
 numpy==1.24.3
 sentence-transformers==2.2.2
 gunicorn==23.0.0
