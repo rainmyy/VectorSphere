@@ -248,7 +248,7 @@ func (dfs *DistributedFileService) replicateShard(filename string, shardIndex in
 		}
 
 		// 获取gRPC客户端
-		client, err := dfs.communicationService.GetSlaveClient(slaveInfo.Address)
+		client, err := dfs.communicationService.GetSShardStoreSlaveClient(slaveInfo.Address)
 		if err != nil {
 			logger.Error("获取目标节点 %s 的gRPC客户端失败: %v", targetNode, err)
 			return
@@ -347,7 +347,7 @@ func (dfs *DistributedFileService) broadcastMetadata(metadata *FileMetadata) {
 			}
 
 			// 获取gRPC客户端
-			client, err := dfs.communicationService.GetSlaveClient(slaveInfo.Address)
+			client, err := dfs.communicationService.GetSShardStoreSlaveClient(slaveInfo.Address)
 			if err != nil {
 				logger.Error("获取gRPC客户端失败: %v", err)
 				return
@@ -480,7 +480,12 @@ func (dfs *DistributedFileService) UploadFile(localFilePath, remoteFilename stri
 	if err != nil {
 		return fmt.Errorf("打开本地文件失败: %v", err)
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		err := file.Close()
+		if err != nil {
+			logger.Error("close file has error: %v", err)
+		}
+	}(file)
 
 	// 获取文件信息
 	fileInfo, err := file.Stat()
@@ -605,7 +610,6 @@ func (dfs *DistributedFileService) replicateShardToNodes(shardPath, shardID, che
 		selectedNodes = nodes
 	} else {
 		// 随机选择count个节点
-		rand.Seed(time.Now().UnixNano())
 		indices := rand.Perm(len(nodes))
 		for i := 0; i < count; i++ {
 			selectedNodes = append(selectedNodes, nodes[indices[i]])
@@ -627,7 +631,7 @@ func (dfs *DistributedFileService) replicateShardToNodes(shardPath, shardID, che
 			}
 
 			// 获取gRPC客户端
-			client, err := dfs.communicationService.GetSlaveClient(slaveInfo.Address)
+			client, err := dfs.communicationService.GetSShardStoreSlaveClient(slaveInfo.Address)
 			if err != nil {
 				logger.Error("获取gRPC客户端失败: %v", err)
 				return
@@ -680,7 +684,12 @@ func (dfs *DistributedFileService) DownloadFile(remoteFilename, localFilePath st
 	if err != nil {
 		return fmt.Errorf("创建本地文件失败: %v", err)
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		err = file.Close()
+		if err != nil {
+			logger.Error("close file failed: %v", err)
+		}
+	}(file)
 
 	// 按顺序下载并合并所有分片
 	for _, shard := range metadata.Shards {
@@ -724,7 +733,10 @@ func (dfs *DistributedFileService) DownloadFile(remoteFilename, localFilePath st
 	}
 
 	// 验证整个文件的校验和
-	file.Seek(0, 0)
+	_, err = file.Seek(0, 0)
+	if err != nil {
+		return err
+	}
 	hasher := md5.New()
 	if _, err := io.Copy(hasher, file); err != nil {
 		return fmt.Errorf("计算文件校验和失败: %v", err)
@@ -748,7 +760,7 @@ func (dfs *DistributedFileService) fetchShardFromNode(filename, shardID, nodeID 
 	}
 
 	// 获取gRPC客户端
-	client, err := dfs.communicationService.GetSlaveClient(slaveInfo.Address)
+	client, err := dfs.communicationService.GetSShardStoreSlaveClient(slaveInfo.Address)
 	if err != nil {
 		return nil, fmt.Errorf("获取gRPC客户端失败: %v", err)
 	}
@@ -810,7 +822,7 @@ func (dfs *DistributedFileService) DeleteFile(filename string) error {
 				}
 
 				// 获取gRPC客户端
-				client, err := dfs.communicationService.GetSlaveClient(slaveInfo.Address)
+				client, err := dfs.communicationService.GetSShardStoreSlaveClient(slaveInfo.Address)
 				if err != nil {
 					logger.Error("获取gRPC客户端失败: %v", err)
 					return
@@ -909,7 +921,12 @@ func (dfs *DistributedFileService) StoreVectorDBTable(tableName string, tableDir
 	if err != nil {
 		return fmt.Errorf("创建临时目录失败: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func(path string) {
+		err = os.RemoveAll(path)
+		if err != nil {
+			logger.Error("remove has error:%v", err)
+		}
+	}(tempDir)
 
 	// 创建表元数据文件
 	tableMetadata := VectorDBFile{
@@ -988,7 +1005,12 @@ func (dfs *DistributedFileService) RestoreVectorDBTable(tableName string, destDi
 	if err != nil {
 		return fmt.Errorf("创建临时目录失败: %v", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func(path string) {
+		err = os.RemoveAll(path)
+		if err != nil {
+			logger.Error("remove has error:%v", err)
+		}
+	}(tempDir)
 
 	// 下载表压缩包
 	tableTarPath := filepath.Join(tempDir, tableName+".tar.gz")
@@ -1081,13 +1103,23 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	defer srcFile.Close()
+	defer func(srcFile *os.File) {
+		err = srcFile.Close()
+		if err != nil {
+			logger.Error("close has error:%v", err)
+		}
+	}(srcFile)
 
 	dstFile, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer dstFile.Close()
+	defer func(dstFile *os.File) {
+		err := dstFile.Close()
+		if err != nil {
+			logger.Error("close has error:%v", err)
+		}
+	}(dstFile)
 
 	_, err = io.Copy(dstFile, srcFile)
 	return err
@@ -1132,15 +1164,30 @@ func createTarGz(srcDir, tarPath string) error {
 	if err != nil {
 		return err
 	}
-	defer tarFile.Close()
+	defer func(tarFile *os.File) {
+		err := tarFile.Close()
+		if err != nil {
+			logger.Error("close has error:%v", err)
+		}
+	}(tarFile)
 
 	// 创建gzip writer
 	gw := gzip.NewWriter(tarFile)
-	defer gw.Close()
+	defer func(gw *gzip.Writer) {
+		err := gw.Close()
+		if err != nil {
+			logger.Error("close has error:%v", err)
+		}
+	}(gw)
 
 	// 创建tar writer
 	tw := tar.NewWriter(gw)
-	defer tw.Close()
+	defer func(tw *tar.Writer) {
+		err := tw.Close()
+		if err != nil {
+			logger.Error("close has error:%v", err)
+		}
+	}(tw)
 
 	// 遍历源目录
 	return filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
@@ -1177,7 +1224,12 @@ func createTarGz(srcDir, tarPath string) error {
 			if err != nil {
 				return err
 			}
-			defer file.Close()
+			defer func(file *os.File) {
+				err := file.Close()
+				if err != nil {
+					logger.Error("close has error:%v", err)
+				}
+			}(file)
 
 			_, err = io.Copy(tw, file)
 			if err != nil {
@@ -1196,14 +1248,24 @@ func extractTarGz(tarPath, destDir string) error {
 	if err != nil {
 		return err
 	}
-	defer tarFile.Close()
+	defer func(tarFile *os.File) {
+		err := tarFile.Close()
+		if err != nil {
+			logger.Error("close has error:%v", err)
+		}
+	}(tarFile)
 
 	// 创建gzip reader
 	gr, err := gzip.NewReader(tarFile)
 	if err != nil {
 		return err
 	}
-	defer gr.Close()
+	defer func(gr *gzip.Reader) {
+		err := gr.Close()
+		if err != nil {
+			logger.Error("close has error:%v", err)
+		}
+	}(gr)
 
 	// 创建tar reader
 	tr := tar.NewReader(gr)
@@ -1238,10 +1300,13 @@ func extractTarGz(tarPath, destDir string) error {
 			if err != nil {
 				return err
 			}
-			defer file.Close()
-
+			_, err = io.Copy(file, tr)
+			closeErr := file.Close()
+			if closeErr != nil {
+				logger.Error("close has error:%v", err)
+			}
 			// 写入文件内容
-			if _, err := io.Copy(file, tr); err != nil {
+			if err != nil {
 				return err
 			}
 		}

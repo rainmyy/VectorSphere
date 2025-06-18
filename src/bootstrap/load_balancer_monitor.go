@@ -1,8 +1,8 @@
 package bootstrap
 
 import (
+	"VectorSphere/src/balance"
 	"VectorSphere/src/library/entity"
-	"VectorSphere/src/server"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -36,13 +36,13 @@ type EndpointMetric struct {
 // LoadBalancerMonitor 负载均衡监控器
 type LoadBalancerMonitor struct {
 	metrics  *LoadBalancerMetrics
-	balancer server.Balancer
+	balancer balance.Balancer
 	ctx      context.Context
 	cancel   context.CancelFunc
 }
 
 // NewLoadBalancerMonitor 创建负载均衡监控器
-func NewLoadBalancerMonitor(balancer server.Balancer) *LoadBalancerMonitor {
+func NewLoadBalancerMonitor(balancer balance.Balancer) *LoadBalancerMonitor {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &LoadBalancerMonitor{
 		metrics: &LoadBalancerMetrics{

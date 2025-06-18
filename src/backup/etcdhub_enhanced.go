@@ -1,6 +1,7 @@
-package server
+package backup
 
 import (
+	"VectorSphere/src/balance"
 	"VectorSphere/src/library/entity"
 	"context"
 	"encoding/json"
@@ -19,7 +20,7 @@ type EnhancedServiceHub struct {
 	leaseID         etcdv3.LeaseID
 	session         *concurrency.Session
 	watched         sync.Map
-	loadBalancer    Balancer
+	loadBalancer    balance.Balancer
 	serviceRegistry map[string]*ServiceInfo
 	mu              sync.RWMutex
 	ctx             context.Context
@@ -77,7 +78,7 @@ func NewEnhancedServiceHub(endpoints []string, heartbeat int64) (*EnhancedServic
 		heartbeat:       heartbeat,
 		session:         session,
 		watched:         sync.Map{},
-		loadBalancer:    LoadBalanceFactory(WeightedRoundRobin),
+		loadBalancer:    balance.LoadBalanceFactory(balance.WeightedRoundRobin),
 		serviceRegistry: make(map[string]*ServiceInfo),
 		ctx:             ctx,
 		cancel:          cancel,

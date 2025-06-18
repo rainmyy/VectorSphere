@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"VectorSphere/src/backup"
 	"VectorSphere/src/library/common"
 	confType "VectorSphere/src/library/confType"
 	"VectorSphere/src/library/entity"
@@ -26,8 +27,8 @@ type AppServer struct {
 	Ctx          context.Context
 	Cancel       context.CancelFunc
 	funcRegister map[string]func()
-	server       *server.IndexServer
-	sentinel     *server.Sentinel
+	server       *backup.IndexServer
+	sentinel     *backup.Sentinel
 	etcdCli      *clientv3.Client
 	grpcConn     *grpc.ClientConn
 	masterAddr   string
@@ -267,7 +268,7 @@ func (app *AppServer) RegisterService() {
 	}
 	if len(masterEndpoint) > 0 {
 		// master节点注册
-		s := new(server.IndexServer)
+		s := new(backup.IndexServer)
 		masterServiceName := config.ServiceName
 		err := s.RegisterService(masterEndpoint, config.DefaultPort, masterServiceName)
 		if err != nil {
@@ -279,7 +280,7 @@ func (app *AppServer) RegisterService() {
 	}
 
 	if len(sentinelEndpoint) > 0 {
-		sentinel := server.NewSentinel(sentinelEndpoint, int64(config.Heartbeat), 100, config.ServiceName, server.Slave)
+		sentinel := backup.NewSentinel(sentinelEndpoint, int64(config.Heartbeat), 100, config.ServiceName, backup.Slave)
 		err := sentinel.RegisterSentinel(int64(config.Heartbeat))
 		if err != nil {
 			logger.Error("Sentinel注册失败:", err)
@@ -317,7 +318,7 @@ func (app *AppServer) DiscoverService() {
 
 	if len(sentinelEndpoint) > 0 {
 		if app.sentinel == nil {
-			sentinel := server.NewSentinel(sentinelEndpoint, int64(config.Heartbeat), 100, config.ServiceName, server.Slave)
+			sentinel := backup.NewSentinel(sentinelEndpoint, int64(config.Heartbeat), 100, config.ServiceName, backup.Slave)
 			app.sentinel = sentinel
 		}
 

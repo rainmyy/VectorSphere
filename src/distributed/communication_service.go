@@ -2,7 +2,7 @@ package distributed
 
 import (
 	"VectorSphere/src/library/logger"
-	serverProto "VectorSphere/src/proto/serverProto"
+	"VectorSphere/src/proto/serverProto"
 	"context"
 	"fmt"
 	"sync"
@@ -17,16 +17,21 @@ import (
 // CommunicationService 通信服务
 type CommunicationService struct {
 	mutex       sync.RWMutex
-	connections map[string]*grpc.ClientConn               // slave地址 -> 连接
-	clients     map[string]serverProto.IndexServiceClient // slave地址 -> 客户端
+	connections map[string]*grpc.ClientConn // slave地址 -> 连接
+	clients     map[string]interface{}      // slave地址 -> 客户端
 	timeout     time.Duration
 }
+
+const (
+	defaultClient = iota
+	shardStoreClient
+)
 
 // NewCommunicationService 创建通信服务
 func NewCommunicationService(etcdClient *clientv3.Client, serviceName string) *CommunicationService {
 	return &CommunicationService{
 		connections: make(map[string]*grpc.ClientConn),
-		clients:     make(map[string]serverProto.IndexServiceClient),
+		clients:     make(map[string]interface{}),
 		timeout:     30 * time.Second, // 默认超时时间
 	}
 }
@@ -38,15 +43,35 @@ func (cs *CommunicationService) GetSlaveClient(slaveAddr string) (serverProto.In
 	cs.mutex.RUnlock()
 
 	if exists {
-		return client, nil
+		return client.(serverProto.IndexServiceClient), nil
+	}
+
+	indexClient, err := cs.createSlaveConnection(slaveAddr, defaultClient)
+	if err != nil {
+		return nil, err
 	}
 
 	// 创建新连接
-	return cs.createSlaveConnection(slaveAddr)
+	return indexClient.(serverProto.IndexServiceClient), err
+}
+
+func (cs *CommunicationService) GetSShardStoreSlaveClient(slaveAddr string) (serverProto.DistributedStorageServiceClient, error) {
+	cs.mutex.RLock()
+	client, exists := cs.clients[slaveAddr]
+	cs.mutex.RUnlock()
+
+	if exists {
+		return client.(serverProto.DistributedStorageServiceClient), nil
+	}
+
+	shardIndexClient, err := cs.createSlaveConnection(slaveAddr, shardStoreClient)
+
+	// 创建新连接
+	return shardIndexClient.(serverProto.DistributedStorageServiceClient), err
 }
 
 // createSlaveConnection 创建slave连接
-func (cs *CommunicationService) createSlaveConnection(slaveAddr string) (serverProto.IndexServiceClient, error) {
+func (cs *CommunicationService) createSlaveConnection(slaveAddr string, clientType int) (interface{}, error) {
 	cs.mutex.Lock()
 	defer cs.mutex.Unlock()
 
@@ -75,8 +100,12 @@ func (cs *CommunicationService) createSlaveConnection(slaveAddr string) (serverP
 	}
 
 	// 创建客户端
-	client := serverProto.NewIndexServiceClient(conn)
-
+	var client interface{}
+	if clientType == shardStoreClient {
+		client = serverProto.NewDistributedStorageServiceClient(conn)
+	} else {
+		client = serverProto.NewIndexServiceClient(conn)
+	}
 	// 存储连接和客户端
 	cs.connections[slaveAddr] = conn
 	cs.clients[slaveAddr] = client
@@ -91,7 +120,10 @@ func (cs *CommunicationService) RemoveSlaveConnection(slaveAddr string) {
 	defer cs.mutex.Unlock()
 
 	if conn, exists := cs.connections[slaveAddr]; exists {
-		conn.Close()
+		err := conn.Close()
+		if err != nil {
+			logger.Error("close conn failed:%v", err)
+		}
 		delete(cs.connections, slaveAddr)
 		delete(cs.clients, slaveAddr)
 		logger.Info("Removed connection to slave: %s", slaveAddr)
@@ -284,7 +316,7 @@ func (cs *CommunicationService) Close() {
 	}
 
 	cs.connections = make(map[string]*grpc.ClientConn)
-	cs.clients = make(map[string]serverProto.IndexServiceClient)
+	cs.clients = make(map[string]interface{})
 }
 
 // GetActiveConnections 获取活跃连接数

@@ -1,10 +1,11 @@
-package server
+package backup
 
 import (
+	"VectorSphere/src/balance"
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/logger"
 	"VectorSphere/src/proto/messages"
-	serverProto "VectorSphere/src/proto/serverProto"
+	"VectorSphere/src/proto/serverProto"
 	"context"
 	"encoding/json"
 	"errors"
@@ -33,13 +34,15 @@ const (
 	Slave
 )
 
+var rateLimiter = make(chan struct{}, 100)
+
 type Sentinel struct {
 	Hub        ServiceHub
 	connPool   sync.Map
 	leaseId    int64
 	ServiceKey string
 	Role       SentinelRole
-	Balancer   Balancer
+	Balancer   balance.Balancer
 	Token      string
 }
 
@@ -437,11 +440,11 @@ func (s *Sentinel) handleLBSwitch(w http.ResponseWriter, r *http.Request) {
 	}
 	switch body.Strategy {
 	case "roundrobin":
-		s.Balancer = &RoundRobinBalancer{}
+		s.Balancer = &balance.RoundRobinBalancer{}
 	case "weighted":
-		s.Balancer = &WeightedBalancer{}
+		s.Balancer = &balance.WeightedBalancer{}
 	case "leastconn":
-		s.Balancer = &LeastConnBalancer{}
+		s.Balancer = &balance.LeastConnBalancer{}
 	default:
 		http.Error(w, "Unknown strategy", 400)
 		return
@@ -535,16 +538,16 @@ func RunCLI() {
 	lb := flag.String("lb", "roundrobin", "Load balancer: roundrobin/weighted/leastconn")
 	token := flag.String("token", "your_token", "API token")
 	flag.Parse()
-	var balancer Balancer
+	var balancer balance.Balancer
 	switch *lb {
 	case "roundrobin":
-		balancer = &RoundRobinBalancer{}
+		balancer = &balance.RoundRobinBalancer{}
 	case "weighted":
-		balancer = &WeightedBalancer{}
+		balancer = &balance.WeightedBalancer{}
 	case "leastconn":
-		balancer = &LeastConnBalancer{}
+		balancer = &balance.LeastConnBalancer{}
 	default:
-		balancer = &RoundRobinBalancer{}
+		balancer = &balance.RoundRobinBalancer{}
 	}
 	if *role == "master" {
 		sentinel := NewSentinel(nil, 0, 0, "service", Master)

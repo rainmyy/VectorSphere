@@ -1,6 +1,7 @@
 package server
 
 import (
+	"VectorSphere/src/backup"
 	"VectorSphere/src/index"
 	"VectorSphere/src/library/entity"
 	PoolLib "VectorSphere/src/library/pool"
@@ -245,7 +246,7 @@ func (s *SlaveService) registerService() error {
 		"tags":   map[string]string{"env": os.Getenv("SLAVE_ENV")},
 	}
 	val, _ := json.Marshal(meta)
-	key := fmt.Sprintf("%s/%s/%s", ServiceRootPath, s.serviceName, s.localhost)
+	key := fmt.Sprintf("%s/%s/%s", backup.ServiceRootPath, s.serviceName, s.localhost)
 	_, err = s.client.Put(context.Background(), key, string(val), clientv3.WithLease(s.leaseID))
 	if err != nil {
 		return fmt.Errorf("注册服务失败: %v", err)

@@ -1,6 +1,7 @@
-package server
+package backup
 
 import (
+	"VectorSphere/src/balance"
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/logger"
 	"context"
@@ -39,8 +40,8 @@ type EtcdServiceHub struct {
 	session   *concurrency.Session
 	election  *concurrency.Election
 
-	watched      sync.Map // 存储已经监视的服务，以避免重复监视
-	loadBalancer Balancer // 负载均衡策略的接口，支持多种负载均衡实现
+	watched      sync.Map         // 存储已经监视的服务，以避免重复监视
+	loadBalancer balance.Balancer // 负载均衡策略的接口，支持多种负载均衡实现
 
 	// 新增字段用于心跳管理
 	heartbeatMap    sync.Map // map[string]context.CancelFunc 存储每个服务的心跳取消函数
@@ -105,7 +106,7 @@ func GetHub(endPoints []entity.EndPoint, heartbeat int64, serviceName string) (e
 			watched:      sync.Map{},
 			session:      session,
 			election:     election,
-			loadBalancer: LoadBalanceFactory(WeightedRoundRobin),
+			loadBalancer: balance.LoadBalanceFactory(balance.WeightedRoundRobin),
 		}
 	})
 
@@ -240,7 +241,7 @@ func (etcd *EtcdServiceHub) keepAliveWithRetry(
 	bo.MaxElapsedTime = 0 // 无限重试
 	bo.MaxInterval = 30 * time.Second
 
-	backoff.RetryNotify(func() error {
+	err := backoff.RetryNotify(func() error {
 		select {
 		case <-ctx.Done():
 			return backoff.Permanent(ctx.Err())
@@ -266,26 +267,30 @@ func (etcd *EtcdServiceHub) keepAliveWithRetry(
 			time.Sleep(1 * time.Second)
 		}
 
-		//keepaliveResp, err := lease.KeepAlive(ctx, leaseID)
-		//if err != nil {
-		//	return fmt.Errorf("keepalive failed: %w", err)
-		//}
-		//
-		//// 处理心跳响应
-		//go func() {
-		//	for ka := range keepaliveResp {
-		//		if ka == nil {
-		//			logger.Warning("Lease %d expired for service %s", leaseID, serviceName)
-		//			return
-		//		}
-		//		logger.Info("Heartbeat success for service %s, TTL: %d", serviceName, ka.TTL)
-		//	}
-		//}()
+		keepaliveResp, err := lease.KeepAlive(ctx, leaseID)
+		if err != nil {
+			return fmt.Errorf("keepalive failed: %w", err)
+		}
+
+		// 处理心跳响应
+		go func() {
+			for ka := range keepaliveResp {
+				if ka == nil {
+					logger.Warning("Lease %d expired for service %s", leaseID, serviceName)
+					return
+				}
+				logger.Info("Heartbeat success for service %s, TTL: %d", serviceName, ka.TTL)
+			}
+		}()
 
 		return nil
 	}, backoff.WithContext(bo, ctx), func(err error, duration time.Duration) {
 		logger.Info("Heartbeat failed for service %s, retrying in %v: %v", serviceName, duration, err)
 	})
+
+	if err != nil {
+		logger.Error("RetryNotify has failed : %v", err)
+	}
 }
 
 // StopHeartbeat 停止服务心跳
@@ -411,24 +416,24 @@ func (etcd *EtcdServiceHub) GetServiceEndpointWithStrategy(serviceName, strategy
 	endpoints := etcd.GetServiceEndpoints(serviceName)
 
 	// 根据策略选择负载均衡器
-	var balancer Balancer
+	var balancer balance.Balancer
 	switch strategy {
 	case "random":
-		balancer = LoadBalanceFactory(Random)
+		balancer = balance.LoadBalanceFactory(balance.Random)
 	case "round_robin":
-		balancer = LoadBalanceFactory(RoundRobin)
+		balancer = balance.LoadBalanceFactory(balance.RoundRobin)
 	case "weighted":
-		balancer = LoadBalanceFactory(WeightedRoundRobin)
+		balancer = balance.LoadBalanceFactory(balance.WeightedRoundRobin)
 	case "least_conn":
-		balancer = LoadBalanceFactory(LeastConnections)
+		balancer = balance.LoadBalanceFactory(balance.LeastConnections)
 	case "consistent_hash":
-		balancer = LoadBalanceFactory(ConsistentHash)
+		balancer = balance.LoadBalanceFactory(balance.ConsistentHash)
 	case "response_time":
-		balancer = LoadBalanceFactory(ResponseTimeWeighted)
+		balancer = balance.LoadBalanceFactory(balance.ResponseTimeWeighted)
 	case "adaptive":
-		balancer = LoadBalanceFactory(AdaptiveRoundRobin)
+		balancer = balance.LoadBalanceFactory(balance.AdaptiveRoundRobin)
 	case "AdaptiveWeighted":
-		balancer = LoadBalanceFactory(AdaptiveWeighted)
+		balancer = balance.LoadBalanceFactory(balance.AdaptiveWeighted)
 	default:
 		balancer = etcd.loadBalancer
 	}
@@ -440,7 +445,7 @@ func (etcd *EtcdServiceHub) GetServiceEndpointWithStrategy(serviceName, strategy
 // GetServiceEndpointWithClientIP 根据客户端IP获取服务端点（用于源IP哈希）
 func (etcd *EtcdServiceHub) GetServiceEndpointWithClientIP(serviceName, clientIP string) entity.EndPoint {
 	endpoints := etcd.GetServiceEndpoints(serviceName)
-	balancer := NewSourceIPHashBalancer()
+	balancer := balance.NewSourceIPHashBalancer()
 	balancer.Set(endpoints...)
 	return balancer.TakeWithContext(clientIP)
 }

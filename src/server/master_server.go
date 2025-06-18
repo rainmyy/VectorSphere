@@ -1,9 +1,10 @@
 package server
 
 import (
+	"VectorSphere/src/backup"
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/pool"
-	serverProto "VectorSphere/src/proto/serverProto"
+	"VectorSphere/src/proto/serverProto"
 	scheduler2 "VectorSphere/src/scheduler"
 	"bytes"
 	"context"
@@ -302,10 +303,16 @@ func (m *MasterService) Start(ctx context.Context) error {
 			// 执行清理操作
 		case <-ctx.Done(): // 监听任务池传递的上下文
 			logger.Info("MasterService context cancelled.")
-			m.Stop(context.Background()) // 调用 Stop 进行清理
+			err := m.Stop(context.Background())
+			if err != nil {
+				logger.Error("stop has failed : %v", err)
+			} // 调用 Stop 进行清理
 		case <-m.appCtx.Done(): // 监听应用全局上下文
 			logger.Info("Application context cancelled, stopping MasterService.")
-			m.Stop(context.Background()) // 调用 Stop 进行清理
+			err := m.Stop(context.Background())
+			if err != nil {
+				logger.Error("stop has failed : %v", err)
+			} // 调用 Stop 进行清理
 		}
 	}()
 
@@ -335,7 +342,10 @@ func (m *MasterService) performHealthChecks() {
 				logger.Warning("Health check failed for slave %s: %v", ip, err)
 				m.slaveStatus.Store(ip, "unhealthy")
 				// 考虑关闭不健康的连接
-				conn.Close()
+				err := conn.Close()
+				if err != nil {
+					logger.Error("conn close failed: %v", err)
+				}
 				m.connPool.Delete(ip)
 				return
 			}
@@ -343,7 +353,7 @@ func (m *MasterService) performHealthChecks() {
 			if healthStatus.Status == serverProto.HealthCheckResponse_SERVING { // 假设 HealthCheckResponse 有 Status 字段
 				m.slaveStatus.Store(ip, "healthy")
 				// 更新从节点负载信息，假设 HealthCheckResponse 包含 LoadInfo
-				// m.slaveLoad.Store(ip, healthStatus.LoadInfo)
+				m.slaveLoad.Store(ip, healthStatus)
 			} else {
 				m.slaveStatus.Store(ip, "unhealthy")
 			}
@@ -622,7 +632,7 @@ func (m *MasterService) registerService() error {
 	m.leaseID = resp.ID
 
 	// 注册服务
-	key := fmt.Sprintf("%s/%s/%s", ServiceRootPath, m.serviceName, m.localhost)
+	key := fmt.Sprintf("%s/%s/%s", backup.ServiceRootPath, m.serviceName, m.localhost)
 	_, err = m.client.Put(m.appCtx, key, m.localhost, clientv3.WithLease(m.leaseID))
 	if err != nil {
 		return fmt.Errorf("注册服务失败: %v", err)
@@ -690,7 +700,7 @@ func (m *MasterService) healthCheck() {
 
 // getSlaveEndpoints 获取所有从节点
 func (m *MasterService) getSlaveEndpoints() []entity.EndPoint {
-	prefix := fmt.Sprintf("%s/%s/", ServiceRootPath, m.serviceName)
+	prefix := fmt.Sprintf("%s/%s/", backup.ServiceRootPath, m.serviceName)
 	resp, err := m.client.Get(context.Background(), prefix, clientv3.WithPrefix())
 	if err != nil {
 		logger.Error("获取从节点失败: %v", err)

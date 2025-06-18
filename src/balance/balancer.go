@@ -1,4 +1,4 @@
-package server
+package balance
 
 import (
 	"VectorSphere/src/library/entity"

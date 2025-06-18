@@ -1,6 +1,7 @@
-package server
+package backup
 
 import (
+	"VectorSphere/src/balance"
 	"VectorSphere/src/library/entity"
 	"context"
 	etcdv3 "go.etcd.io/etcd/client/v3"
@@ -14,7 +15,7 @@ type HubProxy struct {
 	*EtcdServiceHub
 	endpointCache sync.Map
 	limiter       *rate.Limiter
-	Balancer      Balancer
+	Balancer      balance.Balancer
 }
 
 var (
@@ -35,7 +36,7 @@ func GetHubProxy(endPoints []entity.EndPoint, heartBeat int64, qps int, serviceN
 			EtcdServiceHub: hub,
 			endpointCache:  sync.Map{},
 			limiter:        rate.NewLimiter(rate.Every(time.Duration(1e9/qps)*time.Nanosecond), qps),
-			Balancer:       &RoundRobinBalancer{},
+			Balancer:       &balance.RoundRobinBalancer{},
 		}
 	})
 	return hubProxy

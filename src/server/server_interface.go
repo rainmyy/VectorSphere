@@ -2,7 +2,7 @@ package server
 
 import (
 	messages2 "VectorSphere/src/proto/messages"
-	serverProto "VectorSphere/src/proto/serverProto"
+	"VectorSphere/src/proto/serverProto"
 )
 
 type ServerInterface interface {

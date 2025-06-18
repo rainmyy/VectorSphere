@@ -1,9 +1,9 @@
 package bootstrap
 
 import (
+	"VectorSphere/src/balance"
 	"VectorSphere/src/enhanced"
 	"VectorSphere/src/library/logger"
-	"VectorSphere/src/server"
 	"context"
 	"fmt"
 	"net"
@@ -166,21 +166,21 @@ func InitLoadBalancer(client *clientv3.Client, registry *enhanced.EnhancedServic
 	var algorithm enhanced.LoadBalancingAlgorithm
 	switch config.LoadBalancerAlgorithm {
 	case "round_robin":
-		algorithm = server.RoundRobin
+		algorithm = balance.RoundRobin
 	case "weighted_round_robin":
-		algorithm = server.WeightedRoundRobin
+		algorithm = balance.WeightedRoundRobin
 	case "least_connections":
-		algorithm = server.LeastConnections
+		algorithm = balance.LeastConnections
 	case "weighted_least_connections":
 		algorithm = enhanced.WeightedLeastConnections
 	case "random":
-		algorithm = server.Random
+		algorithm = balance.Random
 	case "weighted_random":
 		algorithm = enhanced.WeightedRandom
 	case "ip_hash":
 		algorithm = enhanced.IPHash
 	case "consistent_hash":
-		algorithm = server.ConsistentHash
+		algorithm = balance.ConsistentHash
 	case "least_response_time":
 		algorithm = enhanced.LeastResponseTime
 	case "resource_based":
@@ -188,7 +188,7 @@ func InitLoadBalancer(client *clientv3.Client, registry *enhanced.EnhancedServic
 	case "adaptive":
 		algorithm = enhanced.Adaptive
 	default:
-		algorithm = server.RoundRobin
+		algorithm = balance.RoundRobin
 	}
 
 	// 创建负载均衡器配置

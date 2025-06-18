@@ -1,4 +1,4 @@
-package server
+package backup
 
 import (
 	"VectorSphere/src/index"
@@ -19,7 +19,6 @@ import (
 type IndexServer struct {
 	Index       *index.Index
 	hub         *EtcdServiceHub
-	stop        bool
 	localhost   string
 	serviceName string
 }

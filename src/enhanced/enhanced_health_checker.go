@@ -4,9 +4,11 @@ import (
 	"VectorSphere/src/library/logger"
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"net/http"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -80,9 +82,9 @@ type HealthThresholds struct {
 
 // HealthResult 健康检查结果
 type HealthResult struct {
-	CheckID string       `json:"check_id"`
-	Status  HealthStatus `json:"status"`
-	Message string       `json:"message"`
+	CheckID   string                 `json:"check_id"`
+	Status    HealthStatus           `json:"status"`
+	Message   string                 `json:"message"`
 	Latency   time.Duration          `json:"latency"`
 	Timestamp time.Time              `json:"timestamp"`
 	Details   map[string]interface{} `json:"details"`
@@ -147,8 +149,8 @@ type HealthAlert struct {
 
 // HealthPrediction 健康预测
 type HealthPrediction struct {
-	PredictedStatus HealthStatus `json:"predicted_status"`
-	Confidence      float64      `json:"confidence"`
+	PredictedStatus HealthStatus  `json:"predicted_status"`
+	Confidence      float64       `json:"confidence"`
 	TimeToFailure   time.Duration `json:"time_to_failure"`
 	RiskFactors     []string      `json:"risk_factors"`
 	Recommendations []string      `json:"recommendations"`
@@ -653,7 +655,12 @@ func (hc *EnhancedHealthChecker) performHTTPCheck(ctx context.Context, check *He
 		result.Metrics["latency_ms"] = float64(latency.Milliseconds())
 		return result
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			logger.Error("body close failed:%v", err)
+		}
+	}(resp.Body)
 
 	// 检查状态码
 	expectedStatus := 200
@@ -727,13 +734,182 @@ func (hc *EnhancedHealthChecker) performTCPCheck(ctx context.Context, check *Hea
 
 // performResourceCheck 执行资源检查
 func (hc *EnhancedHealthChecker) performResourceCheck(ctx context.Context, check *HealthCheck, result *HealthResult) *HealthResult {
-	// 这里可以实现CPU、内存、磁盘等资源检查
-	// 简化实现，实际应该集成系统监控
+	// 获取资源检查配置
+	resourceType, _ := check.Config["resource_type"].(string)
+	if resourceType == "" {
+		resourceType = "all" // 默认检查所有资源
+	}
+
+	// 初始化结果
 	result.Status = Healthy
 	result.Message = "Resource check passed"
-	result.Metrics["cpu_usage"] = 50.0 // 模拟数据
-	result.Metrics["memory_usage"] = 60.0
-	result.Metrics["disk_usage"] = 70.0
+	result.Details["resource_type"] = resourceType
+	result.Metrics = make(map[string]float64)
+
+	// 获取CPU使用率
+	if resourceType == "all" || resourceType == "cpu" {
+		cpuUsage, err := getCPUUsage()
+		if err != nil {
+			logger.Warning("Failed to get CPU usage: %v", err)
+			result.Details["cpu_error"] = err.Error()
+		} else {
+			result.Metrics["cpu_usage"] = cpuUsage
+			result.Details["cpu_usage"] = cpuUsage
+
+			// 检查CPU阈值
+			cpuWarningThreshold := 70.0
+			cpuCriticalThreshold := 90.0
+
+			if cpuThreshold, ok := check.Config["cpu_warning_threshold"].(float64); ok {
+				cpuWarningThreshold = cpuThreshold
+			}
+			if cpuThreshold, ok := check.Config["cpu_critical_threshold"].(float64); ok {
+				cpuCriticalThreshold = cpuThreshold
+			}
+
+			if cpuUsage >= cpuCriticalThreshold {
+				result.Status = Critical
+				result.Message = fmt.Sprintf("CPU usage critical: %.2f%%", cpuUsage)
+			} else if cpuUsage >= cpuWarningThreshold && result.Status != Critical {
+				result.Status = Degraded
+				result.Message = fmt.Sprintf("CPU usage high: %.2f%%", cpuUsage)
+			}
+		}
+	}
+
+	// 获取内存使用率
+	if resourceType == "all" || resourceType == "memory" {
+		memUsage, err := getMemoryUsage()
+		if err != nil {
+			logger.Warning("Failed to get memory usage: %v", err)
+			result.Details["memory_error"] = err.Error()
+		} else {
+			result.Metrics["memory_usage"] = memUsage
+			result.Details["memory_usage"] = memUsage
+
+			// 检查内存阈值
+			memWarningThreshold := 80.0
+			memCriticalThreshold := 95.0
+
+			if memThreshold, ok := check.Config["memory_warning_threshold"].(float64); ok {
+				memWarningThreshold = memThreshold
+			}
+			if memThreshold, ok := check.Config["memory_critical_threshold"].(float64); ok {
+				memCriticalThreshold = memThreshold
+			}
+
+			if memUsage >= memCriticalThreshold {
+				result.Status = Critical
+				result.Message = fmt.Sprintf("Memory usage critical: %.2f%%", memUsage)
+			} else if memUsage >= memWarningThreshold && result.Status != Critical {
+				result.Status = Degraded
+				result.Message = fmt.Sprintf("Memory usage high: %.2f%%", memUsage)
+			}
+		}
+	}
+
+	// 获取磁盘使用率
+	if resourceType == "all" || resourceType == "disk" {
+		diskPath, _ := check.Config["disk_path"].(string)
+		if diskPath == "" {
+			diskPath = "/" // 默认检查根目录
+			if runtime.GOOS == "windows" {
+				diskPath = "C:\\"
+			}
+		}
+
+		diskUsage, err := getDiskUsage(diskPath)
+		if err != nil {
+			logger.Warning("Failed to get disk usage for %s: %v", diskPath, err)
+			result.Details["disk_error"] = err.Error()
+		} else {
+			result.Metrics["disk_usage"] = diskUsage
+			result.Details["disk_usage"] = diskUsage
+			result.Details["disk_path"] = diskPath
+
+			// 检查磁盘阈值
+			diskWarningThreshold := 85.0
+			diskCriticalThreshold := 95.0
+
+			if diskThreshold, ok := check.Config["disk_warning_threshold"].(float64); ok {
+				diskWarningThreshold = diskThreshold
+			}
+			if diskThreshold, ok := check.Config["disk_critical_threshold"].(float64); ok {
+				diskCriticalThreshold = diskThreshold
+			}
+
+			if diskUsage >= diskCriticalThreshold {
+				result.Status = Critical
+				result.Message = fmt.Sprintf("Disk usage critical: %.2f%%", diskUsage)
+			} else if diskUsage >= diskWarningThreshold && result.Status != Critical {
+				result.Status = Degraded
+				result.Message = fmt.Sprintf("Disk usage high: %.2f%%", diskUsage)
+			}
+		}
+	}
+
+	// 获取网络状态
+	if resourceType == "all" || resourceType == "network" {
+		networkInterface, _ := check.Config["network_interface"].(string)
+		networkStats, err := getNetworkStats(networkInterface)
+		if err != nil {
+			logger.Warning("Failed to get network stats: %v", err)
+			result.Details["network_error"] = err.Error()
+		} else {
+			for k, v := range networkStats {
+				result.Metrics[k] = v
+				result.Details[k] = v
+			}
+
+			// 检查网络延迟阈值
+			if latency, ok := networkStats["network_latency"]; ok {
+				latencyWarningThreshold := 100.0 // 100ms
+				latencyCriticalThreshold := 300.0 // 300ms
+
+				if threshold, ok := check.Config["latency_warning_threshold"].(float64); ok {
+					latencyWarningThreshold = threshold
+				}
+				if threshold, ok := check.Config["latency_critical_threshold"].(float64); ok {
+					latencyCriticalThreshold = threshold
+				}
+
+				if latency >= latencyCriticalThreshold && result.Status != Critical {
+					result.Status = Critical
+					result.Message = fmt.Sprintf("Network latency critical: %.2fms", latency)
+				} else if latency >= latencyWarningThreshold && result.Status != Critical {
+					result.Status = Degraded
+					result.Message = fmt.Sprintf("Network latency high: %.2fms", latency)
+				}
+			}
+
+			// 检查网络包丢失率
+			if packetLoss, ok := networkStats["packet_loss_rate"]; ok {
+				packetLossWarningThreshold := 0.01 // 1%
+				packetLossCriticalThreshold := 0.05 // 5%
+
+				if threshold, ok := check.Config["packet_loss_warning_threshold"].(float64); ok {
+					packetLossWarningThreshold = threshold
+				}
+				if threshold, ok := check.Config["packet_loss_critical_threshold"].(float64); ok {
+					packetLossCriticalThreshold = threshold
+				}
+
+				if packetLoss >= packetLossCriticalThreshold && result.Status != Critical {
+					result.Status = Critical
+					result.Message = fmt.Sprintf("Network packet loss critical: %.2f%%", packetLoss*100)
+				} else if packetLoss >= packetLossWarningThreshold && result.Status != Critical {
+					result.Status = Degraded
+					result.Message = fmt.Sprintf("Network packet loss high: %.2f%%", packetLoss*100)
+				}
+			}
+		}
+	}
+
+	// 如果所有检查都通过，保持健康状态
+	if result.Status == Healthy {
+		result.Message = "All resource checks passed"
+	}
+
 	return result
 }
 

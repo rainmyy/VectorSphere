@@ -81,7 +81,7 @@ type Backend struct {
 	Region          string                 `json:"region"`
 	Zone            string                 `json:"zone"`
 	Version         string                 `json:"version"`
-	mu              sync.RWMutex           `json:"-"`
+	Mu              sync.RWMutex           `json:"-"`
 }
 
 // LoadBalancerConfig 负载均衡器配置
@@ -368,7 +368,10 @@ func (lb *EnhancedLoadBalancer) RemoveBackend(backendID string) error {
 
 	// 注销健康检查
 	if lb.healthChecker != nil {
-		lb.healthChecker.UnregisterCheck(fmt.Sprintf("backend_%s", backendID))
+		err := lb.healthChecker.UnregisterCheck(fmt.Sprintf("backend_%s", backendID))
+		if err != nil {
+			logger.Error("unable to unregister health checker: %v", err)
+		}
 	}
 
 	// 移除熔断器
@@ -540,13 +543,13 @@ func (lb *EnhancedLoadBalancer) ReleaseBackend(backendID string, success bool, r
 	atomic.AddInt64(&lb.metrics.ActiveConnections, -1)
 
 	// 更新响应时间
-	backend.mu.Lock()
+	backend.Mu.Lock()
 	if backend.ResponseTime == 0 {
 		backend.ResponseTime = responseTime
 	} else {
 		backend.ResponseTime = (backend.ResponseTime + responseTime) / 2
 	}
-	backend.mu.Unlock()
+	backend.Mu.Unlock()
 
 	// 更新成功/失败计数
 	if success {
@@ -692,20 +695,20 @@ func (lb *EnhancedLoadBalancer) selectWeightedRoundRobin(backends []*Backend) *B
 	var selected *Backend
 
 	for _, backend := range backends {
-		backend.mu.Lock()
+		backend.Mu.Lock()
 		backend.CurrentWeight += backend.EffectiveWeight
 		totalWeight += backend.EffectiveWeight
 
 		if selected == nil || backend.CurrentWeight > selected.CurrentWeight {
 			selected = backend
 		}
-		backend.mu.Unlock()
+		backend.Mu.Unlock()
 	}
 
 	if selected != nil {
-		selected.mu.Lock()
+		selected.Mu.Lock()
 		selected.CurrentWeight -= totalWeight
-		selected.mu.Unlock()
+		selected.Mu.Unlock()
 	}
 
 	return selected
@@ -797,7 +800,10 @@ func (lb *EnhancedLoadBalancer) selectIPHash(backends []*Backend, clientIP strin
 	}
 
 	hash := fnv.New32a()
-	hash.Write([]byte(clientIP))
+	_, err := hash.Write([]byte(clientIP))
+	if err != nil {
+		logger.Error("hash write failed:%v", err)
+	}
 	index := hash.Sum32() % uint32(len(backends))
 
 	return backends[index]
@@ -818,9 +824,9 @@ func (lb *EnhancedLoadBalancer) selectLeastResponseTime(backends []*Backend) *Ba
 	minResponseTime := time.Duration(math.MaxInt64)
 
 	for _, backend := range backends {
-		backend.mu.RLock()
+		backend.Mu.RLock()
 		responseTime := backend.ResponseTime
-		backend.mu.RUnlock()
+		backend.Mu.RUnlock()
 
 		if responseTime < minResponseTime {
 			minResponseTime = responseTime

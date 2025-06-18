@@ -255,7 +255,10 @@ func (ele *EnhancedLeaderElection) Stop() error {
 
 	// 如果是领导者，主动放弃领导权
 	if ele.IsLeader() {
-		ele.resignLeadership()
+		err := ele.resignLeadership()
+		if err != nil {
+			logger.Error("resign leader election failed: %v", err)
+		}
 	}
 
 	// 注销候选者
@@ -273,7 +276,10 @@ func (ele *EnhancedLeaderElection) Stop() error {
 
 	// 关闭会话
 	if ele.session != nil {
-		ele.session.Close()
+		err := ele.session.Close()
+		if err != nil {
+			logger.Error("Failed to close session: %v", err)
+		}
 	}
 
 	// 取消上下文
@@ -975,7 +981,10 @@ func (ele *EnhancedLeaderElection) monitorTermDuration() {
 	case <-timer.C:
 		if ele.IsLeader() {
 			logger.Info("Maximum term duration reached, resigning leadership")
-			ele.resignLeadership()
+			err := ele.resignLeadership()
+			if err != nil {
+				logger.Error("resign leader failed: %v", err)
+			}
 		}
 	case <-ele.stopChan:
 		return
