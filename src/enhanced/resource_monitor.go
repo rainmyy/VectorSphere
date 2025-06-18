@@ -70,8 +70,15 @@ func getNetworkStats(interfaceName string) (map[string]float64, error) {
 	// 如果没有指定接口名称，使用第一个非回环接口
 	if interfaceName == "" {
 		for _, iface := range interfaces {
-			// 检查是否为回环接口 (Flags & net.FlagLoopback) != 0
-			if (iface.Flags & net.FlagLoopback) == 0 {
+			// 检查是否为回环接口
+			isLoopback := false
+			for _, flag := range iface.Flags {
+				if flag == "loopback" {
+					isLoopback = true
+					break
+				}
+			}
+			if !isLoopback {
 				interfaceName = iface.Name
 				break
 			}
