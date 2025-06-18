@@ -60,6 +60,26 @@ type SlaveService struct {
 	port          int             // 服务端口
 }
 
+func (s *SlaveService) StoreShard(ctx context.Context, request *StoreShardRequest) (*StoreShardResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s *SlaveService) GetShard(ctx context.Context, request *GetShardRequest) (*GetShardResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s *SlaveService) DeleteShard(ctx context.Context, request *DeleteShardRequest) (*DeleteShardResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (s *SlaveService) SyncMetadata(ctx context.Context, request *SyncMetadataRequest) (*SyncMetadataResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (s *SlaveService) CreateTable(ctx context.Context, request *CreateTableRequest) (*ResCount, error) {
 	//TODO implement me
 	panic("implement me")

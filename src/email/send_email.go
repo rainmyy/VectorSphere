@@ -5,6 +5,7 @@ import (
 	"VectorSphere/src/library/logger"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/smtp"
 	"strings"
 	"time"
@@ -57,127 +58,116 @@ func (s *smtpEmailSender) SendEmail(to []string, subject string, body string) er
 		"\r\n" +
 		body)
 
-	var err error
+	var lastErr error
 	for i := 0; i <= s.config.MaxRetries; i++ {
-		err = s.trySend(addr, s.config.Username, s.config.Password, s.config.From, to, msg)
+		err := s.trySendOnce(addr, s.config.Username, s.config.Password, s.config.From, to, msg)
 		if err == nil {
 			logger.Info("邮件发送成功: To=%v, Subject=%s", to, subject)
 			return nil
 		}
-		logger.Warning("邮件发送失败 (尝试 %d/%d): To=%v, Subject=%s, Error: %v", i+1, s.config.MaxRetries+1, to, subject, err)
+		lastErr = err
+		logger.Warning("邮件发送尝试失败 (%d/%d): To=%v, Subject=%s, Error: %v", i+1, s.config.MaxRetries+1, to, subject, err)
 		if i < s.config.MaxRetries {
+			logger.Info("等待 %v 后重试...", s.config.RetryInterval)
 			time.Sleep(s.config.RetryInterval)
 		}
 	}
-	return fmt.Errorf("邮件发送失败，已达到最大重试次数: %w", err)
+	return fmt.Errorf("邮件发送失败，已达到最大重试次数 (%d): %w", s.config.MaxRetries+1, lastErr)
 }
 
-func (s *smtpEmailSender) trySend(addr, username, password, from string, to []string, msg []byte) error {
-	var client *smtp.Client
-	var err error
-	connTimeout := s.config.Timeout
-
+// trySendOnce 尝试一次性发送邮件，处理TLS、回退到普通连接（如果允许）或直接普通连接。
+func (s *smtpEmailSender) trySendOnce(addr, username, password, from string, to []string, msg []byte) error {
 	if s.config.UseTLS {
-		tlsConfig := &tls.Config{
-			ServerName: s.config.Host,
-		}
-		logger.Info("尝试使用TLS连接SMTP服务器: %s", addr)
-		conn, dialErr := tls.Dial("tcp", addr, tlsConfig)
-		if dialErr == nil {
-			client, err = smtp.NewClient(conn, s.config.Host)
-			if err != nil {
-				logger.Error("创建TLS SMTP客户端失败: %v", err)
-				// 如果允许不安全连接，并且TLS主要部分失败（如NewClient），则尝试普通连接
-				if s.config.AllowInsecure {
-					logger.Warning("TLS SMTP客户端创建失败，尝试回退到普通SMTP连接")
-					return s.sendPlain(addr, username, password, from, to, msg, connTimeout)
-				}
-				return fmt.Errorf("创建TLS SMTP客户端失败: %w", err)
-			}
-			logger.Info("TLS SMTP客户端创建成功")
-		} else {
-			logger.Warning("TLS连接失败: %v", dialErr)
+		logger.Info("尝试通过TLS发送邮件至 %s", addr)
+		err := s.sendOverTLS(addr, username, password, from, to, msg)
+		if err != nil {
+			logger.Warning("通过TLS发送邮件失败: %v", err)
 			if s.config.AllowInsecure {
-				logger.Warning("TLS连接失败，尝试回退到普通SMTP连接")
-				return s.sendPlain(addr, username, password, from, to, msg, connTimeout)
+				logger.Info("由于AllowInsecure为true，回退到普通SMTP连接。")
+				return s.sendOverPlain(addr, username, password, from, to, msg)
 			}
-			return fmt.Errorf("TLS连接失败: %w", dialErr)
+			return fmt.Errorf("TLS发送失败且不允许回退到不安全连接: %w", err)
 		}
-	} else {
-		logger.Info("使用普通SMTP连接")
-		return s.sendPlain(addr, username, password, from, to, msg, connTimeout)
+		logger.Info("邮件通过TLS成功发送。")
+		return nil
 	}
 
+	logger.Info("尝试通过普通SMTP发送邮件至 %s", addr)
+	err := s.sendOverPlain(addr, username, password, from, to, msg)
+	if err != nil {
+		return fmt.Errorf("普通SMTP发送失败: %w", err)
+	}
+	logger.Info("邮件通过普通SMTP成功发送。")
+	return nil
+}
+
+// sendOverTLS 处理通过TLS连接发送邮件的逻辑。
+func (s *smtpEmailSender) sendOverTLS(addr, username, password, from string, to []string, msg []byte) error {
+	tlsConfig := &tls.Config{
+		ServerName: s.config.Host,
+		MinVersion: tls.VersionTLS12, // 考虑为安全设置最小TLS版本
+	}
+
+	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: s.config.Timeout}, "tcp", addr, tlsConfig)
+	if err != nil {
+		return fmt.Errorf("TLS拨号失败 %s: %w", addr, err)
+	}
+	defer conn.Close()
+
+	client, err := smtp.NewClient(conn, s.config.Host)
+	if err != nil {
+		return fmt.Errorf("TLS拨号后创建SMTP客户端失败 %s: %w", s.config.Host, err)
+	}
 	defer client.Close()
 
 	if username != "" && password != "" {
 		auth := smtp.PlainAuth("", username, password, s.config.Host)
 		if err = client.Auth(auth); err != nil {
-			logger.Error("SMTP认证失败: %v", err)
-			return fmt.Errorf("SMTP认证失败: %w", err)
+			return fmt.Errorf("SMTP认证失败 %s: %w", s.config.Host, err)
 		}
-		logger.Info("SMTP认证成功")
+		logger.Info("通过TLS成功进行SMTP认证。")
 	}
 
 	if err = client.Mail(from); err != nil {
-		logger.Error("设置发件人失败 (%s): %v", from, err)
-		return fmt.Errorf("设置发件人失败: %w", err)
+		return fmt.Errorf("SMTP MAIL FROM命令失败 %s: %w", from, err)
 	}
-	logger.Info("发件人设置成功: %s", from)
-
 	for _, recipient := range to {
 		if err = client.Rcpt(recipient); err != nil {
-			logger.Error("设置收件人失败 (%s): %v", recipient, err)
-			return fmt.Errorf("设置收件人 %s 失败: %w", recipient, err)
+			return fmt.Errorf("SMTP RCPT TO命令失败 %s: %w", recipient, err)
 		}
-		logger.Info("收件人设置成功: %s", recipient)
 	}
 
 	w, err := client.Data()
 	if err != nil {
-		logger.Error("开启数据传输失败: %v", err)
-		return fmt.Errorf("开启数据传输失败: %w", err)
+		return fmt.Errorf("SMTP DATA命令失败: %w", err)
 	}
-	logger.Info("数据传输已开启")
+	defer w.Close() // 确保在写入器不再需要时关闭
 
-	_, err = w.Write(msg)
-	if err != nil {
-		logger.Error("写入邮件内容失败: %v", err)
-		return fmt.Errorf("写入邮件内容失败: %w", err)
+	if _, err = w.Write(msg); err != nil {
+		return fmt.Errorf("写入邮件消息失败: %w", err)
 	}
-	logger.Info("邮件内容写入成功")
-
-	err = w.Close()
-	if err != nil {
-		logger.Error("关闭数据传输失败: %v", err)
-		return fmt.Errorf("关闭数据传输失败: %w", err)
+	// w.Close() 将在 defer 中调用，或者在这里显式调用然后从defer中移除
+	// 对于 DATA 命令，必须在所有数据写入后调用 Close() 来结束 DATA 序列
+	if err = w.Close(); err != nil { // 显式关闭以捕获错误
+		return fmt.Errorf("关闭邮件数据写入器失败: %w", err)
 	}
-	logger.Info("数据传输关闭成功")
 
-	return client.Quit()
+	return nil // 成功，client.Quit() 将由 defer client.Close() 处理
 }
 
-func (s *smtpEmailSender) sendPlain(addr, username, password, from string, to []string, msg []byte, timeout time.Duration) error {
-	// 注意：net/smtp 的 SendMail 函数内部处理连接和超时，但这里的超时是针对整个操作的
-	// 为了更精细的控制，通常会自己管理连接，但 SendMail 提供了便利性
-	// 这里我们假设 SendMail 内部有合理的超时，或者依赖外部调用者控制整体超时
+// sendOverPlain 处理通过普通SMTP连接发送邮件的逻辑（使用smtp.SendMail）。
+func (s *smtpEmailSender) sendOverPlain(addr, username, password, from string, to []string, msg []byte) error {
 	var auth smtp.Auth
 	if username != "" && password != "" {
 		auth = smtp.PlainAuth("", username, password, s.config.Host)
-		logger.Info("普通SMTP连接使用认证")
+		logger.Info("为 %s 使用带认证的普通SMTP。", s.config.Host)
 	} else {
-		logger.Info("普通SMTP连接未使用认证")
+		logger.Info("为 %s 使用不带认证的普通SMTP。", s.config.Host)
 	}
 
-	// smtp.SendMail 会自己建立连接、发送然后关闭连接
-	// 它不直接接受一个超时参数，但我们可以通过 context 来控制整体操作的超时（如果需要更复杂的场景）
-	// 对于简单的重试，我们依赖外部的重试循环
-	logger.Info("尝试通过 smtp.SendMail 发送邮件 (普通连接) 至 %s", addr)
 	err := smtp.SendMail(addr, auth, from, to, msg)
 	if err != nil {
-		logger.Error("smtp.SendMail 发送失败: %v", err)
-		return fmt.Errorf("smtp.SendMail 发送失败: %w", err)
+		return fmt.Errorf("smtp.SendMail失败 %s: %w", addr, err)
 	}
-	logger.Info("通过 smtp.SendMail 发送邮件成功 (普通连接)")
 	return nil
 }

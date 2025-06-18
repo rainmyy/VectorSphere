@@ -2,6 +2,7 @@ package distributed
 
 import (
 	"VectorSphere/src/library/logger"
+	"VectorSphere/src/server"
 	"archive/tar"
 	"compress/gzip"
 	"context"
@@ -16,48 +17,6 @@ import (
 	"sync"
 	"time"
 )
-
-// 如果pb包中没有定义以下结构体，则在此处添加
-// 这些结构体应该在pb包中定义，这里是临时补充
-type pbStructs struct{}
-
-// StoreShardRequest 存储分片请求
-type StoreShardRequest struct {
-	Filename string // 文件名
-	ShardId  string // 分片ID
-	Data     []byte // 分片数据
-	Checksum string // 校验和
-}
-
-// GetShardRequest 获取分片请求
-type GetShardRequest struct {
-	Filename string // 文件名
-	ShardId  string // 分片ID
-}
-
-// GetShardResponse 获取分片响应
-type GetShardResponse struct {
-	Data []byte // 分片数据
-}
-
-// DeleteShardRequest 删除分片请求
-type DeleteShardRequest struct {
-	Filename string // 文件名
-	ShardId  int32  // 分片ID
-}
-
-// SyncMetadataRequest 同步元数据请求
-type SyncMetadataRequest struct {
-	Filename string // 文件名
-	Metadata []byte // 序列化后的元数据
-	Version  int64  // 版本号
-}
-
-// 如果pb包中已经定义了这些结构体，则使用pb包中的定义
-func init() {
-	// 这个函数仅用于确保编译时不会出现未使用的导入错误
-	_ = pbStructs{}
-}
 
 // FileMetadata 文件元数据
 type FileMetadata struct {
@@ -107,8 +66,16 @@ func NewDistributedFileService(dm *DistributedManager, sd *ServiceDiscovery, cs 
 
 	// 确保目录存在
 	metadataDir := filepath.Join(baseDir, "metadata")
-	os.MkdirAll(metadataDir, 0755)
-	os.MkdirAll(filepath.Join(baseDir, "shards"), 0755)
+	err := os.MkdirAll(metadataDir, 0755)
+	if err != nil {
+		cancel()
+		return nil
+	}
+	err = os.MkdirAll(filepath.Join(baseDir, "shards"), 0755)
+	if err != nil {
+		cancel()
+		return nil
+	}
 
 	return &DistributedFileService{
 		distributedManager:   dm,
@@ -288,7 +255,7 @@ func (dfs *DistributedFileService) replicateShard(filename string, shardIndex in
 		}
 
 		// 创建请求
-		req := &StoreShardRequest{
+		req := &server.StoreShardRequest{
 			Filename: filename,
 			ShardId:  shard.ShardID,
 			Data:     shardData,
@@ -311,7 +278,10 @@ func (dfs *DistributedFileService) replicateShard(filename string, shardIndex in
 		dfs.metadataMutex.Lock()
 		if metadata, exists = dfs.metadataCache[filename]; exists && shardIndex < len(metadata.Shards) {
 			metadata.Shards[shardIndex].NodeIDs = append(metadata.Shards[shardIndex].NodeIDs, targetNode)
-			dfs.saveMetadata(metadata)
+			err = dfs.saveMetadata(metadata)
+			if err != nil {
+				return
+			}
 		}
 		dfs.metadataMutex.Unlock()
 	}
@@ -384,7 +354,7 @@ func (dfs *DistributedFileService) broadcastMetadata(metadata *FileMetadata) {
 			}
 
 			// 创建请求
-			req := &SyncMetadataRequest{
+			req := &server.SyncMetadataRequest{
 				Filename: metadata.Filename,
 				Metadata: metadataBytes,
 				Version:  metadata.Version,
@@ -664,7 +634,7 @@ func (dfs *DistributedFileService) replicateShardToNodes(shardPath, shardID, che
 			}
 
 			// 创建请求
-			req := &StoreShardRequest{
+			req := &server.StoreShardRequest{
 				Filename: filepath.Base(filepath.Dir(shardPath)),
 				ShardId:  shardID,
 				Data:     shardData,
@@ -784,7 +754,7 @@ func (dfs *DistributedFileService) fetchShardFromNode(filename, shardID, nodeID 
 	}
 
 	// 创建请求
-	req := &GetShardRequest{
+	req := &server.GetShardRequest{
 		Filename: filename,
 		ShardId:  shardID,
 	}
@@ -831,7 +801,7 @@ func (dfs *DistributedFileService) DeleteFile(filename string) error {
 			}
 
 			// 通知远程节点删除分片
-			go func(nodeID, filename string, shardID int) {
+			go func(nodeID, filename string, shardID string) {
 				// 获取节点信息
 				slaveInfo, err := dfs.serviceDiscovery.GetSlaveInfo(nodeID)
 				if err != nil {
@@ -847,9 +817,9 @@ func (dfs *DistributedFileService) DeleteFile(filename string) error {
 				}
 
 				// 创建请求
-				req := &DeleteShardRequest{
+				req := &server.DeleteShardRequest{
 					Filename: filename,
-					ShardId:  int32(shardID),
+					ShardId:  shardID,
 				}
 
 				// 发送请求

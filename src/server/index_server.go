@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-var _ IndexServiceServer = (*IndexServer)(nil)
+//var _ IndexServiceServer = (*IndexServer)(nil)
 
 type IndexServer struct {
 	Index       *index.Index

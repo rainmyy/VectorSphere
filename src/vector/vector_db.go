@@ -159,6 +159,7 @@ type VectorDB struct {
 
 	adaptiveSelector *AdaptiveIndexSelector // 自适应索引选择器
 	cachePath        string
+	pcaConfig        *PCAConfig
 }
 
 const (

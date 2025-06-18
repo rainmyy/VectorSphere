@@ -3,6 +3,8 @@ package vector
 import (
 	"VectorSphere/src/library/logger"
 	"fmt"
+
+	"gonum.org/v1/gonum/mat"
 )
 
 // PCAConfig PCA 配置
@@ -52,37 +54,122 @@ func (db *VectorDB) ApplyPCA(targetDim int, varianceRatio float64) error {
 		}
 	}
 
-	// 计算协方差矩阵
-	covariance := make([][]float64, dim)
-	for i := range covariance {
-		covariance[i] = make([]float64, dim)
-		for j := range covariance[i] {
-			for _, vec := range centeredVectors {
-				covariance[i][j] += vec[i] * vec[j]
-			}
-			covariance[i][j] /= float64(len(vectors) - 1)
-		}
+	// 将中心化数据转换为 gonum 矩阵
+	data := mat.NewDense(len(centeredVectors), dim, nil)
+	for i, vec := range centeredVectors {
+		data.SetRow(i, vec)
 	}
 
-	// 这里需要实现特征值分解，简化示例
-	// 实际应用中建议使用 gonum 等数学库
+	// 计算协方差矩阵: C = (1/n-1) * X^T * X
+	var cov mat.SymDense
+	cov.SymOuterK(1.0/float64(len(vectors)-1), data)
 
-	// 应用降维变换
-	reducedVectors := make(map[string][]float64)
-	for i, id := range ids {
-		// 简化的降维实现，实际需要使用主成分
-		reduced := make([]float64, targetDim)
-		for j := 0; j < targetDim && j < len(vectors[i]); j++ {
-			reduced[j] = vectors[i][j]
+	// 特征值分解
+	var eig mat.EigenSym
+	if ok := eig.Factorize(&cov, true); !ok {
+		return fmt.Errorf("无法进行特征值分解")
+	}
+
+	// 获取特征值和特征向量
+	eigenvalues := eig.Values(nil)
+	var eigenvectors = &mat.Dense{}
+	eig.VectorsTo(eigenvectors)
+
+	// 根据方差比例或目标维度选择主成分
+	numComponents := 0
+	if varianceRatio > 0 && varianceRatio < 1.0 {
+		totalVariance := 0.0
+		for _, val := range eigenvalues {
+			if val > 0 { // 只考虑正特征值
+				totalVariance += val
+			}
 		}
-		reducedVectors[id] = reduced
+		if totalVariance == 0 {
+			logger.Warning("总方差为0，无法根据方差比例选择主成分。将尝试使用targetDim。")
+			// 如果总方差为0，则基于方差比例的计算无意义，此时依赖 targetDim
+			if targetDim > 0 && targetDim <= dim {
+				numComponents = targetDim
+			} else {
+				return fmt.Errorf("总方差为0且targetDim无效 (%d)，无法确定主成分数量", targetDim)
+			}
+		} else {
+			currentVariance := 0.0
+			// 特征值由 eig.Factorize 保证是升序排列的，所以从后往前取是取最大的
+			for i := len(eigenvalues) - 1; i >= 0; i-- {
+				if eigenvalues[i] <= 0 { // 忽略非正特征值
+					continue
+				}
+				currentVariance += eigenvalues[i]
+				numComponents++
+				if currentVariance/totalVariance >= varianceRatio {
+					break
+				}
+			}
+		}
+		// 如果同时指定了 targetDim，并且它比按方差计算出的 numComponents 更小，则采用 targetDim
+		if targetDim > 0 && targetDim < numComponents {
+			logger.Info("根据方差比例计算的主成分数 (%d) 大于目标维度 (%d)，将使用目标维度。", numComponents, targetDim)
+			numComponents = targetDim
+		}
+	} else if targetDim > 0 {
+		numComponents = targetDim
+	} else {
+		return fmt.Errorf("必须指定有效的 targetDimension (>0) 或 varianceRatio (0 < ratio < 1)")
+	}
+
+	if numComponents <= 0 || numComponents > dim {
+		return fmt.Errorf("计算出的主成分数量无效: %d (原始维度: %d)", numComponents, dim)
+	}
+
+	// 提取主成分 (最大的 numComponents 个特征向量)
+	// eigenvectors 的列是特征向量，按特征值升序排列。
+	// 我们需要与最大的 numComponents 个特征值相对应的特征向量，即 eigenvectors 的最后 numComponents 列。
+	p := mat.NewDense(dim, numComponents, nil) // p 是主成分矩阵 W
+	for j := 0; j < numComponents; j++ {
+		// p 的第 j 列 (0-indexed) 对应 eigenvectors 的第 (dim - 1 - j) 列 (0-indexed)
+		// 这是因为 eigenvectors 的列是按特征值升序排列的。
+		columnToExtract := dim - 1 - j
+		// mat.Col copies the column into a new []float64 slice.
+		colData := make([]float64, dim)
+		mat.Col(colData, columnToExtract, eigenvectors)
+		p.SetCol(j, colData)
+	}
+
+	// 应用降维变换: Y = Xc * W (其中 Xc 是中心化数据, W 是主成分)
+	reducedData := mat.NewDense(len(vectors), numComponents, nil)
+	reducedData.Mul(data, p)
+
+	// 存储PCA配置，这应该在所有计算成功后进行
+	db.pcaConfig = &PCAConfig{
+		TargetDimension: numComponents,
+		VarianceRatio:   varianceRatio, // 记录用于计算的方差比
+		Components:      matrixToSlice(p),
+		Mean:            mean,
 	}
 
 	// 更新向量数据库
+	reducedVectors := make(map[string][]float64)
+	for i, id := range ids {
+		reducedVectors[id] = reducedData.RawRowView(i)
+	}
+
 	db.vectors = reducedVectors
-	db.vectorDim = targetDim
+	db.vectorDim = numComponents
 	db.indexed = false // 需要重建索引
 
-	logger.Info("PCA 降维完成：%d -> %d 维", dim, targetDim)
+	logger.Info("PCA 降维完成: %d -> %d 维 (保留方差比例目标: %.2f)", dim, numComponents, varianceRatio)
 	return nil
+}
+
+// Helper function to convert gonum matrix to [][]float64
+func matrixToSlice(m mat.Matrix) [][]float64 {
+	r, c := m.Dims()
+	slice := make([][]float64, r)
+	for i := 0; i < r; i++ {
+		slice[i] = make([]float64, c)
+		for j := 0; j < c; j++ {
+			slice[i][j] = m.At(i, j)
+		}
+	}
+	return slice
 }

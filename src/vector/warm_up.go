@@ -70,6 +70,8 @@ func (db *VectorDB) WarmupIndex() {
 		case StrategyEnhancedLSH:
 			// 检查增强LSH索引是否可用
 			canUse = db.LshIndex != nil && db.LshIndex.Enable && db.LshConfig != nil
+		default:
+			panic("unhandled default case")
 		}
 
 		if !canUse {
