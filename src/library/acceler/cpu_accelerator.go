@@ -20,7 +20,11 @@ func NewFAISSAccelerator(deviceID int, indexType string) *FAISSAccelerator {
 		initialized: false,
 	}
 }
-
+func getGPUDeviceCount() int {
+	// 这里需要调用CUDA API获取设备数量
+	// 简化实现，实际应该调用C.faiss_gpu_get_device_count()
+	return 0 // 默认假设有1个GPU设备
+}
 func (c *FAISSAccelerator) Initialize() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()

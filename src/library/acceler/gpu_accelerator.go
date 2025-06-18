@@ -60,6 +60,11 @@ import (
 	"unsafe"
 )
 
+// getGPUDeviceCount 获取GPU设备数量
+func getGPUDeviceCount() int {
+	return C.faiss_gpu_get_device_count()
+}
+
 // NewFAISSGPUAccelerator creates a new FAISS GPU accelerator
 func NewFAISSGPUAccelerator(deviceID int, indexType string) *FAISSAccelerator {
 	return &FAISSAccelerator{

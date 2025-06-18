@@ -877,13 +877,6 @@ func detectGPUSupport() bool {
 	return true
 }
 
-// getGPUDeviceCount 获取GPU设备数量
-func getGPUDeviceCount() int {
-	// 这里需要调用CUDA API获取设备数量
-	// 简化实现，实际应该调用C.faiss_gpu_get_device_count()
-	return 1 // 默认假设有1个GPU设备
-}
-
 // ComputeStrategySelector 计算策略选择器
 type ComputeStrategySelector struct {
 	detector     *HardwareDetector

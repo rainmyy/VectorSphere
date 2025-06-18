@@ -94,10 +94,6 @@ type VectorDB struct {
 	invertedIndex map[string][]string // 倒排索引，关键词 -> 文件ID列表
 	// 添加倒排索引锁，细化锁粒度
 	invertedMu sync.RWMutex
-	//// 添加查询缓存
-	//queryCache map[string]queryCache
-	//cacheMu    sync.RWMutex
-	//cacheTTL   int64 // 缓存有效期（秒）
 
 	// 新增字段
 	vectorDim         int                  // 向量维度，用于验证
@@ -139,10 +135,6 @@ type VectorDB struct {
 	// 新增 mmap 相关字段
 	useMmap     bool // 是否启用 mmap
 	mmapEnabled bool // mmap 是否可用
-
-	//vectorCache     map[string][]float64 // 向量缓存
-	//vectorCacheMu   sync.RWMutex         // 向量缓存锁
-	//vectorCacheSize int                  // 向量缓存大小
 
 	// 增强 IVF 相关字段
 	ivfConfig         *IVFConfig         // IVF 配置

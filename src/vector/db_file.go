@@ -41,7 +41,7 @@ func (db *VectorDB) SaveToFileWithMmap(filePath string) error {
 	mmapFile, err := storage.NewMmap(db.backupPath, storage.MODE_CREATE)
 	if err != nil {
 		logger.Warning("mmap 创建失败，回退到标准方式: %v", err)
-		return db.SaveToFile(filePath) // 回退到原方法
+		return db.saveToFileStandard(filePath) // 回退到原方法
 	}
 	defer func(mmapFile *storage.Mmap) {
 		err := mmapFile.Unmap()
