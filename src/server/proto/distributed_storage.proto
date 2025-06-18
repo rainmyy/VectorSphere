@@ -1,0 +1,182 @@
+syntax = "proto3";
+
+package server;
+
+option go_package = "VectorSphere/src/server/proto";
+
+// 服务定义
+service DistributedStorageService {
+  // 文件操作
+  rpc CreateFile (CreateFileRequest) returns (CreateFileResponse);
+  rpc DeleteFile (DeleteFileRequest) returns (DeleteFileResponse);
+  rpc GetFileInfo (GetFileInfoRequest) returns (GetFileInfoResponse);
+  rpc ListFiles (ListFilesRequest) returns (ListFilesResponse);
+
+  // 分片操作
+  rpc UploadShard (stream UploadShardRequest) returns (UploadShardResponse); // 支持流式上传分片
+  rpc DownloadShard (DownloadShardRequest) returns (stream DownloadShardResponse); // 支持流式下载分片
+  rpc DeleteShard (DeleteShardStorageRequest) returns (DeleteShardStorageResponse);
+
+  // 元数据同步 - 复用 IndexService 中的定义或根据需要调整
+//   rpc SyncFileMetadata (SyncMetadataRequest) returns (SyncMetadataResponse);
+
+  // 节点管理与状态 (可选，根据具体实现)
+   rpc RegisterNode (RegisterNodeRequest) returns (RegisterNodeResponse);
+   rpc GetNodeStatus (GetNodeStatusRequest) returns (GetNodeStatusResponse);
+}
+
+// 文件信息
+message FileInfo {
+  string filename = 1;
+  int64 size = 2;
+  string checksum_md5 = 3;
+  int64 created_at = 4; // Unix timestamp
+  int64 updated_at = 5; // Unix timestamp
+  map<string, string> metadata = 6; // 其他元数据，例如文件类型、所有者等
+  repeated ShardInfo shards = 7; // 文件包含的分片信息
+  int32 replication_factor = 8; // 副本因子
+  string status = 9; // 文件状态 (e.g., UPLOADING, COMPLETE, DELETED)
+}
+
+// 分片信息
+message ShardInfo {
+  string shard_id = 1;
+  int64 size = 2;
+  string checksum_md5 = 3;
+  repeated string storage_nodes = 4; // 存储该分片的节点列表
+  string status = 5; // 分片状态 (e.g., UPLOADING, COMPLETE, CORRUPTED)
+  int32 order = 6; // 分片在文件中的顺序
+}
+
+// 创建文件请求
+message CreateFileRequest {
+  string filename = 1;
+  int64 total_size = 2; // 预期总大小
+  string checksum_md5 = 3; // 整个文件的预期校验和 (可选)
+  int32 replication_factor = 4; // 副本因子
+  map<string, string> metadata = 5; // 文件元数据
+}
+
+// 创建文件响应
+message CreateFileResponse {
+  FileInfo file_info = 1;
+  string error_message = 2;
+}
+
+// 删除文件请求
+message DeleteFileRequest {
+  string filename = 1;
+}
+
+// 删除文件响应
+message DeleteFileResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+// 获取文件信息请求
+message GetFileInfoRequest {
+  string filename = 1;
+}
+
+// 获取文件信息响应
+message GetFileInfoResponse {
+  FileInfo file_info = 1;
+  string error_message = 2;
+}
+
+// 列出文件请求
+message ListFilesRequest {
+  string prefix = 1; // 可选，用于按前缀过滤
+  int32 page_size = 2; // 分页大小
+  string page_token = 3; // 分页令牌
+}
+
+// 列出文件响应
+message ListFilesResponse {
+  repeated FileInfo files = 1;
+  string next_page_token = 2;
+  string error_message = 3;
+}
+
+// 上传分片请求
+message UploadShardRequest {
+  // 第一个消息必须是元数据
+  message Metadata {
+    string filename = 1;
+    string shard_id = 2;
+    int64 shard_size = 3; // 当前分片的大小
+    string checksum_md5 = 4; // 当前分片的校验和
+    int32 order = 5; // 分片在文件中的顺序
+  }
+  oneof data_oneof {
+    Metadata metadata = 1;
+    bytes chunk = 2; // 分片数据块
+  }
+}
+
+// 上传分片响应
+message UploadShardResponse {
+  string filename = 1;
+  string shard_id = 2;
+  bool success = 3;
+  string error_message = 4;
+}
+
+// 下载分片请求
+message DownloadShardRequest {
+  string filename = 1;
+  string shard_id = 2;
+  int64 offset = 3; // 下载偏移量 (可选, 用于断点续传)
+  int64 length = 4; // 下载长度 (可选, 用于部分下载)
+}
+
+// 下载分片响应
+message DownloadShardResponse {
+  bytes chunk = 1; // 分片数据块
+  string error_message = 2; // 如果在流传输过程中发生错误
+}
+
+// 删除分片请求 (针对特定存储节点上的分片，与IndexService中的DeleteShard区分)
+message DeleteShardStorageRequest {
+  string filename = 1;
+  string shard_id = 2;
+  string node_id = 3; // 可选，如果需要指定从哪个节点删除
+}
+
+// 删除分片响应
+message DeleteShardStorageResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+// 节点注册请求 (可选)
+message RegisterNodeRequest {
+  string node_id = 1;
+  string address = 2; // 节点地址 (ip:port)
+  int64 capacity = 3; // 存储容量
+  int64 used_space = 4; // 已用空间
+  repeated string tags = 5; // 节点标签，例如区域、机架等
+}
+
+// 节点注册响应 (可选)
+message RegisterNodeResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+// 获取节点状态请求 (可选)
+message GetNodeStatusRequest {
+  string node_id = 1;
+}
+
+// 获取节点状态响应 (可选)
+message GetNodeStatusResponse {
+  string node_id = 1;
+  string status = 2; // 例如: ONLINE, OFFLINE, DEGRADED
+  int64 capacity = 3;
+  int64 used_space = 4;
+  float load_factor = 5; // 负载因子
+  int64 last_heartbeat = 6; // Unix timestamp
+  string error_message = 7;
+}

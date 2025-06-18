@@ -385,11 +385,11 @@ func (io *IndexOptimizer) rebuildIndex() {
 	// 设置索引参数
 	indexParams := io.getOptimalIndexParams(indexType)
 
-	// 执行索引重建
-	err := io.vectorDB.RebuildIndex(indexType, indexParams)
+	// 重建索引
+	logger.Info("开始重建索引，类型: %s, 参数: %v", indexType, indexParams)
+	err := io.vectorDB.RebuildIndexWithType(indexType, indexParams) // 使用 indexType 和 indexParams 参数
 	if err != nil {
 		logger.Error("重建索引失败: %v", err)
-		return
 	}
 
 	// 计算重建耗时和质量
@@ -593,9 +593,9 @@ func (io *IndexOptimizer) getOptimalIndexParams(indexType string) map[string]int
 			ef = 30 // 低质量要求可以减少搜索宽度
 		}
 
-		params["m"] = m
-		params["ef_construction"] = efConstruction
-		params["ef"] = ef
+		params["maxConnections"] = m
+		params["efConstruction"] = efConstruction
+		params["efSearch"] = ef
 
 	case "IVF":
 		// IVF参数 - 根据数据规模动态调整聚类数

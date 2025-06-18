@@ -2295,6 +2295,102 @@ func (db *VectorDB) RebuildIndex() error {
 	return err
 }
 
+// RebuildIndexWithType 重建向量数据库索引
+func (db *VectorDB) RebuildIndexWithType(indexType string, indexParams map[string]interface{}) error {
+	// 记录开始时间，用于性能统计
+	start := time.Now()
+	logger.Info("开始重建索引，类型: %s, 参数: %v", indexType, indexParams)
+
+	var err error
+	db.mu.Lock()
+	db.indexed = false               // 标记索引失效
+	db.clusters = make([]Cluster, 0) // 清空旧的IVF簇
+	// 如果存在HNSW索引实例，也需要考虑重置或重建
+	if db.hnsw != nil {
+		// 根据策略，可以选择关闭旧实例并新建，或者尝试更新参数（如果支持）
+		// 这里简单地置为nil，强制在BuildHNSWIndex中重新初始化
+		db.hnsw = nil
+		logger.Info("HNSW索引实例已清除，将在重建时重新初始化")
+	}
+	db.mu.Unlock()
+
+	switch indexType {
+	case "HNSW":
+		db.mu.Lock()
+		db.useHNSWIndex = true
+		// 从 indexParams 解析 HNSW 特定参数
+		if m, ok := indexParams["maxConnections"].(float64); ok {
+			db.maxConnections = int(m)
+		}
+		if efc, ok := indexParams["efConstruction"].(float64); ok {
+			db.efConstruction = efc
+		}
+		if efs, ok := indexParams["efSearch"].(float64); ok {
+			db.efSearch = efs
+		}
+		db.mu.Unlock()
+		err = db.BuildHNSWIndex() // BuildHNSWIndex 内部会使用更新后的参数
+	case "EnhancedIVF":
+		db.mu.Lock()
+		db.useHNSWIndex = false // 确保不使用HNSW
+		// 假设 EnhancedIVF 使用 BuildIndex，并可能需要从 indexParams 获取参数
+		// 例如：numClusters, maxIterations, tolerance
+		numClusters := db.numClusters // 默认值
+		maxIterations := 100          // 默认值
+		tolerance := 0.001            // 默认值
+		if nc, ok := indexParams["numClusters"].(float64); ok {
+			numClusters = int(nc)
+		}
+		if mi, ok := indexParams["maxIterations"].(float64); ok {
+			maxIterations = int(mi)
+		}
+		if tol, ok := indexParams["tolerance"].(float64); ok {
+			tolerance = tol
+		}
+		db.numClusters = numClusters // 更新db的配置
+		db.mu.Unlock()
+		err = db.BuildIndex(maxIterations, tolerance)
+	case "EnhancedLSH", "IVF": // 假设这些也使用 BuildIndex 或有特定构建方法
+		// 此处为简化，也指向BuildIndex，实际应有各自的逻辑
+		db.mu.Lock()
+		db.useHNSWIndex = false
+		numClusters := db.numClusters
+		maxIterations := 100
+		tolerance := 0.001
+		if nc, ok := indexParams["numClusters"].(float64); ok {
+			numClusters = int(nc)
+		}
+		db.numClusters = numClusters
+		db.mu.Unlock()
+		err = db.BuildIndex(maxIterations, tolerance)
+	default:
+		err = fmt.Errorf("不支持的索引类型: %s", indexType)
+	}
+
+	// 更新性能统计信息
+	if err != nil {
+		logger.Error("索引重建失败: %v", err)
+	} else {
+		db.mu.Lock()
+		db.indexed = true // 标记索引构建成功
+		db.mu.Unlock()
+		logger.Info("索引重建成功完成")
+	}
+
+	db.statsMu.Lock()
+	db.stats.IndexBuildTime = time.Since(start)
+	db.stats.LastReindexTime = time.Now()
+
+	// 更新内存使用情况
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	db.stats.MemoryUsage = m.Alloc
+	db.statsMu.Unlock()
+	logger.Info("索引重建过程结束，耗时: %v", time.Since(start))
+
+	return err
+}
+
 // GetVectorForTextWithCache 带缓存的向量获取
 func (db *VectorDB) GetVectorForTextWithCache(text string, vectorizedType int) ([]float64, error) {
 	// 生成缓存键
