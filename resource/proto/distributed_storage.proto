@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package server;
 
-option go_package = "VectorSphere/src/server/proto";
+// option go_package = "VectorSphere/proto/server";
 
 // 服务定义
 service DistributedStorageService {
@@ -15,14 +15,69 @@ service DistributedStorageService {
   // 分片操作
   rpc UploadShard (stream UploadShardRequest) returns (UploadShardResponse); // 支持流式上传分片
   rpc DownloadShard (DownloadShardRequest) returns (stream DownloadShardResponse); // 支持流式下载分片
-  rpc DeleteShard (DeleteShardStorageRequest) returns (DeleteShardStorageResponse);
-
-  // 元数据同步 - 复用 IndexService 中的定义或根据需要调整
-//   rpc SyncFileMetadata (SyncMetadataRequest) returns (SyncMetadataResponse);
 
   // 节点管理与状态 (可选，根据具体实现)
    rpc RegisterNode (RegisterNodeRequest) returns (RegisterNodeResponse);
    rpc GetNodeStatus (GetNodeStatusRequest) returns (GetNodeStatusResponse);
+
+  // Distributed File Service RPCs
+  rpc StoreShard(StoreShardRequest) returns (StoreShardResponse); // 存储分片
+  rpc GetShard(GetShardRequest) returns (GetShardResponse);       // 获取分片
+  rpc DeleteShard(DeleteShardRequest) returns (DeleteShardResponse); // 删除分片
+  // 元数据同步 - 复用 IndexService 中的定义或根据需要调整
+  rpc SyncMetadata(SyncMetadataRequest) returns (SyncMetadataResponse); // 同步元数据
+}
+
+// StoreShardRequest 存储分片请求
+message StoreShardRequest {
+  string filename = 1; // 文件名
+  string shard_id = 2; // 分片ID
+  bytes data = 3;     // 分片数据
+  string checksum = 4; // 校验和
+}
+
+// 删除分片请求 (针对特定存储节点上的分片，与IndexService中的DeleteShard区分)
+message DeleteShardRequest {
+  string filename = 1;
+  string shard_id = 2;
+  string node_id = 3; // 可选，如果需要指定从哪个节点删除
+}
+
+// StoreShardResponse 存储分片响应
+message StoreShardResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+// GetShardRequest 获取分片请求
+message GetShardRequest {
+  string filename = 1; // 文件名
+  string shard_id = 2; // 分片ID
+}
+
+// GetShardResponse 获取分片响应
+message GetShardResponse {
+  bytes data = 1; // 分片数据
+  string error_message = 2;
+}
+
+// DeleteShardResponse 删除分片响应
+message DeleteShardResponse {
+  bool success = 1;
+  string error_message = 2;
+}
+
+// SyncMetadataRequest 同步元数据请求
+message SyncMetadataRequest {
+  string filename = 1;    // 文件名
+  bytes metadata = 2;     // 序列化后的元数据
+  int64 version = 3;      // 版本号
+}
+
+// SyncMetadataResponse 同步元数据响应
+message SyncMetadataResponse {
+  bool success = 1;
+  string error_message = 2;
 }
 
 // 文件信息
@@ -137,18 +192,7 @@ message DownloadShardResponse {
   string error_message = 2; // 如果在流传输过程中发生错误
 }
 
-// 删除分片请求 (针对特定存储节点上的分片，与IndexService中的DeleteShard区分)
-message DeleteShardStorageRequest {
-  string filename = 1;
-  string shard_id = 2;
-  string node_id = 3; // 可选，如果需要指定从哪个节点删除
-}
 
-// 删除分片响应
-message DeleteShardStorageResponse {
-  bool success = 1;
-  string error_message = 2;
-}
 
 // 节点注册请求 (可选)
 message RegisterNodeRequest {
@@ -180,3 +224,5 @@ message GetNodeStatusResponse {
   int64 last_heartbeat = 6; // Unix timestamp
   string error_message = 7;
 }
+
+// protoc -I=D:/code/VectorSphere/resource/proto --gogofaster_opt=Mdoc.proto=VectorSphere/src/proto/messages --gogofaster_opt=Mterm_query.proto=VectorSphere/src/proto/messages --gogofaster_out=plugins=grpc:./src/proto/serverProto --proto_path=./resource/proto distributed_storage.proto

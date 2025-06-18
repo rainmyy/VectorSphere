@@ -1,6 +1,7 @@
 package enhanced
 
 import (
+	"VectorSphere/src/library/entity"
 	"VectorSphere/src/security"
 	"VectorSphere/src/server"
 	"context"
@@ -151,7 +152,7 @@ func LoadBalancingMiddleware(balancer server.Balancer) func(http.Handler) http.H
 					parts := strings.Split(targetEndpoint, ":")
 					if len(parts) == 2 {
 						port, _ := strconv.Atoi(parts[1])
-						endpoint := server.EndPoint{Ip: parts[0], Port: port}
+						endpoint := entity.EndPoint{Ip: parts[0], Port: port}
 						rtBalancer.RecordResponseTime(endpoint, responseTime)
 					}
 				}

@@ -80,9 +80,9 @@ type HealthThresholds struct {
 
 // HealthResult 健康检查结果
 type HealthResult struct {
-	CheckID   string                 `json:"check_id"`
-	Status    HealthStatus           `json:"status"`
-	Message   string                 `json:"message"`
+	CheckID string       `json:"check_id"`
+	Status  HealthStatus `json:"status"`
+	Message string       `json:"message"`
 	Latency   time.Duration          `json:"latency"`
 	Timestamp time.Time              `json:"timestamp"`
 	Details   map[string]interface{} `json:"details"`
@@ -92,7 +92,6 @@ type HealthResult struct {
 	Tags      []string               `json:"tags"`
 }
 
-// ServiceHealth 服务健康状态
 type ServiceHealth struct {
 	ServiceName   string                   `json:"service_name"`
 	NodeID        string                   `json:"node_id"`
@@ -148,8 +147,8 @@ type HealthAlert struct {
 
 // HealthPrediction 健康预测
 type HealthPrediction struct {
-	PredictedStatus HealthStatus  `json:"predicted_status"`
-	Confidence      float64       `json:"confidence"`
+	PredictedStatus HealthStatus `json:"predicted_status"`
+	Confidence      float64      `json:"confidence"`
 	TimeToFailure   time.Duration `json:"time_to_failure"`
 	RiskFactors     []string      `json:"risk_factors"`
 	Recommendations []string      `json:"recommendations"`

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/logger"
 	"context"
 	"encoding/json"
@@ -20,13 +21,13 @@ import (
 
 type ServiceHub interface {
 	GetClient() *etcdv3.Client
-	RegisterService(serviceName string, endpoint *EndPoint, leaseId etcdv3.LeaseID) (etcdv3.LeaseID, error)
-	UnRegisterService(serviceName string, endpoint *EndPoint) error
-	GetServiceEndpoints(serviceName string) []EndPoint
-	GetServiceEndpoint(serviceName string) EndPoint
-	StartHeartbeat(ctx context.Context, serviceName string, endpoint *EndPoint) error
-	StopHeartbeat(serviceName string, endpoint *EndPoint)
-	WatchServiceChanges(ctx context.Context, serviceName string, callback func([]EndPoint))
+	RegisterService(serviceName string, endpoint *entity.EndPoint, leaseId etcdv3.LeaseID) (etcdv3.LeaseID, error)
+	UnRegisterService(serviceName string, endpoint *entity.EndPoint) error
+	GetServiceEndpoints(serviceName string) []entity.EndPoint
+	GetServiceEndpoint(serviceName string) entity.EndPoint
+	StartHeartbeat(ctx context.Context, serviceName string, endpoint *entity.EndPoint) error
+	StopHeartbeat(serviceName string, endpoint *entity.EndPoint)
+	WatchServiceChanges(ctx context.Context, serviceName string, callback func([]entity.EndPoint))
 	Close()
 	RefreshEndpoints(serviceName string)
 }
@@ -69,7 +70,7 @@ func init() {
 
 }
 
-func GetHub(endPoints []EndPoint, heartbeat int64, serviceName string) (error, *EtcdServiceHub) {
+func GetHub(endPoints []entity.EndPoint, heartbeat int64, serviceName string) (error, *EtcdServiceHub) {
 	if etcdServiceHub != nil {
 		return nil, etcdServiceHub
 	}
@@ -112,7 +113,7 @@ func GetHub(endPoints []EndPoint, heartbeat int64, serviceName string) (error, *
 }
 
 // StartHeartbeat 启动服务心跳续约
-func (etcd *EtcdServiceHub) StartHeartbeat(ctx context.Context, serviceName string, endpoint *EndPoint) error {
+func (etcd *EtcdServiceHub) StartHeartbeat(ctx context.Context, serviceName string, endpoint *entity.EndPoint) error {
 	key := fmt.Sprintf("%s/%s", serviceName, endpoint.Ip)
 
 	// 如果已经存在心跳，先停止
@@ -161,7 +162,7 @@ func (etcd *EtcdServiceHub) StartHeartbeat(ctx context.Context, serviceName stri
 }
 
 // monitorServiceHealth 监控服务健康状态
-func (etcd *EtcdServiceHub) monitorServiceHealth(ctx context.Context, serviceName string, endpoint *EndPoint) {
+func (etcd *EtcdServiceHub) monitorServiceHealth(ctx context.Context, serviceName string, endpoint *entity.EndPoint) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -183,7 +184,7 @@ func (etcd *EtcdServiceHub) monitorServiceHealth(ctx context.Context, serviceNam
 }
 
 // performHealthCheck 执行健康检查
-func (etcd *EtcdServiceHub) performHealthCheck(serviceName string, endpoint *EndPoint) error {
+func (etcd *EtcdServiceHub) performHealthCheck(serviceName string, endpoint *entity.EndPoint) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -205,7 +206,7 @@ func (etcd *EtcdServiceHub) performHealthCheck(serviceName string, endpoint *End
 }
 
 // updateServiceStatus 更新服务状态
-func (etcd *EtcdServiceHub) updateServiceStatus(serviceName string, endpoint *EndPoint, status string) {
+func (etcd *EtcdServiceHub) updateServiceStatus(serviceName string, endpoint *entity.EndPoint, status string) {
 	serviceKey := ServiceRootPath + "/" + serviceName + "/" + endpoint.Ip
 
 	// 获取当前服务信息
@@ -233,7 +234,7 @@ func (etcd *EtcdServiceHub) keepAliveWithRetry(
 	lease etcdv3.Lease,
 	leaseID etcdv3.LeaseID,
 	serviceName string,
-	endpoint *EndPoint,
+	endpoint *entity.EndPoint,
 ) {
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxElapsedTime = 0 // 无限重试
@@ -288,7 +289,7 @@ func (etcd *EtcdServiceHub) keepAliveWithRetry(
 }
 
 // StopHeartbeat 停止服务心跳
-func (etcd *EtcdServiceHub) StopHeartbeat(serviceName string, endpoint *EndPoint) {
+func (etcd *EtcdServiceHub) StopHeartbeat(serviceName string, endpoint *entity.EndPoint) {
 	key := fmt.Sprintf("%s/%s", serviceName, endpoint.Ip)
 
 	if cancel, exists := etcd.heartbeatMap.Load(key); exists {
@@ -309,7 +310,7 @@ func (etcd *EtcdServiceHub) StopHeartbeat(serviceName string, endpoint *EndPoint
 }
 
 // WatchServiceChanges 监听服务变化
-func (etcd *EtcdServiceHub) WatchServiceChanges(ctx context.Context, serviceName string, callback func([]EndPoint)) {
+func (etcd *EtcdServiceHub) WatchServiceChanges(ctx context.Context, serviceName string, callback func([]entity.EndPoint)) {
 	// 检查是否已经在监听
 	if cancel, exists := etcd.serviceWatchers.Load(serviceName); exists {
 		cancel.(context.CancelFunc)()
@@ -339,7 +340,7 @@ func (etcd *EtcdServiceHub) WatchServiceChanges(ctx context.Context, serviceName
 	}()
 }
 
-func (etcd *EtcdServiceHub) RegisterService(service string, endpoint *EndPoint, leaseId etcdv3.LeaseID) (etcdv3.LeaseID, error) {
+func (etcd *EtcdServiceHub) RegisterService(service string, endpoint *entity.EndPoint, leaseId etcdv3.LeaseID) (etcdv3.LeaseID, error) {
 	if etcd.client == nil {
 		return 0, errors.New("etcd client is nil")
 	}
@@ -367,7 +368,7 @@ func (etcd *EtcdServiceHub) RegisterService(service string, endpoint *EndPoint, 
 	return leaseId, nil
 }
 
-func (etcd *EtcdServiceHub) UnRegisterService(serviceName string, endpoint *EndPoint) error {
+func (etcd *EtcdServiceHub) UnRegisterService(serviceName string, endpoint *entity.EndPoint) error {
 	key := ServiceRootPath + "/" + serviceName + "/" + endpoint.Ip
 	_, err := etcd.client.Delete(context.Background(), key)
 	if err != nil {
@@ -378,15 +379,15 @@ func (etcd *EtcdServiceHub) UnRegisterService(serviceName string, endpoint *EndP
 	return err
 }
 
-func (etcd *EtcdServiceHub) GetServiceEndpoints(serviceName string) []EndPoint {
+func (etcd *EtcdServiceHub) GetServiceEndpoints(serviceName string) []entity.EndPoint {
 	prefix := ServiceRootPath + "/" + serviceName + "/"
 	resp, err := etcd.client.Get(context.Background(), prefix, etcdv3.WithPrefix())
 	if err != nil {
 		return nil
 	}
-	endpoints := make([]EndPoint, 0, len(resp.Kvs))
+	endpoints := make([]entity.EndPoint, 0, len(resp.Kvs))
 	for _, kv := range resp.Kvs {
-		var ep EndPoint
+		var ep entity.EndPoint
 		if err := json.Unmarshal(kv.Value, &ep); err == nil {
 			endpoints = append(endpoints, ep)
 		}
@@ -401,12 +402,12 @@ func (etcd *EtcdServiceHub) GetServiceEndpoints(serviceName string) []EndPoint {
 //}
 
 // GetServiceEndpoint 支持更多负载均衡策略
-func (etcd *EtcdServiceHub) GetServiceEndpoint(serviceName string) EndPoint {
+func (etcd *EtcdServiceHub) GetServiceEndpoint(serviceName string) entity.EndPoint {
 	return etcd.GetServiceEndpointWithStrategy(serviceName, "")
 }
 
 // GetServiceEndpointWithStrategy 根据策略获取服务端点
-func (etcd *EtcdServiceHub) GetServiceEndpointWithStrategy(serviceName, strategy string) EndPoint {
+func (etcd *EtcdServiceHub) GetServiceEndpointWithStrategy(serviceName, strategy string) entity.EndPoint {
 	endpoints := etcd.GetServiceEndpoints(serviceName)
 
 	// 根据策略选择负载均衡器
@@ -437,7 +438,7 @@ func (etcd *EtcdServiceHub) GetServiceEndpointWithStrategy(serviceName, strategy
 }
 
 // GetServiceEndpointWithClientIP 根据客户端IP获取服务端点（用于源IP哈希）
-func (etcd *EtcdServiceHub) GetServiceEndpointWithClientIP(serviceName, clientIP string) EndPoint {
+func (etcd *EtcdServiceHub) GetServiceEndpointWithClientIP(serviceName, clientIP string) entity.EndPoint {
 	endpoints := etcd.GetServiceEndpoints(serviceName)
 	balancer := NewSourceIPHashBalancer()
 	balancer.Set(endpoints...)
@@ -445,9 +446,9 @@ func (etcd *EtcdServiceHub) GetServiceEndpointWithClientIP(serviceName, clientIP
 }
 
 // GetHealthyEndpoints 获取健康的服务端点
-func (etcd *EtcdServiceHub) GetHealthyEndpoints(serviceName string) []EndPoint {
+func (etcd *EtcdServiceHub) GetHealthyEndpoints(serviceName string) []entity.EndPoint {
 	allEndpoints := etcd.GetServiceEndpoints(serviceName)
-	var healthyEndpoints []EndPoint
+	var healthyEndpoints []entity.EndPoint
 
 	for _, endpoint := range allEndpoints {
 		if etcd.isEndpointHealthy(endpoint) {
@@ -459,7 +460,7 @@ func (etcd *EtcdServiceHub) GetHealthyEndpoints(serviceName string) []EndPoint {
 }
 
 // isEndpointHealthy 检查端点是否健康
-func (etcd *EtcdServiceHub) isEndpointHealthy(endpoint EndPoint) bool {
+func (etcd *EtcdServiceHub) isEndpointHealthy(endpoint entity.EndPoint) bool {
 	// 实现健康检查逻辑
 	// 这里可以通过HTTP健康检查、TCP连接测试等方式
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", endpoint.Ip, endpoint.Port), 3*time.Second)

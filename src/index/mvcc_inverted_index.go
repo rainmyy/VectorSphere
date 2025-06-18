@@ -4,7 +4,7 @@ import (
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/logger"
 	"VectorSphere/src/library/tree"
-	"VectorSphere/src/messages"
+	messages2 "VectorSphere/src/proto/messages"
 	"VectorSphere/src/vector"
 	"fmt"
 	"hash/fnv"
@@ -274,7 +274,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) AdjustConfig() {
 }
 
 // GenerateScoreId 结合 Document 信息和时间戳生成 scoreId
-func GenerateScoreId(doc messages.Document) int64 {
+func GenerateScoreId(doc messages2.Document) int64 {
 	// 获取当前时间戳
 	timestamp := time.Now().UnixNano()
 
@@ -353,7 +353,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) cleanupCache() {
 }
 
 // Add 插入文档到倒排索引
-func (idx *MVCCBPlusTreeInvertedIndex) Add(tx *tree.Transaction, doc messages.Document) error {
+func (idx *MVCCBPlusTreeInvertedIndex) Add(tx *tree.Transaction, doc messages2.Document) error {
 	idx.mu.Lock() // Consider lock granularity; this locks the whole Add operation
 	defer idx.mu.Unlock()
 	scoreId := GenerateScoreId(doc)
@@ -382,7 +382,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) Add(tx *tree.Transaction, doc messages.Do
 		}
 	}
 
-	var keywords []*messages.KeyWord // Track keywords successfully added to B+Tree
+	var keywords []*messages2.KeyWord // Track keywords successfully added to B+Tree
 
 	// Add to B+Tree (Inverted List for keywords)
 	for _, keyword := range doc.KeWords {
@@ -465,7 +465,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) Add(tx *tree.Transaction, doc messages.Do
 
 // rollbackBTreeAdd attempts to remove a document from the B+Tree for a list of keywords.
 // This is a best-effort rollback mechanism.
-func (idx *MVCCBPlusTreeInvertedIndex) rollbackBTreeAdd(tx *tree.Transaction, docId string, keywords []*messages.KeyWord) error {
+func (idx *MVCCBPlusTreeInvertedIndex) rollbackBTreeAdd(tx *tree.Transaction, docId string, keywords []*messages2.KeyWord) error {
 	var firstErr error
 	for _, keyword := range keywords {
 		val, ok := idx.tree.Get(tx, keyword)
@@ -516,7 +516,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) rollbackBTreeAdd(tx *tree.Transaction, do
 // Note: The original Delete took scoreId and a specific keyword.
 // A more robust delete would take doc.Id and remove it from all relevant keyword lists.
 // For now, let's adapt the existing signature and logic, but ideally, it should be doc.Id based for VectorDB.
-func (idx *MVCCBPlusTreeInvertedIndex) Delete(tx *tree.Transaction, docId string, keywords []*messages.KeyWord) error {
+func (idx *MVCCBPlusTreeInvertedIndex) Delete(tx *tree.Transaction, docId string, keywords []*messages2.KeyWord) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 
@@ -574,7 +574,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) Delete(tx *tree.Transaction, docId string
 }
 
 // DelDocument Delete 从倒排索引中删除文档
-func (idx *MVCCBPlusTreeInvertedIndex) DelDocument(tx *tree.Transaction, scoreId int64, keyword *messages.KeyWord) error {
+func (idx *MVCCBPlusTreeInvertedIndex) DelDocument(tx *tree.Transaction, scoreId int64, keyword *messages2.KeyWord) error {
 	doc, err := idx.GetDocumentByScoreId(scoreId)
 	if err != nil {
 		return err
@@ -595,10 +595,10 @@ func (idx *MVCCBPlusTreeInvertedIndex) DelDocument(tx *tree.Transaction, scoreId
 }
 
 // GetDocumentByScoreId 通过 scoreId 获取 Document 信息
-func (idx *MVCCBPlusTreeInvertedIndex) GetDocumentByScoreId(scoreId int64) (messages.Document, error) {
+func (idx *MVCCBPlusTreeInvertedIndex) GetDocumentByScoreId(scoreId int64) (messages2.Document, error) {
 	// 假设存在一个获取所有关键词的方法，这里需要根据实际情况实现
 	allKeywords := idx.getAllKeywords()
-	var doc messages.Document
+	var doc messages2.Document
 
 	for _, keyword := range allKeywords {
 		val, ok := idx.tree.Get(nil, &keyword) // 假设使用 nil 事务，实际需要根据情况调整
@@ -619,21 +619,21 @@ func (idx *MVCCBPlusTreeInvertedIndex) GetDocumentByScoreId(scoreId int64) (mess
 
 	if doc.Id == "" {
 		// 未找到匹配的文档
-		return messages.Document{}, fmt.Errorf("document with scoreId %d not found", scoreId)
+		return messages2.Document{}, fmt.Errorf("document with scoreId %d not found", scoreId)
 	}
 
 	return doc, nil
 }
 
 // getAllKeywords 获取所有关键词，需要根据实际情况实现
-func (idx *MVCCBPlusTreeInvertedIndex) getAllKeywords() []messages.KeyWord {
-	var keywords []messages.KeyWord
+func (idx *MVCCBPlusTreeInvertedIndex) getAllKeywords() []messages2.KeyWord {
+	var keywords []messages2.KeyWord
 	seen := make(map[interface{}]struct{})
 	current := idx.getFirstLeaf()
 
 	for current != nil {
 		for _, key := range current.GetKeys() {
-			if kw, ok := key.(messages.KeyWord); ok {
+			if kw, ok := key.(messages2.KeyWord); ok {
 				if _, exists := seen[kw]; !exists {
 					keywords = append(keywords, kw)
 					seen[kw] = struct{}{}
@@ -647,11 +647,11 @@ func (idx *MVCCBPlusTreeInvertedIndex) getAllKeywords() []messages.KeyWord {
 }
 
 // getMinMaxKeywords 获取最小和最大关键词，需要根据实际情况实现
-func (idx *MVCCBPlusTreeInvertedIndex) getMinMaxKeywords() (messages.KeyWord, messages.KeyWord) {
+func (idx *MVCCBPlusTreeInvertedIndex) getMinMaxKeywords() (messages2.KeyWord, messages2.KeyWord) {
 	// 这里需要实现获取最小和最大关键词的逻辑
 	// 可以遍历 B+ 树的叶子节点链表
 	// 以下是一个简单示例，实际需要根据 B+ 树的实现调整
-	var minKey, maxKey messages.KeyWord
+	var minKey, maxKey messages2.KeyWord
 	firstLeaf := idx.getFirstLeaf()
 	lastLeaf := idx.getLastLeaf()
 	if firstLeaf != nil && len(firstLeaf.GetKeys()) > 0 {
@@ -659,14 +659,14 @@ func (idx *MVCCBPlusTreeInvertedIndex) getMinMaxKeywords() (messages.KeyWord, me
 		if keys == nil {
 			return minKey, maxKey
 		}
-		minKey = keys[0].(messages.KeyWord)
+		minKey = keys[0].(messages2.KeyWord)
 	}
 	if lastLeaf != nil && len(lastLeaf.GetKeys()) > 0 {
 		keys := lastLeaf.GetKeys()
 		if keys == nil {
 			return minKey, maxKey
 		}
-		maxKey = keys[len(keys)-1].(messages.KeyWord)
+		maxKey = keys[len(keys)-1].(messages2.KeyWord)
 	}
 	return minKey, maxKey
 }
@@ -709,7 +709,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) getLastLeaf() *tree.MVCCNode {
 */
 func (idx *MVCCBPlusTreeInvertedIndex) Search(
 	tx *tree.Transaction,
-	query *messages.TermQuery,
+	query *messages2.TermQuery,
 	onFlag uint64,
 	offFlag uint64,
 	orFlags []uint64,
@@ -933,7 +933,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) Search(
 }
 
 // 内部递归查询
-func (idx *MVCCBPlusTreeInvertedIndex) searchQuery(tx *tree.Transaction, query *messages.TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) InvertedList {
+func (idx *MVCCBPlusTreeInvertedIndex) searchQuery(tx *tree.Transaction, query *messages2.TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) InvertedList {
 	switch {
 	case query.Keyword != nil:
 		val, ok := idx.tree.Get(tx, query.Keyword)

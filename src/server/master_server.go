@@ -1,7 +1,9 @@
 package server
 
 import (
+	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/pool"
+	serverProto "VectorSphere/src/proto/serverProto"
 	scheduler2 "VectorSphere/src/scheduler"
 	"bytes"
 	"context"
@@ -43,7 +45,7 @@ type TaskInfo struct {
 	StartTime   time.Time
 	Timeout     time.Duration
 	Slaves      []string
-	Results     map[string]*TaskResponse
+	Results     map[string]*serverProto.TaskResponse
 	ResultsLock sync.RWMutex
 }
 
@@ -89,7 +91,7 @@ type MasterService struct {
 	appCtx context.Context // 用于传递应用的全局上下文
 }
 
-func (m *MasterService) HealthCheck(ctx context.Context, request *HealthCheckRequest) (*HealthCheckResponse, error) {
+func (m *MasterService) HealthCheck(ctx context.Context, request *serverProto.HealthCheckRequest) (*serverProto.HealthCheckResponse, error) {
 	//TODO implement me
 	panic("implement me")
 }
@@ -135,7 +137,7 @@ func (m *MasterService) sendMasterNotify(msg string) {
 // NewMasterService 创建主服务实例
 func NewMasterService(
 	appCtx context.Context,
-	endpoints []EndPoint,
+	endpoints []entity.EndPoint,
 	serviceName string,
 	localhost string,
 	httpPort int,
@@ -225,7 +227,7 @@ func (m *MasterService) ScheduleTask(task scheduler2.ScheduledTask) error {
 		StartTime: time.Now(),
 		Timeout:   task.Timeout(),
 		Slaves:    make([]string, 0, len(slaves)),
-		Results:   make(map[string]*TaskResponse), // 修改这里，使用TaskResponse而不是TaskResult
+		Results:   make(map[string]*serverProto.TaskResponse), // 修改这里，使用TaskResponse而不是TaskResult
 	}
 
 	// 将任务分配给从节点
@@ -284,19 +286,8 @@ func (m *MasterService) Start(ctx context.Context) error {
 
 	if becameMaster {
 		logger.Info("Successfully became master. Initializing master functionalities.")
-		// 启动 HTTP 服务器 (仅当是主节点时)
-		go func() {
-
-		}()
-
 		// 启动健康检查
 		go m.startHealthChecks(ctx) // 使用传递的上下文
-
-		// 注册服务到 etcd (如果需要，并且由选举逻辑处理)
-		err := m.registerService()
-		if err != nil {
-			return err
-		}
 	} else {
 		logger.Info("Node is not master. Master functionalities (HTTP server, health checks) will not be started by this instance.")
 	}
@@ -335,11 +326,11 @@ func (m *MasterService) performHealthChecks() {
 				return
 			}
 
-			client := NewIndexServiceClient(conn) // 假设 SlaveService 定义了 gRPC 服务
+			client := serverProto.NewIndexServiceClient(conn) // 假设 SlaveService 定义了 gRPC 服务
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
-			healthStatus, err := client.HealthCheck(ctx, &HealthCheckRequest{}) // 假设 HealthCheckRequest 是空的
+			healthStatus, err := client.HealthCheck(ctx, &serverProto.HealthCheckRequest{}) // 假设 HealthCheckRequest 是空的
 			if err != nil {
 				logger.Warning("Health check failed for slave %s: %v", ip, err)
 				m.slaveStatus.Store(ip, "unhealthy")
@@ -349,7 +340,7 @@ func (m *MasterService) performHealthChecks() {
 				return
 			}
 
-			if healthStatus.Status == HealthCheckResponse_SERVING { // 假设 HealthCheckResponse 有 Status 字段
+			if healthStatus.Status == serverProto.HealthCheckResponse_SERVING { // 假设 HealthCheckResponse 有 Status 字段
 				m.slaveStatus.Store(ip, "healthy")
 				// 更新从节点负载信息，假设 HealthCheckResponse 包含 LoadInfo
 				// m.slaveLoad.Store(ip, healthStatus.LoadInfo)
@@ -499,8 +490,7 @@ func (m *MasterService) runElection(ctx context.Context) {
 			m.masterMutex.Unlock()
 
 			// 主节点逻辑，例如启动特定服务
-			// go m.startHTTPServer() // 确保这个方法是幂等的或者在之前没有启动
-			// go m.startHealthChecks(ctx)
+			go m.startHealthChecks(ctx)
 
 			// 监听会话是否结束，如果结束则重新选举
 			select {
@@ -518,8 +508,10 @@ func (m *MasterService) runElection(ctx context.Context) {
 				m.isMaster = false
 				m.masterMutex.Unlock()
 				// 停止主节点特定的服务
-				// if m.httpServer != nil { m.httpServer.Close(); m.httpServer = nil }
-				// 重新进入选举循环
+				if m.httpServer != nil {
+					m.httpServer.Close()
+					m.httpServer = nil
+				}
 			}
 		}
 	}
@@ -623,7 +615,7 @@ func (m *MasterService) campaignMaster() {
 // registerService 注册服务
 func (m *MasterService) registerService() error {
 	// 创建租约
-	resp, err := m.client.Grant(context.Background(), 10)
+	resp, err := m.client.Grant(m.appCtx, 10)
 	if err != nil {
 		return fmt.Errorf("创建租约失败: %v", err)
 	}
@@ -631,25 +623,33 @@ func (m *MasterService) registerService() error {
 
 	// 注册服务
 	key := fmt.Sprintf("%s/%s/%s", ServiceRootPath, m.serviceName, m.localhost)
-	_, err = m.client.Put(context.Background(), key, m.localhost, clientv3.WithLease(m.leaseID))
+	_, err = m.client.Put(m.appCtx, key, m.localhost, clientv3.WithLease(m.leaseID))
 	if err != nil {
 		return fmt.Errorf("注册服务失败: %v", err)
 	}
 
 	// 保持租约
-	ch, err := m.client.KeepAlive(context.Background(), m.leaseID)
+	ch, err := m.client.KeepAlive(m.appCtx, m.leaseID)
 	if err != nil {
 		return fmt.Errorf("保持租约失败: %v", err)
 	}
 
 	// 监听停止信号
 	go func() {
-		select {
-		case <-m.stopCh:
-			<-ch
-		case <-m.appCtx.Done(): // 监听应用全局上下文
-			logger.Info("Application context cancelled, stopping MasterService.")
-			m.Stop(context.Background()) // 调用 Stop 进行清理
+		for {
+			select {
+			case <-m.stopCh:
+			case ka := <-ch:
+				if ka == nil {
+					logger.Warning("keep alive channel closed.")
+				} else {
+					logger.Info("keep alive channel continue: %d", ka.TTL)
+				}
+
+			case <-m.appCtx.Done(): // 监听应用全局上下文
+				logger.Info("Application context cancelled, stopping MasterService.")
+				m.Stop(context.Background()) // 调用 Stop 进行清理
+			}
 		}
 	}()
 	return nil
@@ -689,7 +689,7 @@ func (m *MasterService) healthCheck() {
 }
 
 // getSlaveEndpoints 获取所有从节点
-func (m *MasterService) getSlaveEndpoints() []EndPoint {
+func (m *MasterService) getSlaveEndpoints() []entity.EndPoint {
 	prefix := fmt.Sprintf("%s/%s/", ServiceRootPath, m.serviceName)
 	resp, err := m.client.Get(context.Background(), prefix, clientv3.WithPrefix())
 	if err != nil {
@@ -697,11 +697,11 @@ func (m *MasterService) getSlaveEndpoints() []EndPoint {
 		return nil
 	}
 
-	var endpoints []EndPoint
+	var endpoints []entity.EndPoint
 	for _, kv := range resp.Kvs {
 		// 排除自己
 		if string(kv.Value) != m.localhost {
-			endpoints = append(endpoints, EndPoint{Ip: string(kv.Value)})
+			endpoints = append(endpoints, entity.EndPoint{Ip: string(kv.Value)})
 		}
 	}
 
@@ -709,7 +709,7 @@ func (m *MasterService) getSlaveEndpoints() []EndPoint {
 }
 
 // checkSlaveHealth 检查从节点健康状态
-func (m *MasterService) checkSlaveHealth(slave EndPoint) {
+func (m *MasterService) checkSlaveHealth(slave entity.EndPoint) {
 	// 获取连接
 	conn := m.getGrpcConn(slave)
 	if conn == nil {
@@ -720,7 +720,7 @@ func (m *MasterService) checkSlaveHealth(slave EndPoint) {
 	}
 
 	// 创建客户端
-	client := NewIndexServiceClient(conn)
+	client := serverProto.NewIndexServiceClient(conn)
 
 	// 发送健康检查请求（使用 Count 方法作为健康检查）
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -729,7 +729,7 @@ func (m *MasterService) checkSlaveHealth(slave EndPoint) {
 	// 记录请求开始时间，用于计算响应时间
 	startTime := time.Now()
 
-	resp, err := client.Count(ctx, &CountRequest{})
+	resp, err := client.Count(ctx, &serverProto.CountRequest{})
 	if err != nil {
 		// 健康检查失败，标记为不可用
 		m.slaveStatus.Store(slave.Ip, false)
@@ -756,7 +756,7 @@ func (m *MasterService) checkSlaveHealth(slave EndPoint) {
 }
 
 // getGrpcConn 获取 gRPC 连接
-func (m *MasterService) getGrpcConn(point EndPoint) *grpc.ClientConn {
+func (m *MasterService) getGrpcConn(point entity.EndPoint) *grpc.ClientConn {
 	v, ok := m.connPool.Load(point.Ip)
 	if ok {
 		conn := v.(*grpc.ClientConn)
@@ -782,15 +782,15 @@ func (m *MasterService) getGrpcConn(point EndPoint) *grpc.ClientConn {
 }
 
 // getBestSlave 根据负载均衡策略选择最佳从节点
-func (m *MasterService) getBestSlave() (EndPoint, error) {
+func (m *MasterService) getBestSlave() (entity.EndPoint, error) {
 	availableSlaves := m.getAvailableSlaves()
 	if len(availableSlaves) == 0 {
-		return EndPoint{}, errors.New("没有可用的从节点")
+		return entity.EndPoint{}, errors.New("没有可用的从节点")
 	}
 
 	// 实现加权轮询负载均衡
 	type slaveScore struct {
-		endpoint EndPoint
+		endpoint entity.EndPoint
 		score    float64
 	}
 
@@ -1136,7 +1136,7 @@ func (m *MasterService) Stop(ctx context.Context) error {
 //}
 
 // ReportTaskResult 接收从节点的任务执行结果
-func (m *MasterService) ReportTaskResult(ctx context.Context, result *TaskResponse) (*ResCount, error) {
+func (m *MasterService) ReportTaskResult(ctx context.Context, result *serverProto.TaskResponse) (*serverProto.ResCount, error) {
 	// 检查是否是主节点
 	m.masterMutex.RLock()
 	isMaster := m.isMaster
@@ -1170,7 +1170,7 @@ func (m *MasterService) ReportTaskResult(ctx context.Context, result *TaskRespon
 	// 检查任务是否完成
 	m.checkTaskCompletion(taskID)
 
-	return &ResCount{Count: 1}, nil
+	return &serverProto.ResCount{Count: 1}, nil
 }
 
 // checkTaskTimeout 检查任务是否超时
@@ -1198,7 +1198,7 @@ func (m *MasterService) checkTaskTimeout(taskID string, timeout time.Duration) {
 	// 对于未报告结果的从节点，标记为超时
 	for _, slaveID := range pendingSlaves {
 		taskInfo.ResultsLock.Lock()
-		taskInfo.Results[slaveID] = &TaskResponse{
+		taskInfo.Results[slaveID] = &serverProto.TaskResponse{
 			TaskId:       taskID + "-" + slaveID,
 			SlaveId:      slaveID,
 			Success:      false,
@@ -1245,9 +1245,9 @@ func (m *MasterService) processTaskResults(taskID string) {
 }
 
 // 改进的负载均衡策略
-func (m *MasterService) getAvailableSlaves() []EndPoint {
+func (m *MasterService) getAvailableSlaves() []entity.EndPoint {
 	slaves := m.getSlaveEndpoints()
-	var availableSlaves []EndPoint
+	var availableSlaves []entity.EndPoint
 
 	// 统计每个从节点的连接数
 	connCounts := make(map[string]int)

@@ -83,6 +83,17 @@ nvcc --version
 # 方法1：使用 conda (推荐)
 conda install -c pytorch -c nvidia faiss-gpu=1.7.4 cudatoolkit=11.8
 
+### 安装proto
+#下载可执行文件
+go install google.golang.org/protobuf/cmd/protoc-gen-go
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc
+
+#下载库
+go get -u google.golang.org/grpc/cmd/protoc-gen-go-grpc
+go get -u google.golang.org/protobuf/cmd/protoc-gen-go
+go get -u google.golang.org/grpc
+
+
 # 方法2：从源码编译
 git clone https://github.com/facebookresearch/faiss.git
 cd faiss

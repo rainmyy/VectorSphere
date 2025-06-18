@@ -2,8 +2,8 @@ package distributed
 
 import (
 	confType "VectorSphere/src/library/confType"
+	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/logger"
-	"VectorSphere/src/server"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -206,7 +206,7 @@ func (cm *ConfigManager) setDefaults(config *DistributedConfig) {
 
 	// 设置默认endpoints（如果为空）
 	if config.Endpoints == nil {
-		config.Endpoints = make(map[string]server.EndPoint)
+		config.Endpoints = make(map[string]entity.EndPoint)
 	}
 
 	logger.Info("Applied default configuration values")
@@ -270,7 +270,7 @@ func CreateDefaultConfig(configPath string) error {
 		Etcd: EtcdConfig{
 			Endpoints: []string{"localhost:2379"},
 		},
-		Endpoints: make(map[string]server.EndPoint),
+		Endpoints: make(map[string]entity.EndPoint),
 	}
 
 	// 确保目录存在

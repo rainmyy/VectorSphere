@@ -365,7 +365,7 @@ func (eeh *EnhancedErrorHandler) RegisterRetryConfig(serviceName, operation stri
 func (eeh *EnhancedErrorHandler) RegisterCircuitBreaker(serviceName, operation string, config *CircuitBreakerConfig) {
 	key := fmt.Sprintf("%s.%s", serviceName, operation)
 	cb := &CircuitBreaker{
-		name:            key,
+		Name:            key,
 		config:          config,
 		state:           Closed,
 		lastStateChange: time.Now(),
@@ -689,7 +689,7 @@ func (eeh *EnhancedErrorHandler) checkCircuitBreaker(serviceName, operation stri
 		return true // 没有熔断器，允许通过
 	}
 
-	return cb.allowRequest()
+	return cb.AllowRequest()
 }
 
 // recordCircuitBreakerSuccess 记录熔断器成功
@@ -712,7 +712,7 @@ func (eeh *EnhancedErrorHandler) recordCircuitBreakerFailure(serviceName, operat
 	eeh.mu.RUnlock()
 
 	if exists {
-		cb.recordFailure()
+		cb.RecordFailure()
 	}
 }
 

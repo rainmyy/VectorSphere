@@ -1,10 +1,10 @@
 syntax = "proto3";
-package messages;
+package server;
 
 import "key_word.proto";
 
 message TermQuery {
-  KeyWord Keyword = 1; // Keyword类型引用自doc.proto
+  server.KeyWord Keyword = 1; // Keyword类型引用自doc.proto
   repeated TermQuery Must = 2;
   repeated TermQuery Should = 3;
 }

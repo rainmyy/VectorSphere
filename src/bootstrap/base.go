@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"VectorSphere/src/library/common"
 	confType "VectorSphere/src/library/confType"
+	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/logger"
 	"VectorSphere/src/scheduler"
 	"VectorSphere/src/server"
@@ -71,7 +72,7 @@ type ServiceConfig struct {
 	HttpPort             int                        `yaml:"httpPort"`             // Master HTTP 服务的端口
 	TaskTimeout          int                        `yaml:"taskTimeout"`          // Master 任务超时（秒）
 	HealthCheckInterval  int                        `yaml:"healthCheckInterval"`  // Master 健康检查间隔（秒）
-	Endpoints            map[string]server.EndPoint `yaml:"endpoints"`
+	Endpoints            map[string]entity.EndPoint `yaml:"endpoints"`
 }
 
 type MasterConfig struct {
@@ -248,8 +249,8 @@ func (app *AppServer) RegisterService() {
 		logger.Error("read service conf failed, err:%v", err)
 		return
 	}
-	var masterEndpoint []server.EndPoint
-	var sentinelEndpoint []server.EndPoint
+	var masterEndpoint []entity.EndPoint
+	var sentinelEndpoint []entity.EndPoint
 
 	for name, endpoint := range config.Endpoints {
 		port := endpoint.Port
@@ -300,7 +301,7 @@ func (app *AppServer) DiscoverService() {
 		logger.Error("endpoints is nil")
 		return
 	}
-	var sentinelEndpoint []server.EndPoint
+	var sentinelEndpoint []entity.EndPoint
 
 	for name, endpoint := range config.Endpoints {
 		port := endpoint.Port
@@ -347,7 +348,7 @@ func (app *AppServer) Setup() error {
 	if err := app.taskPool.Submit(etcdTask); err != nil {
 		return fmt.Errorf("failed to submit etcd_ready task: %w", err)
 	}
-	var endpoints []server.EndPoint
+	var endpoints []entity.EndPoint
 	for _, endpoint := range cfg.Endpoints {
 		endpoints = append(endpoints, endpoint)
 	}

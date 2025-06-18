@@ -2,8 +2,8 @@ package distributed
 
 import (
 	"VectorSphere/src/library/logger"
-	"VectorSphere/src/messages"
-	"VectorSphere/src/server"
+	messages2 "VectorSphere/src/proto/messages"
+	"VectorSphere/src/proto/serverProto"
 	"context"
 	"encoding/json"
 	"errors"
@@ -304,7 +304,7 @@ func (gw *APIGateway) handleCreateTable(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// 创建protobuf请求
-	createReq := &server.CreateTableRequest{
+	createReq := &serverProto.CreateTableRequest{
 		TableName:          req.TableName,
 		VectorDbPath:       req.VectorDBPath,
 		NumClusters:        req.NumClusters,
@@ -362,7 +362,7 @@ func (gw *APIGateway) handleDeleteTable(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	deleteReq := &server.TableRequest{
+	deleteReq := &serverProto.TableRequest{
 		TableName: tableName,
 	}
 
@@ -404,9 +404,9 @@ func (gw *APIGateway) handleAddDocument(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var req struct {
-		TableName      string             `json:"table_name"`
-		Document       *messages.Document `json:"document"`
-		VectorizedType int32              `json:"vectorized_type"`
+		TableName      string              `json:"table_name"`
+		Document       *messages2.Document `json:"document"`
+		VectorizedType int32               `json:"vectorized_type"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -414,7 +414,7 @@ func (gw *APIGateway) handleAddDocument(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	addReq := &server.AddDocumentRequest{
+	addReq := &serverProto.AddDocumentRequest{
 		TableName:      req.TableName,
 		Document:       req.Document,
 		VectorizedType: req.VectorizedType,
@@ -458,9 +458,9 @@ func (gw *APIGateway) handleDeleteDocument(w http.ResponseWriter, r *http.Reques
 	}
 
 	var req struct {
-		TableName string              `json:"table_name"`
-		DocID     string              `json:"doc_id"`
-		Keywords  []*messages.KeyWord `json:"keywords"`
+		TableName string               `json:"table_name"`
+		DocID     string               `json:"doc_id"`
+		Keywords  []*messages2.KeyWord `json:"keywords"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -468,7 +468,7 @@ func (gw *APIGateway) handleDeleteDocument(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	delReq := &server.DeleteDocumentRequest{
+	delReq := &serverProto.DeleteDocumentRequest{
 		TableName: req.TableName,
 		DocId:     req.DocID,
 		Keywords:  req.Keywords,
@@ -508,15 +508,15 @@ func (gw *APIGateway) handleDeleteDocument(w http.ResponseWriter, r *http.Reques
 func (gw *APIGateway) handleSearchTable(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
-		TableName      string              `json:"table_name"`
-		Query          *messages.TermQuery `json:"query"`
-		VectorizedType int32               `json:"vectorized_type"`
-		K              int32               `json:"k"`
-		Probe          int32               `json:"probe"`
-		OnFlag         uint64              `json:"on_flag"`
-		OffFlag        uint64              `json:"off_flag"`
-		OrFlags        []uint64            `json:"or_flags"`
-		UseAnn         bool                `json:"use_ann"`
+		TableName      string               `json:"table_name"`
+		Query          *messages2.TermQuery `json:"query"`
+		VectorizedType int32                `json:"vectorized_type"`
+		K              int32                `json:"k"`
+		Probe          int32                `json:"probe"`
+		OnFlag         uint64               `json:"on_flag"`
+		OffFlag        uint64               `json:"off_flag"`
+		OrFlags        []uint64             `json:"or_flags"`
+		UseAnn         bool                 `json:"use_ann"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -524,7 +524,7 @@ func (gw *APIGateway) handleSearchTable(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	searchReq := &server.SearchRequest{
+	searchReq := &serverProto.SearchRequest{
 		TableName:      req.TableName,
 		Query:          req.Query,
 		VectorizedType: req.VectorizedType,

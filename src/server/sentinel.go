@@ -1,8 +1,10 @@
 package server
 
 import (
+	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/logger"
-	"VectorSphere/src/messages"
+	"VectorSphere/src/proto/messages"
+	serverProto "VectorSphere/src/proto/serverProto"
 	"context"
 	"encoding/json"
 	"errors"
@@ -41,7 +43,7 @@ type Sentinel struct {
 	Token      string
 }
 
-func (s *Sentinel) DelDoc(ctx context.Context, docId *DocId) (*ResCount, error) {
+func (s *Sentinel) DelDoc(ctx context.Context, docId *serverProto.DocId) (*serverProto.ResCount, error) {
 	endpoints := s.Hub.GetServiceEndpoints(s.ServiceKey)
 	if len(endpoints) == 0 {
 		return nil, errors.New("no endpoints")
@@ -50,14 +52,14 @@ func (s *Sentinel) DelDoc(ctx context.Context, docId *DocId) (*ResCount, error) 
 	wg := sync.WaitGroup{}
 	wg.Add(len(endpoints))
 	for _, endpoint := range endpoints {
-		go func(endpoint EndPoint) {
+		go func(endpoint entity.EndPoint) {
 			defer wg.Done()
 			conn := s.GetGrpcConn(endpoint)
 			if conn == nil {
 				return
 			}
-			client := NewIndexServiceClient(conn)
-			affected, err := client.DelDoc(context.Background(), &DocId{Id: docId.Id})
+			client := serverProto.NewIndexServiceClient(conn)
+			affected, err := client.DelDoc(context.Background(), &serverProto.DocId{Id: docId.Id})
 			if err != nil {
 				return
 			}
@@ -68,10 +70,10 @@ func (s *Sentinel) DelDoc(ctx context.Context, docId *DocId) (*ResCount, error) 
 	}
 	wg.Wait()
 
-	return &ResCount{Count: n}, nil
+	return &serverProto.ResCount{Count: n}, nil
 }
 
-func (s *Sentinel) AddDoc(ctx context.Context, document *messages.Document) (*ResCount, error) {
+func (s *Sentinel) AddDoc(ctx context.Context, document *messages.Document) (*serverProto.ResCount, error) {
 	endPoint := s.Hub.GetServiceEndpoint(s.ServiceKey)
 	if len(endPoint.Ip) == 0 {
 		return nil, errors.New("服务节点不存在")
@@ -80,16 +82,16 @@ func (s *Sentinel) AddDoc(ctx context.Context, document *messages.Document) (*Re
 	if conn == nil {
 		return nil, errors.New("无法连接到" + endPoint.Ip)
 	}
-	client := NewIndexServiceClient(conn)
+	client := serverProto.NewIndexServiceClient(conn)
 	affected, err := client.AddDoc(context.Background(), document)
 	if err != nil {
 		return nil, err
 	}
 
-	return &ResCount{Count: affected.Count}, nil
+	return &serverProto.ResCount{Count: affected.Count}, nil
 }
 
-func (s *Sentinel) Search(ctx context.Context, request *Request) (*Result, error) {
+func (s *Sentinel) Search(ctx context.Context, request *serverProto.Request) (*serverProto.Result, error) {
 	endpoints := s.Hub.GetServiceEndpoints(s.ServiceKey)
 	if len(endpoints) == 0 {
 		return nil, errors.New("no endpoints")
@@ -105,14 +107,14 @@ func (s *Sentinel) Search(ctx context.Context, request *Request) (*Result, error
 	wg.Add(len(endpoints))
 
 	for _, endpoint := range endpoints {
-		go func(endpoint EndPoint) {
+		go func(endpoint entity.EndPoint) {
 			defer wg.Done()
 			conn := s.GetGrpcConn(endpoint)
 			if conn == nil {
 				return
 			}
-			client := NewIndexServiceClient(conn)
-			searchRequest := Request{Query: query, OnFlag: onFlag, OffFlag: offFlag, OrFlags: orFlags}
+			client := serverProto.NewIndexServiceClient(conn)
+			searchRequest := serverProto.Request{Query: query, OnFlag: onFlag, OffFlag: offFlag, OrFlags: orFlags}
 			searchResult, err := client.Search(context.Background(), &searchRequest)
 			if err != nil {
 				return
@@ -138,10 +140,10 @@ func (s *Sentinel) Search(ctx context.Context, request *Request) (*Result, error
 	close(resultChan) // 关闭结果通道 当resultChan关闭时，上面协程range循环结束
 	<-signalChan      // 等待结果处理完成
 
-	return &Result{Results: docs}, nil
+	return &serverProto.Result{Results: docs}, nil
 }
 
-func (s *Sentinel) Count(ctx context.Context, request *CountRequest) (*ResCount, error) {
+func (s *Sentinel) Count(ctx context.Context, request *serverProto.CountRequest) (*serverProto.ResCount, error) {
 	endpoints := s.Hub.GetServiceEndpoints(s.ServiceKey)
 	if len(endpoints) == 0 {
 		return nil, errors.New("no endpoints")
@@ -152,15 +154,15 @@ func (s *Sentinel) Count(ctx context.Context, request *CountRequest) (*ResCount,
 	wg.Add(len(endpoints))
 
 	for _, endpoint := range endpoints {
-		go func(endpoint EndPoint) {
+		go func(endpoint entity.EndPoint) {
 			defer wg.Done()
 			conn := s.GetGrpcConn(endpoint)
 			if conn == nil {
 
 				return
 			}
-			client := NewIndexServiceClient(conn)
-			countResult, err := client.Count(context.Background(), &CountRequest{})
+			client := serverProto.NewIndexServiceClient(conn)
+			countResult, err := client.Count(context.Background(), &serverProto.CountRequest{})
 			if err != nil {
 				return
 			}
@@ -171,52 +173,52 @@ func (s *Sentinel) Count(ctx context.Context, request *CountRequest) (*ResCount,
 	}
 	wg.Wait()
 
-	return &ResCount{Count: count}, nil
+	return &serverProto.ResCount{Count: count}, nil
 }
 
-func (s *Sentinel) ExecuteTask(ctx context.Context, request *TaskRequest) (*TaskResponse, error) {
+func (s *Sentinel) ExecuteTask(ctx context.Context, request *serverProto.TaskRequest) (*serverProto.TaskResponse, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (s *Sentinel) ReportTaskResult(ctx context.Context, response *TaskResponse) (*ResCount, error) {
+func (s *Sentinel) ReportTaskResult(ctx context.Context, response *serverProto.TaskResponse) (*serverProto.ResCount, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (s *Sentinel) CreateTable(ctx context.Context, request *CreateTableRequest) (*ResCount, error) {
+func (s *Sentinel) CreateTable(ctx context.Context, request *serverProto.CreateTableRequest) (*serverProto.ResCount, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (s *Sentinel) DeleteTable(ctx context.Context, request *TableRequest) (*ResCount, error) {
+func (s *Sentinel) DeleteTable(ctx context.Context, request *serverProto.TableRequest) (*serverProto.ResCount, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (s *Sentinel) AddDocumentToTable(ctx context.Context, request *AddDocumentRequest) (*ResCount, error) {
+func (s *Sentinel) AddDocumentToTable(ctx context.Context, request *serverProto.AddDocumentRequest) (*serverProto.ResCount, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (s *Sentinel) DeleteDocumentFromTable(ctx context.Context, request *DeleteDocumentRequest) (*ResCount, error) {
+func (s *Sentinel) DeleteDocumentFromTable(ctx context.Context, request *serverProto.DeleteDocumentRequest) (*serverProto.ResCount, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (s *Sentinel) SearchTable(ctx context.Context, request *SearchRequest) (*SearchResult, error) {
+func (s *Sentinel) SearchTable(ctx context.Context, request *serverProto.SearchRequest) (*serverProto.SearchResult, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (s *Sentinel) HealthCheck(ctx context.Context, request *HealthCheckRequest) (*HealthCheckResponse, error) {
+func (s *Sentinel) HealthCheck(ctx context.Context, request *serverProto.HealthCheckRequest) (*serverProto.HealthCheckResponse, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-var _ IndexServiceServer = (*Sentinel)(nil)
+//var _ IndexServiceServer = (*Sentinel)(nil)
 
-func NewSentinel(endPoints []EndPoint, heartBeat int64, qps int, serviceName string, role SentinelRole) *Sentinel {
+func NewSentinel(endPoints []entity.EndPoint, heartBeat int64, qps int, serviceName string, role SentinelRole) *Sentinel {
 	sentinel := &Sentinel{
 		Hub:        GetHubProxy(endPoints, heartBeat, qps, serviceName),
 		connPool:   sync.Map{},
@@ -278,7 +280,7 @@ func (s *Sentinel) WatchServiceChanges() {
 	}
 }
 
-func (s *Sentinel) GetGrpcConn(point EndPoint) *grpc.ClientConn {
+func (s *Sentinel) GetGrpcConn(point entity.EndPoint) *grpc.ClientConn {
 	v, ok := s.connPool.Load(point.Ip)
 	if ok {
 		conn := v.(*grpc.ClientConn)
@@ -354,7 +356,7 @@ func (s *Sentinel) rateLimitMiddleware(next http.Handler) http.Handler {
 	})
 }
 func (s *Sentinel) handleSearch(w http.ResponseWriter, r *http.Request) {
-	var req Request
+	var req serverProto.Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", 400)
 		return
@@ -450,7 +452,7 @@ func (s *Sentinel) handleLBSwitch(w http.ResponseWriter, r *http.Request) {
 func (s *Sentinel) handleGrayRoute(w http.ResponseWriter, r *http.Request) {
 	tag := r.URL.Query().Get("tag")
 	endpoints := s.Hub.GetServiceEndpoints(s.ServiceKey)
-	var filtered []EndPoint
+	var filtered []entity.EndPoint
 	for _, ep := range endpoints {
 		if ep.Tags["env"] == tag {
 			filtered = append(filtered, ep)
@@ -471,17 +473,17 @@ func (s *Sentinel) ForwardToSlaves(method string, req interface{}) (interface{},
 	if conn == nil {
 		return nil, errors.New("无法连接到从节点")
 	}
-	client := NewIndexServiceClient(conn)
+	client := serverProto.NewIndexServiceClient(conn)
 	switch method {
 	case "AddDoc":
 		doc := req.(*messages.Document)
 		return client.AddDoc(context.Background(), doc)
 	case "Search":
-		searchReq := req.(*Request)
+		searchReq := req.(*serverProto.Request)
 		return client.Search(context.Background(), searchReq)
 	case "DeleteDoc":
 		id := req.(string)
-		return client.DelDoc(context.Background(), &DocId{Id: id})
+		return client.DelDoc(context.Background(), &serverProto.DocId{Id: id})
 	//case "UpdateDoc":
 	//	doc := req.(*messages.Document)
 	//	return client.UpdateDoc(context.Background(), doc)
@@ -565,7 +567,7 @@ func RunCLI() {
 func StartGRPCServer(port int) {
 	lis, _ := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	grpcServer := grpc.NewServer()
-	RegisterIndexServiceServer(grpcServer, &Sentinel{})
+	serverProto.RegisterIndexServiceServer(grpcServer, &Sentinel{})
 	logger.Info("gRPC server started on :%d", port)
 	grpcServer.Serve(lis)
 }

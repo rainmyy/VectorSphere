@@ -6,7 +6,7 @@ import (
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/logger"
 	"VectorSphere/src/library/tree"
-	"VectorSphere/src/messages"
+	messages2 "VectorSphere/src/proto/messages"
 	"VectorSphere/src/vector"
 	"fmt"
 	"math/rand"
@@ -142,7 +142,7 @@ func (mts *MultiTableSearchService) evictOldestCacheEntry() {
 }
 
 // 生成缓存键
-func generateCacheKey(tableName string, query *messages.TermQuery, vectorizedType int, k int, probe int, onFlag uint64, offFlag uint64, orFlags []uint64, useANN bool) string {
+func generateCacheKey(tableName string, query *messages2.TermQuery, vectorizedType int, k int, probe int, onFlag uint64, offFlag uint64, orFlags []uint64, useANN bool) string {
 	// 将查询参数序列化为缓存键
 	key := fmt.Sprintf("%s:%s:%d:%d:%d:%d:%d:%v:%v", tableName,
 		query.Keyword.ToString(), vectorizedType, k, probe, onFlag, offFlag, orFlags, useANN)
@@ -261,7 +261,7 @@ func (mts *MultiTableSearchService) CloseTable(tableName string) error {
 }
 
 // AddDocument 使用重试机制的 AddDocument 方法
-func (mts *MultiTableSearchService) AddDocument(tableName string, doc messages.Document, vectorizedType int) error {
+func (mts *MultiTableSearchService) AddDocument(tableName string, doc messages2.Document, vectorizedType int) error {
 	table, err := mts.GetTable(tableName)
 	if err != nil {
 		return err
@@ -296,7 +296,7 @@ func (mts *MultiTableSearchService) AddDocument(tableName string, doc messages.D
 }
 
 // DeleteDocument 从指定表中删除文档
-func (mts *MultiTableSearchService) DeleteDocument(tableName string, docId string, keywords []*messages.KeyWord) (err error) {
+func (mts *MultiTableSearchService) DeleteDocument(tableName string, docId string, keywords []*messages2.KeyWord) (err error) {
 	table, err := mts.GetTable(tableName)
 	if err != nil {
 		return err
@@ -338,7 +338,7 @@ func (mts *MultiTableSearchService) DeleteDocument(tableName string, docId strin
 }
 
 // Search 在指定表中执行搜索
-func (mts *MultiTableSearchService) searchBa(tableName string, query *messages.TermQuery, vectorizedType int, k int, probe int, onFlag uint64, offFlag uint64, orFlags []uint64, useANN bool) ([]string, error) {
+func (mts *MultiTableSearchService) searchBa(tableName string, query *messages2.TermQuery, vectorizedType int, k int, probe int, onFlag uint64, offFlag uint64, orFlags []uint64, useANN bool) ([]string, error) {
 	table, err := mts.GetTable(tableName)
 	if err != nil {
 		return nil, err
@@ -406,7 +406,7 @@ func (mts *MultiTableSearchService) searchBa(tableName string, query *messages.T
 }
 
 // Search 在指定表中执行搜索 - 优化版本
-func (mts *MultiTableSearchService) Search(tableName string, query *messages.TermQuery, vectorizedType int, k int, probe int, onFlag uint64, offFlag uint64, orFlags []uint64, useANN bool) ([]string, error) {
+func (mts *MultiTableSearchService) Search(tableName string, query *messages2.TermQuery, vectorizedType int, k int, probe int, onFlag uint64, offFlag uint64, orFlags []uint64, useANN bool) ([]string, error) {
 	table, err := mts.GetTable(tableName)
 	if err != nil {
 		return nil, err
@@ -641,8 +641,8 @@ func (mts *MultiTableSearchService) ExecuteQuery(query string) ([]string, error)
 	}
 
 	// 构建 TermQuery
-	termQuery := &messages.TermQuery{
-		Keyword: &messages.KeyWord{Word: keywordQuery},
+	termQuery := &messages2.TermQuery{
+		Keyword: &messages2.KeyWord{Word: keywordQuery},
 	}
 
 	// 如果提供了向量查询文本，设置到 TermQuery 中
@@ -683,7 +683,7 @@ func (mts *MultiTableSearchService) ExecuteQuery(query string) ([]string, error)
 }
 
 // BatchAddDocuments 批量添加文档到指定表
-func (mts *MultiTableSearchService) BatchAddDocuments(tableName string, docs []messages.Document, vectorizedType int) error {
+func (mts *MultiTableSearchService) BatchAddDocuments(tableName string, docs []messages2.Document, vectorizedType int) error {
 	table, err := mts.GetTable(tableName)
 	if err != nil {
 		return err
@@ -714,7 +714,7 @@ func (mts *MultiTableSearchService) BatchAddDocuments(tableName string, docs []m
 	if table.VectorDB != nil {
 		// 使用工作池并行处理
 		numWorkers := runtime.NumCPU()
-		workChan := make(chan messages.Document, len(docs))
+		workChan := make(chan messages2.Document, len(docs))
 		errChan := make(chan error, len(docs))
 		doneChan := make(chan bool, 1)
 
@@ -764,7 +764,7 @@ func (mts *MultiTableSearchService) BatchAddDocuments(tableName string, docs []m
 }
 
 // BatchDeleteDocuments 批量删除文档
-func (mts *MultiTableSearchService) BatchDeleteDocuments(tableName string, docIds []string, keywordsList [][]*messages.KeyWord) error {
+func (mts *MultiTableSearchService) BatchDeleteDocuments(tableName string, docIds []string, keywordsList [][]*messages2.KeyWord) error {
 	if len(docIds) != len(keywordsList) {
 		return fmt.Errorf("docIds and keywordsList must have the same length")
 	}

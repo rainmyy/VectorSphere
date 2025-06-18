@@ -1,6 +1,7 @@
 package server
 
 import (
+	"VectorSphere/src/library/entity"
 	"fmt"
 	"hash/crc32"
 	"math"
@@ -50,36 +51,36 @@ func LoadBalanceFactory(lbType int) Balancer {
 }
 
 type Balancer interface {
-	Take() EndPoint
-	Set(endpoints ...EndPoint) bool
+	Take() entity.EndPoint
+	Set(endpoints ...entity.EndPoint) bool
 }
 
 type RandomBalancer struct {
-	endpoints []EndPoint
+	endpoints []entity.EndPoint
 }
 
-func (r *RandomBalancer) Set(endpoints ...EndPoint) bool {
+func (r *RandomBalancer) Set(endpoints ...entity.EndPoint) bool {
 	r.endpoints = endpoints
 	return true
 }
 
-func (r *RandomBalancer) Take() EndPoint {
+func (r *RandomBalancer) Take() entity.EndPoint {
 	if len(r.endpoints) == 0 {
-		return EndPoint{}
+		return entity.EndPoint{}
 	}
 	index := rand.Intn(len(r.endpoints))
 	return r.endpoints[index]
 }
 
 type WeightRandomBalance struct {
-	adders []EndPoint
+	adders []entity.EndPoint
 	totals []int
 	max    int
 }
 
-func (b *WeightedBalancer) Take() EndPoint {
+func (b *WeightedBalancer) Take() entity.EndPoint {
 	if len(b.endpoints) == 0 {
-		return EndPoint{}
+		return entity.EndPoint{}
 	}
 	total := 0
 	for _, w := range b.weights {
@@ -99,16 +100,16 @@ func (b *WeightedBalancer) Take() EndPoint {
 }
 
 type WeightedBalancer struct {
-	endpoints []EndPoint
+	endpoints []entity.EndPoint
 	weights   []int
 }
 
-func (b *WeightedBalancer) Set(eps ...EndPoint) bool {
+func (b *WeightedBalancer) Set(eps ...entity.EndPoint) bool {
 	b.endpoints = eps
 	b.weights = make([]int, len(eps))
 	for i, ep := range eps {
-		if ep.weight > 0 {
-			b.weights[i] = int(ep.weight)
+		if ep.Weight > 0 {
+			b.weights[i] = int(ep.Weight)
 		} else {
 			b.weights[i] = 1
 		}
@@ -117,20 +118,20 @@ func (b *WeightedBalancer) Set(eps ...EndPoint) bool {
 }
 
 type LeastConnBalancer struct {
-	endpoints []EndPoint
+	endpoints []entity.EndPoint
 	connMap   map[string]int
 }
 
-func (b *LeastConnBalancer) Set(eps ...EndPoint) bool {
+func (b *LeastConnBalancer) Set(eps ...entity.EndPoint) bool {
 	b.endpoints = eps
 	if b.connMap == nil {
 		b.connMap = make(map[string]int)
 	}
 	return true
 }
-func (b *LeastConnBalancer) Take() EndPoint {
+func (b *LeastConnBalancer) Take() entity.EndPoint {
 	if len(b.endpoints) == 0 {
-		return EndPoint{}
+		return entity.EndPoint{}
 	}
 	minIdx := 0
 	minConn := b.connMap[b.endpoints[0].Ip]
@@ -144,17 +145,17 @@ func (b *LeastConnBalancer) Take() EndPoint {
 	return b.endpoints[minIdx]
 }
 
-func (w *WeightRandomBalance) Set(endpoints ...EndPoint) bool {
+func (w *WeightRandomBalance) Set(endpoints ...entity.EndPoint) bool {
 	if w == nil {
 		return false
 	}
 	sort.Slice(endpoints, func(i, j int) bool {
-		return endpoints[i].weight < endpoints[j].weight
+		return endpoints[i].Weight < endpoints[j].Weight
 	})
 	totals := make([]int, len(endpoints))
 	runningTotal := 0
 	for i, e := range endpoints {
-		runningTotal += int(e.weight)
+		runningTotal += int(e.Weight)
 		totals[i] = runningTotal
 	}
 	w.adders = endpoints
@@ -163,25 +164,25 @@ func (w *WeightRandomBalance) Set(endpoints ...EndPoint) bool {
 	return true
 }
 
-func (w *WeightRandomBalance) Take() EndPoint {
+func (w *WeightRandomBalance) Take() entity.EndPoint {
 	r := rand.Intn(w.max) + 1
 	i := sort.SearchInts(w.totals, r)
 	return w.adders[i]
 }
 
 type RoundRobinBalancer struct {
-	endpoints []EndPoint
+	endpoints []entity.EndPoint
 	acc       int64
 }
 
-func (r *RoundRobinBalancer) Set(endpoints ...EndPoint) bool {
+func (r *RoundRobinBalancer) Set(endpoints ...entity.EndPoint) bool {
 	r.endpoints = endpoints
 	return true
 }
 
-func (r *RoundRobinBalancer) Take() EndPoint {
+func (r *RoundRobinBalancer) Take() entity.EndPoint {
 	if len(r.endpoints) == 0 {
-		return EndPoint{}
+		return entity.EndPoint{}
 	}
 	n := atomic.AddInt64(&r.acc, 1)
 	current := r.endpoints[r.acc]
@@ -211,14 +212,14 @@ type ConsistentHashBalancer struct {
 	hash     HashFunc
 	replicas int
 	keys     Uint32Slice
-	hashMap  map[uint32]EndPoint
+	hashMap  map[uint32]entity.EndPoint
 }
 
 func NewConsistentHashBalancer(replicas int, hash HashFunc) *ConsistentHashBalancer {
 	c := &ConsistentHashBalancer{
 		replicas: replicas,
 		hash:     hash,
-		hashMap:  make(map[uint32]EndPoint),
+		hashMap:  make(map[uint32]entity.EndPoint),
 	}
 	if c.hash == nil {
 		c.hash = crc32.ChecksumIEEE
@@ -227,7 +228,7 @@ func NewConsistentHashBalancer(replicas int, hash HashFunc) *ConsistentHashBalan
 	return c
 }
 
-func (c *ConsistentHashBalancer) Set(points ...EndPoint) bool {
+func (c *ConsistentHashBalancer) Set(points ...entity.EndPoint) bool {
 	if len(points) == 0 {
 		return false
 	}
@@ -248,9 +249,9 @@ func (c *ConsistentHashBalancer) IsEmpty() bool {
 	return len(c.keys) == 0
 }
 
-func (c *ConsistentHashBalancer) Take() EndPoint {
+func (c *ConsistentHashBalancer) Take() entity.EndPoint {
 	if c.IsEmpty() {
-		return EndPoint{}
+		return entity.EndPoint{}
 	}
 	hash := c.hash([]byte(""))
 	idx := sort.Search(len(c.keys), func(i int) bool { return c.keys[i] >= hash })
@@ -265,7 +266,7 @@ func (c *ConsistentHashBalancer) Take() EndPoint {
 
 // 源IP哈希负载均衡器
 type SourceIPHashBalancer struct {
-	endpoints []EndPoint
+	endpoints []entity.EndPoint
 	mu        sync.RWMutex
 }
 
@@ -273,23 +274,23 @@ func NewSourceIPHashBalancer() *SourceIPHashBalancer {
 	return &SourceIPHashBalancer{}
 }
 
-func (s *SourceIPHashBalancer) Set(endpoints ...EndPoint) bool {
+func (s *SourceIPHashBalancer) Set(endpoints ...entity.EndPoint) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.endpoints = endpoints
 	return true
 }
 
-func (s *SourceIPHashBalancer) Take() EndPoint {
+func (s *SourceIPHashBalancer) Take() entity.EndPoint {
 	return s.TakeWithContext("")
 }
 
-func (s *SourceIPHashBalancer) TakeWithContext(clientIP string) EndPoint {
+func (s *SourceIPHashBalancer) TakeWithContext(clientIP string) entity.EndPoint {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	if len(s.endpoints) == 0 {
-		return EndPoint{}
+		return entity.EndPoint{}
 	}
 
 	if clientIP == "" {
@@ -304,7 +305,7 @@ func (s *SourceIPHashBalancer) TakeWithContext(clientIP string) EndPoint {
 
 // 响应时间加权负载均衡器
 type ResponseTimeWeightedBalancer struct {
-	endpoints     []EndPoint
+	endpoints     []entity.EndPoint
 	responseTimes []int64 // 平均响应时间（毫秒）
 	requestCounts []int64 // 请求计数
 	mu            sync.RWMutex
@@ -314,7 +315,7 @@ func NewResponseTimeWeightedBalancer() *ResponseTimeWeightedBalancer {
 	return &ResponseTimeWeightedBalancer{}
 }
 
-func (r *ResponseTimeWeightedBalancer) Set(endpoints ...EndPoint) bool {
+func (r *ResponseTimeWeightedBalancer) Set(endpoints ...entity.EndPoint) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -329,12 +330,12 @@ func (r *ResponseTimeWeightedBalancer) Set(endpoints ...EndPoint) bool {
 	return true
 }
 
-func (r *ResponseTimeWeightedBalancer) Take() EndPoint {
+func (r *ResponseTimeWeightedBalancer) Take() entity.EndPoint {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	if len(r.endpoints) == 0 {
-		return EndPoint{}
+		return entity.EndPoint{}
 	}
 
 	// 计算权重（响应时间越低权重越高）
@@ -365,7 +366,7 @@ func (r *ResponseTimeWeightedBalancer) Take() EndPoint {
 }
 
 // 记录响应时间
-func (r *ResponseTimeWeightedBalancer) RecordResponseTime(endpoint EndPoint, responseTime time.Duration) {
+func (r *ResponseTimeWeightedBalancer) RecordResponseTime(endpoint entity.EndPoint, responseTime time.Duration) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -385,7 +386,7 @@ func (r *ResponseTimeWeightedBalancer) RecordResponseTime(endpoint EndPoint, res
 
 // 自适应轮询负载均衡器
 type AdaptiveRoundRobinBalancer struct {
-	endpoints      []EndPoint
+	endpoints      []entity.EndPoint
 	current        int64
 	loadFactors    []float64 // 负载因子
 	mu             sync.RWMutex
@@ -400,7 +401,7 @@ func NewAdaptiveRoundRobinBalancer() *AdaptiveRoundRobinBalancer {
 	}
 }
 
-func (a *AdaptiveRoundRobinBalancer) Set(endpoints ...EndPoint) bool {
+func (a *AdaptiveRoundRobinBalancer) Set(endpoints ...entity.EndPoint) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -414,12 +415,12 @@ func (a *AdaptiveRoundRobinBalancer) Set(endpoints ...EndPoint) bool {
 	return true
 }
 
-func (a *AdaptiveRoundRobinBalancer) Take() EndPoint {
+func (a *AdaptiveRoundRobinBalancer) Take() entity.EndPoint {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
 	if len(a.endpoints) == 0 {
-		return EndPoint{}
+		return entity.EndPoint{}
 	}
 
 	// 根据负载因子调整选择
@@ -437,7 +438,7 @@ func (a *AdaptiveRoundRobinBalancer) Take() EndPoint {
 }
 
 // UpdateLoadFactor 更新负载因子
-func (a *AdaptiveRoundRobinBalancer) UpdateLoadFactor(endpoint EndPoint, loadFactor float64) {
+func (a *AdaptiveRoundRobinBalancer) UpdateLoadFactor(endpoint entity.EndPoint, loadFactor float64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -452,7 +453,7 @@ func (a *AdaptiveRoundRobinBalancer) UpdateLoadFactor(endpoint EndPoint, loadFac
 
 // HealthAwareBalancer 健康感知负载均衡器
 type HealthAwareBalancer struct {
-	endpoints    []EndPoint
+	endpoints    []entity.EndPoint
 	healthStatus map[string]bool
 	mu           sync.RWMutex
 	balancer     Balancer
@@ -467,12 +468,12 @@ func NewHealthAwareBalancer(balancer Balancer) *HealthAwareBalancer {
 }
 
 // Set 设置端点
-func (hab *HealthAwareBalancer) Set(endpoints ...EndPoint) bool {
+func (hab *HealthAwareBalancer) Set(endpoints ...entity.EndPoint) bool {
 	hab.mu.Lock()
 	defer hab.mu.Unlock()
 
 	// 过滤健康的端点
-	var healthyEndpoints []EndPoint
+	var healthyEndpoints []entity.EndPoint
 	for _, ep := range endpoints {
 		key := fmt.Sprintf("%s:%d", ep.Ip, ep.Port)
 		if healthy, exists := hab.healthStatus[key]; !exists || healthy {
@@ -485,7 +486,7 @@ func (hab *HealthAwareBalancer) Set(endpoints ...EndPoint) bool {
 }
 
 // Take 获取端点
-func (hab *HealthAwareBalancer) Take() EndPoint {
+func (hab *HealthAwareBalancer) Take() entity.EndPoint {
 	return hab.balancer.Take()
 }
 
@@ -501,7 +502,7 @@ func (hab *HealthAwareBalancer) UpdateHealth(endpoint string, healthy bool) {
 
 // AdaptiveWeightedBalancer 自适应加权负载均衡器
 type AdaptiveWeightedBalancer struct {
-	endpoints     []EndPoint
+	endpoints     []entity.EndPoint
 	weights       []int64
 	responseTime  []int64 // 响应时间（毫秒）
 	errorCount    []int64 // 错误计数
@@ -516,7 +517,7 @@ func NewAdaptiveWeightedBalancer() *AdaptiveWeightedBalancer {
 }
 
 // Set 设置端点
-func (awb *AdaptiveWeightedBalancer) Set(endpoints ...EndPoint) bool {
+func (awb *AdaptiveWeightedBalancer) Set(endpoints ...entity.EndPoint) bool {
 	awb.mu.Lock()
 	defer awb.mu.Unlock()
 
@@ -528,8 +529,8 @@ func (awb *AdaptiveWeightedBalancer) Set(endpoints ...EndPoint) bool {
 
 	// 初始化权重
 	for i, ep := range endpoints {
-		if ep.weight > 0 {
-			awb.weights[i] = int64(ep.weight)
+		if ep.Weight > 0 {
+			awb.weights[i] = int64(ep.Weight)
 		} else {
 			awb.weights[i] = 100 // 默认权重
 		}
@@ -539,12 +540,12 @@ func (awb *AdaptiveWeightedBalancer) Set(endpoints ...EndPoint) bool {
 }
 
 // Take 获取端点
-func (awb *AdaptiveWeightedBalancer) Take() EndPoint {
+func (awb *AdaptiveWeightedBalancer) Take() entity.EndPoint {
 	awb.mu.RLock()
 	defer awb.mu.RUnlock()
 
 	if len(awb.endpoints) == 0 {
-		return EndPoint{}
+		return entity.EndPoint{}
 	}
 
 	// 计算动态权重
@@ -610,7 +611,7 @@ func (awb *AdaptiveWeightedBalancer) calculateDynamicWeights() []int64 {
 }
 
 // RecordResponse 记录响应
-func (awb *AdaptiveWeightedBalancer) RecordResponse(endpoint EndPoint, responseTime time.Duration, success bool) {
+func (awb *AdaptiveWeightedBalancer) RecordResponse(endpoint entity.EndPoint, responseTime time.Duration, success bool) {
 	awb.mu.RLock()
 	defer awb.mu.RUnlock()
 

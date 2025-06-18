@@ -1,5 +1,5 @@
 syntax = "proto3";
-package messages;
+package server;
 
 import "key_word.proto";
 
@@ -7,6 +7,6 @@ message Document {
   string Id = 1;
   int64 ScoreId = 2;
   uint64 BitsFeature = 3;
-  repeated KeyWord keWords = 4;
+  repeated server.KeyWord keWords = 4;
   bytes Bytes = 5;
 }

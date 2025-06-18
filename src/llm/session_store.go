@@ -3,7 +3,7 @@ package llm
 import (
 	"VectorSphere/src/db"
 	"VectorSphere/src/index"
-	"VectorSphere/src/messages"
+	messages2 "VectorSphere/src/proto/messages"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -331,17 +331,17 @@ func (s *DistributedSessionStore) Set(meta SessionMeta, history []Message) error
 }
 
 // 修改formatDocument方法，添加ScoreId设置
-func (s *DistributedSessionStore) formatDocument(meta SessionMeta, data []byte) messages.Document {
-	var keywords []*messages.KeyWord
-	keywords = append(keywords, &messages.KeyWord{Word: meta.SessionID})
+func (s *DistributedSessionStore) formatDocument(meta SessionMeta, data []byte) messages2.Document {
+	var keywords []*messages2.KeyWord
+	keywords = append(keywords, &messages2.KeyWord{Word: meta.SessionID})
 	if meta.UserID != "" {
-		keywords = append(keywords, &messages.KeyWord{Word: meta.UserID})
+		keywords = append(keywords, &messages2.KeyWord{Word: meta.UserID})
 	}
 	if meta.DeviceID != "" {
-		keywords = append(keywords, &messages.KeyWord{Word: meta.DeviceID})
+		keywords = append(keywords, &messages2.KeyWord{Word: meta.DeviceID})
 	}
 	for _, tag := range meta.Tags {
-		keywords = append(keywords, &messages.KeyWord{Word: tag})
+		keywords = append(keywords, &messages2.KeyWord{Word: tag})
 	}
 
 	// 将SessionID转换为int64作为ScoreId
@@ -354,7 +354,7 @@ func (s *DistributedSessionStore) formatDocument(meta SessionMeta, data []byte) 
 		}
 	}
 
-	doc := messages.Document{
+	doc := messages2.Document{
 		Id:      meta.SessionID,
 		ScoreId: scoreId,
 		KeWords: keywords,
@@ -385,10 +385,10 @@ func (s *DistributedSessionStore) SetWithVersion(meta SessionMeta, history []Mes
 	// 可选：同步到本地索引
 	if s.Index != nil {
 		// 创建指针切片
-		keywords := []*messages.KeyWord{{Word: meta.SessionID}}
+		keywords := []*messages2.KeyWord{{Word: meta.SessionID}}
 
 		// 添加版本文档
-		doc := messages.Document{
+		doc := messages2.Document{
 			Id:      fmt.Sprintf("%s:%d", meta.SessionID, version),
 			KeWords: keywords,
 			Bytes:   data,
@@ -396,7 +396,7 @@ func (s *DistributedSessionStore) SetWithVersion(meta SessionMeta, history []Mes
 		s.Index.Add(doc)
 
 		// 更新latest
-		latestDoc := messages.Document{
+		latestDoc := messages2.Document{
 			Id:      fmt.Sprintf("%s:latest", meta.SessionID),
 			KeWords: keywords, // 复用同一个keywords切片
 			Bytes:   data,
@@ -424,7 +424,7 @@ func (s *DistributedSessionStore) GetVersion(sessionID string, version int64) []
 }
 
 // SearchSessions 多字段检索，仅当本地索引可用时有效
-func (s *DistributedSessionStore) SearchSessions(query *messages.TermQuery) [][]Message {
+func (s *DistributedSessionStore) SearchSessions(query *messages2.TermQuery) [][]Message {
 	if s.Index == nil {
 		return nil
 	}
@@ -449,18 +449,18 @@ type SessionMeta struct {
 
 func (s *SkipListSessionStore) Set(meta SessionMeta, history []Message) error {
 	data, _ := json.Marshal(history)
-	var keywords []*messages.KeyWord
-	keywords = append(keywords, &messages.KeyWord{Word: meta.SessionID})
+	var keywords []*messages2.KeyWord
+	keywords = append(keywords, &messages2.KeyWord{Word: meta.SessionID})
 	if meta.UserID != "" {
-		keywords = append(keywords, &messages.KeyWord{Word: meta.UserID})
+		keywords = append(keywords, &messages2.KeyWord{Word: meta.UserID})
 	}
 	if meta.DeviceID != "" {
-		keywords = append(keywords, &messages.KeyWord{Word: meta.DeviceID})
+		keywords = append(keywords, &messages2.KeyWord{Word: meta.DeviceID})
 	}
 	for _, tag := range meta.Tags {
-		keywords = append(keywords, &messages.KeyWord{Word: tag})
+		keywords = append(keywords, &messages2.KeyWord{Word: tag})
 	}
-	doc := messages.Document{
+	doc := messages2.Document{
 		Id:      meta.SessionID,
 		KeWords: keywords,
 		Bytes:   data,
@@ -650,7 +650,7 @@ func (s *DistributedSessionStore) getAllUserIDs() []string {
 }
 
 // SearchSessions 多字段检索
-func (s *SkipListSessionStore) SearchSessions(query *messages.TermQuery) [][]Message {
+func (s *SkipListSessionStore) SearchSessions(query *messages2.TermQuery) [][]Message {
 	results := s.Index.Search(query, 0, 0, nil)
 	var histories [][]Message
 	for _, raw := range results {

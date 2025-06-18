@@ -2,7 +2,7 @@ package distributed
 
 import (
 	"VectorSphere/src/library/logger"
-	"VectorSphere/src/server"
+	"VectorSphere/src/proto/serverProto"
 	"archive/tar"
 	"compress/gzip"
 	"context"
@@ -255,7 +255,7 @@ func (dfs *DistributedFileService) replicateShard(filename string, shardIndex in
 		}
 
 		// 创建请求
-		req := &server.StoreShardRequest{
+		req := &serverProto.StoreShardRequest{
 			Filename: filename,
 			ShardId:  shard.ShardID,
 			Data:     shardData,
@@ -354,7 +354,7 @@ func (dfs *DistributedFileService) broadcastMetadata(metadata *FileMetadata) {
 			}
 
 			// 创建请求
-			req := &server.SyncMetadataRequest{
+			req := &serverProto.SyncMetadataRequest{
 				Filename: metadata.Filename,
 				Metadata: metadataBytes,
 				Version:  metadata.Version,
@@ -634,7 +634,7 @@ func (dfs *DistributedFileService) replicateShardToNodes(shardPath, shardID, che
 			}
 
 			// 创建请求
-			req := &server.StoreShardRequest{
+			req := &serverProto.StoreShardRequest{
 				Filename: filepath.Base(filepath.Dir(shardPath)),
 				ShardId:  shardID,
 				Data:     shardData,
@@ -754,7 +754,7 @@ func (dfs *DistributedFileService) fetchShardFromNode(filename, shardID, nodeID 
 	}
 
 	// 创建请求
-	req := &server.GetShardRequest{
+	req := &serverProto.GetShardRequest{
 		Filename: filename,
 		ShardId:  shardID,
 	}
@@ -817,7 +817,7 @@ func (dfs *DistributedFileService) DeleteFile(filename string) error {
 				}
 
 				// 创建请求
-				req := &server.DeleteShardRequest{
+				req := &serverProto.DeleteShardRequest{
 					Filename: filename,
 					ShardId:  shardID,
 				}

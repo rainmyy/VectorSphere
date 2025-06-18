@@ -5,9 +5,9 @@
 package mocks
 
 import (
+	messages2 "VectorSphere/src/proto/messages"
+	server "VectorSphere/src/proto/serverProto"
 	reflect "reflect"
-	messages "VectorSphere/src/messages"
-	server "VectorSphere/src/server"
 
 	gomock "github.com/golang/mock/gomock"
 )
@@ -36,7 +36,7 @@ func (m *MockServerInterface) EXPECT() *MockServerInterfaceMockRecorder {
 }
 
 // AddDoc mocks base method.
-func (m *MockServerInterface) AddDoc(document *messages.Document) (int, error) {
+func (m *MockServerInterface) AddDoc(document *messages2.Document) (int, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AddDoc", document)
 	ret0, _ := ret[0].(int)
@@ -79,10 +79,10 @@ func (mr *MockServerInterfaceMockRecorder) DelDoc(id interface{}) *gomock.Call {
 }
 
 // Search mocks base method.
-func (m *MockServerInterface) Search(query *messages.TermQuery, onFlag, offFlag uint64, orFlags []uint64) []*messages.Document {
+func (m *MockServerInterface) Search(query *messages2.TermQuery, onFlag, offFlag uint64, orFlags []uint64) []*messages2.Document {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Search", query, onFlag, offFlag, orFlags)
-	ret0, _ := ret[0].([]*messages.Document)
+	ret0, _ := ret[0].([]*messages2.Document)
 	return ret0
 }
 

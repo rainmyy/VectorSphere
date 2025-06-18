@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"VectorSphere/src/library/entity"
 	"VectorSphere/src/server"
 	"context"
 	"encoding/json"
@@ -23,7 +24,7 @@ type LoadBalancerMetrics struct {
 
 // EndpointMetric 端点指标
 type EndpointMetric struct {
-	Endpoint        server.EndPoint `json:"endpoint"`
+	Endpoint        entity.EndPoint `json:"endpoint"`
 	RequestCount    int64           `json:"request_count"`
 	SuccessCount    int64           `json:"success_count"`
 	FailureCount    int64           `json:"failure_count"`
@@ -55,7 +56,7 @@ func NewLoadBalancerMonitor(balancer server.Balancer) *LoadBalancerMonitor {
 }
 
 // RecordRequest 记录请求
-func (lbm *LoadBalancerMonitor) RecordRequest(endpoint server.EndPoint, latency time.Duration, success bool) {
+func (lbm *LoadBalancerMonitor) RecordRequest(endpoint entity.EndPoint, latency time.Duration, success bool) {
 	lbm.metrics.mu.Lock()
 	defer lbm.metrics.mu.Unlock()
 

@@ -3,7 +3,7 @@ package index
 import (
 	"VectorSphere/src/library/collect"
 	"VectorSphere/src/library/strategy"
-	"VectorSphere/src/messages"
+	messages2 "VectorSphere/src/proto/messages"
 	farmhash "github.com/leemcloughlin/gofarmhash"
 	"runtime"
 	"sync"
@@ -14,9 +14,9 @@ type SkipListValue struct {
 	BitsFeature uint64
 }
 type IReverseIndex interface {
-	Add(doc messages.Document)
-	Delete(scoreId int64, keyword *messages.KeyWord)
-	Search(query *messages.TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) []string
+	Add(doc messages2.Document)
+	Delete(scoreId int64, keyword *messages2.KeyWord)
+	Search(query *messages2.TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) []string
 }
 
 var _ IReverseIndex = (*SkipListInvertedIndex)(nil)
@@ -33,7 +33,7 @@ func NewSkipListInvertedIndex(docNumEstimate int) *SkipListInvertedIndex {
 	}
 }
 
-func (index *SkipListInvertedIndex) Add(doc messages.Document) {
+func (index *SkipListInvertedIndex) Add(doc messages2.Document) {
 	for _, keyword := range doc.KeWords {
 		key := keyword.ToString()
 		lock := index.getLock(key)
@@ -59,7 +59,7 @@ func (index *SkipListInvertedIndex) getLock(key string) *sync.RWMutex {
 	return &index.locks[n%len(index.locks)]
 }
 
-func (index *SkipListInvertedIndex) Delete(floatId int64, keyword *messages.KeyWord) {
+func (index *SkipListInvertedIndex) Delete(floatId int64, keyword *messages2.KeyWord) {
 	key := keyword.ToString()
 	lock := index.getLock(key)
 	lock.Lock()
@@ -71,7 +71,7 @@ func (index *SkipListInvertedIndex) Delete(floatId int64, keyword *messages.KeyW
 	}
 }
 
-func (index *SkipListInvertedIndex) Search(query *messages.TermQuery, onFlag uint64, offFlag uint64, orFlag []uint64) []string {
+func (index *SkipListInvertedIndex) Search(query *messages2.TermQuery, onFlag uint64, offFlag uint64, orFlag []uint64) []string {
 	result := index.searchQuery(query, onFlag, offFlag, orFlag)
 	if result == nil {
 		return nil
@@ -87,7 +87,7 @@ func (index *SkipListInvertedIndex) Search(query *messages.TermQuery, onFlag uin
 	return arr
 }
 
-func (index *SkipListInvertedIndex) searchQuery(query *messages.TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) *strategy.SkipList {
+func (index *SkipListInvertedIndex) searchQuery(query *messages2.TermQuery, onFlag uint64, offFlag uint64, orFlags []uint64) *strategy.SkipList {
 	switch {
 	case query.Keyword != nil:
 		keyWord := query.Keyword.ToString()

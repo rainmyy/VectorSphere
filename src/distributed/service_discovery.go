@@ -1,8 +1,8 @@
 package distributed
 
 import (
+	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/logger"
-	"VectorSphere/src/server"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -444,14 +444,14 @@ func CreateServiceInfo(serviceName, nodeID, address string, port int, nodeType s
 }
 
 // ConvertToEndPoints 转换为EndPoint列表
-func (sd *ServiceDiscovery) ConvertToEndPoints() []server.EndPoint {
+func (sd *ServiceDiscovery) ConvertToEndPoints() []entity.EndPoint {
 	sd.mutex.RLock()
 	defer sd.mutex.RUnlock()
 
-	var endpoints []server.EndPoint
+	var endpoints []entity.EndPoint
 	for _, info := range sd.slaveInfos {
 		if info.Status == "active" {
-			endpoints = append(endpoints, server.EndPoint{
+			endpoints = append(endpoints, entity.EndPoint{
 				Ip:   info.Address,
 				Port: info.Port,
 			})

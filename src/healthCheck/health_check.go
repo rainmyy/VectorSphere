@@ -3,8 +3,9 @@ package healthCheck
 import (
 	"VectorSphere/src/email"
 	"VectorSphere/src/library/config"
+	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/logger"
-	"VectorSphere/src/server"
+	serverProto "VectorSphere/src/proto/serverProto"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -44,7 +45,7 @@ type HealthCheckManager struct {
 
 // ServiceHealthInfo 服务健康信息
 type ServiceHealthInfo struct {
-	Endpoint     server.EndPoint
+	Endpoint     entity.EndPoint
 	Status       grpc_health_v1.HealthCheckResponse_ServingStatus
 	LastCheck    time.Time
 	FailureCount int
@@ -94,7 +95,7 @@ type AlertRule struct {
 }
 
 // HealthChangeCallback 健康状态变化回调
-type HealthChangeCallback func(serviceName string, endpoint server.EndPoint, oldStatus, newStatus grpc_health_v1.HealthCheckResponse_ServingStatus)
+type HealthChangeCallback func(serviceName string, endpoint entity.EndPoint, oldStatus, newStatus grpc_health_v1.HealthCheckResponse_ServingStatus)
 
 // NewHealthCheckManager 创建健康检查管理器
 func NewHealthCheckManager(checkInterval time.Duration) *HealthCheckManager {
@@ -220,7 +221,7 @@ func (hm *HealthCheckManager) triggerAlert(serviceName string, info *ServiceHeal
 }
 
 // 新增方法：处理服务心跳
-func (hm *HealthCheckManager) handleHeartbeat(serviceName string, endpoint server.EndPoint, leaseID int64) {
+func (hm *HealthCheckManager) handleHeartbeat(serviceName string, endpoint entity.EndPoint, leaseID int64) {
 	key := fmt.Sprintf("%s:%s:%d", serviceName, endpoint.Ip, endpoint.Port)
 
 	hm.mu.Lock()
@@ -267,7 +268,7 @@ func (hm *HealthCheckManager) updateEtcdServiceStatus(serviceName string, info *
 }
 
 // RegisterService 注册服务进行健康检查
-func (hm *HealthCheckManager) RegisterService(serviceName string, endpoint server.EndPoint) {
+func (hm *HealthCheckManager) RegisterService(serviceName string, endpoint entity.EndPoint) {
 	hm.mu.Lock()
 	defer hm.mu.Unlock()
 
@@ -504,7 +505,7 @@ func (hm *HealthCheckManager) checkSingleService(key string, serviceInfo *Servic
 	hm.updateServiceStatus(key, serviceInfo, resp.Status, latency)
 
 	// 如果是自定义健康检查响应，更新负载信息
-	if customResp, ok := interface{}(resp).(*server.HealthCheckResponse); ok {
+	if customResp, ok := interface{}(resp).(*serverProto.HealthCheckResponse); ok {
 		serviceInfo.Load = customResp.Load
 	}
 }
@@ -534,11 +535,11 @@ func (hm *HealthCheckManager) updateServiceStatus(key string, serviceInfo *Servi
 }
 
 // GetHealthyServices 获取健康的服务列表
-func (hm *HealthCheckManager) GetHealthyServices(serviceName string) []server.EndPoint {
+func (hm *HealthCheckManager) GetHealthyServices(serviceName string) []entity.EndPoint {
 	hm.mu.RLock()
 	defer hm.mu.RUnlock()
 
-	var healthyEndpoints []server.EndPoint
+	var healthyEndpoints []entity.EndPoint
 	for _, serviceInfo := range hm.Services {
 		if serviceInfo.Status == grpc_health_v1.HealthCheckResponse_SERVING {
 			healthyEndpoints = append(healthyEndpoints, serviceInfo.Endpoint)
@@ -636,4 +637,47 @@ func (hm *HealthCheckManager) checkAlerts() {
 			}
 		}
 	}
+}
+
+// GetTotalChecksCount 获取总检查次数
+func (hm *HealthCheckManager) GetTotalChecksCount() int64 {
+	hm.metrics.mu.RLock()
+	defer hm.metrics.mu.RUnlock()
+	return hm.metrics.TotalChecks
+}
+
+// GetSuccessfulChecksCount 获取成功检查次数
+func (hm *HealthCheckManager) GetSuccessfulChecksCount() int64 {
+	hm.metrics.mu.RLock()
+	defer hm.metrics.mu.RUnlock()
+	return hm.metrics.SuccessfulChecks
+}
+
+// GetAverageLatency 获取平均延迟
+func (hm *HealthCheckManager) GetAverageLatency() time.Duration {
+	hm.metrics.mu.RLock()
+	defer hm.metrics.mu.RUnlock()
+	return hm.metrics.AverageLatency
+}
+
+// GetLastCheckTime 获取最后检查时间
+func (hm *HealthCheckManager) GetLastCheckTime() time.Time {
+	hm.metrics.mu.RLock()
+	defer hm.metrics.mu.RUnlock()
+	return hm.metrics.LastCheckTime
+}
+
+// GetAllServiceHealth 获取所有服务的健康状态
+func (hm *HealthCheckManager) GetAllServiceHealth() map[string]*ServiceHealthInfo {
+	hm.mu.RLock()
+	defer hm.mu.RUnlock()
+
+	result := make(map[string]*ServiceHealthInfo)
+	for key, info := range hm.Services {
+		// 创建一个副本以避免外部修改
+		infoCopy := *info
+		result[key] = &infoCopy
+	}
+
+	return result
 }

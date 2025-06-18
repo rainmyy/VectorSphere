@@ -3,8 +3,8 @@ package main
 import (
 	"VectorSphere/src/bootstrap"
 	"VectorSphere/src/distributed"
+	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/logger"
-	"VectorSphere/src/server"
 	"context"
 	"flag"
 	"fmt"
@@ -104,8 +104,8 @@ func main() {
 	if err != nil {
 		logger.Fatal("Failed to initialize config manager: %v", err)
 	}
-	endpoints := make(map[string]server.EndPoint)
-	endpoints["127.0.0.1"] = server.EndPoint{Ip: "127.0.0.1", Port: 2379}
+	endpoints := make(map[string]entity.EndPoint)
+	endpoints["127.0.0.1"] = entity.EndPoint{Ip: "127.0.0.1", Port: 2379}
 	// 创建分布式管理器配置
 	dmConfig := &distributed.DistributedConfig{
 		ServiceName: config.ServiceName,

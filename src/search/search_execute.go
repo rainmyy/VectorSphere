@@ -2,7 +2,7 @@ package search
 
 import (
 	"VectorSphere/src/library/tree"
-	"VectorSphere/src/messages"
+	messages2 "VectorSphere/src/proto/messages"
 	"fmt"
 	"sort"
 	"strconv"
@@ -110,8 +110,8 @@ func (se *SearchExecutor) ExecuteSearchPlan(parsedQuery *ParsedQuery) ([]SearchR
 
 	if callInvertedIndex {
 		// 创建 TermQuery
-		termQuery := &messages.TermQuery{
-			Keyword: &messages.KeyWord{Word: keywordQuery},
+		termQuery := &messages2.TermQuery{
+			Keyword: &messages2.KeyWord{Word: keywordQuery},
 		}
 
 		// 直接使用 InvertedIndex 的 Search 方法
@@ -133,7 +133,7 @@ func (se *SearchExecutor) ExecuteSearchPlan(parsedQuery *ParsedQuery) ([]SearchR
 	if callVectorSearch {
 		// 直接使用 InvertedIndex 的 Search 方法进行向量搜索
 		// 创建一个空的 TermQuery，因为我们只关心向量搜索部分
-		emptyTermQuery := &messages.TermQuery{}
+		emptyTermQuery := &messages2.TermQuery{}
 
 		vectorResults, err = table.InvertedIndex.Search(
 			tx,

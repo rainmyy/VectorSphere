@@ -480,7 +480,7 @@ func (lb *EnhancedLoadBalancer) SelectBackend(ctx *RequestContext) *LoadBalancin
 	// 检查熔断器
 	if lb.config.CircuitBreaker {
 		if cb, exists := lb.circuitBreakers[backend.ID]; exists {
-			if !cb.allowRequest() {
+			if !cb.AllowRequest() {
 				// 熔断器打开，尝试选择其他后端
 				logger.Warning("Circuit breaker open for backend %s, selecting alternative", backend.ID)
 				backend = lb.selectAlternativeBackend(healthyBackends, backend.ID)
@@ -566,7 +566,7 @@ func (lb *EnhancedLoadBalancer) ReleaseBackend(backendID string, success bool, r
 
 		// 更新熔断器
 		if cb, exists := lb.circuitBreakers[backendID]; exists {
-			cb.recordFailure()
+			cb.RecordFailure()
 		}
 
 		// 检查是否需要标记为不健康
@@ -898,7 +898,7 @@ func (lb *EnhancedLoadBalancer) selectAlternativeBackend(backends []*Backend, ex
 		if backend.ID != excludeID {
 			// 检查熔断器状态
 			if cb, exists := lb.circuitBreakers[backend.ID]; exists {
-				if !cb.allowRequest() {
+				if !cb.AllowRequest() {
 					continue
 				}
 			}
@@ -1078,7 +1078,7 @@ func (lb *EnhancedLoadBalancer) registerBackendHealthCheck(backend *Backend) {
 		return
 	}
 
-	healthCheck := &HealthCheck{
+	check := &HealthCheck{
 		ID:       fmt.Sprintf("backend_%s", backend.ID),
 		Name:     fmt.Sprintf("Backend %s Health Check", backend.ID),
 		Type:     HTTPCheck,
@@ -1105,7 +1105,7 @@ func (lb *EnhancedLoadBalancer) registerBackendHealthCheck(backend *Backend) {
 		}
 	})
 
-	lb.healthChecker.RegisterCheck(healthCheck)
+	lb.healthChecker.RegisterCheck(check)
 }
 
 // updateBackendHealth 更新后端健康状态
@@ -1159,7 +1159,7 @@ func (lb *EnhancedLoadBalancer) registerCircuitBreaker(backend *Backend) {
 	}
 
 	cb := &CircuitBreaker{
-		name:            fmt.Sprintf("backend_%s", backend.ID),
+		Name:            fmt.Sprintf("backend_%s", backend.ID),
 		config:          config,
 		state:           Closed,
 		lastStateChange: time.Now(),

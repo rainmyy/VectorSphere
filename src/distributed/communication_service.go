@@ -2,7 +2,7 @@ package distributed
 
 import (
 	"VectorSphere/src/library/logger"
-	"VectorSphere/src/server"
+	serverProto "VectorSphere/src/proto/serverProto"
 	"context"
 	"fmt"
 	"sync"
@@ -17,8 +17,8 @@ import (
 // CommunicationService 通信服务
 type CommunicationService struct {
 	mutex       sync.RWMutex
-	connections map[string]*grpc.ClientConn          // slave地址 -> 连接
-	clients     map[string]server.IndexServiceClient // slave地址 -> 客户端
+	connections map[string]*grpc.ClientConn               // slave地址 -> 连接
+	clients     map[string]serverProto.IndexServiceClient // slave地址 -> 客户端
 	timeout     time.Duration
 }
 
@@ -26,13 +26,13 @@ type CommunicationService struct {
 func NewCommunicationService(etcdClient *clientv3.Client, serviceName string) *CommunicationService {
 	return &CommunicationService{
 		connections: make(map[string]*grpc.ClientConn),
-		clients:     make(map[string]server.IndexServiceClient),
+		clients:     make(map[string]serverProto.IndexServiceClient),
 		timeout:     30 * time.Second, // 默认超时时间
 	}
 }
 
 // GetSlaveClient 获取slave客户端连接
-func (cs *CommunicationService) GetSlaveClient(slaveAddr string) (server.IndexServiceClient, error) {
+func (cs *CommunicationService) GetSlaveClient(slaveAddr string) (serverProto.IndexServiceClient, error) {
 	cs.mutex.RLock()
 	client, exists := cs.clients[slaveAddr]
 	cs.mutex.RUnlock()
@@ -46,7 +46,7 @@ func (cs *CommunicationService) GetSlaveClient(slaveAddr string) (server.IndexSe
 }
 
 // createSlaveConnection 创建slave连接
-func (cs *CommunicationService) createSlaveConnection(slaveAddr string) (server.IndexServiceClient, error) {
+func (cs *CommunicationService) createSlaveConnection(slaveAddr string) (serverProto.IndexServiceClient, error) {
 	cs.mutex.Lock()
 	defer cs.mutex.Unlock()
 
@@ -75,7 +75,7 @@ func (cs *CommunicationService) createSlaveConnection(slaveAddr string) (server.
 	}
 
 	// 创建客户端
-	client := server.NewIndexServiceClient(conn)
+	client := serverProto.NewIndexServiceClient(conn)
 
 	// 存储连接和客户端
 	cs.connections[slaveAddr] = conn
@@ -99,7 +99,7 @@ func (cs *CommunicationService) RemoveSlaveConnection(slaveAddr string) {
 }
 
 // BroadcastToSlaves 向所有slave广播请求
-func (cs *CommunicationService) BroadcastToSlaves(ctx context.Context, slaveAddrs []string, requestFunc func(client server.IndexServiceClient) error) map[string]error {
+func (cs *CommunicationService) BroadcastToSlaves(ctx context.Context, slaveAddrs []string, requestFunc func(client serverProto.IndexServiceClient) error) map[string]error {
 	results := make(map[string]error)
 	var wg sync.WaitGroup
 	var resultMutex sync.Mutex
@@ -141,7 +141,7 @@ func (cs *CommunicationService) BroadcastToSlaves(ctx context.Context, slaveAddr
 }
 
 // SendToSlave 向指定slave发送请求
-func (cs *CommunicationService) SendToSlave(ctx context.Context, slaveAddr string, requestFunc func(client server.IndexServiceClient) error) error {
+func (cs *CommunicationService) SendToSlave(ctx context.Context, slaveAddr string, requestFunc func(client serverProto.IndexServiceClient) error) error {
 	client, err := cs.GetSlaveClient(slaveAddr)
 	if err != nil {
 		return fmt.Errorf("获取slave客户端失败: %v", err)
@@ -163,40 +163,40 @@ func (cs *CommunicationService) SendToSlave(ctx context.Context, slaveAddr strin
 }
 
 // CreateTableOnSlaves 在所有slave上创建表
-func (cs *CommunicationService) CreateTableOnSlaves(ctx context.Context, slaveAddrs []string, request *server.CreateTableRequest) map[string]error {
-	return cs.BroadcastToSlaves(ctx, slaveAddrs, func(client server.IndexServiceClient) error {
+func (cs *CommunicationService) CreateTableOnSlaves(ctx context.Context, slaveAddrs []string, request *serverProto.CreateTableRequest) map[string]error {
+	return cs.BroadcastToSlaves(ctx, slaveAddrs, func(client serverProto.IndexServiceClient) error {
 		_, err := client.CreateTable(ctx, request)
 		return err
 	})
 }
 
 // DeleteTableOnSlaves 在所有slave上删除表
-func (cs *CommunicationService) DeleteTableOnSlaves(ctx context.Context, slaveAddrs []string, request *server.TableRequest) map[string]error {
-	return cs.BroadcastToSlaves(ctx, slaveAddrs, func(client server.IndexServiceClient) error {
+func (cs *CommunicationService) DeleteTableOnSlaves(ctx context.Context, slaveAddrs []string, request *serverProto.TableRequest) map[string]error {
+	return cs.BroadcastToSlaves(ctx, slaveAddrs, func(client serverProto.IndexServiceClient) error {
 		_, err := client.DeleteTable(ctx, request)
 		return err
 	})
 }
 
 // AddDocumentToSlaves 向所有slave添加文档
-func (cs *CommunicationService) AddDocumentToSlaves(ctx context.Context, slaveAddrs []string, request *server.AddDocumentRequest) map[string]error {
-	return cs.BroadcastToSlaves(ctx, slaveAddrs, func(client server.IndexServiceClient) error {
+func (cs *CommunicationService) AddDocumentToSlaves(ctx context.Context, slaveAddrs []string, request *serverProto.AddDocumentRequest) map[string]error {
+	return cs.BroadcastToSlaves(ctx, slaveAddrs, func(client serverProto.IndexServiceClient) error {
 		_, err := client.AddDocumentToTable(ctx, request)
 		return err
 	})
 }
 
 // DeleteDocumentFromSlaves 从所有slave删除文档
-func (cs *CommunicationService) DeleteDocumentFromSlaves(ctx context.Context, slaveAddrs []string, request *server.DeleteDocumentRequest) map[string]error {
-	return cs.BroadcastToSlaves(ctx, slaveAddrs, func(client server.IndexServiceClient) error {
+func (cs *CommunicationService) DeleteDocumentFromSlaves(ctx context.Context, slaveAddrs []string, request *serverProto.DeleteDocumentRequest) map[string]error {
+	return cs.BroadcastToSlaves(ctx, slaveAddrs, func(client serverProto.IndexServiceClient) error {
 		_, err := client.DeleteDocumentFromTable(ctx, request)
 		return err
 	})
 }
 
 // SearchOnSlaves 在所有slave上搜索
-func (cs *CommunicationService) SearchOnSlaves(ctx context.Context, slaveAddrs []string, request *server.SearchRequest) map[string]*server.SearchResult {
-	results := make(map[string]*server.SearchResult)
+func (cs *CommunicationService) SearchOnSlaves(ctx context.Context, slaveAddrs []string, request *serverProto.SearchRequest) map[string]*serverProto.SearchResult {
+	results := make(map[string]*serverProto.SearchResult)
 	var wg sync.WaitGroup
 	var resultMutex sync.Mutex
 
@@ -257,7 +257,7 @@ func (cs *CommunicationService) HealthCheckSlaves(ctx context.Context, slaveAddr
 			defer cancel()
 
 			// 执行健康检查
-			_, err = client.HealthCheck(requestCtx, &server.HealthCheckRequest{})
+			_, err = client.HealthCheck(requestCtx, &serverProto.HealthCheckRequest{})
 
 			resultMutex.Lock()
 			results[slaveAddr] = err == nil
@@ -284,7 +284,7 @@ func (cs *CommunicationService) Close() {
 	}
 
 	cs.connections = make(map[string]*grpc.ClientConn)
-	cs.clients = make(map[string]server.IndexServiceClient)
+	cs.clients = make(map[string]serverProto.IndexServiceClient)
 }
 
 // GetActiveConnections 获取活跃连接数

@@ -48,8 +48,8 @@ type CircuitBreakerMetrics struct {
 
 // CircuitBreaker 熔断器
 type CircuitBreaker struct {
-	name            string
-	config          *CircuitBreakerConfig
+	Name   string
+	config *CircuitBreakerConfig
 	state           CircuitBreakerState
 	failureCount    int64
 	successCount    int64
@@ -83,8 +83,8 @@ func (cb *CircuitBreaker) updateFailureRate() {
 
 // 熔断器方法
 
-// allowRequest 检查是否允许请求
-func (cb *CircuitBreaker) allowRequest() bool {
+// AllowRequest 检查是否允许请求
+func (cb *CircuitBreaker) AllowRequest() bool {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
@@ -100,7 +100,7 @@ func (cb *CircuitBreaker) allowRequest() bool {
 			cb.lastStateChange = now
 			cb.metrics.StateChanges++
 			cb.metrics.CurrentState = "half_open"
-			logger.Info("Circuit breaker %s transitioned to half-open", cb.name)
+			logger.Info("Circuit breaker %s transitioned to half-open", cb.Name)
 			return true
 		}
 		return false
@@ -133,13 +133,13 @@ func (cb *CircuitBreaker) recordSuccess() {
 			cb.lastStateChange = time.Now()
 			cb.metrics.StateChanges++
 			cb.metrics.CurrentState = "closed"
-			logger.Info("Circuit breaker %s transitioned to closed", cb.name)
+			logger.Info("Circuit breaker %s transitioned to closed", cb.Name)
 		}
 	}
 }
 
-// recordFailure 记录失败
-func (cb *CircuitBreaker) recordFailure() {
+// RecordFailure 记录失败
+func (cb *CircuitBreaker) RecordFailure() {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
@@ -160,13 +160,13 @@ func (cb *CircuitBreaker) recordFailure() {
 			cb.lastStateChange = time.Now()
 			cb.metrics.StateChanges++
 			cb.metrics.CurrentState = "open"
-			logger.Warning("Circuit breaker %s opened due to high failure rate: %.2f", cb.name, failureRate)
+			logger.Warning("Circuit breaker %s opened due to high failure rate: %.2f", cb.Name, failureRate)
 		} else if cb.state == HalfOpen {
 			cb.state = Open
 			cb.lastStateChange = time.Now()
 			cb.metrics.StateChanges++
 			cb.metrics.CurrentState = "open"
-			logger.Warning("Circuit breaker %s opened from half-open due to failure", cb.name)
+			logger.Warning("Circuit breaker %s opened from half-open due to failure", cb.Name)
 		}
 	}
 }

@@ -91,6 +91,7 @@ type EnhancedServiceRegistry struct {
 	ctx            context.Context
 	cancel         context.CancelFunc
 	mu             sync.RWMutex
+	LeaseId        clientv3.LeaseID
 }
 
 // ServiceChangeEvent 服务变更事件
@@ -170,6 +171,7 @@ func (esr *EnhancedServiceRegistry) RegisterService(ctx context.Context, metadat
 		return fmt.Errorf("创建租约失败: %v", err)
 	}
 
+	esr.LeaseId = leaseID
 	// 序列化元数据
 	metadataBytes, err := esr.serializeMetadata(metadata)
 	if err != nil {
@@ -414,7 +416,6 @@ func (lm *LeaseManager) StartKeepAlive(ctx context.Context, leaseID clientv3.Lea
 			} else {
 				lm.updateLeaseStats(leaseID, false)
 				logger.Warning("KeepAlive response is nil for lease %d", leaseID)
-				return
 			}
 
 			// 更新成功率

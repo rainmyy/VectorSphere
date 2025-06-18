@@ -1,6 +1,7 @@
 package server
 
 import (
+	"VectorSphere/src/library/entity"
 	"context"
 	etcdv3 "go.etcd.io/etcd/client/v3"
 	"golang.org/x/time/rate"
@@ -21,7 +22,7 @@ var (
 	proxyOnce sync.Once
 )
 
-func GetHubProxy(endPoints []EndPoint, heartBeat int64, qps int, serviceName string) *HubProxy {
+func GetHubProxy(endPoints []entity.EndPoint, heartBeat int64, qps int, serviceName string) *HubProxy {
 	if hubProxy != nil {
 		return hubProxy
 	}
@@ -44,14 +45,14 @@ func (h *HubProxy) GetClient() *etcdv3.Client {
 	return h.client
 }
 
-func (h *HubProxy) GetEndpoints(serviceName string) []EndPoint {
+func (h *HubProxy) GetEndpoints(serviceName string) []entity.EndPoint {
 	if !h.limiter.Allow() {
 		return nil
 	}
 	h.WatchEndpoints(serviceName)
 	cacheEndpoints, ok := h.endpointCache.Load(serviceName)
 	if ok {
-		return cacheEndpoints.([]EndPoint)
+		return cacheEndpoints.([]entity.EndPoint)
 	}
 	endpoints := h.EtcdServiceHub.GetServiceEndpoints(serviceName)
 	if len(endpoints) > 0 {

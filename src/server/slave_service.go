@@ -2,8 +2,11 @@ package server
 
 import (
 	"VectorSphere/src/index"
+	"VectorSphere/src/library/entity"
 	PoolLib "VectorSphere/src/library/pool"
 	"VectorSphere/src/library/tree"
+	"VectorSphere/src/proto/messages"
+	serverProto "VectorSphere/src/proto/serverProto"
 	scheduler2 "VectorSphere/src/scheduler"
 	"bytes"
 	"context"
@@ -19,7 +22,6 @@ import (
 
 	"VectorSphere/src/library/common"
 	"VectorSphere/src/library/logger"
-	"VectorSphere/src/messages"
 	"VectorSphere/src/search"
 	"net/http"
 	"os"
@@ -27,7 +29,7 @@ import (
 	"sync"
 )
 
-var _ IndexServiceServer = (*SlaveService)(nil)
+var _ serverProto.IndexServiceServer = (*SlaveService)(nil)
 
 // SlaveService 从服务结构体
 type SlaveService struct {
@@ -55,58 +57,38 @@ type SlaveService struct {
 	// 通信服务
 	communicationService interface{}
 
-	appCtx        context.Context // 用于传递应用的全局上下文
-	etcdEndpoints []EndPoint      // etcd 端点
-	port          int             // 服务端口
+	appCtx        context.Context   // 用于传递应用的全局上下文
+	etcdEndpoints []entity.EndPoint // etcd 端点
+	port          int               // 服务端口
 }
 
-func (s *SlaveService) StoreShard(ctx context.Context, request *StoreShardRequest) (*StoreShardResponse, error) {
+func (s *SlaveService) CreateTable(ctx context.Context, request *serverProto.CreateTableRequest) (*serverProto.ResCount, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (s *SlaveService) GetShard(ctx context.Context, request *GetShardRequest) (*GetShardResponse, error) {
+func (s *SlaveService) DeleteTable(ctx context.Context, request *serverProto.TableRequest) (*serverProto.ResCount, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (s *SlaveService) DeleteShard(ctx context.Context, request *DeleteShardRequest) (*DeleteShardResponse, error) {
+func (s *SlaveService) AddDocumentToTable(ctx context.Context, request *serverProto.AddDocumentRequest) (*serverProto.ResCount, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (s *SlaveService) SyncMetadata(ctx context.Context, request *SyncMetadataRequest) (*SyncMetadataResponse, error) {
+func (s *SlaveService) DeleteDocumentFromTable(ctx context.Context, request *serverProto.DeleteDocumentRequest) (*serverProto.ResCount, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (s *SlaveService) CreateTable(ctx context.Context, request *CreateTableRequest) (*ResCount, error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (s *SlaveService) DeleteTable(ctx context.Context, request *TableRequest) (*ResCount, error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (s *SlaveService) AddDocumentToTable(ctx context.Context, request *AddDocumentRequest) (*ResCount, error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (s *SlaveService) DeleteDocumentFromTable(ctx context.Context, request *DeleteDocumentRequest) (*ResCount, error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (s *SlaveService) SearchTable(ctx context.Context, request *SearchRequest) (*SearchResult, error) {
+func (s *SlaveService) SearchTable(ctx context.Context, request *serverProto.SearchRequest) (*serverProto.SearchResult, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
 // NewSlaveService 创建从服务实例
-func NewSlaveService(appCtx context.Context, endpoints []EndPoint, serviceName string, port int) (*SlaveService, error) {
+func NewSlaveService(appCtx context.Context, endpoints []entity.EndPoint, serviceName string, port int) (*SlaveService, error) {
 	// 获取本地 IP
 	localIp, err := common.GetLocalHost()
 	if err != nil {
@@ -268,6 +250,7 @@ func (s *SlaveService) registerService() error {
 	if err != nil {
 		return fmt.Errorf("注册服务失败: %v", err)
 	}
+
 	ch, err := s.client.KeepAlive(context.Background(), s.leaseID)
 	if err != nil {
 		return fmt.Errorf("保持租约失败: %v", err)
@@ -509,54 +492,54 @@ func (s *SlaveService) updateMasterConnectionFromEtcd(ctx context.Context, maste
 
 // 实现 IndexServiceServer 接口
 
-func (s *SlaveService) DelDoc(ctx context.Context, docId *DocId) (*ResCount, error) {
+func (s *SlaveService) DelDoc(ctx context.Context, docId *serverProto.DocId) (*serverProto.ResCount, error) {
 	// 调用索引服务删除文档
-	return &ResCount{
+	return &serverProto.ResCount{
 		Count: int32(s.Index.DelDoc(docId.Id)),
 	}, nil
 }
 
-func (s *SlaveService) AddDoc(ctx context.Context, doc *messages.Document) (*ResCount, error) {
+func (s *SlaveService) AddDoc(ctx context.Context, doc *messages.Document) (*serverProto.ResCount, error) {
 	// 调用索引服务添加文档
 	n, err := s.Index.AddDoc(*doc)
-	return &ResCount{
+	return &serverProto.ResCount{
 		Count: int32(n),
 	}, err
 }
 
-func (s *SlaveService) Search(ctx context.Context, request *Request) (*Result, error) {
+func (s *SlaveService) Search(ctx context.Context, request *serverProto.Request) (*serverProto.Result, error) {
 	// 调用索引服务搜索
 	result, err := s.Index.Search(request.Query, request.OnFlag, request.OffFlag, request.OrFlags)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Result{
+	return &serverProto.Result{
 		Results: result,
 	}, nil
 }
 
 // HealthCheck 实现 IndexServiceServer 接口的 HealthCheck 方法
-func (s *SlaveService) HealthCheck(ctx context.Context, req *HealthCheckRequest) (*HealthCheckResponse, error) {
+func (s *SlaveService) HealthCheck(ctx context.Context, req *serverProto.HealthCheckRequest) (*serverProto.HealthCheckResponse, error) {
 	// 1. 检查核心依赖服务是否可用
 	if s.client == nil {
 		logger.Warning("HealthCheck: etcd client is nil")
-		return &HealthCheckResponse{
-			Status: HealthCheckResponse_NOT_SERVING,
+		return &serverProto.HealthCheckResponse{
+			Status: serverProto.HealthCheckResponse_NOT_SERVING,
 			Load:   0, // 或者一个表示错误/不可用的特定负值
 		}, nil
 	}
 	if s.Index == nil {
 		logger.Warning("HealthCheck: Index service is nil")
-		return &HealthCheckResponse{
-			Status: HealthCheckResponse_NOT_SERVING,
+		return &serverProto.HealthCheckResponse{
+			Status: serverProto.HealthCheckResponse_NOT_SERVING,
 			Load:   0,
 		}, nil
 	}
 	if s.taskExecutor == nil {
 		logger.Warning("HealthCheck: TaskExecutor is nil")
-		return &HealthCheckResponse{
-			Status: HealthCheckResponse_NOT_SERVING,
+		return &serverProto.HealthCheckResponse{
+			Status: serverProto.HealthCheckResponse_NOT_SERVING,
 			Load:   0,
 		}, nil
 	}
@@ -625,30 +608,30 @@ func (s *SlaveService) HealthCheck(ctx context.Context, req *HealthCheckRequest)
 
 	if currentLoad > loadThreshold {
 		logger.Warning("HealthCheck: Load (%.2f%%) exceeds threshold (%.2f%%)", currentLoad, loadThreshold)
-		return &HealthCheckResponse{
-			Status: HealthCheckResponse_UNKNOWN, // 或者一个表示高负载的状态
-			Load:   float32(currentLoad),        // protobuf 的 load 是 int32，进行转换
+		return &serverProto.HealthCheckResponse{
+			Status: serverProto.HealthCheckResponse_UNKNOWN, // 或者一个表示高负载的状态
+			Load:   float32(currentLoad),                    // protobuf 的 load 是 int32，进行转换
 		}, nil
 	}
 
 	// 如果所有检查通过，并且负载在可接受范围内，则返回 SERVING 状态
-	return &HealthCheckResponse{
-		Status: HealthCheckResponse_SERVING,
+	return &serverProto.HealthCheckResponse{
+		Status: serverProto.HealthCheckResponse_SERVING,
 		Load:   float32(currentLoad),
 	}, nil
 }
 
-func (s *SlaveService) Count(ctx context.Context, request *CountRequest) (*ResCount, error) {
+func (s *SlaveService) Count(ctx context.Context, request *serverProto.CountRequest) (*serverProto.ResCount, error) {
 	// 调用索引服务计数
-	return &ResCount{
+	return &serverProto.ResCount{
 		Count: int32(s.Index.Total()),
 	}, nil
 }
 
-func (s *SlaveService) ExecuteTask(ctx context.Context, request *TaskRequest) (*TaskResponse, error) {
+func (s *SlaveService) ExecuteTask(ctx context.Context, request *serverProto.TaskRequest) (*serverProto.TaskResponse, error) {
 	// 检查请求是否为空
 	if request == nil {
-		return &TaskResponse{
+		return &serverProto.TaskResponse{
 			Success:      false,
 			ErrorMessage: "请求为空",
 		}, nil
@@ -658,7 +641,7 @@ func (s *SlaveService) ExecuteTask(ctx context.Context, request *TaskRequest) (*
 	var taskData map[string]interface{}
 	err := json.Unmarshal(request.TaskData, &taskData)
 	if err != nil {
-		return &TaskResponse{
+		return &serverProto.TaskResponse{
 			TaskId:       request.TaskId,
 			Success:      false,
 			ErrorMessage: fmt.Sprintf("解析任务数据失败: %v", err),
@@ -667,7 +650,7 @@ func (s *SlaveService) ExecuteTask(ctx context.Context, request *TaskRequest) (*
 
 	// 检查多表服务是否初始化
 	if s.multiTableService == nil {
-		return &TaskResponse{
+		return &serverProto.TaskResponse{
 			TaskId:       request.TaskId,
 			Success:      false,
 			ErrorMessage: "多表搜索服务未初始化",
@@ -838,7 +821,7 @@ func (s *SlaveService) ExecuteTask(ctx context.Context, request *TaskRequest) (*
 	}
 
 	// 创建任务响应
-	response := &TaskResponse{
+	response := &serverProto.TaskResponse{
 		TaskId:       request.TaskId,
 		Success:      success,
 		ResultData:   resultData,
@@ -852,7 +835,7 @@ func (s *SlaveService) ExecuteTask(ctx context.Context, request *TaskRequest) (*
 }
 
 // reportTaskResult 上报任务结果给主服务
-func (s *SlaveService) reportTaskResult(response *TaskResponse) {
+func (s *SlaveService) reportTaskResult(response *serverProto.TaskResponse) {
 	// 检查主节点连接
 	s.masterMutex.RLock()
 	masterConn := s.masterConn
@@ -864,7 +847,7 @@ func (s *SlaveService) reportTaskResult(response *TaskResponse) {
 	}
 
 	// 创建客户端
-	client := NewIndexServiceClient(masterConn)
+	client := serverProto.NewIndexServiceClient(masterConn)
 
 	// 创建上下文，设置超时
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -878,6 +861,6 @@ func (s *SlaveService) reportTaskResult(response *TaskResponse) {
 }
 
 // ReportTaskResult 接收任务结果上报（主服务调用）
-func (s *SlaveService) ReportTaskResult(ctx context.Context, response *TaskResponse) (*ResCount, error) {
+func (s *SlaveService) ReportTaskResult(ctx context.Context, response *serverProto.TaskResponse) (*serverProto.ResCount, error) {
 	return nil, fmt.Errorf("从服务不支持接收任务结果上报")
 }

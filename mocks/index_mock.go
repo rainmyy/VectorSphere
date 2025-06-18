@@ -5,7 +5,7 @@
 package mocks
 
 import (
-	messages "VectorSphere/src/messages"
+	messages2 "VectorSphere/src/proto/messages"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
@@ -35,7 +35,7 @@ func (m *MockIndexInterface) EXPECT() *MockIndexInterfaceMockRecorder {
 }
 
 // AddDoc mocks base method.
-func (m *MockIndexInterface) AddDoc(doc messages.Document) (int, error) {
+func (m *MockIndexInterface) AddDoc(doc messages2.Document) (int, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "AddDoc", doc)
 	ret0, _ := ret[0].(int)
@@ -92,10 +92,10 @@ func (mr *MockIndexInterfaceMockRecorder) DelDoc(docId interface{}) *gomock.Call
 }
 
 // Search mocks base method.
-func (m *MockIndexInterface) Search(query *messages.TermQuery, onFlag, offFlag uint64, orFlags []uint64) []*messages.Document {
+func (m *MockIndexInterface) Search(query *messages2.TermQuery, onFlag, offFlag uint64, orFlags []uint64) []*messages2.Document {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Search", query, onFlag, offFlag, orFlags)
-	ret0, _ := ret[0].([]*messages.Document)
+	ret0, _ := ret[0].([]*messages2.Document)
 	return ret0
 }
 

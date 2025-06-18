@@ -1,5 +1,5 @@
 syntax = "proto3";
-package messages;
+package server;
 
 message KeyWord {
   string Field = 1;

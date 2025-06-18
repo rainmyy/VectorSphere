@@ -3,6 +3,7 @@ package distributed
 import (
 	"VectorSphere/src/enhanced"
 	"VectorSphere/src/library/common"
+	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/logger"
 	"VectorSphere/src/library/pool"
 	"VectorSphere/src/scheduler"
@@ -40,7 +41,7 @@ type DistributedConfig struct {
 	HttpPort              int                        `yaml:"httpPort"`
 	TaskTimeout           int                        `yaml:"taskTimeout"`
 	HealthCheckInterval   int                        `yaml:"healthCheckInterval"`
-	Endpoints             map[string]server.EndPoint `yaml:"endpoints"`
+	Endpoints             map[string]entity.EndPoint `yaml:"endpoints"`
 	DataDir               string                     `yaml:"dataDir"`
 	LoadBalancerConfig    *enhanced.EnhancedLoadBalancer
 	EnhancedConfigManager *enhanced.EnhancedConfigManager
@@ -340,7 +341,7 @@ func (dm *DistributedManager) startMasterService(communicationSvc *Communication
 	logger.Info("Starting master service...")
 
 	// 转换endpoints
-	var endpoints []server.EndPoint
+	var endpoints []entity.EndPoint
 	for _, ep := range dm.config.Endpoints {
 		endpoints = append(endpoints, ep)
 	}
@@ -375,7 +376,7 @@ func (dm *DistributedManager) startSlaveService(communicationSvc *CommunicationS
 	logger.Info("Starting slave service...")
 
 	// 转换endpoints
-	var endpoints []server.EndPoint
+	var endpoints []entity.EndPoint
 	for _, ep := range dm.config.Endpoints {
 		endpoints = append(endpoints, ep)
 	}

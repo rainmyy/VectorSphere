@@ -1,6 +1,7 @@
 package server
 
 import (
+	"VectorSphere/src/library/entity"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -29,7 +30,7 @@ type EnhancedServiceHub struct {
 // ServiceInfo 服务信息
 type ServiceInfo struct {
 	ServiceName string            `json:"serviceName"`
-	Endpoint    *EndPoint         `json:"endpoint"`
+	Endpoint    *entity.EndPoint  `json:"endpoint"`
 	Metadata    map[string]string `json:"metadata"`
 	Version     string            `json:"version"`
 	Weight      int               `json:"weight"`
@@ -90,7 +91,7 @@ func NewEnhancedServiceHub(endpoints []string, heartbeat int64) (*EnhancedServic
 }
 
 // RegisterServiceWithMetadata 注册服务（带元数据）
-func (h *EnhancedServiceHub) RegisterServiceWithMetadata(serviceName string, endpoint *EndPoint, metadata map[string]string, version string, weight int) error {
+func (h *EnhancedServiceHub) RegisterServiceWithMetadata(serviceName string, endpoint *entity.EndPoint, metadata map[string]string, version string, weight int) error {
 	operation := func() error {
 		lease := etcdv3.NewLease(h.client)
 		leaseResp, err := lease.Grant(h.ctx, h.heartbeat)

@@ -2,6 +2,7 @@ package service
 
 import (
 	"VectorSphere/src/library/logger"
+	messages2 "VectorSphere/src/proto/messages"
 	"VectorSphere/src/search"
 	"context"
 	"database/sql"
@@ -12,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"VectorSphere/src/messages"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
@@ -22,7 +22,7 @@ import (
 type DataTransformHook func(columns []string, values []interface{}) ([]interface{}, error)
 
 // DocumentProcessHook 文档处理钩子函数类型
-type DocumentProcessHook func(doc *messages.Document) error
+type DocumentProcessHook func(doc *messages2.Document) error
 
 // RetryStrategy 重试策略
 type RetryStrategy struct {
@@ -539,7 +539,7 @@ func (s *DBImportService) ImportTable(tableName string, sqlQuery string) error {
 	}
 
 	// 创建工作池
-	workChan := make(chan []messages.Document, s.config.WorkerCount*2)
+	workChan := make(chan []messages2.Document, s.config.WorkerCount*2)
 	errChan := make(chan error, s.config.WorkerCount)
 	doneChan := make(chan bool, 1)
 	ctx, cancel = context.WithCancel(s.ctx)
@@ -574,7 +574,7 @@ func (s *DBImportService) ImportTable(tableName string, sqlQuery string) error {
 	}()
 
 	// 读取数据并创建文档批次
-	batch := make([]messages.Document, 0, s.config.BatchSize)
+	batch := make([]messages2.Document, 0, s.config.BatchSize)
 	batchCount := 0
 	totalRows := 0
 
@@ -622,7 +622,7 @@ func (s *DBImportService) ImportTable(tableName string, sqlQuery string) error {
 		// 达到批处理大小，发送到工作通道
 		if len(batch) >= s.config.BatchSize {
 			// 创建批次副本，避免数据竞争
-			batchCopy := make([]messages.Document, len(batch))
+			batchCopy := make([]messages2.Document, len(batch))
 			copy(batchCopy, batch)
 			workChan <- batchCopy
 			batch = batch[:0] // 清空批次，但保留底层数组
@@ -781,11 +781,11 @@ func (s *DBImportService) adjustBatchSize(avgProcessTime time.Duration) {
 }
 
 // processDocumentBatch 处理文档批次
-func (s *DBImportService) processDocumentBatch(ctx context.Context, tableName string, workChan <-chan []messages.Document, errChan chan<- error, wg *sync.WaitGroup) {
+func (s *DBImportService) processDocumentBatch(ctx context.Context, tableName string, workChan <-chan []messages2.Document, errChan chan<- error, wg *sync.WaitGroup) {
 	defer wg.Done()
 
 	var batchesInTx int
-	var docBuffer []messages.Document
+	var docBuffer []messages2.Document
 
 	for batch := range workChan {
 		// 检查是否被取消
@@ -879,17 +879,17 @@ func (s *DBImportService) retryOperation(operation func() error, maxRetries int,
 }
 
 // createDocument 从数据库行创建文档
-func (s *DBImportService) createDocument(columns []string, rowValues []interface{}) (messages.Document, error) {
+func (s *DBImportService) createDocument(columns []string, rowValues []interface{}) (messages2.Document, error) {
 	// 应用前置数据转换钩子
 	if s.config.PreTransformHook != nil {
 		var err error
 		rowValues, err = s.config.PreTransformHook(columns, rowValues)
 		if err != nil {
-			return messages.Document{}, fmt.Errorf("前置数据转换钩子执行失败: %w", err)
+			return messages2.Document{}, fmt.Errorf("前置数据转换钩子执行失败: %w", err)
 		}
 	}
 
-	doc := messages.Document{}
+	doc := messages2.Document{}
 	var contentBuilder strings.Builder
 
 	// 遍历所有列
@@ -931,14 +931,14 @@ func (s *DBImportService) createDocument(columns []string, rowValues []interface
 				// 对字段值进行分词
 				words := strings.Fields(strVal)
 				for _, word := range words {
-					doc.KeWords = append(doc.KeWords, &messages.KeyWord{
+					doc.KeWords = append(doc.KeWords, &messages2.KeyWord{
 						Field: fieldName,
 						Word:  word,
 					})
 				}
 
 				// 同时将整个字段值作为一个关键词
-				doc.KeWords = append(doc.KeWords, &messages.KeyWord{
+				doc.KeWords = append(doc.KeWords, &messages2.KeyWord{
 					Field: fieldName,
 					Word:  strVal,
 				})

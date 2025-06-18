@@ -3,7 +3,7 @@ package test
 import (
 	"VectorSphere/src/library/logger"
 	"VectorSphere/src/library/tree"
-	"VectorSphere/src/messages"
+	"VectorSphere/src/proto/messages"
 	"VectorSphere/src/search"
 	"VectorSphere/src/service"
 	"VectorSphere/src/vector"
