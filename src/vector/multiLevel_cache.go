@@ -6,7 +6,7 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -73,7 +73,10 @@ type CacheStats struct {
 func NewMultiLevelCache(l1Capacity, l2Capacity, l3Capacity int, l3Path string) *MultiLevelCache {
 	// 确保L3缓存目录存在
 	if l3Path != "" {
-		os.MkdirAll(l3Path, 0755)
+		err := os.MkdirAll(l3Path, 0755)
+		if err != nil {
+			return nil
+		}
 	}
 
 	cache := &MultiLevelCache{
@@ -468,7 +471,7 @@ func (c *MultiLevelCache) CleanupExpired(expiryTime time.Time) {
 			defer c.l3Mu.Unlock()
 
 			// 遍历L3缓存目录
-			files, err := ioutil.ReadDir(c.l3CachePath)
+			files, err := fs.ReadDir(os.DirFS(c.l3CachePath), c.l3CachePath)
 			if err != nil {
 				fmt.Printf("Error reading L3 cache directory: %v\n", err)
 				return
@@ -483,7 +486,7 @@ func (c *MultiLevelCache) CleanupExpired(expiryTime time.Time) {
 				filePath := filepath.Join(c.l3CachePath, file.Name())
 
 				// 读取文件内容
-				data, err := ioutil.ReadFile(filePath)
+				data, err := fs.ReadFile(os.DirFS(filePath), filePath)
 				if err != nil {
 					continue
 				}
@@ -492,13 +495,19 @@ func (c *MultiLevelCache) CleanupExpired(expiryTime time.Time) {
 				cache, err := c.deserializeCache(data)
 				if err != nil {
 					// 无法解析的文件直接删除
-					os.Remove(filePath)
+					err := os.Remove(filePath)
+					if err != nil {
+						return
+					}
 					continue
 				}
 
 				// 检查是否过期
 				if cache.Timestamp < timestamp {
-					os.Remove(filePath)
+					err := os.Remove(filePath)
+					if err != nil {
+						return
+					}
 				}
 			}
 		}()
@@ -546,7 +555,7 @@ func (c *MultiLevelCache) EnforceCapacityLimits() {
 			defer c.l3Mu.Unlock()
 
 			// 获取所有缓存文件
-			files, err := ioutil.ReadDir(c.l3CachePath)
+			files, err := fs.ReadDir(os.DirFS(c.l3CachePath), c.l3CachePath)
 			if err != nil {
 				fmt.Printf("Error reading L3 cache directory: %v\n", err)
 				return
@@ -558,7 +567,7 @@ func (c *MultiLevelCache) EnforceCapacityLimits() {
 				timestamp int64
 				size      int64
 			}
-			cacheFiles := []cacheFileInfo{}
+			var cacheFiles []cacheFileInfo
 			totalSize := int64(0)
 
 			for _, file := range files {
@@ -567,12 +576,19 @@ func (c *MultiLevelCache) EnforceCapacityLimits() {
 				}
 
 				filePath := filepath.Join(c.l3CachePath, file.Name())
-				fileSize := file.Size()
+				var fileInfo fs.FileInfo
+				fileInfo, err = file.Info()
+				if err != nil {
+					logger.Error("failed to retrieve file information", err)
+					continue
+				}
+				fileSize := fileInfo.Size()
 				totalSize += fileSize
 
 				// 读取文件内容获取时间戳
-				data, err := ioutil.ReadFile(filePath)
+				data, err := fs.ReadFile(os.DirFS(filePath), filePath)
 				if err != nil {
+					logger.Error("failed to retrieve file information", err)
 					continue
 				}
 
@@ -580,7 +596,10 @@ func (c *MultiLevelCache) EnforceCapacityLimits() {
 				cache, err := c.deserializeCache(data)
 				if err != nil {
 					// 无法解析的文件直接删除
-					os.Remove(filePath)
+					err := os.Remove(filePath)
+					if err != nil {
+						return
+					}
 					continue
 				}
 
@@ -600,7 +619,10 @@ func (c *MultiLevelCache) EnforceCapacityLimits() {
 
 				// 删除最旧的文件，直到总大小低于容量限制
 				for i := 0; i < len(cacheFiles) && totalSize > int64(c.l3Capacity); i++ {
-					os.Remove(cacheFiles[i].path)
+					err := os.Remove(cacheFiles[i].path)
+					if err != nil {
+						return
+					}
 					totalSize -= cacheFiles[i].size
 				}
 			}
@@ -789,7 +811,7 @@ func (c *MultiLevelCache) Clear() {
 			defer c.l3Mu.Unlock()
 
 			// 遍历L3缓存目录
-			files, err := ioutil.ReadDir(c.l3CachePath)
+			files, err := fs.ReadDir(os.DirFS(c.l3CachePath), c.l3CachePath)
 			if err != nil {
 				fmt.Printf("Error reading L3 cache directory: %v\n", err)
 				return
@@ -799,7 +821,10 @@ func (c *MultiLevelCache) Clear() {
 			for _, file := range files {
 				if strings.HasSuffix(file.Name(), c.l3FileExt) {
 					filePath := filepath.Join(c.l3CachePath, file.Name())
-					os.Remove(filePath)
+					err := os.Remove(filePath)
+					if err != nil {
+						return
+					}
 				}
 			}
 		}()
@@ -870,7 +895,7 @@ func (c *MultiLevelCache) loadFromQueryLogs() error {
 	}
 
 	// 读取查询日志文件
-	data, err := ioutil.ReadFile(queryLogPath)
+	data, err := fs.ReadFile(os.DirFS(queryLogPath), queryLogPath)
 	if err != nil {
 		return fmt.Errorf("读取查询日志文件失败: %v", err)
 	}
@@ -967,7 +992,7 @@ func (c *MultiLevelCache) loadFromPredefinedQueries() error {
 	}
 
 	// 读取预定义热门查询文件
-	data, err := ioutil.ReadFile(predefinedQueriesPath)
+	data, err := fs.ReadFile(os.DirFS(predefinedQueriesPath), predefinedQueriesPath)
 	if err != nil {
 		return fmt.Errorf("读取预定义热门查询文件失败: %v", err)
 	}
@@ -1118,6 +1143,8 @@ func (c *MultiLevelCache) detectDataType(data interface{}) CacheDataType {
 				return TypeIntArray
 			case reflect.Uint8: // []byte
 				return TypeBytes
+			default:
+				panic("unhandled default case")
 			}
 		}
 
@@ -1146,7 +1173,7 @@ func (c *MultiLevelCache) readFromL3Cache(key string) (queryCache, bool) {
 	}
 
 	// 读取文件内容
-	data, err := ioutil.ReadFile(filePath)
+	data, err := fs.ReadFile(os.DirFS(filePath), filePath)
 	if err != nil {
 		return queryCache{}, false
 	}
@@ -1160,7 +1187,12 @@ func (c *MultiLevelCache) readFromL3Cache(key string) (queryCache, bool) {
 	// 检查是否过期
 	if time.Now().Unix()-cache.Timestamp > int64(c.l3TTL.Seconds()) {
 		// 异步删除过期文件
-		go os.Remove(filePath)
+		go func() {
+			err := os.Remove(filePath)
+			if err != nil {
+				logger.Error("remove %s file error: %v", filePath, err)
+			}
+		}()
 		return queryCache{}, false
 	}
 
@@ -1186,5 +1218,5 @@ func (c *MultiLevelCache) writeToL3Cache(key string, cache queryCache) error {
 
 	// 写入文件
 	filePath := c.getL3CacheFilePath(key)
-	return ioutil.WriteFile(filePath, data, 0644)
+	return os.WriteFile(filePath, data, 0644)
 }

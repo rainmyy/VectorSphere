@@ -1,6 +1,7 @@
 package tree
 
 import (
+	"VectorSphere/src/library/logger"
 	"errors"
 	"fmt"
 	"os"
@@ -198,7 +199,12 @@ func (tm *TransactionManager) writeCommitLog(tx *Transaction) error {
 	if err != nil {
 		return err
 	}
-	defer logFile.Close()
+	defer func(logFile *os.File) {
+		err := logFile.Close()
+		if err != nil {
+			logger.Error(err.Error())
+		}
+	}(logFile)
 
 	// 写入事务ID和提交时间
 	logEntry := fmt.Sprintf("Transaction ID: %d committed at %s\n", tx.txID, time.Now().Format(time.RFC3339))
@@ -215,7 +221,12 @@ func (tm *TransactionManager) Rollback(tx *Transaction) {
 		fmt.Println("Error opening rollback log file:", err)
 		return
 	}
-	defer logFile.Close()
+	defer func(logFile *os.File) {
+		err := logFile.Close()
+		if err != nil {
+			logger.Error(err.Error())
+		}
+	}(logFile)
 
 	// 写入回滚操作日志
 	logEntry := fmt.Sprintf("Transaction ID: %d rolled back at %s\n", tx.txID, time.Now().Format(time.RFC3339))

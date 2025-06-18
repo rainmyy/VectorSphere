@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"golang.org/x/sys/windows"
 	"sync"
 	"syscall"
 	"unsafe"
@@ -87,7 +88,7 @@ func NewSharedMemory() (*SharedMemory, error) {
 		syscall.PAGE_READWRITE,                  // 读写权限
 		0,                                       // 高位大小
 		uint32(SharedMemSize),                   // 低位大小
-		syscall.StringToUTF16Ptr(SharedMemName), // 共享内存名称
+		windows.StringToUTF16Ptr(SharedMemName), // 共享内存名称
 	)
 
 	if err != nil {
@@ -100,7 +101,7 @@ func NewSharedMemory() (*SharedMemory, error) {
 			syscall.PAGE_READWRITE,                  // 读写权限
 			0,                                       // 高位大小
 			0,                                       // 使用0表示打开现有的而不是创建新的
-			syscall.StringToUTF16Ptr(SharedMemName), // 共享内存名称
+			windows.StringToUTF16Ptr(SharedMemName), // 共享内存名称
 		)
 		if err != nil {
 			return nil, formatError("无法创建或打开共享内存", err)
@@ -116,12 +117,15 @@ func NewSharedMemory() (*SharedMemory, error) {
 		uintptr(SharedMemSize),
 	)
 	if err != nil {
-		syscall.CloseHandle(h)
+		err := syscall.CloseHandle(h)
+		if err != nil {
+			return nil, err
+		}
 		return nil, formatError("无法映射共享内存视图", err)
 	}
 
 	// 转换为字节切片
-	mem := (*[SharedMemSize]byte)(unsafe.Pointer(addr))
+	mem := (*[SharedMemSize]byte)(unsafe.Pointer(&addr))
 	sm.memory = mem[:]
 	sm.mapHandle = h
 

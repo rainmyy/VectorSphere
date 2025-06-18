@@ -174,7 +174,10 @@ func (t *MVCCBPlusTree) Get(tx *Transaction, key Key) (Value, bool) {
 		return mvccNode.GetValue(tx)
 	case ReadCommitted:
 		// 2. 读取已提交：获取事务开始时已提交的最新版本
-		t.lockMgr.Acquire(tx.txID, key, LockShared)
+		_, err := t.lockMgr.Acquire(tx.txID, key, LockShared)
+		if err != nil {
+			return nil, false
+		}
 		defer t.lockMgr.Release(tx.txID, key)
 
 		t.mu.RLock()
@@ -187,7 +190,10 @@ func (t *MVCCBPlusTree) Get(tx *Transaction, key Key) (Value, bool) {
 		}
 
 		// 获取快照锁并创建读取视图
-		t.lockMgr.Acquire(tx.txID, key, LockShared)
+		_, err := t.lockMgr.Acquire(tx.txID, key, LockShared)
+		if err != nil {
+			return nil, false
+		}
 		defer t.lockMgr.Release(tx.txID, key)
 
 		t.mu.RLock()

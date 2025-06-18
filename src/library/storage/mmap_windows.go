@@ -28,7 +28,7 @@ func NewMmap(fileName string, mode int) (*Mmap, error) {
 	}
 	fi, err := f.Stat()
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, err
 	}
 	mmap.FileLen = fi.Size()
@@ -36,7 +36,7 @@ func NewMmap(fileName string, mode int) (*Mmap, error) {
 		// 扩展文件
 		err = syscall.Ftruncate(syscall.Handle(f.Fd()), mmap.FileLen+APPEND_DATA)
 		if err != nil {
-			f.Close()
+			_ = f.Close()
 			return nil, err
 		}
 		mmap.FileLen = APPEND_DATA
@@ -49,81 +49,81 @@ func NewMmap(fileName string, mode int) (*Mmap, error) {
 		uint32(mmap.FileLen),
 		nil)
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, err
 	}
 	addr, err := syscall.MapViewOfFile(h, syscall.FILE_MAP_WRITE, 0, 0, uintptr(mmap.FileLen))
-	syscall.CloseHandle(h)
+	_ = syscall.CloseHandle(h)
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, err
 	}
 	// 转换为[]byte
-	mmap.MmapBytes = *(*[]byte)(unsafe.Pointer(addr))
+	mmap.MmapBytes = *(*[]byte)(unsafe.Pointer(&addr))
 	mmap.Filed = f
 	return mmap, nil
 }
 
-func (this *Mmap) checkFilePointer(checkValue int64) error {
-	if this.FilePointer+checkValue < this.FileLen {
+func (m *Mmap) checkFilePointer(checkValue int64) error {
+	if m.FilePointer+checkValue < m.FileLen {
 		return nil
 	}
 
-	err := syscall.Ftruncate(syscall.Handle(this.Filed.Fd()), this.FileLen+APPEND_DATA)
+	err := syscall.Ftruncate(syscall.Handle(m.Filed.Fd()), m.FileLen+APPEND_DATA)
 	if err != nil {
 		return err
 	}
-	this.FileLen += APPEND_DATA
-	h, err := syscall.CreateFileMapping(syscall.Handle(this.Filed.Fd()), nil, syscall.PAGE_READWRITE, 0, uint32(this.FileLen), nil)
-	addr, err := syscall.MapViewOfFile(h, syscall.FILE_MAP_WRITE, 0, 0, uintptr(this.FileLen))
+	m.FileLen += APPEND_DATA
+	h, err := syscall.CreateFileMapping(syscall.Handle(m.Filed.Fd()), nil, syscall.PAGE_READWRITE, 0, uint32(m.FileLen), nil)
+	addr, err := syscall.MapViewOfFile(h, syscall.FILE_MAP_WRITE, 0, 0, uintptr(m.FileLen))
 	err = syscall.CloseHandle(h)
 	if err != nil {
 		return err
 	}
-	this.MmapBytes = *(*[]byte)(unsafe.Pointer(addr))
+	m.MmapBytes = *(*[]byte)(unsafe.Pointer(&addr))
 
 	return nil
 }
 
-func (this *Mmap) checkFileCap(start, len int64) error {
-	if start+len < this.FileLen {
+func (m *Mmap) checkFileCap(start, len int64) error {
+	if start+len < m.FileLen {
 		return nil
 	}
-	err := syscall.Ftruncate(syscall.Handle(this.Filed.Fd()), this.FileLen+APPEND_DATA)
+	err := syscall.Ftruncate(syscall.Handle(m.Filed.Fd()), m.FileLen+APPEND_DATA)
 	if err != nil {
 		return err
 	}
-	this.FileLen += APPEND_DATA
-	this.FilePointer = start + len
+	m.FileLen += APPEND_DATA
+	m.FilePointer = start + len
 
 	return nil
 }
 
-func (this *Mmap) Unmap() error {
-	if this.MmapBytes != nil && len(this.MmapBytes) > 0 {
-		addr := uintptr(unsafe.Pointer(&this.MmapBytes[0]))
+func (m *Mmap) Unmap() error {
+	if m.MmapBytes != nil && len(m.MmapBytes) > 0 {
+		addr := uintptr(unsafe.Pointer(&m.MmapBytes[0]))
 		err := syscall.UnmapViewOfFile(addr)
 		if err != nil {
 			return err
 		}
 	}
-	if this.Filed != nil {
-		return this.Filed.Close()
+	if m.Filed != nil {
+		return m.Filed.Close()
 	}
 	return nil
 }
 
-func (this *Mmap) Sync() error {
-	if this.MmapBytes == nil || len(this.MmapBytes) == 0 {
+func (m *Mmap) Sync() error {
+	if m.MmapBytes == nil || len(m.MmapBytes) == 0 {
 		return nil
 	}
-	addr := uintptr(unsafe.Pointer(&this.MmapBytes[0]))
-	err := syscall.FlushViewOfFile(addr, uintptr(len(this.MmapBytes)))
+	addr := uintptr(unsafe.Pointer(&m.MmapBytes[0]))
+	err := syscall.FlushViewOfFile(addr, uintptr(len(m.MmapBytes)))
 	if err != nil {
 		return errors.New("FlushViewOfFile failed:" + err.Error())
 	}
-	if this.Filed != nil {
-		h := syscall.Handle(this.Filed.Fd())
+	if m.Filed != nil {
+		h := syscall.Handle(m.Filed.Fd())
 		err := syscall.FlushFileBuffers(h)
 		if err != nil {
 			return err
