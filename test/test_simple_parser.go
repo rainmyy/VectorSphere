@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"testing"
 )
 
-func main() {
+func TestSimpleParser(t *testing.T) {
 	fmt.Println("测试简化的SQL解析器")
 	fmt.Println("========================")
 

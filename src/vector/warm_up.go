@@ -133,12 +133,12 @@ func (db *VectorDB) WarmupIndex() {
 		}
 
 		// 针对增强索引进行额外的预热操作
-		//switch ws.strategy {
-		//case EnhancedIVF:
-		//	db.warmupEnhancedIVFAdvanced(sampleQueries)
-		//case EnhancedLSH:
-		//	db.warmupEnhancedLSHAdvanced(sampleQueries)
-		//}
+		switch ws.strategy {
+		case StrategyEnhancedIVF:
+			db.warmupEnhancedIVFAdvanced(sampleQueries)
+		case StrategyEnhancedLSH:
+			db.warmupEnhancedLSHAdvanced(sampleQueries)
+		}
 	}
 
 	// 预热不同的计算策略
@@ -203,330 +203,321 @@ func (db *VectorDB) WarmupIndex() {
 }
 
 // warmupEnhancedIVFComponents 预热增强IVF索引组件
-//func (db *VectorDB) warmupEnhancedIVFComponents(query []float64, ctx SearchContext) {
-//	if db.ivfIndex == nil || !db.ivfIndex.Enable || db.ivfConfig == nil {
-//		log.Trace("增强IVF索引或配置不可用，跳过组件预热")
-//		return
-//	}
-//
-//	log.Trace("开始预热增强IVF索引组件")
-//
-//	// 1. 预热聚类中心计算/访问
-//	if db.ivfIndex.Clusters != nil && len(db.ivfIndex.Clusters) > 0 {
-//		log.Trace("预热IVF聚类中心...")
-//		// 模拟计算查询向量与部分聚类中心的距离
-//		numClustersToWarmup := min(5, len(db.ivfIndex.Clusters)) // 限制预热的聚类数量
-//		for i := 0; i < numClustersToWarmup; i++ {
-//			cluster := db.ivfIndex.Clusters[i]
-//			if cluster != nil && len(cluster.Centroid) > 0 {
-//				_ = acceler.AdaptiveCosineSimilarity(query, cluster.Centroid, db.GetOptimalStrategy(query)) // 使用自适应策略
-//			}
-//		}
-//	}
-//
-//	// 2. 预热倒排列表访问
-//	if db.ivfIndex.InvertedLists != nil {
-//		log.Trace("预热IVF倒排列表...")
-//		// 模拟访问几个倒排列表中的向量
-//		numListsToWarmup := 0
-//		for _, list := range db.ivfIndex.InvertedLists {
-//			if numListsToWarmup >= 3 { // 限制预热的倒排列表数量
-//				break
-//			}
-//			if len(list) > 0 {
-//				// 访问列表中的前几个向量
-//				numVectorsToAccess := min(2, len(list))
-//				for i := 0; i < numVectorsToAccess; i++ {
-//					if vec, exists := db.vectors[list[i]]; exists {
-//						_ = acceler.AdaptiveCosineSimilarity(query, vec, db.GetOptimalStrategy(query))
-//					}
-//				}
-//			}
-//			numListsToWarmup++
-//		}
-//	}
-//
-//	// 3. 预热PQ编码器 (如果使用)
-//	if db.ivfConfig.EnablePQ && db.pqCodebook != nil && db.pqCodebook.Encoder != nil {
-//		log.Trace("预热PQ编码器...")
-//		_, err := db.pqCodebook.Encoder.Encode(query)
-//		if err != nil {
-//			log.Trace("PQ编码器预热失败: %v", err)
-//		}
-//		// 预热PQ解码 (如果适用，通常在搜索时)
-//		if len(db.ivfIndex.InvertedLists) > 0 {
-//			for _, list := range db.ivfIndex.InvertedLists {
-//				if len(list) > 0 {
-//					vectorID := list[0]
-//					db.mu.RLock()
-//					pqCodes, pqExists := db.pqCodes[vectorID]
-//					db.mu.RUnlock()
-//					if pqExists && pqCodes != nil {
-//						_, err = db.pqCodebook.Encoder.Decode(pqCodes)
-//						if err != nil {
-//							log.Trace("PQ解码器预热失败: %v", err)
-//						}
-//					}
-//					break // 只预热一个
-//				}
-//			}
-//		}
-//	}
-//
-//	// 4. 预热IVF量化器 (如果独立于PQ)
-//	if db.ivfConfig.EnableQuantization && db.quantizer != nil {
-//		log.Trace("预热IVF量化器...")
-//		_, err := db.quantizer.Quantize(query)
-//		if err != nil {
-//			log.Trace("IVF量化器预热失败: %v", err)
-//		}
-//	}
-//
-//	// 5. 预热距离计算器 (特定于IVF的优化版本，如果存在)
-//	// 假设有一个优化的距离计算器，这里只是概念性预热
-//	if db.ivfIndex != nil {
-//		log.Trace("预热IVF距离计算器...")
-//		if len(db.vectors) > 0 {
-//			var firstVector []float64
-//			db.mu.RLock()
-//			for _, v := range db.vectors {
-//				firstVector = v
-//				break
-//			}
-//			db.mu.RUnlock()
-//			if firstVector != nil {
-//				_, err := db.ivfIndex.DistanceCalculator.ComputeDistance(query, firstVector)
-//				if err != nil {
-//					log.Trace("IVF距离计算器预热失败: %v", err)
-//				}
-//			}
-//		}
-//	}
-//
-//	// 6. 预热自适应搜索参数调整逻辑 (如果IVF有此机制)
-//	if db.ivfIndex.AdaptiveSearchTuner != nil {
-//		log.Trace("预热IVF自适应搜索调谐器...")
-//		// 模拟参数更新
-//		db.ivfIndex.AdaptiveSearchTuner.AdjustParameters(ctx.QualityLevel, len(db.vectors))
-//	}
-//
-//	// 7. 预热索引统计信息访问
-//	if db.ivfIndex.Stats != nil {
-//		log.Trace("预热IVF索引统计信息访问...")
-//		_ = db.ivfIndex.Stats.GetTotalVectors()
-//		_ = db.ivfIndex.Stats.GetAvgVectorsPerList()
-//	}
-//
-//	// 8. 预热缓存系统 (如果IVF有特定缓存，如最近访问的倒排列表)
-//	if db.ivfIndex.Cache != nil {
-//		log.Trace("预热IVF缓存系统...")
-//		// 模拟缓存的Get/Put操作
-//		_ = db.ivfIndex.Cache.Get("sample_key")
-//		db.ivfIndex.Cache.Put("sample_key", []byte("sample_data"))
-//	}
-//
-//	// 9. 预热并行处理组件 (如果IVF搜索涉及特定的并行模式)
-//	// 例如，如果倒排列表的扫描是并行化的，可以尝试触发这个逻辑
-//	// 这部分比较抽象，具体实现依赖于IVF的并行策略
-//
-//	// 10. 预热内存池/分配器 (如果IVF使用自定义内存管理)
-//	// 模拟分配和释放操作
-//
-//	log.Trace("增强IVF索引组件预热完成")
-//}
-//
-//// warmupEnhancedLSHComponents 预热增强LSH索引组件
-//func (db *VectorDB) warmupEnhancedLSHComponents(query []float64, ctx SearchContext) {
-//	if db.LshIndex == nil || !db.LshIndex.Enable {
-//		return
-//	}
-//
-//	log.Trace("开始预热增强LSH索引组件")
-//
-//	// 1. 预热LSH哈希函数
-//	if db.LshIndex.Tables != nil {
-//		for i, table := range db.LshIndex.Tables {
-//			if i >= 5 { // 限制预热的哈希表数量
-//				break
-//			}
-//			if table.HashFunctions != nil {
-//				// 对查询向量进行哈希计算
-//				for j, hashFunc := range table.HashFunctions {
-//					if j >= 3 { // 限制预热的哈希函数数量
-//						break
-//					}
-//					_, err := hashFunc.Hash(query)
-//					if err != nil {
-//						log.Trace("LSH哈希函数预热失败: %v", err)
-//					}
-//				}
-//			}
-//		}
-//	}
-//
-//	// 2. 预热LSH桶访问
-//	if db.LshIndex.Tables != nil {
-//		for i, table := range db.LshIndex.Tables {
-//			if i >= 3 { // 限制预热的哈希表数量
-//				break
-//			}
-//			if table.Buckets != nil {
-//				// 访问几个桶
-//				bucketCount := 0
-//				for _, bucket := range table.Buckets {
-//					if bucketCount >= 5 { // 限制预热的桶数量
-//						break
-//					}
-//					if len(bucket.VectorIDs) > 0 {
-//						// 访问桶中的前几个向量
-//						for j := 0; j < min(2, len(bucket.VectorIDs)); j++ {
-//							if vec, exists := db.vectors[bucket.VectorIDs[j]]; exists {
-//								_ = acceler.AdaptiveCosineSimilarity(query, vec, db.GetOptimalStrategy(query))
-//							}
-//						}
-//					}
-//					bucketCount++
-//				}
-//			}
-//		}
-//	}
-//
-//	// 3. 预热LSH族
-//	if db.LshFamilies != nil {
-//		for familyName, family := range db.LshFamilies {
-//			if family != nil && family.HashFunctions != nil {
-//				log.Trace("预热LSH族: %s", familyName)
-//				// 对查询向量进行LSH族哈希计算
-//				for i, hashFunc := range family.HashFunctions {
-//					if i >= 3 { // 限制预热的哈希函数数量
-//						break
-//					}
-//					_, err := hashFunc.Hash(query)
-//					if err != nil {
-//						log.Trace("LSH族哈希函数预热失败: %v", err)
-//					}
-//				}
-//			}
-//		}
-//	}
-//
-//	// 4. 预热自适应LSH
-//	if db.AdaptiveLSH != nil {
-//		// 模拟自适应参数调整
-//		db.AdaptiveLSH.UpdateParameters(len(db.vectors), len(query), ctx.QualityLevel)
-//	}
-//
-//	log.Trace("增强LSH索引组件预热完成")
-//}
-//
-//// warmupEnhancedIVFAdvanced 增强IVF索引高级预热
-//func (db *VectorDB) warmupEnhancedIVFAdvanced(sampleQueries [][]float64) {
-//	if db.ivfIndex == nil || !db.ivfIndex.Enable {
-//		return
-//	}
-//
-//	log.Info("开始增强IVF索引高级预热")
-//
-//	// 1. 预热不同的nprobe值
-//	nprobeValues := []int{1, 5, 10, 20, 50}
-//	for _, nprobe := range nprobeValues {
-//		if nprobe > len(db.ivfIndex.Clusters) {
-//			continue
-//		}
-//		for i, query := range sampleQueries {
-//			if i >= 2 { // 限制查询数量
-//				break
-//			}
-//			_, err := db.EnhancedIVFSearch(query, 5, nprobe)
-//			if err != nil {
-//				log.Trace("nprobe=%d 预热失败: %v", nprobe, err)
-//			}
-//		}
-//	}
-//
-//	// 2. 预热批量搜索
-//	if len(sampleQueries) >= 3 {
-//		batchQueries := sampleQueries[:3]
-//		_, err := db.EnhancedIVFBatchSearch(batchQueries, 5, 10)
-//		if err != nil {
-//			log.Trace("批量搜索预热失败: %v", err)
-//		}
-//	}
-//
-//	// 3. 预热范围搜索（如果支持）
-//	if len(sampleQueries) > 0 {
-//		_, err := db.EnhancedIVFRangeSearch(sampleQueries[0], 0.8, 10)
-//		if err != nil {
-//			log.Trace("范围搜索预热失败: %v", err)
-//		}
-//	}
-//
-//	log.Info("增强IVF索引高级预热完成")
-//}
-//
-//// warmupEnhancedLSHAdvanced 增强LSH索引高级预热
-//func (db *VectorDB) warmupEnhancedLSHAdvanced(sampleQueries [][]float64) {
-//	if db.LshIndex == nil || !db.LshIndex.Enable {
-//		return
-//	}
-//
-//	log.Info("开始增强LSH索引高级预热")
-//
-//	// 1. 预热不同的LSH参数组合
-//	if db.LshConfig != nil {
-//		// 保存原始参数
-//		originalR := db.LshConfig.R
-//		originalW := db.LshConfig.W
-//
-//		// 尝试不同的参数组合
-//		paramCombos := []struct {
-//			R float64
-//			W float64
-//		}{
-//			{R: originalR, W: originalW},
-//			{R: originalR / 2, W: originalW},
-//			{R: originalR, W: originalW / 2},
-//		}
-//
-//		for _, combo := range paramCombos {
-//			if combo.R <= 0 || combo.W <= 0 {
-//				continue
-//			}
-//			// 临时调整参数
-//			db.LshConfig.R = float64(combo.R)
-//			db.LshConfig.W = float64(combo.W)
-//
-//			for i, query := range sampleQueries {
-//				if i >= 2 { // 限制查询数量
-//					break
-//				}
-//				_, err := db.EnhancedLSHSearch(query, 5)
-//				if err != nil {
-//					log.Trace("LSH参数L=%d,K=%d 预热失败: %v", combo.R, combo.W, err)
-//				}
-//			}
-//		}
-//
-//		// 恢复原始参数
-//		db.LshConfig.R = originalR
-//		db.LshConfig.W = originalW
-//	}
-//
-//	// 2. 预热多表查询
-//	if len(sampleQueries) > 0 {
-//		_, err := db.EnhancedLSHMultiTableSearch(sampleQueries[0], 5)
-//		if err != nil {
-//			log.Trace("多表查询预热失败: %v", err)
-//		}
-//	}
-//
-//	// 3. 预热近似搜索
-//	if len(sampleQueries) > 0 {
-//		_, err := db.EnhancedLSHApproximateSearch(sampleQueries[0], 5, 0.8)
-//		if err != nil {
-//			log.Trace("近似搜索预热失败: %v", err)
-//		}
-//	}
-//
-//	log.Info("增强LSH索引高级预热完成")
-//}
+func (db *VectorDB) warmupEnhancedIVFComponents(query []float64, ctx SearchContext) {
+	if db.ivfIndex == nil || !db.ivfIndex.Enable || db.ivfConfig == nil {
+		logger.Trace("增强IVF索引或配置不可用，跳过组件预热")
+		return
+	}
+
+	logger.Trace("开始预热增强IVF索引组件")
+
+	// 1. 预热聚类中心计算/访问
+	if db.ivfIndex.Clusters != nil && len(db.ivfIndex.Clusters) > 0 {
+		logger.Trace("预热IVF聚类中心...")
+		// 模拟计算查询向量与部分聚类中心的距离
+		numClustersToWarmup := min(5, len(db.ivfIndex.Clusters)) // 限制预热的聚类数量
+		for i := 0; i < numClustersToWarmup; i++ {
+			cluster := db.ivfIndex.Clusters[i]
+			if len(cluster.Centroid) > 0 {
+				_ = acceler.AdaptiveCosineSimilarity(query, cluster.Centroid, db.GetOptimalStrategy(query)) // 使用自适应策略
+			}
+		}
+	}
+
+	// 2. 预热倒排列表访问（使用聚类中的VectorIDs）
+	if db.ivfIndex.Clusters != nil {
+		logger.Trace("预热IVF倒排列表...")
+		// 模拟访问几个聚类中的向量
+		numClustersToWarmup := min(3, len(db.ivfIndex.Clusters)) // 限制预热的聚类数量
+		for i := 0; i < numClustersToWarmup; i++ {
+			cluster := db.ivfIndex.Clusters[i]
+			if len(cluster.VectorIDs) > 0 {
+				// 访问聚类中的前几个向量
+				numVectorsToAccess := min(2, len(cluster.VectorIDs))
+				for j := 0; j < numVectorsToAccess; j++ {
+					if vec, exists := db.vectors[cluster.VectorIDs[j]]; exists {
+						_ = acceler.AdaptiveCosineSimilarity(query, vec, db.GetOptimalStrategy(query))
+					}
+				}
+			}
+		}
+	}
+
+	// 3. 预热PQ编码器 (如果使用)
+	if db.ivfConfig.UsePQCompression && db.pqCodebook != nil {
+		logger.Trace("预热PQ编码器...")
+		// 使用现有的PQ压缩函数进行预热
+		_, err := acceler.OptimizedCompressByPQ(query, db.pqCodebook, db.numSubVectors, db.numCentroidsPerSubVector)
+		if err != nil {
+			logger.Trace("PQ编码器预热失败: %v", err)
+		}
+		// 预热PQ解码 (如果适用，通常在搜索时)
+		if db.ivfPQIndex != nil && len(db.ivfPQIndex.PQCodes) > 0 {
+			for vectorID, pqCodes := range db.ivfPQIndex.PQCodes {
+				if pqCodes != nil {
+					// 模拟PQ解码过程
+					_ = vectorID // 使用vectorID避免未使用变量警告
+					break        // 只预热一个
+				}
+			}
+		}
+	}
+
+	// 4. 预热IVF量化器 (概念性预热)
+	if db.ivfConfig.UsePQCompression {
+		logger.Trace("预热IVF量化器...")
+		// 使用PQ压缩进行量化预热
+		if db.pqCodebook != nil {
+			_, err := acceler.OptimizedCompressByPQ(query, db.pqCodebook, db.numSubVectors, db.numCentroidsPerSubVector)
+			if err != nil {
+				logger.Trace("IVF量化器预热失败: %v", err)
+			}
+		}
+	}
+
+	// 5. 预热距离计算器 (使用通用距离计算)
+	if db.ivfIndex != nil {
+		logger.Trace("预热IVF距离计算器...")
+		if len(db.vectors) > 0 {
+			var firstVector []float64
+			db.mu.RLock()
+			for _, v := range db.vectors {
+				firstVector = v
+				break
+			}
+			db.mu.RUnlock()
+			if firstVector != nil {
+				// 使用通用的余弦相似度计算进行预热
+				_ = acceler.AdaptiveCosineSimilarity(query, firstVector, db.GetOptimalStrategy(query))
+			}
+		}
+	}
+
+	// 6. 预热自适应搜索参数调整逻辑 (概念性预热)
+	logger.Trace("预热IVF自适应搜索调谐器...")
+	// 模拟参数调整逻辑，实际实现可能在其他地方
+	_ = ctx.QualityLevel
+	_ = len(db.vectors)
+
+	// 7. 预热索引统计信息访问
+	logger.Trace("预热IVF索引统计信息访问...")
+	// 访问基本的索引信息
+	_ = db.ivfIndex.TotalVectors
+	_ = len(db.ivfIndex.Clusters)
+
+	// 8. 预热缓存系统 (使用数据库级别的缓存)
+	if db.MultiCache != nil {
+		logger.Trace("预热IVF缓存系统...")
+		// 模拟缓存的Get/Put操作
+		_, _ = db.MultiCache.Get("sample_key")
+		db.MultiCache.Put("sample_key", []byte("sample_data"))
+	}
+
+	// 9. 预热并行处理组件 (如果IVF搜索涉及特定的并行模式)
+	// 例如，如果倒排列表的扫描是并行化的，可以尝试触发这个逻辑
+	// 这部分比较抽象，具体实现依赖于IVF的并行策略
+
+	// 10. 预热内存池/分配器 (如果IVF使用自定义内存管理)
+	// 模拟分配和释放操作
+
+	logger.Trace("增强IVF索引组件预热完成")
+}
+
+// warmupEnhancedLSHComponents 预热增强LSH索引组件
+func (db *VectorDB) warmupEnhancedLSHComponents(query []float64, ctx SearchContext) {
+	if db.LshIndex == nil || !db.LshIndex.Enable {
+		return
+	}
+
+	logger.Trace("开始预热增强LSH索引组件")
+
+	// 1. 预热LSH哈希函数
+	if db.LshIndex.Tables != nil {
+		for i, table := range db.LshIndex.Tables {
+			if i >= 5 { // 限制预热的哈希表数量
+				break
+			}
+			if table.HashFunctions != nil {
+				// 对查询向量进行哈希计算
+				for j, hashFunc := range table.HashFunctions {
+					if j >= 3 { // 限制预热的哈希函数数量
+						break
+					}
+					_, err := hashFunc.Hash(query)
+					if err != nil {
+						logger.Trace("LSH哈希函数预热失败: %v", err)
+					}
+				}
+			}
+		}
+	}
+
+	// 2. 预热LSH桶访问
+	if db.LshIndex.Tables != nil {
+		for i, table := range db.LshIndex.Tables {
+			if i >= 3 { // 限制预热的哈希表数量
+				break
+			}
+			if table.Buckets != nil {
+				// 访问几个桶
+				bucketCount := 0
+				for _, bucket := range table.Buckets {
+					if bucketCount >= 5 { // 限制预热的桶数量
+						break
+					}
+					if len(bucket.VectorIDs) > 0 {
+						// 访问桶中的前几个向量
+						for j := 0; j < min(2, len(bucket.VectorIDs)); j++ {
+							if vec, exists := db.vectors[bucket.VectorIDs[j]]; exists {
+								_ = acceler.AdaptiveCosineSimilarity(query, vec, db.GetOptimalStrategy(query))
+							}
+						}
+					}
+					bucketCount++
+				}
+			}
+		}
+	}
+
+	// 3. 预热LSH族
+	if db.LshFamilies != nil {
+		for familyName, family := range db.LshFamilies {
+			if family != nil && family.HashFunctions != nil {
+				logger.Trace("预热LSH族: %s", familyName)
+				// 对查询向量进行LSH族哈希计算
+				for i, hashFunc := range family.HashFunctions {
+					if i >= 3 { // 限制预热的哈希函数数量
+						break
+					}
+					_, err := hashFunc.Hash(query)
+					if err != nil {
+						logger.Trace("LSH族哈希函数预热失败: %v", err)
+					}
+				}
+			}
+		}
+	}
+
+	// 4. 预热自适应LSH
+	if db.AdaptiveLSH != nil {
+		// 模拟自适应参数调整
+		// 访问自适应LSH的配置信息
+		_ = db.AdaptiveLSH.OptimalParams
+		_ = db.AdaptiveLSH.LastTuning
+	}
+
+	logger.Trace("增强LSH索引组件预热完成")
+}
+
+// warmupEnhancedIVFAdvanced 增强IVF索引高级预热
+func (db *VectorDB) warmupEnhancedIVFAdvanced(sampleQueries [][]float64) {
+	if db.ivfIndex == nil || !db.ivfIndex.Enable {
+		return
+	}
+
+	logger.Info("开始增强IVF索引高级预热")
+
+	// 1. 预热不同的nprobe值
+	nprobeValues := []int{1, 5, 10, 20, 50}
+	for _, nprobe := range nprobeValues {
+		if nprobe > len(db.ivfIndex.Clusters) {
+			continue
+		}
+		for i, query := range sampleQueries {
+			if i >= 2 { // 限制查询数量
+				break
+			}
+			_, err := db.EnhancedIVFSearch(query, 5, nprobe)
+			if err != nil {
+				logger.Trace("nprobe=%d 预热失败: %v", nprobe, err)
+			}
+		}
+	}
+
+	// 2. 预热批量搜索 (使用单个查询模拟批量)
+	if len(sampleQueries) >= 3 {
+		for i := 0; i < min(3, len(sampleQueries)); i++ {
+			_, err := db.EnhancedIVFSearch(sampleQueries[i], 5, 10)
+			if err != nil {
+				logger.Trace("批量搜索预热失败: %v", err)
+			}
+		}
+	}
+
+	// 3. 预热范围搜索 (使用标准搜索模拟)
+	if len(sampleQueries) > 0 {
+		_, err := db.EnhancedIVFSearch(sampleQueries[0], 10, 10)
+		if err != nil {
+			logger.Trace("范围搜索预热失败: %v", err)
+		}
+	}
+
+	logger.Info("增强IVF索引高级预热完成")
+}
+
+// warmupEnhancedLSHAdvanced 增强LSH索引高级预热
+func (db *VectorDB) warmupEnhancedLSHAdvanced(sampleQueries [][]float64) {
+	if db.LshIndex == nil || !db.LshIndex.Enable {
+		return
+	}
+
+	logger.Info("开始增强LSH索引高级预热")
+
+	// 1. 预热不同的LSH参数组合
+	if db.LshConfig != nil {
+		// 保存原始参数
+		originalR := db.LshConfig.R
+		originalW := db.LshConfig.W
+
+		// 尝试不同的参数组合
+		paramCombos := []struct {
+			R float64
+			W float64
+		}{
+			{R: originalR, W: originalW},
+			{R: originalR / 2, W: originalW},
+			{R: originalR, W: originalW / 2},
+		}
+
+		for _, combo := range paramCombos {
+			if combo.R <= 0 || combo.W <= 0 {
+				continue
+			}
+			// 临时调整参数
+			db.LshConfig.R = float64(combo.R)
+			db.LshConfig.W = float64(combo.W)
+
+			for i, query := range sampleQueries {
+				if i >= 2 { // 限制查询数量
+					break
+				}
+				_, err := db.EnhancedLSHSearch(query, 5)
+				if err != nil {
+					logger.Trace("LSH参数R=%.2f,W=%.2f 预热失败: %v", combo.R, combo.W, err)
+				}
+			}
+		}
+
+		// 恢复原始参数
+		db.LshConfig.R = originalR
+		db.LshConfig.W = originalW
+	}
+
+	// 2. 预热多表查询 (使用标准LSH搜索)
+	if len(sampleQueries) > 0 {
+		_, err := db.EnhancedLSHSearch(sampleQueries[0], 5)
+		if err != nil {
+			logger.Trace("多表查询预热失败: %v", err)
+		}
+	}
+
+	// 3. 预热近似搜索 (使用标准LSH搜索)
+	if len(sampleQueries) > 0 {
+		_, err := db.EnhancedLSHSearch(sampleQueries[0], 5)
+		if err != nil {
+			logger.Trace("近似搜索预热失败: %v", err)
+		}
+	}
+
+	logger.Info("增强LSH索引高级预热完成")
+}

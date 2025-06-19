@@ -106,7 +106,6 @@ type LSHPerformance struct {
 }
 
 // BuildEnhancedLSHIndex 构建增强 LSH 索引
-// BuildEnhancedLSHIndex 构建增强 LSH 索引
 func (db *VectorDB) BuildEnhancedLSHIndex(config *LSHConfig) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
