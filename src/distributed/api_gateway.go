@@ -85,6 +85,12 @@ func (gw *APIGateway) Stop(ctx context.Context) error {
 
 func (gw *APIGateway) registerFunc(requestMethod string, handler func(http.ResponseWriter, *http.Request)) http.Handler {
 	fn := func(w http.ResponseWriter, r *http.Request) {
+		// 检查是否为master
+		if !gw.distributedManager.IsMaster() {
+			http.Error(w, "Only master can create tables", http.StatusForbidden)
+			return
+		}
+
 		if r.Method != requestMethod {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -285,11 +291,6 @@ func (gw *APIGateway) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (gw *APIGateway) handleCreateTable(w http.ResponseWriter, r *http.Request) {
-	// 检查是否为master
-	if !gw.distributedManager.IsMaster() {
-		http.Error(w, "Only master can create tables", http.StatusForbidden)
-		return
-	}
 
 	var req struct {
 		TableName          string `json:"table_name"`
@@ -351,11 +352,6 @@ func (gw *APIGateway) handleCreateTable(w http.ResponseWriter, r *http.Request) 
 }
 
 func (gw *APIGateway) handleDeleteTable(w http.ResponseWriter, r *http.Request) {
-	if !gw.distributedManager.IsMaster() {
-		http.Error(w, "Only master can delete tables", http.StatusForbidden)
-		return
-	}
-
 	tableName := r.URL.Query().Get("table_name")
 	if tableName == "" {
 		http.Error(w, "table_name parameter required", http.StatusBadRequest)
@@ -398,11 +394,6 @@ func (gw *APIGateway) handleDeleteTable(w http.ResponseWriter, r *http.Request) 
 }
 
 func (gw *APIGateway) handleAddDocument(w http.ResponseWriter, r *http.Request) {
-	if !gw.distributedManager.IsMaster() {
-		http.Error(w, "Only master can add documents", http.StatusForbidden)
-		return
-	}
-
 	var req struct {
 		TableName      string              `json:"table_name"`
 		Document       *messages2.Document `json:"document"`
@@ -452,11 +443,6 @@ func (gw *APIGateway) handleAddDocument(w http.ResponseWriter, r *http.Request) 
 }
 
 func (gw *APIGateway) handleDeleteDocument(w http.ResponseWriter, r *http.Request) {
-	if !gw.distributedManager.IsMaster() {
-		http.Error(w, "Only master can delete documents", http.StatusForbidden)
-		return
-	}
-
 	var req struct {
 		TableName string               `json:"table_name"`
 		DocID     string               `json:"doc_id"`

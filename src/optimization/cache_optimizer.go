@@ -332,8 +332,125 @@ func (co *CacheOptimizer) clearCache() {
 
 // prewarmCache 预热缓存
 func (co *CacheOptimizer) prewarmCache() {
-	// 调用向量数据库预热缓存
-	co.multiLevelCache.Prewarm()
+	logger.Info("开始预热缓存...")
+
+	// 调用向量数据库系统级预热缓存
+	co.multiLevelCache.PrewarmSystem()
+
+	// 预热常用的向量查询模式
+	co.prewarmCommonVectorQueries()
+
+	// 预热最近访问的热门查询
+	co.prewarmRecentHotQueries()
+
+	// 预热基于用户行为的查询模式
+	co.prewarmUserBehaviorQueries()
+
+	logger.Info("缓存预热完成")
+}
+
+// prewarmCommonVectorQueries 预热常用的向量查询模式
+func (co *CacheOptimizer) prewarmCommonVectorQueries() {
+	// 预热常见的向量维度查询
+	commonDimensions := []int{128, 256, 512, 768, 1024}
+	commonKValues := []int{5, 10, 20, 50, 100}
+
+	for _, dim := range commonDimensions {
+		for _, k := range commonKValues {
+			// 生成示例向量
+			vector := make([]float64, dim)
+			for i := range vector {
+				vector[i] = float64(i) / float64(dim) // 简单的示例向量
+			}
+
+			// 生成缓存键
+			options := &SearchOptions{
+				QualityLevel: 0.8,
+				EnableGPU:    false,
+				Nprobe:       10,
+			}
+			cacheKey := generateCacheKey(vector, k, options)
+
+			// 生成模拟结果
+			mockResults := make([]string, k)
+			for i := 0; i < k; i++ {
+				mockResults[i] = fmt.Sprintf("result_%d_%d_%d", dim, k, i)
+			}
+
+			// 预热到缓存
+			co.multiLevelCache.Prewarm(cacheKey, mockResults)
+		}
+	}
+
+	logger.Info("预热了 %d 个常用向量查询模式", len(commonDimensions)*len(commonKValues))
+}
+
+// prewarmRecentHotQueries 预热最近访问的热门查询
+func (co *CacheOptimizer) prewarmRecentHotQueries() {
+	// 从LRU策略中获取最近访问的查询
+	co.evictionPolicy.mu.RLock()
+	recentQueries := make([]string, 0, 50)
+	currentTime := time.Now()
+
+	// 收集最近1小时内访问的查询
+	for key, accessTime := range co.evictionPolicy.accessTimes {
+		if currentTime.Sub(accessTime) <= time.Hour {
+			recentQueries = append(recentQueries, key)
+		}
+		if len(recentQueries) >= 50 { // 限制数量
+			break
+		}
+	}
+	co.evictionPolicy.mu.RUnlock()
+
+	// 为这些查询生成模拟结果并预热
+	for i, queryKey := range recentQueries {
+		// 生成模拟结果
+		mockResults := make([]string, 10) // 默认返回10个结果
+		for j := 0; j < 10; j++ {
+			mockResults[j] = fmt.Sprintf("hot_result_%d_%d", i, j)
+		}
+
+		// 预热到缓存
+		co.multiLevelCache.Prewarm(queryKey, mockResults)
+	}
+
+	logger.Info("预热了 %d 个最近热门查询", len(recentQueries))
+}
+
+// prewarmUserBehaviorQueries 预热基于用户行为的查询模式
+func (co *CacheOptimizer) prewarmUserBehaviorQueries() {
+	// 基于用户行为模式预热缓存
+	userBehaviorPatterns := []struct {
+		pattern string
+		weight  float64
+	}{
+		{"similarity_search_text", 0.4},  //文本相似性搜索 (40%权重)
+		{"similarity_search_image", 0.3}, //图像相似性搜索 (30%权重)
+		{"recommendation_query", 0.2},    //推荐查询 (20%权重)
+		{"classification_query", 0.1},    //分类查询 (10%权重)
+	}
+
+	for _, pattern := range userBehaviorPatterns {
+		// 根据权重决定预热的查询数量
+		queryCount := int(pattern.weight * 100)
+
+		for i := 0; i < queryCount; i++ {
+			// 生成基于模式的缓存键
+			cacheKey := fmt.Sprintf("%s_pattern_%d", pattern.pattern, i)
+
+			// 生成模拟结果
+			mockResults := make([]string, 15) // 用户行为查询通常返回更多结果
+			for j := 0; j < 15; j++ {
+				mockResults[j] = fmt.Sprintf("%s_result_%d", pattern.pattern, j)
+			}
+
+			// 预热到缓存
+			co.multiLevelCache.Prewarm(cacheKey, mockResults)
+		}
+	}
+
+	logger.Info("预热了基于用户行为的查询模式")
 }
 
 // resetStats 重置统计

@@ -78,7 +78,6 @@ type DistributedManager struct {
 	apiGateway       *APIGateway
 
 	// 状态管理
-	isMaster  bool
 	isRunning bool
 	stopCh    chan struct{}
 }
@@ -266,7 +265,7 @@ func (dm *DistributedManager) onBecomeLeader() {
 	dm.mutex.Lock()
 	defer dm.mutex.Unlock()
 
-	dm.isMaster = true
+	dm.setMaster(true)
 	logger.Info("Node became master")
 
 	// 启动master服务
@@ -285,12 +284,21 @@ func (dm *DistributedManager) onBecomeLeader() {
 	}
 }
 
+func (dm *DistributedManager) setMaster(isMaster bool) {
+	if isMaster {
+		dm.config.NodeType = MasterNode
+		return
+	}
+
+	dm.config.NodeType = SlaveNode
+}
+
 // onLoseLeader 失去leader时的处理
 func (dm *DistributedManager) onLoseLeader() {
 	dm.mutex.Lock()
 	defer dm.mutex.Unlock()
 
-	dm.isMaster = false
+	dm.setMaster(false)
 	logger.Info("Node lost master status")
 
 	// 停止master服务
@@ -407,7 +415,8 @@ func (dm *DistributedManager) startSlaveService(communicationSvc *CommunicationS
 func (dm *DistributedManager) IsMaster() bool {
 	dm.mutex.RLock()
 	defer dm.mutex.RUnlock()
-	return dm.isMaster
+
+	return dm.config.NodeType == MasterNode
 }
 
 // GetMasterService 获取master服务实例

@@ -1,8 +1,6 @@
 package distributed
 
 import (
-	"VectorSphere/src/library/logger"
-	"VectorSphere/src/proto/serverProto"
 	"archive/tar"
 	"compress/gzip"
 	"context"
@@ -16,6 +14,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"VectorSphere/src/library/logger"
+	"VectorSphere/src/proto/serverProto"
 )
 
 // FileMetadata 文件元数据
@@ -105,6 +106,570 @@ func (dfs *DistributedFileService) Start() error {
 	go dfs.startBackgroundTasks()
 
 	return nil
+}
+
+// =============================================================================
+// gRPC 服务接口实现
+// =============================================================================
+
+// CreateFile 创建文件
+func (dfs *DistributedFileService) CreateFile(ctx context.Context, req *serverProto.CreateFileRequest) (*serverProto.CreateFileResponse, error) {
+	// 获取文件锁
+	fileLock := dfs.getFileLock(req.Filename)
+	fileLock.Lock()
+	defer fileLock.Unlock()
+
+	// 检查文件是否已存在
+	dfs.metadataMutex.RLock()
+	_, exists := dfs.metadataCache[req.Filename]
+	dfs.metadataMutex.RUnlock()
+
+	if exists {
+		return &serverProto.CreateFileResponse{
+			ErrorMessage: fmt.Sprintf("文件 %s 已存在", req.Filename),
+		}, nil
+	}
+
+	// 创建文件元数据
+	metadata := &FileMetadata{
+		Filename:     req.Filename,
+		Size:         req.TotalSize,
+		LastModified: time.Now(),
+		Checksum:     req.ChecksumMd5,
+		OwnerNode:    dfs.distributedManager.localhost,
+		Replicas:     []string{},
+		Version:      1,
+		Shards:       []ShardInfo{},
+	}
+
+	// 保存元数据
+	dfs.metadataMutex.Lock()
+	err := dfs.saveMetadata(metadata)
+	dfs.metadataMutex.Unlock()
+
+	if err != nil {
+		return &serverProto.CreateFileResponse{
+			ErrorMessage: fmt.Sprintf("保存元数据失败: %v", err),
+		}, nil
+	}
+
+	// 构建响应
+	fileInfo := &serverProto.FileInfo{
+		Filename:          metadata.Filename,
+		Size_:             metadata.Size,
+		ChecksumMd5:       metadata.Checksum,
+		CreatedAt:         metadata.LastModified.Unix(),
+		UpdatedAt:         metadata.LastModified.Unix(),
+		ReplicationFactor: int32(dfs.replicaFactor),
+		Status:            "CREATED",
+		Metadata:          req.Metadata,
+	}
+
+	return &serverProto.CreateFileResponse{
+		FileInfo: fileInfo,
+	}, nil
+}
+
+// DeleteFile 删除文件 (gRPC接口实现)
+func (dfs *DistributedFileService) DeleteFile(ctx context.Context, req *serverProto.DeleteFileRequest) (*serverProto.DeleteFileResponse, error) {
+	err := dfs.deleteFileInternal(req.Filename)
+	if err != nil {
+		return &serverProto.DeleteFileResponse{
+			Success:      false,
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+
+	return &serverProto.DeleteFileResponse{
+		Success: true,
+	}, nil
+}
+
+// GetFileInfo 获取文件信息
+func (dfs *DistributedFileService) GetFileInfo(ctx context.Context, req *serverProto.GetFileInfoRequest) (*serverProto.GetFileInfoResponse, error) {
+	metadata, err := dfs.getFileMetadataInternal(req.Filename)
+	if err != nil {
+		return &serverProto.GetFileInfoResponse{
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+
+	// 构建分片信息
+	shards := make([]*serverProto.ShardInfo, len(metadata.Shards))
+	for i, shard := range metadata.Shards {
+		shards[i] = &serverProto.ShardInfo{
+			ShardId:      shard.ShardID,
+			Size_:        shard.Size,
+			ChecksumMd5:  shard.Checksum,
+			StorageNodes: shard.NodeIDs,
+			Status:       "COMPLETE",
+			Order:        int32(i),
+		}
+	}
+
+	// 构建文件信息
+	fileInfo := &serverProto.FileInfo{
+		Filename:          metadata.Filename,
+		Size_:             metadata.Size,
+		ChecksumMd5:       metadata.Checksum,
+		CreatedAt:         metadata.LastModified.Unix(),
+		UpdatedAt:         metadata.LastModified.Unix(),
+		Shards:            shards,
+		ReplicationFactor: int32(dfs.replicaFactor),
+		Status:            "COMPLETE",
+	}
+
+	return &serverProto.GetFileInfoResponse{
+		FileInfo: fileInfo,
+	}, nil
+}
+
+// ListFiles 列出文件 (gRPC接口实现)
+func (dfs *DistributedFileService) ListFiles(ctx context.Context, req *serverProto.ListFilesRequest) (*serverProto.ListFilesResponse, error) {
+	files, err := dfs.listFilesInternal()
+	if err != nil {
+		return &serverProto.ListFilesResponse{
+			ErrorMessage: err.Error(),
+		}, nil
+	}
+
+	// 过滤和分页
+	filteredFiles := make([]FileMetadata, 0)
+	for _, file := range files {
+		if req.Prefix == "" || strings.HasPrefix(file.Filename, req.Prefix) {
+			filteredFiles = append(filteredFiles, file)
+		}
+	}
+
+	// 简单分页实现
+	pageSize := int(req.PageSize)
+	if pageSize <= 0 {
+		pageSize = 100 // 默认页大小
+	}
+
+	startIndex := 0
+	if req.PageToken != "" {
+		// 简单的页面令牌实现（实际应用中应该更安全）
+		if idx, parseErr := fmt.Sscanf(req.PageToken, "page_%d", &startIndex); parseErr != nil || idx != 1 {
+			startIndex = 0
+		}
+	}
+
+	endIndex := startIndex + pageSize
+	if endIndex > len(filteredFiles) {
+		endIndex = len(filteredFiles)
+	}
+
+	// 构建响应文件列表
+	responseFiles := make([]*serverProto.FileInfo, 0)
+	for i := startIndex; i < endIndex; i++ {
+		file := filteredFiles[i]
+		
+		// 构建分片信息
+		shards := make([]*serverProto.ShardInfo, len(file.Shards))
+		for j, shard := range file.Shards {
+			shards[j] = &serverProto.ShardInfo{
+				ShardId:      shard.ShardID,
+				Size_:        shard.Size,
+				ChecksumMd5:  shard.Checksum,
+				StorageNodes: shard.NodeIDs,
+				Status:       "COMPLETE",
+				Order:        int32(j),
+			}
+		}
+
+		fileInfo := &serverProto.FileInfo{
+			Filename:          file.Filename,
+			Size_:             file.Size,
+			ChecksumMd5:       file.Checksum,
+			CreatedAt:         file.LastModified.Unix(),
+			UpdatedAt:         file.LastModified.Unix(),
+			Shards:            shards,
+			ReplicationFactor: int32(dfs.replicaFactor),
+			Status:            "COMPLETE",
+		}
+		responseFiles = append(responseFiles, fileInfo)
+	}
+
+	// 构建下一页令牌
+	nextPageToken := ""
+	if endIndex < len(filteredFiles) {
+		nextPageToken = fmt.Sprintf("page_%d", endIndex)
+	}
+
+	return &serverProto.ListFilesResponse{
+		Files:         responseFiles,
+		NextPageToken: nextPageToken,
+	}, nil
+}
+
+// UploadShard 上传分片（流式）
+func (dfs *DistributedFileService) UploadShard(stream serverProto.DistributedStorageService_UploadShardServer) error {
+	// 接收第一个消息（元数据）
+	req, err := stream.Recv()
+	if err != nil {
+		return fmt.Errorf("接收元数据失败: %v", err)
+	}
+
+	metadata := req.GetMetadata()
+	if metadata == nil {
+		return fmt.Errorf("第一个消息必须包含元数据")
+	}
+
+	// 创建临时文件存储分片数据
+	tempFile, err := os.CreateTemp("", "shard_*")
+	if err != nil {
+		return fmt.Errorf("创建临时文件失败: %v", err)
+	}
+	defer func() {
+		tempFile.Close()
+		os.Remove(tempFile.Name())
+	}()
+
+	// 接收分片数据
+	hasher := md5.New()
+	var totalSize int64
+
+	for {
+		req, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("接收分片数据失败: %v", err)
+		}
+
+		chunk := req.GetChunk()
+		if chunk == nil {
+			continue
+		}
+
+		// 写入临时文件
+		n, err := tempFile.Write(chunk)
+		if err != nil {
+			return fmt.Errorf("写入分片数据失败: %v", err)
+		}
+
+		// 更新校验和
+		hasher.Write(chunk)
+		totalSize += int64(n)
+	}
+
+	// 验证校验和
+	calculatedChecksum := fmt.Sprintf("%x", hasher.Sum(nil))
+	if calculatedChecksum != metadata.ChecksumMd5 {
+		return fmt.Errorf("分片校验和不匹配")
+	}
+
+	// 验证大小
+	if totalSize != metadata.ShardSize {
+		return fmt.Errorf("分片大小不匹配")
+	}
+
+	// 保存分片到正确位置
+	shardsDir := filepath.Join(dfs.baseDir, "shards", metadata.Filename)
+	if err := os.MkdirAll(shardsDir, 0755); err != nil {
+		return fmt.Errorf("创建分片目录失败: %v", err)
+	}
+
+	shardPath := filepath.Join(shardsDir, metadata.ShardId)
+	tempFile.Seek(0, 0)
+	shardFile, err := os.Create(shardPath)
+	if err != nil {
+		return fmt.Errorf("创建分片文件失败: %v", err)
+	}
+	defer shardFile.Close()
+
+	if _, err := io.Copy(shardFile, tempFile); err != nil {
+		return fmt.Errorf("保存分片文件失败: %v", err)
+	}
+
+	// 更新文件元数据
+	dfs.metadataMutex.Lock()
+	fileMetadata, exists := dfs.metadataCache[metadata.Filename]
+	if exists {
+		// 添加或更新分片信息
+		shardInfo := ShardInfo{
+			ShardID:  metadata.ShardId,
+			Offset:   int64(metadata.Order) * dfs.shardSize,
+			Size:     totalSize,
+			NodeIDs:  []string{dfs.distributedManager.localhost},
+			Checksum: calculatedChecksum,
+		}
+
+		// 查找是否已存在该分片
+		found := false
+		for i, shard := range fileMetadata.Shards {
+			if shard.ShardID == metadata.ShardId {
+				fileMetadata.Shards[i] = shardInfo
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			fileMetadata.Shards = append(fileMetadata.Shards, shardInfo)
+		}
+
+		// 保存更新的元数据
+		dfs.saveMetadata(fileMetadata)
+	}
+	dfs.metadataMutex.Unlock()
+
+	// 发送响应
+	return stream.SendAndClose(&serverProto.UploadShardResponse{
+		Filename:     metadata.Filename,
+		ShardId:      metadata.ShardId,
+		Success:      true,
+		ErrorMessage: "",
+	})
+}
+
+// DownloadShard 下载分片（流式）
+func (dfs *DistributedFileService) DownloadShard(req *serverProto.DownloadShardRequest, stream serverProto.DistributedStorageService_DownloadShardServer) error {
+	// 构建分片文件路径
+	shardPath := filepath.Join(dfs.baseDir, "shards", req.Filename, req.ShardId)
+
+	// 打开分片文件
+	file, err := os.Open(shardPath)
+	if err != nil {
+		return fmt.Errorf("打开分片文件失败: %v", err)
+	}
+	defer file.Close()
+
+	// 获取文件信息
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("获取分片文件信息失败: %v", err)
+	}
+
+	// 处理偏移量和长度
+	offset := req.Offset
+	length := req.Length
+	if length <= 0 {
+		length = fileInfo.Size() - offset
+	}
+
+	// 设置文件偏移量
+	if offset > 0 {
+		if _, err := file.Seek(offset, 0); err != nil {
+			return fmt.Errorf("设置文件偏移量失败: %v", err)
+		}
+	}
+
+	// 流式发送分片数据
+	buffer := make([]byte, 32*1024) // 32KB 缓冲区
+	remaining := length
+
+	for remaining > 0 {
+		// 计算本次读取大小
+		readSize := int64(len(buffer))
+		if readSize > remaining {
+			readSize = remaining
+		}
+
+		// 读取数据
+		n, err := file.Read(buffer[:readSize])
+		if err != nil && err != io.EOF {
+			return fmt.Errorf("读取分片数据失败: %v", err)
+		}
+
+		if n == 0 {
+			break
+		}
+
+		// 发送数据块
+		if err := stream.Send(&serverProto.DownloadShardResponse{
+			Chunk: buffer[:n],
+		}); err != nil {
+			return fmt.Errorf("发送分片数据失败: %v", err)
+		}
+
+		remaining -= int64(n)
+	}
+
+	return nil
+}
+
+// RegisterNode 注册节点
+func (dfs *DistributedFileService) RegisterNode(ctx context.Context, req *serverProto.RegisterNodeRequest) (*serverProto.RegisterNodeResponse, error) {
+	// 这里应该与服务发现组件集成
+	// 目前简单实现
+	logger.Info("节点注册请求: ID=%s, Address=%s, Capacity=%d", req.NodeId, req.Address, req.Capacity)
+
+	// 在实际实现中，这里应该:
+	// 1. 验证节点信息
+	// 2. 将节点信息注册到服务发现系统
+	// 3. 更新节点状态
+
+	return &serverProto.RegisterNodeResponse{
+		Success: true,
+	}, nil
+}
+
+// GetNodeStatus 获取节点状态
+func (dfs *DistributedFileService) GetNodeStatus(ctx context.Context, req *serverProto.GetNodeStatusRequest) (*serverProto.GetNodeStatusResponse, error) {
+	// 获取本地节点状态
+	if req.NodeId == dfs.distributedManager.localhost || req.NodeId == "" {
+		// 计算存储使用情况
+		var usedSpace int64
+		var capacity int64 = 100 * 1024 * 1024 * 1024 // 100GB 默认容量
+
+		// 计算已使用空间
+		filepath.Walk(dfs.baseDir, func(path string, info os.FileInfo, err error) error {
+			if err == nil && !info.IsDir() {
+				usedSpace += info.Size()
+			}
+			return nil
+		})
+
+		loadFactor := float32(usedSpace) / float32(capacity)
+
+		return &serverProto.GetNodeStatusResponse{
+			NodeId:        dfs.distributedManager.localhost,
+			Status:        "ONLINE",
+			Capacity:      capacity,
+			UsedSpace:     usedSpace,
+			LoadFactor:    loadFactor,
+			LastHeartbeat: time.Now().Unix(),
+		}, nil
+	}
+
+	// 获取其他节点状态（通过服务发现）
+	_, err := dfs.serviceDiscovery.GetSlaveInfo(req.NodeId)
+	if err != nil {
+		return &serverProto.GetNodeStatusResponse{
+			ErrorMessage: fmt.Sprintf("获取节点信息失败: %v", err),
+		}, nil
+	}
+
+	// 这里应该通过gRPC调用获取远程节点状态
+	// 目前返回基本信息
+	return &serverProto.GetNodeStatusResponse{
+		NodeId:        req.NodeId,
+		Status:        "ONLINE",
+		LastHeartbeat: time.Now().Unix(),
+	}, nil
+}
+
+// StoreShard 存储分片
+func (dfs *DistributedFileService) StoreShard(ctx context.Context, req *serverProto.StoreShardRequest) (*serverProto.StoreShardResponse, error) {
+	// 创建分片目录
+	shardsDir := filepath.Join(dfs.baseDir, "shards", req.Filename)
+	if err := os.MkdirAll(shardsDir, 0755); err != nil {
+		return &serverProto.StoreShardResponse{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("创建分片目录失败: %v", err),
+		}, nil
+	}
+
+	// 验证校验和
+	hasher := md5.New()
+	hasher.Write(req.Data)
+	calculatedChecksum := fmt.Sprintf("%x", hasher.Sum(nil))
+
+	if calculatedChecksum != req.Checksum {
+		return &serverProto.StoreShardResponse{
+			Success:      false,
+			ErrorMessage: "分片校验和不匹配",
+		}, nil
+	}
+
+	// 保存分片文件
+	shardPath := filepath.Join(shardsDir, req.ShardId)
+	if err := os.WriteFile(shardPath, req.Data, 0644); err != nil {
+		return &serverProto.StoreShardResponse{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("保存分片文件失败: %v", err),
+		}, nil
+	}
+
+	logger.Info("分片 %s 已成功存储到本地", req.ShardId)
+	return &serverProto.StoreShardResponse{
+		Success: true,
+	}, nil
+}
+
+// GetShard 获取分片
+func (dfs *DistributedFileService) GetShard(ctx context.Context, req *serverProto.GetShardRequest) (*serverProto.GetShardResponse, error) {
+	// 构建分片文件路径
+	shardPath := filepath.Join(dfs.baseDir, "shards", req.Filename, req.ShardId)
+
+	// 读取分片文件
+	data, err := os.ReadFile(shardPath)
+	if err != nil {
+		return &serverProto.GetShardResponse{
+			ErrorMessage: fmt.Sprintf("读取分片文件失败: %v", err),
+		}, nil
+	}
+
+	return &serverProto.GetShardResponse{
+		Data: data,
+	}, nil
+}
+
+// DeleteShard 删除分片
+func (dfs *DistributedFileService) DeleteShard(ctx context.Context, req *serverProto.DeleteShardRequest) (*serverProto.DeleteShardResponse, error) {
+	// 构建分片文件路径
+	shardPath := filepath.Join(dfs.baseDir, "shards", req.Filename, req.ShardId)
+
+	// 删除分片文件
+	if err := os.Remove(shardPath); err != nil {
+		if os.IsNotExist(err) {
+			// 文件不存在，认为删除成功
+			return &serverProto.DeleteShardResponse{
+				Success: true,
+			}, nil
+		}
+		return &serverProto.DeleteShardResponse{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("删除分片文件失败: %v", err),
+		}, nil
+	}
+
+	logger.Info("分片 %s 已成功删除", req.ShardId)
+	return &serverProto.DeleteShardResponse{
+		Success: true,
+	}, nil
+}
+
+// SyncMetadata 同步元数据
+func (dfs *DistributedFileService) SyncMetadata(ctx context.Context, req *serverProto.SyncMetadataRequest) (*serverProto.SyncMetadataResponse, error) {
+	// 反序列化元数据
+	var metadata FileMetadata
+	if err := json.Unmarshal(req.Metadata, &metadata); err != nil {
+		return &serverProto.SyncMetadataResponse{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("反序列化元数据失败: %v", err),
+		}, nil
+	}
+
+	// 检查版本号
+	dfs.metadataMutex.Lock()
+	existingMetadata, exists := dfs.metadataCache[req.Filename]
+	if exists && existingMetadata.Version >= req.Version {
+		// 本地版本更新或相同，不需要同步
+		dfs.metadataMutex.Unlock()
+		return &serverProto.SyncMetadataResponse{
+			Success: true,
+		}, nil
+	}
+
+	// 更新元数据
+	metadata.Version = req.Version
+	if err := dfs.saveMetadata(&metadata); err != nil {
+		dfs.metadataMutex.Unlock()
+		return &serverProto.SyncMetadataResponse{
+			Success:      false,
+			ErrorMessage: fmt.Sprintf("保存元数据失败: %v", err),
+		}, nil
+	}
+	dfs.metadataMutex.Unlock()
+
+	logger.Info("文件 %s 的元数据已同步，版本: %d", req.Filename, req.Version)
+	return &serverProto.SyncMetadataResponse{
+		Success: true,
+	}, nil
 }
 
 // Stop 停止分布式文件服务
@@ -784,7 +1349,7 @@ func (dfs *DistributedFileService) fetchShardFromNode(filename, shardID, nodeID 
 }
 
 // DeleteFile 从分布式存储系统删除文件
-func (dfs *DistributedFileService) DeleteFile(filename string) error {
+func (dfs *DistributedFileService) deleteFileInternal(filename string) error {
 	// 获取文件锁
 	fileLock := dfs.getFileLock(filename)
 	fileLock.Lock()
@@ -865,7 +1430,7 @@ func (dfs *DistributedFileService) DeleteFile(filename string) error {
 }
 
 // ListFiles 列出分布式存储系统中的所有文件
-func (dfs *DistributedFileService) ListFiles() ([]FileMetadata, error) {
+func (dfs *DistributedFileService) listFilesInternal() ([]FileMetadata, error) {
 	dfs.metadataMutex.RLock()
 	defer dfs.metadataMutex.RUnlock()
 
@@ -878,7 +1443,7 @@ func (dfs *DistributedFileService) ListFiles() ([]FileMetadata, error) {
 }
 
 // GetFileMetadata 获取文件元数据
-func (dfs *DistributedFileService) GetFileMetadata(filename string) (*FileMetadata, error) {
+func (dfs *DistributedFileService) getFileMetadataInternal(filename string) (*FileMetadata, error) {
 	dfs.metadataMutex.RLock()
 	defer dfs.metadataMutex.RUnlock()
 
@@ -1067,7 +1632,7 @@ func (dfs *DistributedFileService) RestoreVectorDBTable(tableName string, destDi
 // ListVectorDBTables 列出所有向量数据库表
 func (dfs *DistributedFileService) ListVectorDBTables() ([]VectorDBFile, error) {
 	// 获取所有文件
-	files, err := dfs.ListFiles()
+	files, err := dfs.listFilesInternal()
 	if err != nil {
 		return nil, fmt.Errorf("获取文件列表失败: %v", err)
 	}
