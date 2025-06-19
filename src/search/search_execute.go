@@ -32,7 +32,7 @@ func NewSearchExecutor(service *MultiTableSearchService) *SearchExecutor {
 }
 
 // ExecuteSearchPlan 根据 ParsedQuery 执行搜索
-func (se *SearchExecutor) ExecuteSearchPlan(parsedQuery *ParsedQuery) ([]SearchResultItem, error) {
+func (se *SearchExecutor) ExecuteSearchPlan(parsedQuery *SimpleParsedQuery) ([]SearchResultItem, error) {
 	if se.service == nil {
 		return nil, fmt.Errorf("SearchExecutor service is not initialized")
 	}
@@ -409,40 +409,34 @@ func (se *SearchExecutor) ExecuteSearchPlan(parsedQuery *ParsedQuery) ([]SearchR
 
 // getBitPositionForField 根据字段名和值获取对应的位位置
 // 这个函数需要根据实际业务逻辑实现
-func getBitPositionForField(field string, value interface{}) int {
+func getBitPositionForField(field string, value string) int {
 	// 这里只是示例，实际实现需要根据业务逻辑定义
 	// 例如：可以使用一个映射表将字段名和值映射到位位置
 
 	// 示例映射逻辑
 	switch field {
 	case "status":
-		if strValue, ok := value.(string); ok {
-			switch strValue {
-			case "active":
-				return 0
-			case "inactive":
-				return 1
-			}
+		switch value {
+		case "active":
+			return 0
+		case "inactive":
+			return 1
 		}
 	case "category":
-		if strValue, ok := value.(string); ok {
-			switch strValue {
-			case "A":
-				return 2
-			case "B":
-				return 3
-			case "C":
-				return 4
-			}
+		switch value {
+		case "A":
+			return 2
+		case "B":
+			return 3
+		case "C":
+			return 4
 		}
 	case "type":
-		if strValue, ok := value.(string); ok {
-			switch strValue {
-			case "internal":
-				return 5
-			case "external":
-				return 6
-			}
+		switch value {
+		case "internal":
+			return 5
+		case "external":
+			return 6
 		}
 	}
 

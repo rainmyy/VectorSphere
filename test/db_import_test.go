@@ -8,10 +8,11 @@ import (
 	"VectorSphere/src/service"
 	"VectorSphere/src/vector"
 	"fmt"
+	"testing"
 	"time"
 )
 
-func test_import() {
+func TestImport(t *testing.T) {
 	// 创建导入配置
 	config := &service.DBImportConfig{
 		DriverName:     "mysql",
@@ -46,7 +47,7 @@ func test_import() {
 	importService := service.NewDBImportService(searchService, config)
 
 	// 创建导入调度器
-	scheduler, _ := importService.GetChangedRecords(importService)
+	scheduler := service.NewImportScheduler(importService)
 
 	// 添加导入计划
 	scheduler.AddSchedule("products", "SELECT * FROM products", 1*time.Hour, true)
@@ -69,7 +70,7 @@ func test_import() {
 	scheduler.Stop()
 }
 
-func test_1() {
+func TestDBImport(t *testing.T) {
 	// 初始化事务管理器、锁管理器和WAL管理器
 	txMgr := tree.NewTransactionManager()
 	lockMgr := tree.NewLockManager()

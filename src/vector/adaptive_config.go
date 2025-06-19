@@ -46,7 +46,7 @@ func (db *VectorDB) AdjustConfig() {
 		config.NumClusters = 1000
 	} else if vectorCount > 100000 {
 		config.NumClusters = 100
-	} else if vectorCount > 10000 {
+	} else if vectorCount >= 10000 {
 		config.NumClusters = 50
 	} else {
 		config.NumClusters = 10
