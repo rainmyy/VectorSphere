@@ -7,6 +7,7 @@ import (
 	"VectorSphere/src/library/logger"
 	"VectorSphere/src/proto/messages"
 	"VectorSphere/src/proto/serverProto"
+
 	"context"
 	"errors"
 	"fmt"
@@ -21,6 +22,7 @@ type IndexServer struct {
 	hub         *EtcdServiceHub
 	localhost   string
 	serviceName string
+	stop        bool
 }
 
 func (w *IndexServer) HealthCheck(ctx context.Context, request *serverProto.HealthCheckRequest) (*serverProto.HealthCheckResponse, error) {
