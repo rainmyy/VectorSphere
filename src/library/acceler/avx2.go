@@ -85,7 +85,7 @@ func FindNearestCentroidAVX2(vec []float64, centroids []entity.Point) (int, floa
 	}
 	for i, c := range centroids {
 		if len(c) != len(vec) {
-			return -1, 0, errors.New("centroid length mismatch at index " + string(i))
+			return -1, 0, errors.New("centroid length mismatch at index " + string(rune(i)))
 		}
 	}
 	vecPtr := (*C.double)(unsafe.Pointer(&vec[0]))

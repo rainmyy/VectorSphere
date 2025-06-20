@@ -96,7 +96,7 @@ func OptimizedCosineSimilarity(a, b []float64) float64 {
 
 // PrecomputedDistanceTable 预计算的距离表
 type PrecomputedDistanceTable struct {
-	tables [][]float64 // tables[m][c] 表示查询向量的第 m 个子向量与第 m 个子空间的第 c 个质心的距离
+	Tables [][]float64 // Tables[m][c] 表示查询向量的第 m 个子向量与第 m 个子空间的第 c 个质心的距离
 }
 
 // NewPrecomputedDistanceTable 为查询向量创建预计算距离表
@@ -167,64 +167,70 @@ func NewPrecomputedDistanceTable(queryVector []float64, codebook [][]entity.Poin
 		}
 	}
 
-	return &PrecomputedDistanceTable{tables: tables}, nil
+	return &PrecomputedDistanceTable{Tables: tables}, nil
 }
 
 // BatchCompressByPQ 批量压缩多个向量
 func BatchCompressByPQ(vectors [][]float64, loadedCodebook [][]entity.Point, numSubVectors int, numCentroidsPerSubVector int, numWorkers int) ([]entity.CompressedVector, error) {
 	if len(vectors) == 0 {
-		return nil, fmt.Errorf("输入向量列表不能为空")
+		return []entity.CompressedVector{}, nil
 	}
 
 	if numWorkers <= 0 {
 		numWorkers = runtime.NumCPU()
 	}
 
-	// 创建结果切片
-	results := make([]entity.CompressedVector, len(vectors))
+	type jobResult struct {
+		idx     int
+		compVec entity.CompressedVector
+		err     error
+	}
 
-	// 使用工作池并行处理
-	workChan := make(chan int, len(vectors))
-	errChan := make(chan error, 1)
+	jobs := make(chan int, len(vectors))
+	resultsChan := make(chan jobResult, len(vectors))
+
 	var wg sync.WaitGroup
-
 	// 启动工作协程
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-
-			for idx := range workChan {
-				compressedVec, err := OptimizedCompressByPQ(vectors[idx], loadedCodebook, numSubVectors, numCentroidsPerSubVector)
-				if err != nil {
-					select {
-					case errChan <- fmt.Errorf("压缩向量 %d 失败: %w", idx, err):
-					default:
-					}
-					return
-				}
-				results[idx] = compressedVec
+			for idx := range jobs {
+				compressedVec, err := CompressByPQ(vectors[idx], loadedCodebook, numSubVectors, numCentroidsPerSubVector)
+				resultsChan <- jobResult{idx: idx, compVec: compressedVec, err: err}
 			}
 		}()
 	}
 
 	// 发送任务
 	for i := range vectors {
-		workChan <- i
+		jobs <- i
 	}
-	close(workChan)
+	close(jobs)
 
-	// 等待所有工作完成
-	wg.Wait()
-	close(errChan)
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
 
-	// 检查错误
-	select {
-	case err := <-errChan:
-		return nil, err
-	default:
-		return results, nil
+	// 收集结果
+	results := make([]entity.CompressedVector, len(vectors))
+	var firstErr error
+	for res := range resultsChan {
+		if res.err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("压缩向量 %d 失败: %w", res.idx, res.err)
+			}
+		} else {
+			results[res.idx] = res.compVec
+		}
 	}
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
+
+	return results, nil
 }
 
 // ComputeDistance 使用预计算的距离表计算查询向量与压缩向量的距离
@@ -232,21 +238,21 @@ func (dt *PrecomputedDistanceTable) ComputeDistance(compressedVector entity.Comp
 	if compressedVector.Data == nil || len(compressedVector.Data) == 0 {
 		return 0, fmt.Errorf("压缩向量数据不能为空")
 	}
-	if len(compressedVector.Data) != len(dt.tables) {
-		return 0, fmt.Errorf("压缩向量的数据长度 %d 与距离表数量 %d 不匹配", len(compressedVector.Data), len(dt.tables))
+	if len(compressedVector.Data) != len(dt.Tables) {
+		return 0, fmt.Errorf("压缩向量的数据长度 %d 与距离表数量 %d 不匹配", len(compressedVector.Data), len(dt.Tables))
 	}
 
 	totalSquaredDistance := 0.0
 
 	// 累加每个子空间的距离
-	for m := 0; m < len(dt.tables); m++ {
+	for m := 0; m < len(dt.Tables); m++ {
 		centroidIndex := int(compressedVector.Data[m])
 
-		if centroidIndex < 0 || centroidIndex >= len(dt.tables[m]) {
-			return 0, fmt.Errorf("子空间 %d 的质心索引 %d 超出范围 [0, %d)", m, centroidIndex, len(dt.tables[m]))
+		if centroidIndex < 0 || centroidIndex >= len(dt.Tables[m]) {
+			return 0, fmt.Errorf("子空间 %d 的质心索引 %d 超出范围 [0, %d)", m, centroidIndex, len(dt.Tables[m]))
 		}
 
-		totalSquaredDistance += dt.tables[m][centroidIndex]
+		totalSquaredDistance += dt.Tables[m][centroidIndex]
 	}
 
 	return totalSquaredDistance, nil
@@ -478,6 +484,7 @@ func CompressByPQ(vec []float64, loadedCodebook [][]entity.Point, numSubvectors 
 		}
 		// 校验 numCentroidsPerSubvector (如果提供)
 		if numCentroidsPerSubvector > 0 && len(currentSubspaceCodebook) != numCentroidsPerSubvector {
+			return entity.CompressedVector{}, fmt.Errorf("子空间 %d 的码本中质心数量 %d 与指定的质心数量 %d 不符", i, len(currentSubspaceCodebook), numCentroidsPerSubvector)
 		}
 		// 校验子空间码本中质心的维度
 		if len(currentSubspaceCodebook[0]) != subvectorDim {
