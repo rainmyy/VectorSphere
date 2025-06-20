@@ -12,6 +12,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"os/exec"
 	"runtime"
 	"sync"
 	"time"
@@ -866,14 +867,16 @@ func (hd *HardwareDetector) GetHardwareCapabilities() HardwareCapabilities {
 	return hd.capabilities
 }
 
-// detectGPUSupport 检测GPU支持
+// detectGPUSupport a more stable and efficient way to detect GPU support.
+// It checks for the presence of NVIDIA drivers and a usable GPU by executing the `nvidia-smi` command.
+// This method avoids the circular dependency that occurred when GPU detection was part of the accelerator's initialization.
 func detectGPUSupport() bool {
-	// 尝试初始化GPU加速器来检测GPU支持
-	gpuAccelerator := NewFAISSAccelerator(0, "Flat")
-	if err := gpuAccelerator.Initialize(); err != nil {
+	cmd := exec.Command("nvidia-smi")
+	if err := cmd.Run(); err != nil {
+		// If the command fails, it's likely that NVIDIA drivers are not installed or the GPU is not available.
 		return false
 	}
-	gpuAccelerator.Cleanup()
+	// If the command executes successfully, it indicates that a usable NVIDIA GPU is present.
 	return true
 }
 

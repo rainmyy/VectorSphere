@@ -490,12 +490,12 @@ func (s *DBImportService) ImportTable(tableName string, sqlQuery string) error {
 	}()
 
 	// 重置统计信息
-	s.importStats.mu.Lock()
+	s.importMutex.Lock()
 	s.importStats = &ImportStats{
 		StartTime:    time.Now(),
 		CurrentTable: tableName,
 	}
-	s.importStats.mu.Unlock()
+	s.importMutex.Unlock()
 
 	// 开始内存监控
 	s.memoryMonitor.StartMonitoring(5 * time.Second)
