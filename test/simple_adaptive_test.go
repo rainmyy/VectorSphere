@@ -306,7 +306,7 @@ func TestIntegration(t *testing.T) {
 
 	fmt.Printf("\n自适应调整后:\n")
 	fmt.Printf("  簇数量: %d (期望: 100)\n", db.config.NumClusters)
-	fmt.Printf("  efConstruction: %.1f (期望: 200.0)\n", db.efConstruction)
+	fmt.Printf("  efConstruction: %.1f (期望: 400.0)\n", db.efConstruction)
 	fmt.Printf("  maxConnections: %d (期望: %d)\n", db.maxConnections, int(math.Min(64, math.Max(16, float64(384)/10))))
 	fmt.Printf("  工作协程数: %d (CPU核心数: %d)\n", db.config.MaxWorkers, runtime.NumCPU())
 
@@ -321,7 +321,7 @@ func TestIntegration(t *testing.T) {
 		fmt.Printf("  ❌ 簇数量调整错误\n")
 		allCorrect = false
 	}
-	if db.efConstruction != 200.0 {
+	if db.efConstruction != 400.0 {
 		fmt.Printf("  ❌ efConstruction调整错误\n")
 		allCorrect = false
 	}

@@ -1,6 +1,7 @@
 package test
 
 import (
+	"VectorSphere/src/backup"
 	"VectorSphere/src/search"
 	"fmt"
 	"log"
@@ -51,7 +52,7 @@ func TestSimpleParser(t *testing.T) {
 		fmt.Printf("  分页: LIMIT %d OFFSET %d\n", parsedQuery.Limit, parsedQuery.Offset)
 
 		// 测试ParseQueryWithAST兼容性函数
-		_, compatParsedQuery, errs, err := search.ParseQueryWithAST(query)
+		_, compatParsedQuery, errs, err := backup.ParseQueryWithAST(query)
 		if err != nil {
 			log.Printf("兼容性解析错误: %v", err)
 		} else if len(errs) > 0 {
