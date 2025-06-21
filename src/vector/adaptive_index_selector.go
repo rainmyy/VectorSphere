@@ -308,6 +308,19 @@ func (ais *AdaptiveIndexSelector) GetInsights() map[string]interface{} {
 		return insights
 	}
 
+	// 计算全局平均延迟和质量
+	var totalLatency time.Duration
+	var totalQuality float64
+	for _, record := range ais.performanceWindow {
+		totalLatency += record.Latency
+		totalQuality += record.Quality
+	}
+	avgLatency := totalLatency / time.Duration(len(ais.performanceWindow))
+	avgQuality := totalQuality / float64(len(ais.performanceWindow))
+	
+	insights["avg_latency"] = avgLatency.String()
+	insights["avg_quality"] = avgQuality
+
 	// 策略使用统计
 	strategyStats := make(map[string]interface{})
 	strategyCount := make(map[IndexStrategy]int)
@@ -758,16 +771,33 @@ func (ais *AdaptiveIndexSelector) GetOptimalStrategy(ctx SearchContext) IndexStr
 	// 为当前上下文的特征计算权重
 	vectorCount := len(ais.db.vectors)
 	dimension := len(ctx.QueryVector)
+	
+	// 如果当前数据库为空，使用查询上下文中的信息作为参考
+	if vectorCount == 0 {
+		// 在测试或空数据库情况下，使用合理的默认值
+		vectorCount = 1000 // 假设中等规模的数据集
+	}
 
 	// 分析各策略在相似上下文下的表现
 	strategyPerformance := make(map[IndexStrategy][]float64)
+	highSimilarityFound := false
 
 	for _, record := range ais.performanceWindow {
 		// 计算上下文相似度
 		contextSimilarity := ais.calculateContextSimilarity(ctx, record, vectorCount, dimension)
 
-		// 只考虑相似度较高的记录
+		// 首先尝试高相似度阈值
 		if contextSimilarity > 0.7 {
+			highSimilarityFound = true
+			// 计算综合性能分数
+			latencyScore := 1.0 / (1.0 + float64(record.Latency.Milliseconds())/1000.0)
+			performanceScore := 0.6*record.Quality + 0.4*latencyScore
+			// 根据上下文相似度加权
+			weightedScore := performanceScore * contextSimilarity
+
+			strategyPerformance[record.Strategy] = append(strategyPerformance[record.Strategy], weightedScore)
+		} else if !highSimilarityFound && contextSimilarity > 0.3 {
+			// 如果没有高相似度记录，考虑中等相似度记录
 			// 计算综合性能分数
 			latencyScore := 1.0 / (1.0 + float64(record.Latency.Milliseconds())/1000.0)
 			performanceScore := 0.6*record.Quality + 0.4*latencyScore
@@ -776,6 +806,21 @@ func (ais *AdaptiveIndexSelector) GetOptimalStrategy(ctx SearchContext) IndexStr
 
 			strategyPerformance[record.Strategy] = append(strategyPerformance[record.Strategy], weightedScore)
 		}
+	}
+
+	// 如果找到了高相似度记录，清除低相似度记录
+	if highSimilarityFound {
+		filteredPerformance := make(map[IndexStrategy][]float64)
+		for _, record := range ais.performanceWindow {
+			contextSimilarity := ais.calculateContextSimilarity(ctx, record, vectorCount, dimension)
+			if contextSimilarity > 0.7 {
+				latencyScore := 1.0 / (1.0 + float64(record.Latency.Milliseconds())/1000.0)
+				performanceScore := 0.6*record.Quality + 0.4*latencyScore
+				weightedScore := performanceScore * contextSimilarity
+				filteredPerformance[record.Strategy] = append(filteredPerformance[record.Strategy], weightedScore)
+			}
+		}
+		strategyPerformance = filteredPerformance
 	}
 
 	// 选择平均性能最好的策略
@@ -795,17 +840,42 @@ func (ais *AdaptiveIndexSelector) GetOptimalStrategy(ctx SearchContext) IndexStr
 // calculateContextSimilarity 计算上下文相似度
 func (ais *AdaptiveIndexSelector) calculateContextSimilarity(ctx SearchContext, record PerformanceRecord, currentVectorCount, currentDimension int) float64 {
 	// 数据规模相似度
-	vectorCountSim := 1.0 - math.Abs(float64(currentVectorCount-record.VectorCount))/math.Max(float64(currentVectorCount), float64(record.VectorCount))
+	vectorCountSim := 1.0
+	if currentVectorCount > 0 && record.VectorCount > 0 {
+		maxCount := math.Max(float64(currentVectorCount), float64(record.VectorCount))
+		vectorCountSim = 1.0 - math.Abs(float64(currentVectorCount-record.VectorCount))/maxCount
+	} else if currentVectorCount == 0 && record.VectorCount == 0 {
+		vectorCountSim = 1.0
+	} else {
+		vectorCountSim = 0.1 // 一个为0一个不为0时给予很低相似度
+	}
 
 	// 维度相似度
-	dimensionSim := 1.0 - math.Abs(float64(currentDimension-record.Dimension))/math.Max(float64(currentDimension), float64(record.Dimension))
+	dimensionSim := 1.0
+	if currentDimension > 0 && record.Dimension > 0 {
+		maxDim := math.Max(float64(currentDimension), float64(record.Dimension))
+		dimensionSim = 1.0 - math.Abs(float64(currentDimension-record.Dimension))/maxDim
+	} else if currentDimension == record.Dimension {
+		dimensionSim = 1.0
+	} else {
+		dimensionSim = 0.1 // 维度不匹配时给予很低相似度
+	}
 
 	// 时间相似度 (越近的记录相似度越高)
 	timeDiff := time.Since(record.Timestamp).Hours()
 	timeSim := math.Exp(-timeDiff / 24.0) // 24小时衰减
 
-	// 综合相似度 (加权平均)
-	similarity := 0.4*vectorCountSim + 0.3*dimensionSim + 0.3*timeSim
+	// 综合相似度 (加权平均，但如果数据规模或维度差异很大，整体相似度应该很低)
+	// 如果向量数量或维度差异超过10倍，认为相似度很低
+	vectorCountRatio := math.Max(float64(currentVectorCount), float64(record.VectorCount)) / math.Max(1, math.Min(float64(currentVectorCount), float64(record.VectorCount)))
+	dimensionRatio := math.Max(float64(currentDimension), float64(record.Dimension)) / math.Max(1, math.Min(float64(currentDimension), float64(record.Dimension)))
+	
+	if vectorCountRatio > 10 || dimensionRatio > 2 {
+		// 如果差异太大，直接返回很低的相似度
+		return 0.1
+	}
+
+	similarity := 0.5*vectorCountSim + 0.3*dimensionSim + 0.2*timeSim
 
 	return math.Max(0, math.Min(1, similarity))
 }
