@@ -45,12 +45,12 @@ RUN addgroup -g 1001 -S vectorsphere && \
 WORKDIR /app
 
 # 创建必要的目录
-RUN mkdir -p /app/config /app/data /app/logs && \
+RUN mkdir -p /app/c /app/data /app/logs && \
     chown -R vectorsphere:vectorsphere /app
 
 # 从构建阶段复制二进制文件
 COPY --from=builder /app/vectorsphere /app/vectorsphere
-COPY --from=builder /app/config/config.yaml /app/config/config.yaml
+COPY --from=builder /app/c/c.yaml /app/c/c.yaml
 COPY --from=builder /app/README.md /app/README.md
 
 # 设置权限
@@ -68,9 +68,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
 # 设置环境变量
-ENV VECTORSPHERE_CONFIG_PATH=/app/config/config.yaml
+ENV VECTORSPHERE_CONFIG_PATH=/app/c/c.yaml
 ENV VECTORSPHERE_DATA_DIR=/app/data
 ENV VECTORSPHERE_LOG_LEVEL=info
 
 # 启动命令
-CMD ["/app/vectorsphere", "-config", "/app/config/config.yaml"]
+CMD ["/app/vectorsphere", "-c", "/app/c/c.yaml"]

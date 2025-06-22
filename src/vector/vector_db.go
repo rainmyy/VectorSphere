@@ -552,7 +552,7 @@ func (db *VectorDB) hnswSearchWithScores(query []float64, k int) ([]entity.Resul
 	}
 
 	if len(db.vectors) == 0 {
-		return []entity.Result{}, nil
+		return nil, fmt.Errorf("数据库为空，无法进行搜索")
 	}
 
 	// 选择最优计算策略
@@ -934,6 +934,7 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 		vectorizedType:    DefaultVectorized,
 		normalizedVectors: make(map[string][]float64),
 		config:            AdaptiveConfig{},
+		stats:             PerformanceStats{},
 
 		// 初始化 PQ 相关字段
 		pqCodebook:               nil,
@@ -2450,6 +2451,12 @@ func (db *VectorDB) Add(id string, vector []float64) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
+	// 跳过空向量和nil向量
+	if vector == nil || len(vector) == 0 {
+		logger.Warning("跳过空向量或nil向量: %s", id)
+		return
+	}
+
 	// 设置向量维度（如果尚未设置）
 	if db.vectorDim == 0 && len(vector) > 0 {
 		db.vectorDim = len(vector)
@@ -3642,11 +3649,25 @@ func (db *VectorDB) GetOptimalStrategy(query []float64) acceler.ComputeStrategy 
 
 // FindNearestWithScores 查找最近邻并返回分数（更新为使用自适应计算）
 func (db *VectorDB) FindNearestWithScores(query []float64, k int, nprobe int) ([]entity.Result, error) {
+	startTime := time.Now()
+	defer func() {
+		queryTime := time.Since(startTime)
+		db.statsMu.Lock()
+		db.stats.TotalQueries++
+		if db.stats.AvgQueryTime == 0 {
+			db.stats.AvgQueryTime = queryTime
+		} else {
+			alpha := 0.1
+			db.stats.AvgQueryTime = time.Duration(float64(db.stats.AvgQueryTime)*(1-alpha) + float64(queryTime)*alpha)
+		}
+		db.statsMu.Unlock()
+	}()
+
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
 	if len(db.vectors) == 0 {
-		return []entity.Result{}, nil
+		return nil, fmt.Errorf("数据库为空，无法进行搜索")
 	}
 
 	// 选择最优计算策略
@@ -3661,7 +3682,8 @@ func (db *VectorDB) FindNearestWithScores(query []float64, k int, nprobe int) ([
 		})
 
 		normalizedQuery := acceler.NormalizeVector(query)
-		return db.hnsw.Search(normalizedQuery, k)
+		results, err := db.hnsw.Search(normalizedQuery, k)
+		return results, err
 	}
 
 	// 使用IVF索引进行自适应搜索
@@ -4617,6 +4639,13 @@ func (db *VectorDB) ParallelFindNearest(query []float64, k int) ([]entity.Result
 
 func (db *VectorDB) GetDataSize() int {
 	return len(db.vectors)
+}
+
+// GetPCAConfig 获取PCA配置
+func (db *VectorDB) GetPCAConfig() *PCAConfig {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+	return db.pcaConfig
 }
 
 // CheckIndexHealth 添加索引健康检查方法

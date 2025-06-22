@@ -107,7 +107,7 @@ VectorSphere 分布式系统是一个基于 etcd 的分布式向量数据库系�
 
 ### 2. 配置文件
 
-创建配置文件 `config/config.yaml`：
+创建配置文件 `c/c.yaml`：
 
 ```yaml
 service_name: "vectorsphere"
@@ -168,7 +168,7 @@ go build -o vectorsphere main.go
 ./vectorsphere
 
 # 指定配置文件
-./vectorsphere -config /path/to/config.yaml
+./vectorsphere -c /path/to/c.yaml
 
 # 强制指定节点类型
 ./vectorsphere -type master
@@ -182,13 +182,13 @@ go build -o vectorsphere main.go
 
 ```bash
 # 节点1（会自动成为 Master）
-./vectorsphere -config config1.yaml
+./vectorsphere -c config1.yaml
 
 # 节点2（Slave）
-./vectorsphere -config config2.yaml
+./vectorsphere -c config2.yaml
 
 # 节点3（Slave）
-./vectorsphere -config config3.yaml
+./vectorsphere -c config3.yaml
 ```
 
 ## API 使用示例

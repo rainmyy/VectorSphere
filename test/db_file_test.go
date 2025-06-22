@@ -143,8 +143,8 @@ func TestLoadFromFileWithMmap(t *testing.T) {
 		t.Fatalf("加载的向量不存在")
 	}
 
-	if len(loadedVector) != 1000 {
-		t.Fatalf("向量长度不匹配: got %d, want 1000", len(loadedVector))
+	if len(loadedVector) != 100 {
+		t.Fatalf("向量长度不匹配: got %d, want 100", len(loadedVector))
 	}
 }
 
@@ -351,13 +351,13 @@ func TestSaveLoadWithCompression(t *testing.T) {
 	}
 }
 
-// TestSaveFilePathNotSet 测试未设置文件路径时的保存
+// TestSaveFilePathNotSet 测试传入空文件路径时的保存
 func TestSaveFilePathNotSet(t *testing.T) {
 	db := vector.NewVectorDB("", 10) // 空路径
 
-	err := db.SaveToFile("test.gob")
+	err := db.SaveToFile("") // 传入空路径
 	if err == nil {
-		t.Fatalf("未设置文件路径应该返回错误")
+		t.Fatalf("传入空文件路径应该返回错误")
 	}
 
 	// 暂时跳过错误信息检查，因为可能实际错误信息不同
@@ -367,13 +367,13 @@ func TestSaveFilePathNotSet(t *testing.T) {
 	// }
 }
 
-// TestLoadFilePathNotSet 测试未设置文件路径时的加载
+// TestLoadFilePathNotSet 测试传入空文件路径时的加载
 func TestLoadFilePathNotSet(t *testing.T) {
 	db := vector.NewVectorDB("", 10) // 空路径
 
-	err := db.LoadFromFile("test.gob")
+	err := db.LoadFromFile("") // 传入空路径
 	if err == nil {
-		t.Fatalf("未设置文件路径应该返回错误")
+		t.Fatalf("传入空文件路径应该返回错误")
 	}
 
 	// 暂时跳过错误信息检查，因为可能实际错误信息不同

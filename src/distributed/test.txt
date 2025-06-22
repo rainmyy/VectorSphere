@@ -10,7 +10,7 @@ import (
 
 func main() {
 	// 解析命令行参数
-	configPath := flag.String("config", "", "配置文件路径")
+	configPath := flag.String("c", "", "配置文件路径")
 	nodeType := flag.String("type", "auto", "节点类型: master, slave, auto")
 	logLevel := flag.String("log", "info", "日志级别: debug, info, warn, error")
 	version := flag.Bool("version", false, "显示版本信息")
@@ -66,8 +66,8 @@ func printUsage() {
 	fmt.Println("  vectorsphere [options]")
 	fmt.Println("")
 	fmt.Println("Options:")
-	fmt.Println("  -config string")
-	fmt.Println("        配置文件路径 (默认: ./config/config.yaml)")
+	fmt.Println("  -c string")
+	fmt.Println("        配置文件路径 (默认: ./c/c.yaml)")
 	fmt.Println("  -type string")
 	fmt.Println("        节点类型: master, slave, auto (默认: auto)")
 	fmt.Println("  -log string")
@@ -82,7 +82,7 @@ func printUsage() {
 	fmt.Println("  vectorsphere")
 	fmt.Println("")
 	fmt.Println("  # 指定配置文件启动")
-	fmt.Println("  vectorsphere -config /path/to/config.yaml")
+	fmt.Println("  vectorsphere -c /path/to/c.yaml")
 	fmt.Println("")
 	fmt.Println("  # 强制以master模式启动")
 	fmt.Println("  vectorsphere -type master")

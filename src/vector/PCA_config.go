@@ -61,8 +61,12 @@ func (db *VectorDB) ApplyPCA(targetDim int, varianceRatio float64) error {
 	}
 
 	// 计算协方差矩阵: C = (1/n-1) * X^T * X
+	// 其中 X 是中心化数据矩阵 (n x d)
 	var cov mat.SymDense
-	cov.SymOuterK(1.0/float64(len(vectors)-1), data)
+	// 使用正确的协方差矩阵计算：C = X^T * X / (n-1)
+	var dataT mat.Dense
+	dataT.CloneFrom(data.T())
+	cov.SymOuterK(1.0/float64(len(vectors)-1), &dataT)
 
 	// 特征值分解
 	var eig mat.EigenSym
@@ -106,10 +110,17 @@ func (db *VectorDB) ApplyPCA(targetDim int, varianceRatio float64) error {
 				}
 			}
 		}
-		// 如果同时指定了 targetDim，并且它比按方差计算出的 numComponents 更小，则采用 targetDim
-		if targetDim > 0 && targetDim < numComponents {
-			logger.Info("根据方差比例计算的主成分数 (%d) 大于目标维度 (%d)，将使用目标维度。", numComponents, targetDim)
-			numComponents = targetDim
+		// 如果同时指定了 targetDim，需要处理两种情况：
+		// 1. 方差比例计算出的维度大于目标维度：使用目标维度
+		// 2. 方差比例计算出的维度小于目标维度：使用目标维度（确保至少达到目标维度）
+		if targetDim > 0 {
+			if targetDim < numComponents {
+				logger.Info("根据方差比例计算的主成分数 (%d) 大于目标维度 (%d)，将使用目标维度。", numComponents, targetDim)
+				numComponents = targetDim
+			} else if targetDim > numComponents {
+				logger.Info("根据方差比例计算的主成分数 (%d) 小于目标维度 (%d)，将使用目标维度。", numComponents, targetDim)
+				numComponents = targetDim
+			}
 		}
 	} else if targetDim > 0 {
 		numComponents = targetDim
@@ -124,11 +135,26 @@ func (db *VectorDB) ApplyPCA(targetDim int, varianceRatio float64) error {
 	// 提取主成分 (最大的 numComponents 个特征向量)
 	// eigenvectors 的列是特征向量，按特征值升序排列。
 	// 我们需要与最大的 numComponents 个特征值相对应的特征向量，即 eigenvectors 的最后 numComponents 列。
+	
+	// 检查特征向量矩阵的维度
+	eigRows, eigCols := eigenvectors.Dims()
+	logger.Debug("特征向量矩阵维度: %d x %d, 原始维度: %d, 目标主成分数: %d", eigRows, eigCols, dim, numComponents)
+	
+	if eigCols != dim {
+		return fmt.Errorf("特征向量矩阵列数 (%d) 与原始维度 (%d) 不匹配", eigCols, dim)
+	}
+	
 	p := mat.NewDense(dim, numComponents, nil) // p 是主成分矩阵 W
 	for j := 0; j < numComponents; j++ {
 		// p 的第 j 列 (0-indexed) 对应 eigenvectors 的第 (dim - 1 - j) 列 (0-indexed)
 		// 这是因为 eigenvectors 的列是按特征值升序排列的。
 		columnToExtract := dim - 1 - j
+		
+		// 确保列索引在有效范围内
+		if columnToExtract < 0 || columnToExtract >= eigCols {
+			return fmt.Errorf("列索引 %d 超出特征向量矩阵范围 [0, %d)", columnToExtract, eigCols)
+		}
+		
 		// mat.Col copies the column into a new []float64 slice.
 		colData := make([]float64, dim)
 		mat.Col(colData, columnToExtract, eigenvectors)

@@ -96,7 +96,7 @@ serviceRegistryPath: "/services/vectorsphere/"
 serviceTTL: 30
 
 # 配置管理
-configPathPrefix: "/config/vectorsphere/"
+configPathPrefix: "/c/vectorsphere/"
 
 # 领导者选举
 electionPathPrefix: "/election/vectorsphere/"
@@ -133,13 +133,13 @@ scripts\start.bat standalone 8080 localhost:2379 VectorSphere
 #### 直接使用 Go
 ```bash
 # 启动主节点
-go run src/main.go --mode=master --port=8080 --etcd=localhost:2379 --service=VectorSphere --config=conf/app.yaml
+go run src/main.go --mode=master --port=8080 --etcd=localhost:2379 --service=VectorSphere --c=conf/app.yaml
 
 # 启动从节点
-go run src/main.go --mode=slave --port=8081 --etcd=localhost:2379 --service=VectorSphere --config=conf/app.yaml
+go run src/main.go --mode=slave --port=8081 --etcd=localhost:2379 --service=VectorSphere --c=conf/app.yaml
 
 # 启动独立节点
-go run src/main.go --mode=standalone --port=8080 --etcd=localhost:2379 --service=VectorSphere --config=conf/app.yaml
+go run src/main.go --mode=standalone --port=8080 --etcd=localhost:2379 --service=VectorSphere --c=conf/app.yaml
 ```
 
 ## 服务启动流程

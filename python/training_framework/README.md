@@ -8,7 +8,7 @@ This framework provides a structured way to fine-tune large language models on y
 python/
 └── training_framework/
     ├── app.py              # Flask app to serve the trained model
-    ├── config.py           # All configurations and hyperparameters
+    ├── c.py           # All configurations and hyperparameters
     ├── data_loader.py      # Scripts for loading and preprocessing data
     ├── model.py            # Model definition
     ├── train.py            # Main training script
@@ -27,13 +27,13 @@ pip install -r ../requirements.txt
 
 ### 2. Configuration
 
-Edit `config.py` to set your desired parameters, such as model names, data paths, and training hyperparameters.
+Edit `c.py` to set your desired parameters, such as model names, data paths, and training hyperparameters.
 
 ### 3. Data Preparation
 
 Place your training data in the `data/` directory (you may need to create it). The `data_loader.py` is currently set up to load from a database. You can modify it to load from text files or other formats.
 
-For database training, set the `DB_CONNECTION_STRING` in `config.py`.
+For database training, set the `DB_CONNECTION_STRING` in `c.py`.
 
 ### 4. Training
 
@@ -43,7 +43,7 @@ Run the training script:
 python train.py
 ```
 
-The script will load the data, fine-tune the model, and save the final version to the directory specified by `MODEL_OUTPUT_DIR` in the config.
+The script will load the data, fine-tune the model, and save the final version to the directory specified by `MODEL_OUTPUT_DIR` in the c.
 
 ### 5. Serving the Model
 

@@ -98,7 +98,7 @@ go get -u google.golang.org/grpc
 git clone https://github.com/facebookresearch/faiss.git
 cd faiss
 cmake -B build -DFAISS_ENABLE_GPU=ON -DFAISS_ENABLE_PYTHON=OFF -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release
+cmake --build build --c Release
 cmake --install build --prefix C:/faiss
 ### 安装和编译
 ```

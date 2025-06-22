@@ -266,7 +266,11 @@ func TestGetEffectiveness(t *testing.T) {
 	maxAcceptableTime := 100 * time.Millisecond
 	timeScore := 1.0 - float64(queryTime)/float64(maxAcceptableTime)
 
-	expected := recall*recallWeight + precision*precisionWeight + timeScore*timeWeight
+	// 使用指数移动平均后的实际值计算期望
+	alpha := 0.1
+	expectedRecall := recall * alpha // 因为初始值为0
+	expectedPrecision := precision * alpha // 因为初始值为0
+	expected := expectedRecall*recallWeight + expectedPrecision*precisionWeight + timeScore*timeWeight
 	if abs(effectiveness-expected) > 0.001 {
 		t.Errorf("期望有效性为%f，实际为%f", expected, effectiveness)
 	}
@@ -298,7 +302,11 @@ func TestGetEffectivenessWithSlowQuery(t *testing.T) {
 	timeWeight := 0.2
 	timeScore := 0.0 // 查询时间太慢
 
-	expected := recall*recallWeight + precision*precisionWeight + timeScore*timeWeight
+	// 使用指数移动平均后的实际值计算期望
+	alpha := 0.1
+	expectedRecall := recall * alpha // 因为初始值为0
+	expectedPrecision := precision * alpha // 因为初始值为0
+	expected := expectedRecall*recallWeight + expectedPrecision*precisionWeight + timeScore*timeWeight
 	if abs(effectiveness-expected) > 0.001 {
 		t.Errorf("期望有效性为%f，实际为%f", expected, effectiveness)
 	}

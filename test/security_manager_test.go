@@ -209,7 +209,7 @@ func TestJWTGeneration(t *testing.T) {
 
 // TestInvalidJWTValidation 测试无效JWT令牌验证
 func TestInvalidJWTValidation(t *testing.T) {
-	config := &security.SecurityConfig{
+	c := &security.SecurityConfig{
 		RBAC: &security.RBACConfig{Enabled: false},
 		Audit: &security.AuditConfig{
 			Enabled: false,
@@ -224,7 +224,7 @@ func TestInvalidJWTValidation(t *testing.T) {
 		},
 	}
 
-	esm, err := security.NewEnhancedSecurityManager(config)
+	esm, err := security.NewEnhancedSecurityManager(c)
 	if err != nil {
 		t.Fatalf("创建增强安全管理器失败: %v", err)
 	}
@@ -486,17 +486,17 @@ func TestPermissionMatching(t *testing.T) {
 		resource string
 		expected bool
 	}{
-		{[]string{"admin"}, "read", "service", true},     // *:* 匹配所有
-		{[]string{"admin"}, "write", "config", true},    // *:* 匹配所有
-		{[]string{"service"}, "read", "service", true},  // service:* 匹配
-		{[]string{"service"}, "write", "service", true}, // service:* 匹配
-		{[]string{"service"}, "read", "config", false},  // service:* 不匹配config
-		{[]string{"readonly"}, "read", "service", true}, // *:read 匹配
-		{[]string{"readonly"}, "read", "config", true},  // *:read 匹配
-		{[]string{"readonly"}, "write", "config", false}, // *:read 不匹配write
-		{[]string{"specific"}, "write", "config", true},   // 精确匹配
+		{[]string{"admin"}, "read", "service", true},        // *:* 匹配所有
+		{[]string{"admin"}, "write", "config", true},        // *:* 匹配所有
+		{[]string{"service"}, "read", "service", true},      // service:* 匹配
+		{[]string{"service"}, "write", "service", true},     // service:* 匹配
+		{[]string{"service"}, "read", "config", false},      // service:* 不匹配config
+		{[]string{"readonly"}, "read", "service", true},     // *:read 匹配
+		{[]string{"readonly"}, "read", "config", true},      // *:read 匹配
+		{[]string{"readonly"}, "write", "config", false},    // *:read 不匹配write
+		{[]string{"specific"}, "write", "config", true},     // 精确匹配
 		{[]string{"specific"}, "register", "service", true}, // 精确匹配
-		{[]string{"specific"}, "read", "config", false},    // 无匹配权限
+		{[]string{"specific"}, "read", "config", false},     // 无匹配权限
 	}
 
 	for i, tc := range testCases {
@@ -527,7 +527,7 @@ func TestPermissionMatching(t *testing.T) {
 // TestEncryptionKeyRotation 测试加密密钥轮换
 func TestEncryptionKeyRotation(t *testing.T) {
 	config := &security.SecurityConfig{
-		RBAC: &security.RBACConfig{Enabled: false},
+		RBAC:  &security.RBACConfig{Enabled: false},
 		Audit: &security.AuditConfig{Enabled: false, LogFile: "test.log"},
 		Network: &security.NetworkConfig{
 			AllowedIPs: []string{},
@@ -667,7 +667,7 @@ func TestSecurityManagerConcurrentAccess(t *testing.T) {
 // TestInvalidEncryptionData 测试无效加密数据处理
 func TestInvalidEncryptionData(t *testing.T) {
 	config := &security.SecurityConfig{
-		RBAC: &security.RBACConfig{Enabled: false},
+		RBAC:  &security.RBACConfig{Enabled: false},
 		Audit: &security.AuditConfig{Enabled: false, LogFile: "test.log"},
 		Network: &security.NetworkConfig{
 			AllowedIPs: []string{},
@@ -683,8 +683,8 @@ func TestInvalidEncryptionData(t *testing.T) {
 
 	// 测试解密无效数据
 	invalidData := [][]byte{
-		{}, // 空数据
-		{1, 2, 3}, // 太短的数据
+		{},                               // 空数据
+		{1, 2, 3},                        // 太短的数据
 		[]byte("invalid-encrypted-data"), // 无效格式
 	}
 
@@ -699,7 +699,7 @@ func TestInvalidEncryptionData(t *testing.T) {
 // BenchmarkSecurityOperations 安全操作基准测试
 func BenchmarkSecurityOperations(b *testing.B) {
 	config := &security.SecurityConfig{
-		RBAC: &security.RBACConfig{Enabled: false},
+		RBAC:  &security.RBACConfig{Enabled: false},
 		Audit: &security.AuditConfig{Enabled: false, LogFile: "bench.log"},
 		Network: &security.NetworkConfig{
 			AllowedIPs: []string{},

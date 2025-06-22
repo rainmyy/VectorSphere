@@ -103,7 +103,8 @@ func (lf *LSHFamily) GetEffectiveness() float64 {
 
 	// 时间评分：查询时间越短评分越高（归一化到0-1）
 	maxAcceptableTime := 100 * time.Millisecond
-	timeScore := 1.0 - math.Min(1.0, float64(lf.Performance.AvgQueryTime)/float64(maxAcceptableTime))
+	timeRatio := float64(lf.Performance.AvgQueryTime) / float64(maxAcceptableTime)
+	timeScore := math.Max(0.0, 1.0-timeRatio)
 
 	return lf.Performance.AvgRecall*recallWeight + lf.Performance.AvgPrecision*precisionWeight + timeScore*timeWeight
 }
@@ -112,6 +113,10 @@ func (lf *LSHFamily) GetEffectiveness() float64 {
 func (lf *LSHFamily) IsExpired(expireDuration time.Duration) bool {
 	lf.mu.RLock()
 	defer lf.mu.RUnlock()
+	// 如果过期时间为0或负数，则认为立即过期
+	if expireDuration <= 0 {
+		return true
+	}
 	return time.Since(lf.LastUsed) > expireDuration
 }
 

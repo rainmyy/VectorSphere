@@ -144,13 +144,13 @@ func (db *VectorDB) saveToFileStandard(filePath string) error {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
-	if db.backupPath == "" {
+	if filePath == "" {
 		return fmt.Errorf("文件路径未设置，无法保存数据库")
 	}
 
-	file, err := os.Create(db.backupPath)
+	file, err := os.Create(filePath)
 	if err != nil {
-		return fmt.Errorf("创建数据库文件 %s 失败: %v", db.backupPath, err)
+		return fmt.Errorf("创建数据库文件 %s 失败: %v", filePath, err)
 	}
 	defer func(file *os.File) {
 		err := file.Close()
@@ -319,7 +319,7 @@ func (db *VectorDB) LoadFromFileWithMmap(filePath string) error {
 // LoadFromFile 从文件加载数据库（智能选择是否使用 mmap）
 func (db *VectorDB) LoadFromFile(filePath string) error {
 	// 检查文件大小
-	if fileInfo, err := os.Stat(db.filePath); err == nil {
+	if fileInfo, err := os.Stat(filePath); err == nil {
 		fileSize := fileInfo.Size()
 
 		// 大于 10MB 的文件使用 mmap 优化
@@ -340,14 +340,14 @@ func (db *VectorDB) loadFromFileStandard(filePath string) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
-	if db.filePath == "" {
+	if filePath == "" {
 		return fmt.Errorf("文件路径未设置，无法加载数据库")
 	}
 
-	file, err := os.Open(db.filePath)
+	file, err := os.Open(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			logger.Info("数据库文件 %s 不存在，将创建一个新的空数据库。", db.filePath)
+			logger.Info("数据库文件 %s 不存在，将创建一个新的空数据库。", filePath)
 			// 初始化为空数据库状态，确保所有 map 都已创建
 			db.vectors = make(map[string][]float64)
 			db.clusters = make([]Cluster, 0)
@@ -358,7 +358,7 @@ func (db *VectorDB) loadFromFileStandard(filePath string) error {
 			db.pqCodebook = nil
 			return nil // 文件不存在不是错误，是正常启动流程
 		}
-		return fmt.Errorf("打开数据库文件 %s 失败: %v", db.filePath, err)
+		return fmt.Errorf("打开数据库文件 %s 失败: %v", filePath, err)
 	}
 	defer func(file *os.File) {
 		err := file.Close()
