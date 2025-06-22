@@ -2801,15 +2801,15 @@ func (db *VectorDB) Delete(id string) error {
 // MultiLevelIndex 多级索引结构
 type MultiLevelIndex struct {
 	// 一级索引：簇中心
-	clusters []Cluster
+	Clusters []Cluster
 
 	// 二级索引：每个簇内部的KD树或其他数据结构
-	subIndices []interface{} // 可以是KDTree或其他索引结构
+	SubIndices []interface{} // 可以是KDTree或其他索引结构
 
 	// 索引元数据
-	numClusters int
-	indexed     bool
-	buildTime   time.Time
+	NumClusters int
+	Indexed     bool
+	BuildTime   time.Time
 }
 
 // BuildMultiLevelIndex 在BuildIndex方法中构建多级索引
@@ -2860,11 +2860,11 @@ func (db *VectorDB) BuildMultiLevelIndex(maxIterations int, tolerance float64) e
 
 	// 4. 第二级：为每个簇构建KD树子索引
 	multiIndex := &MultiLevelIndex{
-		clusters:    db.clusters,                         // 注意：这里可能需要深拷贝或调整，取决于 MultiLevelIndex 的设计
-		subIndices:  make([]interface{}, db.numClusters), // 假设 subIndices 在 goroutine 中填充
-		numClusters: db.numClusters,
-		indexed:     true,
-		buildTime:   time.Now(),
+		Clusters:    db.clusters,                         // 注意：这里可能需要深拷贝或调整，取决于 MultiLevelIndex 的设计
+		SubIndices:  make([]interface{}, db.numClusters), // 假设 subIndices 在 goroutine 中填充
+		NumClusters: db.numClusters,
+		Indexed:     true,
+		BuildTime:   time.Now(),
 	}
 
 	// 并行构建每个簇的KD树
@@ -2891,7 +2891,7 @@ func (db *VectorDB) BuildMultiLevelIndex(maxIterations int, tolerance float64) e
 			}
 
 			// 保存KD树到多级索引
-			multiIndex.subIndices[clusterIdx] = kdTree
+			multiIndex.SubIndices[clusterIdx] = kdTree
 		}(i)
 	}
 
@@ -3597,7 +3597,7 @@ func (db *VectorDB) FindNearest(query []float64, k int, nprobe int) ([]entity.Re
 //		if err != nil {
 //			return nil, err
 //		}
-//	} else if db.config.UseMultiLevelIndex && db.multiIndex != nil && db.multiIndex.indexed {
+//	} else if db.config.UseMultiLevelIndex && db.multiIndex != nil && db.multiIndex.Indexed {
 //		results, err = db.multiIndexSearch(query, k, nprobe)
 //		if err != nil {
 //			return nil, err
@@ -3928,7 +3928,7 @@ func (db *VectorDB) HybridSearch(query []float64, k int, options SearchOptions, 
 	} else if len(query) > 1000 {
 		// 高维向量使用LSH (Locality-Sensitive Hashing)
 		return db.lshSearch(query, k, options.NumHashTables)
-	} else if db.config.UseMultiLevelIndex && db.multiIndex != nil && db.multiIndex.indexed {
+	} else if db.config.UseMultiLevelIndex && db.multiIndex != nil && db.multiIndex.Indexed {
 		return db.multiIndexSearch(query, k, nprobe)
 	} else {
 		// 默认使用IVF索引
@@ -4182,10 +4182,10 @@ func (db *VectorDB) multiIndexSearch(query []float64, k int, nprobe int) ([]enti
 	clusterDist := make([]struct {
 		Index int
 		Dist  float64
-	}, len(db.multiIndex.clusters))
+	}, len(db.multiIndex.Clusters))
 
 	selectedStrategy := db.GetSelectStrategy()
-	for i, cluster := range db.multiIndex.clusters {
+	for i, cluster := range db.multiIndex.Clusters {
 		dist, err := acceler.AdaptiveEuclideanDistanceSquared(query, cluster.Centroid, selectedStrategy)
 		if err != nil {
 			return nil, fmt.Errorf("error calculating distance to centroid %d: %w", i, err)
@@ -4211,9 +4211,9 @@ func (db *VectorDB) multiIndexSearch(query []float64, k int, nprobe int) ([]enti
 	// 2. 在选中的簇的二级索引中搜索
 	for i := 0; i < numToProbe; i++ {
 		clusterIdx := clusterDist[i].Index
-		selectedCluster := db.multiIndex.clusters[clusterIdx]
+		selectedCluster := db.multiIndex.Clusters[clusterIdx]
 
-		if clusterIdx >= len(db.multiIndex.subIndices) || db.multiIndex.subIndices[clusterIdx] == nil {
+		if clusterIdx >= len(db.multiIndex.SubIndices) || db.multiIndex.SubIndices[clusterIdx] == nil {
 			logger.Warning("Sub-index for cluster %d not found or nil. Performing brute-force in this cluster.", clusterIdx)
 			// 回退到暴力搜索该簇内的向量
 			for _, id := range selectedCluster.VectorIDs {
@@ -4229,7 +4229,7 @@ func (db *VectorDB) multiIndexSearch(query []float64, k int, nprobe int) ([]enti
 		}
 
 		// 假设二级索引是 KDTree，并且有 FindNearest 方法
-		kdTree, ok := db.multiIndex.subIndices[clusterIdx].(*tree.KDTree) // 类型断言
+		kdTree, ok := db.multiIndex.SubIndices[clusterIdx].(*tree.KDTree) // 类型断言
 		if !ok || kdTree == nil {
 			logger.Warning("Sub-index for cluster %d is not a KDTree or is nil. Performing brute-force.", clusterIdx)
 			for _, id := range selectedCluster.VectorIDs {
