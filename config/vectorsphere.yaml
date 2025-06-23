@@ -1,0 +1,291 @@
+# VectorSphere 分布式向量数据库配置文件
+# 此配置文件展示了完整的分布式优化配置选项
+
+# 分布式配置
+distributed:
+  # 索引结构选择
+  index_selection:
+    enable: true
+    # HNSW索引配置
+    hnsw:
+      enable: true
+      m: 16                    # 连接数
+      ef_construction: 200     # 构建时的搜索范围
+      ef_search: 100          # 搜索时的搜索范围
+      max_m: 16
+      max_m0: 32
+      ml: 1.0
+      seed: 42
+      
+    # IVF索引配置
+    ivf:
+      enable: true
+      nlist: 1024             # 聚类中心数量
+      nprobe: 64              # 搜索的聚类数量
+      quantizer_type: "flat"   # 量化器类型
+      metric_type: "L2"        # 距离度量类型
+      
+    # PQ索引配置
+    pq:
+      enable: true
+      m: 8                    # 子向量数量
+      nbits: 8                # 每个子向量的位数
+      
+    # LSH索引配置
+    lsh:
+      enable: false
+      num_tables: 10          # 哈希表数量
+      num_bits: 64            # 哈希位数
+      
+    # 自适应索引选择
+    adaptive_selection:
+      enable: true
+      data_size_threshold: 1000000      # 数据量阈值
+      latency_threshold: "100ms"        # 延迟阈值
+      memory_threshold: 0.8             # 内存使用率阈值
+      small_dataset_index: "HNSW"       # 小数据集索引
+      medium_dataset_index: "IVF"       # 中等数据集索引
+      large_dataset_index: "PQ"         # 大数据集索引
+      
+  # 分布式架构
+  distributed_architecture:
+    # 分片策略
+    sharding_strategy:
+      strategy: "range"        # range, hash, cluster
+      shard_count: 4
+      replication_factor: 2
+      
+    # 计算存储分离
+    compute_storage_separation:
+      enable: true
+      compute_nodes:
+        min_nodes: 2
+        max_nodes: 10
+        auto_scaling: true
+      storage_nodes:
+        min_nodes: 3
+        max_nodes: 6
+        replication_factor: 3
+      coordination_nodes:
+        count: 3
+        
+    # 容错机制
+    fault_tolerance:
+      enable: true
+      retry_count: 3
+      timeout: "30s"
+      circuit_breaker:
+        enable: true
+        failure_threshold: 5
+        recovery_timeout: "60s"
+        
+# 性能优化配置
+performance:
+  # 查询加速
+  query_acceleration:
+    enable: true
+    # 多阶段搜索
+    multi_stage_search:
+      enable: true
+      coarse_search_candidates: 1000
+      fine_search_candidates: 100
+      
+    # 预处理优化
+    preprocessing:
+      enable: true
+      vector_normalization: true
+      dimension_reduction:
+        enable: false
+        target_dimension: 128
+        method: "PCA"
+        
+  # 并发控制
+  concurrency_control:
+    enable: true
+    max_concurrent_queries: 100
+    query_queue_size: 1000
+    thread_pool_size: 16
+    
+  # 内存管理
+  memory_management:
+    enable: true
+    garbage_collection:
+      enable: true
+      gc_threshold: 0.8
+      gc_interval: "5m"
+    memory_pool:
+      enable: true
+      pool_size: "1GB"
+      
+  # 批处理
+  batch_processing:
+    enable: true
+    batch_size: 100
+    batch_timeout: "10ms"
+    
+  # 预取
+  prefetching:
+    enable: true
+    prefetch_size: 50
+    prefetch_threads: 4
+    
+# 硬件加速配置
+hardware:
+  # GPU加速
+  gpu:
+    enable: false
+    device_count: 1
+    memory_limit: "4GB"
+    compute_capability: "7.5"
+    
+  # FPGA加速
+  fpga:
+    enable: false
+    device_count: 1
+    bitstream_path: "/path/to/bitstream"
+    
+  # 持久内存
+  pmem:
+    enable: false
+    device_path: "/dev/dax0.0"
+    size: "16GB"
+    
+  # RDMA网络
+  rdma:
+    enable: false
+    device_name: "mlx5_0"
+    port: 1
+    
+  # CPU优化
+  cpu:
+    enable: true
+    numa_aware: true
+    power_saving: false
+    simd_optimization: true
+    
+# 缓存策略配置
+cache:
+  # 结果缓存
+  result_cache:
+    enable: true
+    max_size: 1073741824      # 1GB
+    ttl: "1h"
+    eviction_policy: "LRU"
+    
+  # 向量缓存
+  vector_cache:
+    enable: true
+    max_size: 2147483648      # 2GB
+    ttl: "2h"
+    hot_data_strategy:
+      enable: true
+      access_threshold: 10
+      
+  # 索引缓存
+  index_cache:
+    enable: true
+    max_size: 536870912       # 512MB
+    max_indexes: 100
+    preload:
+      enable: true
+      preload_count: 10
+      
+# 监控配置
+monitoring:
+  # 指标收集
+  metrics:
+    enable: true
+    collection_interval: "10s"
+    retention_period: "24h"
+    
+    # Prometheus导出
+    exporter:
+      prometheus:
+        enable: true
+        port: 9090
+        path: "/metrics"
+        
+  # 告警配置
+  alerting:
+    enable: true
+    rules:
+      - name: "HighCPUUsage"
+        metric: "cpu_utilization"
+        condition:
+          operator: ">"
+          threshold: 70.0
+          time_window: "5m"
+        severity: "warning"
+        
+      - name: "HighQueryLatency"
+        metric: "search_latency_p95"
+        condition:
+          operator: ">"
+          threshold: 200.0  # 200ms
+          time_window: "5m"
+        severity: "critical"
+        
+  # 自动扩缩容
+  auto_scaling:
+    enable: true
+    strategy: "reactive"
+    metrics:
+      cpu_utilization:
+        enable: true
+        scale_up_threshold: 70.0
+        scale_down_threshold: 30.0
+      memory_utilization:
+        enable: true
+        scale_up_threshold: 80.0
+        scale_down_threshold: 40.0
+      query_latency:
+        enable: true
+        scale_up_threshold: "200ms"
+        scale_down_threshold: "50ms"
+        
+    limits:
+      min_compute_nodes: 1
+      max_compute_nodes: 10
+      min_storage_nodes: 1
+      max_storage_nodes: 5
+      
+  # 日志配置
+  logging:
+    enable: true
+    level: "INFO"
+    format: "json"
+    output:
+      console: true
+      file:
+        enable: true
+        path: "./logs/vectorsphere.log"
+        max_size: 104857600     # 100MB
+        max_age: 7              # 7 days
+        max_backups: 10
+        
+  # 健康检查
+  health_check:
+    enable: true
+    interval: "30s"
+    timeout: "5s"
+    endpoints:
+      - name: "api-health"
+        path: "/health"
+        method: "GET"
+        expected_status: 200
+        
+# 自适应优化配置
+adaptive_optimization:
+  enable: true
+  optimization_interval: "1m"
+  strategy: "Balanced"          # HighPerformance, MemoryEfficient, Balanced
+  
+  # 自定义规则
+  custom_rules:
+    - name: "CustomHighLatencyRule"
+      description: "自定义高延迟优化规则"
+      condition: "query_latency_p95 > 300ms"
+      action: "enable_gpu_acceleration"
+      priority: 1
+      cooldown: "10m"
+      enabled: true

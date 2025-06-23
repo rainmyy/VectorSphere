@@ -146,10 +146,10 @@ func (c *ClusterShardStrategy) findNearestClusters(query []float64, k int) []int
 
 // DistributedConsistentHash 分布式一致性哈希
 type DistributedConsistentHash struct {
-	hashRing map[uint32]*SearchNode
+	hashRing     map[uint32]*SearchNode
 	sortedHashes []uint32
-	replicas int
-	mu sync.RWMutex
+	replicas     int
+	mu           sync.RWMutex
 }
 
 // NewDistributedConsistentHash 创建分布式一致性哈希
@@ -191,7 +191,7 @@ func (ch *DistributedConsistentHash) GetNode(key string) *SearchNode {
 	}
 
 	hashValue := uint32(hash(key))
-	
+
 	// 找到第一个大于等于hashValue的节点
 	for _, h := range ch.sortedHashes {
 		if h >= hashValue {
@@ -231,7 +231,7 @@ func (dsm *DistributedSearchManager) DistributedSearch(ctx context.Context, quer
 
 	// 确定需要搜索的分片
 	shards := dsm.shardStrategy.GetShardForQuery(query, len(dsm.nodes))
-	
+
 	// 并行搜索多个分片
 	resultChan := make(chan []entity.Result, len(shards))
 	errorChan := make(chan error, len(shards))
@@ -241,7 +241,7 @@ func (dsm *DistributedSearchManager) DistributedSearch(ctx context.Context, quer
 		wg.Add(1)
 		go func(shard int) {
 			defer wg.Done()
-			
+
 			node := dsm.selectNodeForShard(shard)
 			if node == nil {
 				errorChan <- fmt.Errorf("分片 %d 没有可用节点", shard)
@@ -254,7 +254,7 @@ func (dsm *DistributedSearchManager) DistributedSearch(ctx context.Context, quer
 				errorChan <- err
 				return
 			}
-			
+
 			resultChan <- results
 		}(shardID)
 	}

@@ -16,6 +16,7 @@ import (
 // IVFConfig IVF 配置结构
 type IVFConfig struct {
 	NumClusters        int     `json:"num_clusters"`        // 聚类数量
+	Nprobe             int     `json:"nprobe"`              // 搜索时探测的聚类数量
 	TrainingRatio      float64 `json:"training_ratio"`      // 训练数据比例
 	RebalanceThreshold int     `json:"rebalance_threshold"` // 重平衡阈值
 	UsePQCompression   bool    `json:"use_pq_compression"`  // 是否使用 PQ 压缩

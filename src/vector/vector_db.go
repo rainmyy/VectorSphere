@@ -456,7 +456,7 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOption
 		processedQuery = db.dataPreprocessor.Normalize([][]float64{query})[0]
 	}
 
-	// 硬件加速检查（暂时禁用）
+	// 硬件加速检查
 	var accelerator HardwareAccelerator
 	if db.hardwareManager != nil {
 		if options.UseGPU {

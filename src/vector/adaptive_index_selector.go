@@ -136,8 +136,8 @@ func (db *VectorDB) GetPerformanceInsights() map[string]interface{} {
 			strategyName := db.getStrategyName(strategy)
 			strategyPerf[strategyName] = map[string]interface{}{
 				"avg_latency":    metrics.AvgLatency.String(),
-				"throughput_qps": metrics.ThroughputQPS,
 				"recall":         metrics.Recall,
+				"throughput_qps": metrics.ThroughputQPS,
 				"memory_usage":   metrics.MemoryUsage,
 				"last_updated":   metrics.LastUpdated.Format(time.RFC3339),
 			}
@@ -317,7 +317,7 @@ func (ais *AdaptiveIndexSelector) GetInsights() map[string]interface{} {
 	}
 	avgLatency := totalLatency / time.Duration(len(ais.performanceWindow))
 	avgQuality := totalQuality / float64(len(ais.performanceWindow))
-	
+
 	insights["avg_latency"] = avgLatency.String()
 	insights["avg_quality"] = avgQuality
 
@@ -771,7 +771,7 @@ func (ais *AdaptiveIndexSelector) GetOptimalStrategy(ctx SearchContext) IndexStr
 	// 为当前上下文的特征计算权重
 	vectorCount := len(ais.db.vectors)
 	dimension := len(ctx.QueryVector)
-	
+
 	// 如果当前数据库为空，使用查询上下文中的信息作为参考
 	if vectorCount == 0 {
 		// 在测试或空数据库情况下，使用合理的默认值
@@ -869,7 +869,7 @@ func (ais *AdaptiveIndexSelector) calculateContextSimilarity(ctx SearchContext, 
 	// 如果向量数量或维度差异超过10倍，认为相似度很低
 	vectorCountRatio := math.Max(float64(currentVectorCount), float64(record.VectorCount)) / math.Max(1, math.Min(float64(currentVectorCount), float64(record.VectorCount)))
 	dimensionRatio := math.Max(float64(currentDimension), float64(record.Dimension)) / math.Max(1, math.Min(float64(currentDimension), float64(record.Dimension)))
-	
+
 	if vectorCountRatio > 10 || dimensionRatio > 2 {
 		// 如果差异太大，直接返回很低的相似度
 		return 0.1

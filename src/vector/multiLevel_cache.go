@@ -25,9 +25,9 @@ type MultiLevelCache struct {
 	l1Mu       sync.RWMutex
 
 	// L2: 共享内存缓存 - 较快，容量中等
-	l2Capacity     int
-	l2Mu           sync.RWMutex
-	l2SharedMem    *storage.SharedMemory // 共享内存管理器
+	l2Capacity      int
+	l2Mu            sync.RWMutex
+	l2SharedMem     *storage.SharedMemory // 共享内存管理器
 	l2FallbackCache map[string]queryCache // 普通内存fallback缓存
 
 	// L3: 磁盘缓存 - 较慢，容量大
@@ -76,7 +76,7 @@ func NewMultiLevelCache(l1Capacity, l2Capacity, l3Capacity int, l3Path string) *
 	if l3Path != "" {
 		// 清理路径中的特殊字符
 		l3Path = filepath.Clean(l3Path)
-		
+
 		// 确保L3缓存目录存在
 		err := os.MkdirAll(l3Path, 0755)
 		if err != nil {
@@ -415,10 +415,10 @@ func (c *MultiLevelCache) Put(key string, results interface{}) {
 			if c.l2FallbackCache == nil {
 				c.l2FallbackCache = make(map[string]queryCache)
 			}
-			
+
 			// 存储到fallback缓存
 			c.l2FallbackCache[key] = cache
-			
+
 			// 检查并执行容量限制
 			if len(c.l2FallbackCache) > c.l2Capacity {
 				// 按时间戳排序，删除最旧的项
@@ -426,17 +426,17 @@ func (c *MultiLevelCache) Put(key string, results interface{}) {
 					key       string
 					timestamp int64
 				}
-				
+
 				var items []cacheItem
 				for k, v := range c.l2FallbackCache {
 					items = append(items, cacheItem{key: k, timestamp: v.Timestamp})
 				}
-				
+
 				// 按时间戳排序（最旧的在前面）
 				sort.Slice(items, func(i, j int) bool {
 					return items[i].timestamp < items[j].timestamp
 				})
-				
+
 				// 删除超出容量的最旧项
 				deleteCount := len(c.l2FallbackCache) - c.l2Capacity
 				for i := 0; i < deleteCount; i++ {
@@ -748,7 +748,7 @@ func (c *MultiLevelCache) enforceL2CapacityLimit() {
 		if c.l2FallbackCache == nil {
 			c.l2FallbackCache = make(map[string]queryCache)
 		}
-		
+
 		// 检查fallback缓存是否超过容量限制
 		if len(c.l2FallbackCache) > c.l2Capacity {
 			// 按时间戳排序，删除最旧的项
@@ -756,17 +756,17 @@ func (c *MultiLevelCache) enforceL2CapacityLimit() {
 				key       string
 				timestamp int64
 			}
-			
+
 			var items []cacheItem
 			for k, v := range c.l2FallbackCache {
 				items = append(items, cacheItem{key: k, timestamp: v.Timestamp})
 			}
-			
+
 			// 按时间戳排序（最旧的在前面）
 			sort.Slice(items, func(i, j int) bool {
 				return items[i].timestamp < items[j].timestamp
 			})
-			
+
 			// 删除超出容量的最旧项
 			deleteCount := len(c.l2FallbackCache) - c.l2Capacity
 			for i := 0; i < deleteCount; i++ {
@@ -1192,7 +1192,7 @@ func (c *MultiLevelCache) getL3CacheFilePath(key string) string {
 	if key == "" {
 		key = "__empty_key__"
 	}
-	
+
 	// 使用MD5哈希作为文件名，避免特殊字符和路径过长问题
 	hashKey := fmt.Sprintf("%x", md5.Sum([]byte(key)))
 	return filepath.Join(c.l3CachePath, hashKey+c.l3FileExt)
@@ -1270,7 +1270,8 @@ func (c *MultiLevelCache) detectDataType(data interface{}) CacheDataType {
 			case reflect.Uint8: // []byte
 				return TypeBytes
 			default:
-				panic("unhandled default case")
+				// 未知的切片元素类型，返回TypeUnknown
+				return TypeUnknown
 			}
 		}
 

@@ -20,16 +20,16 @@ type AutoScaler struct {
 
 // ScalingPolicy 扩缩容策略
 type ScalingPolicy struct {
-	Name            string
-	MetricType      MetricType
-	Threshold       float64
-	Direction       ScalingDirection
-	CooldownPeriod  time.Duration
-	MinInstances    int
-	MaxInstances    int
-	ScalingFactor   float64
-	LastScaleTime   time.Time
-	Enabled         bool
+	Name           string
+	MetricType     MetricType
+	Threshold      float64
+	Direction      ScalingDirection
+	CooldownPeriod time.Duration
+	MinInstances   int
+	MaxInstances   int
+	ScalingFactor  float64
+	LastScaleTime  time.Time
+	Enabled        bool
 }
 
 // MetricType 指标类型
@@ -62,14 +62,14 @@ type ResourceManager struct {
 
 // Instance 实例
 type Instance struct {
-	ID       string
-	Type     InstanceType
-	Status   InstanceStatus
-	CPU      float64
-	Memory   float64
-	GPU      bool
-	Created  time.Time
-	mu       sync.RWMutex
+	ID      string
+	Type    InstanceType
+	Status  InstanceStatus
+	CPU     float64
+	Memory  float64
+	GPU     bool
+	Created time.Time
+	mu      sync.RWMutex
 }
 
 // InstanceType 实例类型
@@ -86,10 +86,10 @@ const (
 type InstanceStatus string
 
 const (
-	InstancePending    InstanceStatus = "pending"
-	InstanceRunning    InstanceStatus = "running"
+	InstancePending     InstanceStatus = "pending"
+	InstanceRunning     InstanceStatus = "running"
 	InstanceTerminating InstanceStatus = "terminating"
-	InstanceTerminated InstanceStatus = "terminated"
+	InstanceTerminated  InstanceStatus = "terminated"
 )
 
 // MetricsCollector 指标收集器
@@ -107,15 +107,15 @@ type MetricValue struct {
 
 // ScalingEvent 扩缩容事件
 type ScalingEvent struct {
-	Timestamp     time.Time
-	PolicyName    string
-	MetricType    MetricType
-	MetricValue   float64
-	Threshold     float64
-	Direction     ScalingDirection
-	OldInstances  int
-	NewInstances  int
-	Reason        string
+	Timestamp    time.Time
+	PolicyName   string
+	MetricType   MetricType
+	MetricValue  float64
+	Threshold    float64
+	Direction    ScalingDirection
+	OldInstances int
+	NewInstances int
+	Reason       string
 }
 
 // NewAutoScaler 创建自动扩缩容器
@@ -332,7 +332,7 @@ func (rm *ResourceManager) ScaleInstances(targetInstances int) error {
 				GPU:     false,
 				Created: time.Now(),
 			}
-			
+
 			// 模拟实例启动
 			go func(inst *Instance) {
 				time.Sleep(30 * time.Second) // 模拟启动时间
@@ -340,7 +340,7 @@ func (rm *ResourceManager) ScaleInstances(targetInstances int) error {
 				inst.Status = InstanceRunning
 				inst.mu.Unlock()
 			}(instance)
-			
+
 			rm.instancePool = append(rm.instancePool, instance)
 		}
 	} else {
@@ -351,7 +351,7 @@ func (rm *ResourceManager) ScaleInstances(targetInstances int) error {
 			instance.mu.Lock()
 			instance.Status = InstanceTerminating
 			instance.mu.Unlock()
-			
+
 			// 模拟实例终止
 			go func(inst *Instance) {
 				time.Sleep(10 * time.Second) // 模拟终止时间
@@ -360,7 +360,7 @@ func (rm *ResourceManager) ScaleInstances(targetInstances int) error {
 				inst.mu.Unlock()
 			}(instance)
 		}
-		
+
 		// 从池中移除实例
 		rm.instancePool = rm.instancePool[:len(rm.instancePool)-instancesToRemove]
 	}

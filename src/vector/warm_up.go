@@ -56,6 +56,8 @@ func (db *VectorDB) WarmupIndex() {
 		// 检查索引类型是否可用
 		canUse := true
 		switch ws.strategy {
+		case StrategyBruteForce:
+			canUse = len(db.vectors) > 0
 		case StrategyHNSW:
 			canUse = db.useHNSWIndex && db.indexed && db.hnsw != nil
 		case StrategyPQ:
@@ -70,8 +72,12 @@ func (db *VectorDB) WarmupIndex() {
 		case StrategyEnhancedLSH:
 			// 检查增强LSH索引是否可用
 			canUse = db.LshIndex != nil && db.LshIndex.Enable && db.LshConfig != nil
+		case StrategyIVFHNSW:
+			// 检查IVF-HNSW混合索引是否可用
+			canUse = db.ivfHnswIndex != nil && db.ivfHnswIndex.Enable
 		default:
-			panic("unhandled default case")
+			logger.Warning("未知的索引策略: %v", ws.strategy)
+			canUse = false
 		}
 
 		if !canUse {
@@ -123,6 +129,15 @@ func (db *VectorDB) WarmupIndex() {
 					// 预热LSH索引的各个组件
 					//db.warmupEnhancedLSHComponents(query, ctx)
 				}
+			case StrategyIVFHNSW:
+				// 预热IVF-HNSW混合索引
+				results, err = db.ivfHnswSearchWithScores(query, 5, ctx)
+				if err != nil {
+					logger.Warning("IVF-HNSW索引预热失败: %v", err)
+				}
+			default:
+				logger.Warning("未知的索引策略，跳过预热: %v", ws.strategy)
+				continue
 			}
 
 			if err != nil {
@@ -138,6 +153,12 @@ func (db *VectorDB) WarmupIndex() {
 			db.warmupEnhancedIVFAdvanced(sampleQueries)
 		case StrategyEnhancedLSH:
 			db.warmupEnhancedLSHAdvanced(sampleQueries)
+		case StrategyIVFHNSW:
+			// IVF-HNSW索引的额外预热操作
+			logger.Trace("IVF-HNSW索引预热完成")
+		default:
+			// 其他策略不需要额外的预热操作
+			continue
 		}
 	}
 
