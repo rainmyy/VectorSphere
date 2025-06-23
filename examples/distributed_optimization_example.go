@@ -37,8 +37,6 @@ func main() {
 
 	// 6. 创建性能监控器
 	performanceMonitor := vector.NewStandardPerformanceMonitor()
-	performanceMonitor.Start()
-	defer performanceMonitor.Stop()
 
 	// 7. 创建自适应优化引擎
 	adaptiveOptimizer := vector.NewAdaptiveOptimizer(configManager, performanceMonitor)
@@ -107,15 +105,15 @@ func simulateHighCPUWorkload(db *vector.VectorDB, optimizer *vector.AdaptiveOpti
 	
 	// 模拟高CPU使用率的指标
 	metrics := &vector.PerformanceMetrics{
-		CPUUtilization:    85.0, // 85% CPU使用率
-		MemoryUtilization: 60.0,
-		QueryLatencyP95:   150 * time.Millisecond,
-		ThroughputQPS:     500,
-		Timestamp:         time.Now(),
+		AvgLatency:    150 * time.Millisecond,
+		Recall:        0.95,
+		ThroughputQPS: 500,
+		MemoryUsage:   uint64(60 * 1024 * 1024), // 60MB
+		LastUpdated:   time.Now(),
 	}
 	
-	fmt.Printf("  CPU使用率: %.1f%%, 内存使用率: %.1f%%, 延迟P95: %v\n",
-		metrics.CPUUtilization, metrics.MemoryUtilization, metrics.QueryLatencyP95)
+	fmt.Printf("  平均延迟: %v, 召回率: %.2f, 吞吐量: %.1f QPS\n",
+		metrics.AvgLatency, metrics.Recall, metrics.ThroughputQPS)
 	
 	// 等待优化引擎检测并应用优化
 	time.Sleep(2 * time.Second)
@@ -126,15 +124,15 @@ func simulateHighMemoryWorkload(db *vector.VectorDB, optimizer *vector.AdaptiveO
 	fmt.Println("  模拟内存密集型查询...")
 	
 	metrics := &vector.PerformanceMetrics{
-		CPUUtilization:    45.0,
-		MemoryUtilization: 90.0, // 90% 内存使用率
-		QueryLatencyP95:   120 * time.Millisecond,
-		ThroughputQPS:     300,
-		Timestamp:         time.Now(),
+		AvgLatency:    120 * time.Millisecond,
+		Recall:        0.92,
+		ThroughputQPS: 300,
+		MemoryUsage:   uint64(90 * 1024 * 1024), // 90MB 高内存使用
+		LastUpdated:   time.Now(),
 	}
 	
-	fmt.Printf("  CPU使用率: %.1f%%, 内存使用率: %.1f%%, 延迟P95: %v\n",
-		metrics.CPUUtilization, metrics.MemoryUtilization, metrics.QueryLatencyP95)
+	fmt.Printf("  平均延迟: %v, 召回率: %.2f, 内存使用: %dMB\n",
+		metrics.AvgLatency, metrics.Recall, metrics.MemoryUsage/(1024*1024))
 	
 	time.Sleep(2 * time.Second)
 }
@@ -144,17 +142,15 @@ func simulateHighLatencyWorkload(db *vector.VectorDB, optimizer *vector.Adaptive
 	fmt.Println("  模拟高延迟查询...")
 	
 	metrics := &vector.PerformanceMetrics{
-		CPUUtilization:    60.0,
-		MemoryUtilization: 70.0,
-		QueryLatencyP95:   350 * time.Millisecond, // 350ms 高延迟
-		QueryLatencyP99:   500 * time.Millisecond,
-		ThroughputQPS:     200,
-		Timestamp:         time.Now(),
+		AvgLatency:    350 * time.Millisecond, // 350ms 高延迟
+		Recall:        0.88,
+		ThroughputQPS: 200,
+		MemoryUsage:   uint64(70 * 1024 * 1024), // 70MB
+		LastUpdated:   time.Now(),
 	}
 	
-	fmt.Printf("  CPU使用率: %.1f%%, 内存使用率: %.1f%%, 延迟P95: %v, 延迟P99: %v\n",
-		metrics.CPUUtilization, metrics.MemoryUtilization, 
-		metrics.QueryLatencyP95, metrics.QueryLatencyP99)
+	fmt.Printf("  平均延迟: %v, 召回率: %.2f, 吞吐量: %.1f QPS\n",
+		metrics.AvgLatency, metrics.Recall, metrics.ThroughputQPS)
 	
 	time.Sleep(2 * time.Second)
 }
@@ -164,17 +160,15 @@ func simulatelargeDatasetWorkload(db *vector.VectorDB, optimizer *vector.Adaptiv
 	fmt.Println("  模拟大数据集查询...")
 	
 	metrics := &vector.PerformanceMetrics{
-		CPUUtilization:    55.0,
-		MemoryUtilization: 75.0,
-		QueryLatencyP95:   180 * time.Millisecond,
-		ThroughputQPS:     150,
-		DataSize:          15 * 1024 * 1024 * 1024, // 15GB 数据
-		Timestamp:         time.Now(),
+		AvgLatency:    180 * time.Millisecond,
+		Recall:        0.90,
+		ThroughputQPS: 150,
+		MemoryUsage:   uint64(75 * 1024 * 1024), // 75MB
+		LastUpdated:   time.Now(),
 	}
 	
-	fmt.Printf("  CPU使用率: %.1f%%, 内存使用率: %.1f%%, 数据大小: %.1fGB\n",
-		metrics.CPUUtilization, metrics.MemoryUtilization, 
-		float64(metrics.DataSize)/(1024*1024*1024))
+	fmt.Printf("  平均延迟: %v, 召回率: %.2f, 内存使用: %dMB\n",
+		metrics.AvgLatency, metrics.Recall, metrics.MemoryUsage/(1024*1024))
 	
 	time.Sleep(2 * time.Second)
 }
@@ -202,17 +196,11 @@ func showPerformanceMetrics(optimizer *vector.AdaptiveOptimizer) {
 		return
 	}
 	
-	fmt.Printf("  CPU使用率: %.1f%%\n", metrics.CPUUtilization)
-	fmt.Printf("  内存使用率: %.1f%%\n", metrics.MemoryUtilization)
-	fmt.Printf("  查询延迟P95: %v\n", metrics.QueryLatencyP95)
-	fmt.Printf("  查询延迟P99: %v\n", metrics.QueryLatencyP99)
+	fmt.Printf("  平均延迟: %v\n", metrics.AvgLatency)
+	fmt.Printf("  召回率: %.2f\n", metrics.Recall)
 	fmt.Printf("  吞吐量QPS: %.1f\n", metrics.ThroughputQPS)
-	fmt.Printf("  缓存命中率: %.1f%%\n", metrics.CacheHitRate*100)
-	fmt.Printf("  错误率: %.2f%%\n", metrics.ErrorRate*100)
-	fmt.Printf("  活跃连接数: %d\n", metrics.ActiveConnections)
-	if metrics.DataSize > 0 {
-		fmt.Printf("  数据大小: %.2fGB\n", float64(metrics.DataSize)/(1024*1024*1024))
-	}
+	fmt.Printf("  内存使用: %dMB\n", metrics.MemoryUsage/(1024*1024))
+	fmt.Printf("  最后更新: %v\n", metrics.LastUpdated.Format("15:04:05"))
 }
 
 // demonstrateConfigurationScenarios 演示不同配置场景
@@ -223,8 +211,8 @@ func demonstrateConfigurationScenarios() {
 	fmt.Println("\n场景1: 高性能配置")
 	highPerfConfig := vector.GetDefaultDistributedConfig()
 	highPerfConfig.IndexConfig.HNSWConfig.Enable = true
-		highPerfConfig.IndexConfig.HNSWConfig.MaxConnections = 32
-		highPerfConfig.IndexConfig.HNSWConfig.EfConstruction = 400
+	highPerfConfig.IndexConfig.HNSWConfig.MaxConnections = 32
+	highPerfConfig.IndexConfig.HNSWConfig.EfConstruction = 400
 	fmt.Println("  - 启用HNSW索引")
 	fmt.Println("  - 增加连接数到32")
 	fmt.Println("  - 提高构建参数到400")
@@ -232,9 +220,9 @@ func demonstrateConfigurationScenarios() {
 	// 场景2: 内存优化配置
 	fmt.Println("\n场景2: 内存优化配置")
 	memoryOptConfig := vector.GetDefaultDistributedConfig()
-	memoryOptConfig.IndexSelection.PQ.Enable = true
-	memoryOptConfig.IndexSelection.PQ.M = 16
-	memoryOptConfig.IndexSelection.PQ.Nbits = 8
+	memoryOptConfig.IndexConfig.PQConfig.Enable = true
+	memoryOptConfig.IndexConfig.PQConfig.NumSubVectors = 16
+	memoryOptConfig.IndexConfig.PQConfig.NumCentroids = 256
 	fmt.Println("  - 启用PQ压缩")
 	fmt.Println("  - 设置16个子向量")
 	fmt.Println("  - 每个子向量8位")
@@ -242,9 +230,9 @@ func demonstrateConfigurationScenarios() {
 	// 场景3: 大规模数据配置
 	fmt.Println("\n场景3: 大规模数据配置")
 	largeScaleConfig := vector.GetDefaultDistributedConfig()
-	largeScaleConfig.IndexSelection.IVF.Enable = true
-	largeScaleConfig.IndexSelection.IVF.Nlist = 4096
-	largeScaleConfig.IndexSelection.IVF.Nprobe = 128
+	largeScaleConfig.IndexConfig.IVFConfig.Enable = true
+	largeScaleConfig.IndexConfig.IVFConfig.NumClusters = 4096
+	largeScaleConfig.IndexConfig.IVFConfig.Nprobe = 128
 	fmt.Println("  - 启用IVF索引")
 	fmt.Println("  - 设置4096个聚类中心")
 	fmt.Println("  - 搜索128个聚类")
@@ -294,10 +282,10 @@ func demonstrateCacheStrategies() {
 	fmt.Println("\n向量缓存:")
 	fmt.Printf("  - 最大大小: %dMB\n", cacheConfig.VectorCache.MaxSize/(1024*1024))
 	fmt.Printf("  - 热数据策略: %v\n", cacheConfig.VectorCache.HotDataStrategy.Enable)
-	fmt.Printf("  - 访问阈值: %d\n", cacheConfig.VectorCache.HotDataStrategy.AccessThreshold)
+	fmt.Printf("  - 热数据阈值: %.2f\n", cacheConfig.VectorCache.HotDataStrategy.HotThreshold)
 	
 	fmt.Println("\n索引缓存:")
 	fmt.Printf("  - 最大大小: %dMB\n", cacheConfig.IndexCache.MaxSize/(1024*1024))
-	fmt.Printf("  - 最大索引数: %d\n", cacheConfig.IndexCache.MaxIndexes)
-	fmt.Printf("  - 预加载: %v\n", cacheConfig.IndexCache.Preload.Enable)
+	fmt.Printf("  - 最大索引数: %d\n", cacheConfig.IndexCache.MaxIndices)
+	fmt.Printf("  - 预加载: %v\n", cacheConfig.IndexCache.Preloading.Enable)
 }
