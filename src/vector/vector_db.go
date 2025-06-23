@@ -32,7 +32,7 @@ const (
 	StrategyHybrid                          // 混合策略
 	StrategyEnhancedIVF
 	StrategyEnhancedLSH
-	StrategyIVFHNSW                         // IVF-HNSW混合索引
+	StrategyIVFHNSW // IVF-HNSW混合索引
 )
 
 // SearchContext 搜索上下文
@@ -151,13 +151,17 @@ type VectorDB struct {
 	AdaptiveLSH *AdaptiveLSH          `json:"adaptive_lsh"`
 
 	// IVF-HNSW 混合索引相关字段
-	ivfHnswIndex     *IVFHNSWIndex     // IVF-HNSW 混合索引
-	ivfHnswConfig    *IVFHNSWConfig    // IVF-HNSW 配置
-	useIVFHNSWIndex  bool              // 是否启用 IVF-HNSW 混合索引
+	ivfHnswIndex    *IVFHNSWIndex  // IVF-HNSW 混合索引
+	ivfHnswConfig   *IVFHNSWConfig // IVF-HNSW 配置
+	useIVFHNSWIndex bool           // 是否启用 IVF-HNSW 混合索引
 
-	adaptiveSelector *AdaptiveIndexSelector // 自适应索引选择器
-	cachePath        string
-	pcaConfig        *PCAConfig
+	adaptiveSelector   *AdaptiveIndexSelector // 自适应索引选择器
+	cachePath          string
+	pcaConfig          *PCAConfig
+	performanceMonitor PerformanceMonitor // 性能监控器
+	dataPreprocessor   DataPreprocessor   // 数据预处理器
+	hardwareManager    *HardwareManager   // 硬件管理器
+	cacheManager       *CacheManager      // 缓存管理器
 }
 
 const (
@@ -174,13 +178,13 @@ type IVFHNSWConfig struct {
 	TrainingRatio      float64 `json:"training_ratio"`      // 训练数据比例
 	Nprobe             int     `json:"nprobe"`              // 搜索时探测的聚类数量
 	RebalanceThreshold int     `json:"rebalance_threshold"` // 重平衡阈值
-	
+
 	// HNSW 相关配置
-	MaxConnections     int     `json:"max_connections"`     // HNSW 最大连接数
-	EfConstruction     float64 `json:"ef_construction"`     // HNSW 构建时的扩展因子
-	EfSearch           float64 `json:"ef_search"`           // HNSW 搜索时的扩展因子
-	MaxLevel           int     `json:"max_level"`           // HNSW 最大层数
-	
+	MaxConnections int     `json:"max_connections"` // HNSW 最大连接数
+	EfConstruction float64 `json:"ef_construction"` // HNSW 构建时的扩展因子
+	EfSearch       float64 `json:"ef_search"`       // HNSW 搜索时的扩展因子
+	MaxLevel       int     `json:"max_level"`       // HNSW 最大层数
+
 	// 混合索引配置
 	EnableHierarchical bool    `json:"enable_hierarchical"` // 启用层次化搜索
 	ClusterHNSWRatio   float64 `json:"cluster_hnsw_ratio"`  // 聚类内使用HNSW的比例阈值
@@ -198,58 +202,58 @@ type IVFHNSWIndex struct {
 	ClusterCentroids [][]float64      `json:"centroids"`
 	ClusterSizes     []int            `json:"sizes"`
 	NumClusters      int              `json:"num_clusters"`
-	
+
 	// HNSW 部分
-	ClusterGraphs    map[int]*graph.HNSWGraph `json:"-"` // 每个聚类的HNSW图
-	GlobalGraph      *graph.HNSWGraph         `json:"-"` // 全局HNSW图（聚类中心）
-	
+	ClusterGraphs map[int]*graph.HNSWGraph `json:"-"` // 每个聚类的HNSW图
+	GlobalGraph   *graph.HNSWGraph         `json:"-"` // 全局HNSW图（聚类中心）
+
 	// 统计信息
-	TotalVectors     int                      `json:"total_vectors"`
-	IndexVersion     int                      `json:"version"`
-	LastUpdateTime   time.Time                `json:"last_update"`
-	PerformanceStats IVFHNSWPerformanceStats  `json:"performance_stats"`
-	
+	TotalVectors     int                     `json:"total_vectors"`
+	IndexVersion     int                     `json:"version"`
+	LastUpdateTime   time.Time               `json:"last_update"`
+	PerformanceStats IVFHNSWPerformanceStats `json:"performance_stats"`
+
 	// 并发控制
-	mu               sync.RWMutex             `json:"-"`
-	Enable           bool                     `json:"enable"`
+	mu     sync.RWMutex `json:"-"`
+	Enable bool         `json:"enable"`
 }
 
 // IVFHNSWCluster IVF-HNSW 聚类结构
 type IVFHNSWCluster struct {
-	Centroid        []float64                `json:"centroid"`
-	VectorIDs       []string                 `json:"vector_ids"`
-	HNSWGraph       *graph.HNSWGraph         `json:"-"` // 聚类内的HNSW图
-	UseHNSW         bool                     `json:"use_hnsw"`
-	PQCodes         map[string][]byte        `json:"pq_codes,omitempty"` // PQ编码（可选）
-	Metrics         IVFHNSWClusterMetrics    `json:"metrics"`
-	LastAccessed    time.Time                `json:"last_accessed"`
-	AccessCount     int64                    `json:"access_count"`
+	Centroid     []float64             `json:"centroid"`
+	VectorIDs    []string              `json:"vector_ids"`
+	HNSWGraph    *graph.HNSWGraph      `json:"-"` // 聚类内的HNSW图
+	UseHNSW      bool                  `json:"use_hnsw"`
+	PQCodes      map[string][]byte     `json:"pq_codes,omitempty"` // PQ编码（可选）
+	Metrics      IVFHNSWClusterMetrics `json:"metrics"`
+	LastAccessed time.Time             `json:"last_accessed"`
+	AccessCount  int64                 `json:"access_count"`
 }
 
 // IVFHNSWClusterMetrics 聚类指标
 type IVFHNSWClusterMetrics struct {
-	Variance         float64   `json:"variance"`          // 方差
-	Density          float64   `json:"density"`           // 密度
-	Radius           float64   `json:"radius"`            // 半径
-	QueryFrequency   float64   `json:"query_frequency"`   // 查询频率
-	HNSWBuildTime    time.Duration `json:"hnsw_build_time"`  // HNSW构建时间
-	AvgSearchTime    time.Duration `json:"avg_search_time"`  // 平均搜索时间
-	LastRebalance    time.Time `json:"last_rebalance"`
+	Variance       float64       `json:"variance"`        // 方差
+	Density        float64       `json:"density"`         // 密度
+	Radius         float64       `json:"radius"`          // 半径
+	QueryFrequency float64       `json:"query_frequency"` // 查询频率
+	HNSWBuildTime  time.Duration `json:"hnsw_build_time"` // HNSW构建时间
+	AvgSearchTime  time.Duration `json:"avg_search_time"` // 平均搜索时间
+	LastRebalance  time.Time     `json:"last_rebalance"`
 }
 
 // IVFHNSWPerformanceStats IVF-HNSW 性能统计
 type IVFHNSWPerformanceStats struct {
-	TotalQueries      int64         `json:"total_queries"`
-	IVFQueries        int64         `json:"ivf_queries"`        // 仅使用IVF的查询数
-	HNSWQueries       int64         `json:"hnsw_queries"`       // 使用HNSW的查询数
-	HybridQueries     int64         `json:"hybrid_queries"`     // 混合查询数
-	AvgIVFLatency     time.Duration `json:"avg_ivf_latency"`
-	AvgHNSWLatency    time.Duration `json:"avg_hnsw_latency"`
-	AvgHybridLatency  time.Duration `json:"avg_hybrid_latency"`
-	Recall            float64       `json:"recall"`
-	ThroughputQPS     float64       `json:"throughput_qps"`
-	MemoryUsage       uint64        `json:"memory_usage"`
-	LastUpdated       time.Time     `json:"last_updated"`
+	TotalQueries     int64         `json:"total_queries"`
+	IVFQueries       int64         `json:"ivf_queries"`    // 仅使用IVF的查询数
+	HNSWQueries      int64         `json:"hnsw_queries"`   // 使用HNSW的查询数
+	HybridQueries    int64         `json:"hybrid_queries"` // 混合查询数
+	AvgIVFLatency    time.Duration `json:"avg_ivf_latency"`
+	AvgHNSWLatency   time.Duration `json:"avg_hnsw_latency"`
+	AvgHybridLatency time.Duration `json:"avg_hybrid_latency"`
+	Recall           float64       `json:"recall"`
+	ThroughputQPS    float64       `json:"throughput_qps"`
+	MemoryUsage      uint64        `json:"memory_usage"`
+	LastUpdated      time.Time     `json:"last_updated"`
 }
 
 // GetStats 获取性能统计信息
@@ -428,17 +432,73 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 
 // OptimizedSearch 优化的搜索方法
 func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOptions) ([]entity.Result, error) {
-	// 检查查询向量维度
+	// 查询向量维度检查
 	if len(query) != db.vectorDim {
-		return nil, fmt.Errorf("查询向量维度不匹配，期望: %d, 实际: %d", db.vectorDim, len(query))
+		return nil, fmt.Errorf("查询向量维度 %d 与数据库向量维度 %d 不匹配", len(query), db.vectorDim)
 	}
 
+	// 性能监控
+	var tracker *OperationTracker
+	if db.performanceMonitor != nil {
+		tracker = db.performanceMonitor.StartOperation("vector_search")
+		tracker.AddTag("k", fmt.Sprintf("%d", k))
+		tracker.AddTag("vector_dim", fmt.Sprintf("%d", len(query)))
+		defer func() {
+			if tracker != nil {
+				tracker.End(true, nil)
+			}
+		}()
+	}
+
+	// 数据预处理
+	processedQuery := query
+	if options.NormalizeVectors && db.dataPreprocessor != nil {
+		processedQuery = db.dataPreprocessor.Normalize([][]float64{query})[0]
+	}
+
+	// 硬件加速检查（暂时禁用）
+	var accelerator HardwareAccelerator
+	if db.hardwareManager != nil {
+		if options.UseGPU {
+			if gpu, exists := db.hardwareManager.GetAccelerator("gpu"); exists && gpu.IsAvailable() {
+				accelerator = gpu
+			}
+		} else if options.UseFPGA {
+			if fpga, exists := db.hardwareManager.GetAccelerator("fpga"); exists && fpga.IsAvailable() {
+				accelerator = fpga
+			}
+		} else {
+			// 自动选择最佳硬件加速器
+			workloadType := "high_throughput"
+			if options.SearchTimeout > 0 && options.SearchTimeout < 10*time.Millisecond {
+				workloadType = "low_latency"
+			}
+			accelerator = db.hardwareManager.GetBestAccelerator(workloadType)
+		}
+	}
+
+	// 缓存检查
+	var cacheKey string
+	if options.UseCache && db.cacheManager != nil {
+		cacheKey = db.generateCacheKey(processedQuery, k, options)
+		if strategy, exists := db.cacheManager.GetStrategy(options.CacheStrategy); exists {
+			if cached, found := strategy.Get(cacheKey); found {
+				if results, ok := cached.([]entity.Result); ok {
+					if tracker != nil {
+						tracker.AddTag("cache_hit", "true")
+					}
+					return results, nil
+				}
+			}
+		}
+	}
+	// 构建搜索上下文
 	ctx := SearchContext{
-		QueryVector:  query,
+		QueryVector:  processedQuery,
 		K:            k,
 		Nprobe:       options.Nprobe,
 		Timeout:      options.SearchTimeout,
-		QualityLevel: options.QualityLevel, // 从选项中获取质量等级
+		QualityLevel: options.QualityLevel,
 	}
 
 	// 如果没有设置质量等级，使用默认值
@@ -446,8 +506,35 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOption
 		ctx.QualityLevel = 0.8
 	}
 
-	// 使用自适应选择器优化策略选择
-	indexStrategy := db.selectOptimalStrategyWithAdaptive(ctx)
+	// 策略选择：优先使用强制策略，否则智能选择
+	var indexStrategy IndexStrategy
+	if options.ForceStrategy != "" {
+		// 使用强制指定的策略
+		switch options.ForceStrategy {
+		case "brute_force":
+			indexStrategy = StrategyBruteForce
+		case "ivf":
+			indexStrategy = StrategyIVF
+		case "hnsw":
+			indexStrategy = StrategyHNSW
+		case "pq":
+			indexStrategy = StrategyPQ
+		case "lsh":
+			indexStrategy = StrategyEnhancedLSH
+		case "ivf_hnsw":
+			indexStrategy = StrategyIVFHNSW
+		case "hybrid":
+			indexStrategy = StrategyHybrid
+		default:
+			indexStrategy = db.selectOptimalStrategyWithAdaptive(ctx)
+		}
+		if tracker != nil {
+			tracker.AddTag("forced_strategy", options.ForceStrategy)
+		}
+	} else {
+		// 智能策略选择
+		indexStrategy = db.selectOptimalStrategyWithAdaptive(ctx)
+	}
 
 	logger.Trace("选择搜索策略: %v, 数据量: %d, 维度: %d, 质量要求: %.2f",
 		indexStrategy, len(db.vectors), len(query), ctx.QualityLevel)
@@ -501,10 +588,80 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOption
 		results, err = db.ivfSearchWithScores(query, k, ctx.Nprobe, db.GetOptimalStrategy(query))
 	}
 
+	// 多阶段搜索优化
+	if options.EnableMultiStage && err == nil && len(results) > 0 {
+		if options.CoarseK > k && options.CoarseK <= len(results)*2 {
+			// 第一阶段：粗搜索获取更多候选
+			coarseResults, coarseErr := db.executeSearch(processedQuery, options.CoarseK, indexStrategy, ctx)
+			if coarseErr == nil && len(coarseResults) > k {
+				// 第二阶段：精搜索从候选中选择最佳结果
+				if options.EnablePQRefinement && db.pqCodebook != nil {
+					// 使用PQ解码进行精确重排
+					refinedResults := db.refinePQResults(processedQuery, coarseResults[:min(options.CoarseK, len(coarseResults))], k)
+					if len(refinedResults) > 0 {
+						results = refinedResults
+					}
+				} else {
+					// 使用精确距离计算重排
+					results = db.reRankResults(processedQuery, coarseResults, k)
+				}
+				if tracker != nil {
+					tracker.AddTag("multi_stage", "true")
+				}
+			}
+		}
+	}
+
+	// 硬件加速后处理
+	if accelerator != nil && err == nil {
+		if acceleratedResults, accelErr := accelerator.AccelerateSearch(processedQuery, results, options); accelErr == nil {
+			results = acceleratedResults
+			if tracker != nil {
+				tracker.AddTag("hardware_accelerated", "true")
+			}
+		}
+	}
+
+	// 结果后处理
+	if err == nil && len(results) > 0 {
+		// 应用过滤器
+		if options.FilterFirst && db.dataPreprocessor != nil {
+			results = db.dataPreprocessor.FilterResults(results, options)
+		}
+
+		// 结果去重
+		if options.EnableDeduplication {
+			results = db.deduplicateResults(results)
+		}
+
+		// 缓存结果
+		if options.UseCache && db.cacheManager != nil && cacheKey != "" {
+			if strategy, exists := db.cacheManager.GetStrategy(options.CacheStrategy); exists {
+				strategy.Put(cacheKey, results)
+				if tracker != nil {
+					tracker.AddTag("cache_stored", "true")
+				}
+			}
+		}
+	}
+
 	// 记录增强的性能指标
 	latency := time.Since(startTime)
 	quality := db.estimateSearchQuality(results, ctx)
 	db.updateEnhancedPerformanceMetrics(indexStrategy, latency, len(results), quality, ctx)
+
+	// 性能监控记录
+	if tracker != nil {
+		tracker.AddTag("strategy", fmt.Sprintf("%v", indexStrategy))
+		tracker.AddTag("result_count", fmt.Sprintf("%d", len(results)))
+		tracker.AddTag("latency_ms", fmt.Sprintf("%.2f", float64(latency.Nanoseconds())/1e6))
+		tracker.AddTag("quality", fmt.Sprintf("%.3f", quality))
+		var errorTags map[string]string
+		if err != nil {
+			errorTags = map[string]string{"error": err.Error()}
+		}
+		tracker.End(err == nil, errorTags)
+	}
 
 	return results, err
 }
@@ -5277,7 +5434,7 @@ func (db *VectorDB) BuildIVFHNSWIndex(config *IVFHNSWConfig) error {
 		if clusterSize >= config.MinClusterSize {
 			// 构建聚类内的HNSW图
 			hnswGraph := graph.NewHNSWGraph(config.MaxConnections, config.EfConstruction, config.EfSearch)
-			
+
 			// 添加聚类内的向量到HNSW图
 			successCount := 0
 			for _, vectorID := range index.Clusters[i].VectorIDs {
@@ -5289,7 +5446,7 @@ func (db *VectorDB) BuildIVFHNSWIndex(config *IVFHNSWConfig) error {
 					successCount++
 				}
 			}
-			
+
 			// 只有成功添加了足够的向量才使用HNSW
 			if successCount >= config.MinClusterSize/2 {
 				index.Clusters[i].HNSWGraph = hnswGraph
@@ -5515,7 +5672,7 @@ func (db *VectorDB) performKMeansForIVFHNSW(data [][]float64, k int) ([][]float6
 				for j := 0; j < dim; j++ {
 					newCentroids[i][j] /= float64(clusterCounts[i])
 				}
-				
+
 				// 检查收敛性
 				dist, _ := algorithm.EuclideanDistanceSquared(centroids[i], newCentroids[i])
 				if dist > tolerance {
