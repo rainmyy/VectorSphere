@@ -127,7 +127,7 @@ func (db *VectorDB) BuildEnhancedLSHIndex(config *LSHConfig) error {
 	db.LshConfig = config
 
 	// 获取向量维度
-	vectorDimension := db.getVectorDimension()
+	vectorDimension := db.getVectorDimensionUnsafe()
 	if vectorDimension == 0 {
 		logger.Warning("Cannot determine vector dimension, using default dimension 128")
 		vectorDimension = 128
@@ -541,19 +541,36 @@ func (db *VectorDB) getVectorDimension() int {
 	return 0
 }
 
+// getVectorDimensionUnsafe 获取向量维度（不加锁版本，用于已经持有锁的情况）
+func (db *VectorDB) getVectorDimensionUnsafe() int {
+	if len(db.vectors) == 0 {
+		return 0
+	}
+
+	// 从第一个向量获取维度
+	for _, vector := range db.vectors {
+		return len(vector)
+	}
+
+	return 0
+}
+
 // EnhancedLSHSearch 增强 LSH 搜索
 func (db *VectorDB) EnhancedLSHSearch(query []float64, k int) ([]entity.Result, error) {
+	// 检查查询向量是否为空或nil
+	if query == nil || len(query) == 0 {
+		return []entity.Result{}, nil
+	}
+
 	if db.LshIndex == nil {
 		return db.lshSearch(query, k, 5)
 	}
-
-	db.LshIndex.mu.RLock()
-	defer db.LshIndex.mu.RUnlock()
 
 	startTime := time.Now()
 	candidateSet := make(map[string]struct{})
 
 	// 1. 多表查询
+	db.LshIndex.mu.RLock()
 	for i := range db.LshIndex.Tables {
 		table := &db.LshIndex.Tables[i]
 
@@ -589,9 +606,13 @@ func (db *VectorDB) EnhancedLSHSearch(query []float64, k int) ([]entity.Result, 
 		table.QueryCount++
 		table.mu.Unlock()
 	}
+	db.LshIndex.mu.RUnlock()
 
 	// 5. 精确排序
 	results := make([]entity.Result, 0, len(candidateSet))
+	
+	// 获取向量数据的读锁
+	db.mu.RLock()
 	for id := range candidateSet {
 		if vector, exists := db.vectors[id]; exists {
 			similarity := acceler.CosineSimilarity(query, vector)
@@ -601,6 +622,7 @@ func (db *VectorDB) EnhancedLSHSearch(query []float64, k int) ([]entity.Result, 
 			})
 		}
 	}
+	db.mu.RUnlock()
 
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].Similarity > results[j].Similarity

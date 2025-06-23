@@ -154,10 +154,17 @@ func (g *HNSWGraph) SetDistanceFunc(distFunc func([]float64, []float64) (float64
 // randomLevel 随机生成节点的层级
 func (g *HNSWGraph) randomLevel() int {
 	r := rand.Float64() * rand.Float64() * rand.Float64() * rand.Float64()
+	// 防止r为0导致log(0)无穷大
+	if r <= 0 {
+		r = 1e-10
+	}
 	level := int(-math.Log(r) * g.levelMult)
 	// 限制最大层级
 	if level > 32 {
 		level = 32
+	}
+	if level < 0 {
+		level = 0
 	}
 	return level
 }

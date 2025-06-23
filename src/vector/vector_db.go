@@ -32,6 +32,7 @@ const (
 	StrategyHybrid                          // 混合策略
 	StrategyEnhancedIVF
 	StrategyEnhancedLSH
+	StrategyIVFHNSW                         // IVF-HNSW混合索引
 )
 
 // SearchContext 搜索上下文
@@ -149,6 +150,11 @@ type VectorDB struct {
 	LshFamilies map[string]*LSHFamily `json:"lsh_families"`
 	AdaptiveLSH *AdaptiveLSH          `json:"adaptive_lsh"`
 
+	// IVF-HNSW 混合索引相关字段
+	ivfHnswIndex     *IVFHNSWIndex     // IVF-HNSW 混合索引
+	ivfHnswConfig    *IVFHNSWConfig    // IVF-HNSW 配置
+	useIVFHNSWIndex  bool              // 是否启用 IVF-HNSW 混合索引
+
 	adaptiveSelector *AdaptiveIndexSelector // 自适应索引选择器
 	cachePath        string
 	pcaConfig        *PCAConfig
@@ -160,6 +166,91 @@ const (
 	TfidfVectorized
 	WordEmbeddingVectorized
 )
+
+// IVFHNSWConfig IVF-HNSW 混合索引配置
+type IVFHNSWConfig struct {
+	// IVF 相关配置
+	NumClusters        int     `json:"num_clusters"`        // 聚类数量
+	TrainingRatio      float64 `json:"training_ratio"`      // 训练数据比例
+	Nprobe             int     `json:"nprobe"`              // 搜索时探测的聚类数量
+	RebalanceThreshold int     `json:"rebalance_threshold"` // 重平衡阈值
+	
+	// HNSW 相关配置
+	MaxConnections     int     `json:"max_connections"`     // HNSW 最大连接数
+	EfConstruction     float64 `json:"ef_construction"`     // HNSW 构建时的扩展因子
+	EfSearch           float64 `json:"ef_search"`           // HNSW 搜索时的扩展因子
+	MaxLevel           int     `json:"max_level"`           // HNSW 最大层数
+	
+	// 混合索引配置
+	EnableHierarchical bool    `json:"enable_hierarchical"` // 启用层次化搜索
+	ClusterHNSWRatio   float64 `json:"cluster_hnsw_ratio"`  // 聚类内使用HNSW的比例阈值
+	MinClusterSize     int     `json:"min_cluster_size"`    // 使用HNSW的最小聚类大小
+	MaxClusterSize     int     `json:"max_cluster_size"`    // 最大聚类大小
+	UsePQCompression   bool    `json:"use_pq_compression"`  // 是否使用PQ压缩
+	PQSubVectors       int     `json:"pq_sub_vectors"`      // PQ 子向量数量
+	PQCentroids        int     `json:"pq_centroids"`        // PQ 质心数量
+}
+
+// IVFHNSWIndex IVF-HNSW 混合索引结构
+type IVFHNSWIndex struct {
+	// IVF 部分
+	Clusters         []IVFHNSWCluster `json:"clusters"`
+	ClusterCentroids [][]float64      `json:"centroids"`
+	ClusterSizes     []int            `json:"sizes"`
+	NumClusters      int              `json:"num_clusters"`
+	
+	// HNSW 部分
+	ClusterGraphs    map[int]*graph.HNSWGraph `json:"-"` // 每个聚类的HNSW图
+	GlobalGraph      *graph.HNSWGraph         `json:"-"` // 全局HNSW图（聚类中心）
+	
+	// 统计信息
+	TotalVectors     int                      `json:"total_vectors"`
+	IndexVersion     int                      `json:"version"`
+	LastUpdateTime   time.Time                `json:"last_update"`
+	PerformanceStats IVFHNSWPerformanceStats  `json:"performance_stats"`
+	
+	// 并发控制
+	mu               sync.RWMutex             `json:"-"`
+	Enable           bool                     `json:"enable"`
+}
+
+// IVFHNSWCluster IVF-HNSW 聚类结构
+type IVFHNSWCluster struct {
+	Centroid        []float64                `json:"centroid"`
+	VectorIDs       []string                 `json:"vector_ids"`
+	HNSWGraph       *graph.HNSWGraph         `json:"-"` // 聚类内的HNSW图
+	UseHNSW         bool                     `json:"use_hnsw"`
+	PQCodes         map[string][]byte        `json:"pq_codes,omitempty"` // PQ编码（可选）
+	Metrics         IVFHNSWClusterMetrics    `json:"metrics"`
+	LastAccessed    time.Time                `json:"last_accessed"`
+	AccessCount     int64                    `json:"access_count"`
+}
+
+// IVFHNSWClusterMetrics 聚类指标
+type IVFHNSWClusterMetrics struct {
+	Variance         float64   `json:"variance"`          // 方差
+	Density          float64   `json:"density"`           // 密度
+	Radius           float64   `json:"radius"`            // 半径
+	QueryFrequency   float64   `json:"query_frequency"`   // 查询频率
+	HNSWBuildTime    time.Duration `json:"hnsw_build_time"`  // HNSW构建时间
+	AvgSearchTime    time.Duration `json:"avg_search_time"`  // 平均搜索时间
+	LastRebalance    time.Time `json:"last_rebalance"`
+}
+
+// IVFHNSWPerformanceStats IVF-HNSW 性能统计
+type IVFHNSWPerformanceStats struct {
+	TotalQueries      int64         `json:"total_queries"`
+	IVFQueries        int64         `json:"ivf_queries"`        // 仅使用IVF的查询数
+	HNSWQueries       int64         `json:"hnsw_queries"`       // 使用HNSW的查询数
+	HybridQueries     int64         `json:"hybrid_queries"`     // 混合查询数
+	AvgIVFLatency     time.Duration `json:"avg_ivf_latency"`
+	AvgHNSWLatency    time.Duration `json:"avg_hnsw_latency"`
+	AvgHybridLatency  time.Duration `json:"avg_hybrid_latency"`
+	Recall            float64       `json:"recall"`
+	ThroughputQPS     float64       `json:"throughput_qps"`
+	MemoryUsage       uint64        `json:"memory_usage"`
+	LastUpdated       time.Time     `json:"last_updated"`
+}
 
 // GetStats 获取性能统计信息
 func (db *VectorDB) GetStats() PerformanceStats {
@@ -175,6 +266,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 	vectorDim := len(ctx.QueryVector)
 	ivfIndexReady := db.ivfIndex != nil && db.ivfIndex.Enable
 	lshIndexReady := db.LshIndex != nil && db.LshIndex.Enable
+	ivfHnswIndexReady := db.ivfHnswIndex != nil && db.useIVFHNSWIndex
 	db.mu.RUnlock()
 
 	// 1. 数据规模和索引可用性综合判断
@@ -182,7 +274,16 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 		return StrategyBruteForce
 	}
 
-	// 2. 优先考虑增强型索引（根据数据特征和性能要求）
+	// 2. 优先考虑IVF-HNSW混合索引（最优性能）
+	if ivfHnswIndexReady && vectorCount > 50000 {
+		// IVF-HNSW适合大规模、高维数据，平衡精度和速度
+		if vectorDim >= 256 && ctx.QualityLevel > 0.75 {
+			logger.Trace("选择IVF-HNSW混合策略：数据量=%d，质量要求=%.2f，维度=%d", vectorCount, ctx.QualityLevel, vectorDim)
+			return StrategyIVFHNSW
+		}
+	}
+
+	// 3. 优先考虑增强型索引（根据数据特征和性能要求）
 	if vectorCount > 10000 {
 		// 大规模数据集优先选择
 		if ivfIndexReady && db.ivfConfig != nil {
@@ -202,9 +303,13 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 		}
 	}
 
-	// 3. GPU加速判断 - 新增GPU优先策略
+	// 4. GPU加速判断 - 新增GPU优先策略
 	if db.HardwareCaps.HasGPU && db.gpuAccelerator != nil && vectorCount > 10000 {
-		// 对于大规模数据，GPU混合策略通常性能最佳
+		// 对于大规模数据，优先考虑IVF-HNSW混合索引
+		if vectorCount > 100000 && ivfHnswIndexReady {
+			return StrategyIVFHNSW
+		}
+		// 其次考虑GPU混合策略
 		if vectorCount > 100000 {
 			return StrategyHybrid
 		}
@@ -214,14 +319,19 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 		}
 	}
 
-	// 4. 维度特征判断
+	// 5. 维度特征判断
 	if vectorDim > 2048 {
-		// 超高维数据优先考虑LSH
+		// 超高维数据优先考虑IVF-HNSW混合索引
+		if ivfHnswIndexReady {
+			logger.Trace("超高维数据选择IVF-HNSW混合策略：维度=%d", vectorDim)
+			return StrategyIVFHNSW
+		}
+		// 其次考虑LSH
 		if lshIndexReady && db.LshConfig != nil {
 			logger.Trace("超高维数据选择EnhancedLSH策略：维度=%d", vectorDim)
 			return StrategyEnhancedLSH
 		}
-		// 其次考虑PQ压缩
+		// 再次考虑PQ压缩
 		if db.usePQCompression && db.pqCodebook != nil {
 			return StrategyPQ
 		}
@@ -231,9 +341,13 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 		}
 	}
 
-	// 5. 质量要求判断
+	// 6. 质量要求判断
 	if ctx.QualityLevel > 0.9 {
 		// 高质量要求，优先精确搜索
+		if ivfHnswIndexReady && vectorCount > 10000 {
+			logger.Trace("高质量要求选择IVF-HNSW混合策略：质量要求=%.2f", ctx.QualityLevel)
+			return StrategyIVFHNSW
+		}
 		if ivfIndexReady && db.ivfConfig != nil {
 			logger.Trace("高质量要求选择EnhancedIVF策略：质量要求=%.2f", ctx.QualityLevel)
 			return StrategyEnhancedIVF
@@ -249,7 +363,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 		}
 	}
 
-	// 6. 性能要求判断 (低延迟)
+	// 7. 性能要求判断 (低延迟)
 	if ctx.Timeout > 0 && ctx.Timeout < 10*time.Millisecond {
 		// 低延迟要求，优先快速策略
 		if lshIndexReady && db.LshConfig != nil {
@@ -261,21 +375,34 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 		}
 	}
 
-	// 7. 中等延迟要求判断
+	// 8. 中等延迟要求判断
 	if ctx.Timeout > 0 && ctx.Timeout < 100*time.Millisecond {
+		if ivfHnswIndexReady && ctx.QualityLevel > 0.8 {
+			logger.Trace("中等延迟要求选择IVF-HNSW混合策略：超时限制=%v，质量要求=%.2f", ctx.Timeout, ctx.QualityLevel)
+			return StrategyIVFHNSW
+		}
 		if ivfIndexReady && db.ivfConfig != nil && ctx.QualityLevel > 0.7 {
 			logger.Trace("中等延迟要求选择EnhancedIVF策略：超时限制=%v，质量要求=%.2f", ctx.Timeout, ctx.QualityLevel)
 			return StrategyEnhancedIVF
 		}
 	}
 
-	// 8. 硬件能力判断
+	// 9. 硬件能力判断
 	if db.HardwareCaps.HasGPU && vectorCount > 50000 {
+		if ivfHnswIndexReady {
+			return StrategyIVFHNSW // IVF-HNSW混合索引
+		}
 		return StrategyHybrid // GPU加速的混合策略
 	}
 
-	// 9. 默认策略选择（按优先级）
-	// 优先选择增强型索引
+	// 10. 默认策略选择（按优先级）
+	// 优先选择IVF-HNSW混合索引
+	if ivfHnswIndexReady {
+		logger.Trace("默认选择IVF-HNSW混合策略")
+		return StrategyIVFHNSW
+	}
+
+	// 其次选择增强型索引
 	if ivfIndexReady && db.ivfConfig != nil {
 		logger.Trace("默认选择EnhancedIVF策略")
 		return StrategyEnhancedIVF
@@ -301,6 +428,11 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 
 // OptimizedSearch 优化的搜索方法
 func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOptions) ([]entity.Result, error) {
+	// 检查查询向量维度
+	if len(query) != db.vectorDim {
+		return nil, fmt.Errorf("查询向量维度不匹配，期望: %d, 实际: %d", db.vectorDim, len(query))
+	}
+
 	ctx := SearchContext{
 		QueryVector:  query,
 		K:            k,
@@ -347,6 +479,19 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOption
 			logger.Warning("EnhancedLSH搜索失败，回退到传统搜索: %v", err)
 			// 根据数据规模选择回退策略
 			if len(db.vectors) > 10000 {
+				results, err = db.ivfSearchWithScores(query, k, ctx.Nprobe, db.GetOptimalStrategy(query))
+			} else {
+				results, err = db.bruteForceSearch(query, k)
+			}
+		}
+	case StrategyIVFHNSW:
+		results, err = db.ivfHnswSearchWithScores(query, k, ctx)
+		if err != nil {
+			logger.Warning("IVF-HNSW混合搜索失败，回退到增强IVF: %v", err)
+			// 回退到增强IVF或传统搜索
+			if db.ivfIndex != nil && db.ivfIndex.Enable {
+				results, err = db.EnhancedIVFSearch(query, k, ctx.Nprobe)
+			} else if len(db.vectors) > 10000 {
 				results, err = db.ivfSearchWithScores(query, k, ctx.Nprobe, db.GetOptimalStrategy(query))
 			} else {
 				results, err = db.bruteForceSearch(query, k)
@@ -758,6 +903,8 @@ func (db *VectorDB) getStrategyName(strategy IndexStrategy) string {
 		return "增强LSH"
 	case StrategyEnhancedIVF:
 		return "增强IVF"
+	case StrategyIVFHNSW:
+		return "IVF-HNSW混合"
 	default:
 		return "未知策略"
 	}
@@ -4661,6 +4808,9 @@ func (db *VectorDB) CheckIndexHealth() map[string]bool {
 	// 检查EnhancedLSH索引健康状态
 	health["enhanced_lsh"] = db.LshIndex != nil && db.LshIndex.Enable && db.LshConfig != nil
 
+	// 检查IVF-HNSW混合索引健康状态
+	health["ivf_hnsw"] = db.ivfHnswIndex != nil && db.ivfHnswIndex.Enable && db.ivfHnswConfig != nil && db.useIVFHNSWIndex
+
 	// 检查传统索引健康状态
 	health["traditional_ivf"] = db.indexed && len(db.clusters) > 0
 	health["hnsw"] = db.useHNSWIndex && db.indexed && db.hnsw != nil
@@ -4989,6 +5139,12 @@ func (db *VectorDB) OptimizeIndex() error {
 		}
 	}
 
+	// 如果启用了IVF-HNSW混合索引，执行参数调优
+	if indexHealth["ivf_hnsw"] {
+		logger.Info("优化IVF-HNSW混合索引参数...")
+		db.optimizeIVFHNSWParameters()
+	}
+
 	// 如果启用了PQ压缩，优化PQ参数
 	if indexHealth["pq"] {
 		logger.Info("优化PQ压缩参数...")
@@ -5033,4 +5189,681 @@ func (db *VectorDB) OptimizeIndex() error {
 
 	logger.Info("索引优化完成，耗时: %v", time.Since(start))
 	return nil
+}
+
+// ==================== IVF-HNSW 混合索引实现 ====================
+
+// BuildIVFHNSWIndex 构建IVF-HNSW混合索引
+func (db *VectorDB) BuildIVFHNSWIndex(config *IVFHNSWConfig) error {
+	if config == nil {
+		return fmt.Errorf("IVF-HNSW配置不能为空")
+	}
+
+	db.mu.Lock()
+	defer db.mu.Unlock()
+
+	if len(db.vectors) == 0 {
+		return fmt.Errorf("数据库为空，无法构建索引")
+	}
+
+	logger.Info("开始构建IVF-HNSW混合索引，数据量: %d, 聚类数: %d", len(db.vectors), config.NumClusters)
+	startTime := time.Now()
+
+	// 检查配置参数的合理性
+	if config.NumClusters <= 0 {
+		return fmt.Errorf("聚类数必须大于0")
+	}
+	if config.NumClusters > len(db.vectors) {
+		return fmt.Errorf("聚类数不能大于向量数量")
+	}
+
+	// 1. 初始化索引结构
+	index := &IVFHNSWIndex{
+		Clusters:         make([]IVFHNSWCluster, config.NumClusters),
+		ClusterCentroids: make([][]float64, config.NumClusters),
+		ClusterSizes:     make([]int, config.NumClusters),
+		NumClusters:      config.NumClusters,
+		ClusterGraphs:    make(map[int]*graph.HNSWGraph),
+		TotalVectors:     len(db.vectors),
+		IndexVersion:     1,
+		LastUpdateTime:   time.Now(),
+		Enable:           true,
+	}
+
+	// 2. 准备训练数据
+	trainingData := db.sampleTrainingDataForIVFHNSW(config.TrainingRatio)
+	if len(trainingData) < config.NumClusters {
+		return fmt.Errorf("训练数据不足，需要至少 %d 个样本", config.NumClusters)
+	}
+
+	// 3. 使用K-means聚类算法生成聚类中心
+	logger.Info("执行K-means聚类...")
+	if len(trainingData) == 0 {
+		return fmt.Errorf("训练数据为空")
+	}
+	centroids, err := db.performKMeansForIVFHNSW(trainingData, config.NumClusters)
+	if err != nil {
+		return fmt.Errorf("K-means聚类失败: %w", err)
+	}
+	if len(centroids) != config.NumClusters {
+		return fmt.Errorf("聚类中心数量不匹配，期望: %d, 实际: %d", config.NumClusters, len(centroids))
+	}
+
+	// 4. 初始化聚类
+	for i, centroid := range centroids {
+		index.ClusterCentroids[i] = centroid
+		index.Clusters[i] = IVFHNSWCluster{
+			Centroid:     centroid,
+			VectorIDs:    make([]string, 0),
+			UseHNSW:      false,
+			PQCodes:      make(map[string][]byte),
+			LastAccessed: time.Now(),
+			AccessCount:  0,
+		}
+	}
+
+	// 5. 分配向量到聚类
+	logger.Info("分配向量到聚类...")
+	for id, vector := range db.vectors {
+		clusterID := db.findNearestClusterForIVFHNSW(vector, centroids)
+		index.Clusters[clusterID].VectorIDs = append(index.Clusters[clusterID].VectorIDs, id)
+		index.ClusterSizes[clusterID]++
+	}
+
+	// 6. 为大聚类构建HNSW图
+	logger.Info("为大聚类构建HNSW图...")
+	for i := range index.Clusters {
+		clusterSize := len(index.Clusters[i].VectorIDs)
+		if clusterSize >= config.MinClusterSize {
+			// 构建聚类内的HNSW图
+			hnswGraph := graph.NewHNSWGraph(config.MaxConnections, config.EfConstruction, config.EfSearch)
+			
+			// 添加聚类内的向量到HNSW图
+			successCount := 0
+			for _, vectorID := range index.Clusters[i].VectorIDs {
+				if vector, exists := db.vectors[vectorID]; exists {
+					if err := hnswGraph.AddNode(vectorID, vector); err != nil {
+						logger.Warning("添加向量到HNSW图失败: %v", err)
+						continue
+					}
+					successCount++
+				}
+			}
+			
+			// 只有成功添加了足够的向量才使用HNSW
+			if successCount >= config.MinClusterSize/2 {
+				index.Clusters[i].HNSWGraph = hnswGraph
+				index.Clusters[i].UseHNSW = true
+				index.ClusterGraphs[i] = hnswGraph
+				logger.Info("聚类 %d 构建HNSW图完成，向量数: %d/%d", i, successCount, clusterSize)
+			} else {
+				logger.Warning("聚类 %d HNSW图构建失败，成功向量数不足: %d/%d", i, successCount, clusterSize)
+			}
+		}
+	}
+
+	// 7. 构建全局HNSW图（聚类中心）
+	logger.Info("构建全局HNSW图...")
+	globalGraph := graph.NewHNSWGraph(config.MaxConnections, config.EfConstruction, config.EfSearch)
+	globalSuccessCount := 0
+	for i, centroid := range centroids {
+		clusterID := fmt.Sprintf("cluster_%d", i)
+		if err := globalGraph.AddNode(clusterID, centroid); err != nil {
+			logger.Warning("添加聚类中心到全局HNSW图失败: %v", err)
+		} else {
+			globalSuccessCount++
+		}
+	}
+	if globalSuccessCount > 0 {
+		index.GlobalGraph = globalGraph
+		logger.Info("全局HNSW图构建完成，成功添加聚类中心: %d/%d", globalSuccessCount, len(centroids))
+	} else {
+		logger.Warning("全局HNSW图构建失败，无法添加任何聚类中心")
+	}
+
+	// 8. 计算聚类指标
+	db.calculateIVFHNSWClusterMetrics(index)
+
+	// 9. 保存索引
+	db.ivfHnswIndex = index
+	db.ivfHnswConfig = config
+	db.useIVFHNSWIndex = true
+
+	buildTime := time.Since(startTime)
+	logger.Info("IVF-HNSW混合索引构建完成，耗时: %v", buildTime)
+
+	// 更新性能统计
+	db.statsMu.Lock()
+	db.stats.IndexBuildTime = buildTime
+	db.stats.LastReindexTime = time.Now()
+	db.statsMu.Unlock()
+
+	return nil
+}
+
+// ivfHnswSearchWithScores IVF-HNSW混合搜索
+func (db *VectorDB) ivfHnswSearchWithScores(query []float64, k int, ctx SearchContext) ([]entity.Result, error) {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+
+	if !db.useIVFHNSWIndex || db.ivfHnswIndex == nil {
+		return nil, fmt.Errorf("IVF-HNSW混合索引未启用或未构建")
+	}
+
+	if len(query) == 0 {
+		return []entity.Result{}, nil
+	}
+
+	startTime := time.Now()
+	index := db.ivfHnswIndex
+	config := db.ivfHnswConfig
+
+	// 1. 使用全局HNSW图找到最相关的聚类
+	nprobe := config.Nprobe
+	if nprobe <= 0 {
+		nprobe = int(math.Sqrt(float64(config.NumClusters)))
+	}
+	if nprobe > config.NumClusters {
+		nprobe = config.NumClusters
+	}
+
+	logger.Trace("IVF-HNSW搜索：探测聚类数=%d", nprobe)
+
+	// 2. 找到最近的聚类
+	candidateClusters := db.findCandidateClustersIVFHNSW(query, nprobe)
+
+	// 3. 在候选聚类中搜索
+	allResults := make([]entity.Result, 0)
+	for _, clusterID := range candidateClusters {
+		if clusterID >= len(index.Clusters) {
+			continue
+		}
+
+		cluster := &index.Clusters[clusterID]
+		cluster.AccessCount++
+		cluster.LastAccessed = time.Now()
+
+		var clusterResults []entity.Result
+		var err error
+
+		// 根据聚类大小选择搜索策略
+		if cluster.UseHNSW && cluster.HNSWGraph != nil {
+			// 使用HNSW搜索
+			clusterResults, err = db.searchInClusterHNSW(query, k, cluster)
+		} else {
+			// 使用暴力搜索
+			clusterResults, err = db.searchInClusterBruteForce(query, k, cluster)
+		}
+
+		if err != nil {
+			logger.Warning("聚类 %d 搜索失败: %v", clusterID, err)
+			continue
+		}
+
+		allResults = append(allResults, clusterResults...)
+	}
+
+	// 4. 合并和排序结果
+	sort.Slice(allResults, func(i, j int) bool {
+		return allResults[i].Similarity > allResults[j].Similarity
+	})
+
+	if len(allResults) > k {
+		allResults = allResults[:k]
+	}
+
+	// 5. 更新性能统计
+	latency := time.Since(startTime)
+	db.updateIVFHNSWPerformanceStats(latency, len(allResults), true)
+
+	logger.Trace("IVF-HNSW搜索完成，返回结果数: %d，耗时: %v", len(allResults), latency)
+	return allResults, nil
+}
+
+// sampleTrainingDataForIVFHNSW 为IVF-HNSW采样训练数据
+func (db *VectorDB) sampleTrainingDataForIVFHNSW(ratio float64) [][]float64 {
+	if ratio <= 0 || ratio > 1 {
+		ratio = 0.1 // 默认使用10%的数据
+	}
+
+	totalVectors := len(db.vectors)
+	sampleSize := int(float64(totalVectors) * ratio)
+	if sampleSize < 100 {
+		sampleSize = totalVectors // 如果样本太少，使用全部数据
+	}
+
+	trainingData := make([][]float64, 0, sampleSize)
+	count := 0
+	step := totalVectors / sampleSize
+	if step < 1 {
+		step = 1
+	}
+
+	for _, vector := range db.vectors {
+		if count%step == 0 {
+			trainingData = append(trainingData, vector)
+			if len(trainingData) >= sampleSize {
+				break
+			}
+		}
+		count++
+	}
+
+	return trainingData
+}
+
+// performKMeansForIVFHNSW 执行K-means聚类
+func (db *VectorDB) performKMeansForIVFHNSW(data [][]float64, k int) ([][]float64, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("训练数据为空")
+	}
+	if k <= 0 {
+		return nil, fmt.Errorf("聚类数必须大于0")
+	}
+	if len(data) < k {
+		return nil, fmt.Errorf("训练数据数量 %d 少于聚类数 %d", len(data), k)
+	}
+
+	dim := len(data[0])
+	centroids := make([][]float64, k)
+
+	// 随机初始化聚类中心
+	rand.Seed(time.Now().UnixNano())
+	for i := 0; i < k; i++ {
+		centroids[i] = make([]float64, dim)
+		copy(centroids[i], data[rand.Intn(len(data))])
+	}
+
+	maxIterations := 100
+	tolerance := 1e-6
+
+	for iter := 0; iter < maxIterations; iter++ {
+		// 分配数据点到最近的聚类中心
+		assignments := make([]int, len(data))
+		for i, point := range data {
+			minDist := math.Inf(1)
+			bestCluster := 0
+			for j, centroid := range centroids {
+				dist, _ := algorithm.EuclideanDistanceSquared(point, centroid)
+				if dist < minDist {
+					minDist = dist
+					bestCluster = j
+				}
+			}
+			assignments[i] = bestCluster
+		}
+
+		// 更新聚类中心
+		newCentroids := make([][]float64, k)
+		clusterCounts := make([]int, k)
+		for i := 0; i < k; i++ {
+			newCentroids[i] = make([]float64, dim)
+		}
+
+		for i, point := range data {
+			clusterID := assignments[i]
+			for j := 0; j < dim; j++ {
+				newCentroids[clusterID][j] += point[j]
+			}
+			clusterCounts[clusterID]++
+		}
+
+		// 计算平均值
+		converged := true
+		for i := 0; i < k; i++ {
+			if clusterCounts[i] > 0 {
+				for j := 0; j < dim; j++ {
+					newCentroids[i][j] /= float64(clusterCounts[i])
+				}
+				
+				// 检查收敛性
+				dist, _ := algorithm.EuclideanDistanceSquared(centroids[i], newCentroids[i])
+				if dist > tolerance {
+					converged = false
+				}
+			} else {
+				// 如果聚类为空，重新随机初始化
+				copy(newCentroids[i], data[rand.Intn(len(data))])
+				converged = false
+			}
+		}
+
+		centroids = newCentroids
+		if converged {
+			logger.Info("K-means收敛，迭代次数: %d", iter+1)
+			break
+		}
+	}
+
+	return centroids, nil
+}
+
+// findNearestClusterForIVFHNSW 找到最近的聚类
+func (db *VectorDB) findNearestClusterForIVFHNSW(vector []float64, centroids [][]float64) int {
+	minDist := math.Inf(1)
+	bestCluster := 0
+
+	for i, centroid := range centroids {
+		dist, _ := algorithm.EuclideanDistanceSquared(vector, centroid)
+		if dist < minDist {
+			minDist = dist
+			bestCluster = i
+		}
+	}
+
+	return bestCluster
+}
+
+// findCandidateClustersIVFHNSW 找到候选聚类
+func (db *VectorDB) findCandidateClustersIVFHNSW(query []float64, nprobe int) []int {
+	index := db.ivfHnswIndex
+	candidates := make([]struct {
+		clusterID int
+		distance  float64
+	}, 0, len(index.ClusterCentroids))
+
+	// 计算查询向量到所有聚类中心的距离
+	for i, centroid := range index.ClusterCentroids {
+		dist, _ := algorithm.EuclideanDistanceSquared(query, centroid)
+		candidates = append(candidates, struct {
+			clusterID int
+			distance  float64
+		}{i, dist})
+	}
+
+	// 按距离排序
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].distance < candidates[j].distance
+	})
+
+	// 返回最近的nprobe个聚类
+	result := make([]int, 0, nprobe)
+	for i := 0; i < nprobe && i < len(candidates); i++ {
+		result = append(result, candidates[i].clusterID)
+	}
+
+	return result
+}
+
+// searchInClusterHNSW 在聚类中使用HNSW搜索
+func (db *VectorDB) searchInClusterHNSW(query []float64, k int, cluster *IVFHNSWCluster) ([]entity.Result, error) {
+	if cluster.HNSWGraph == nil {
+		return nil, fmt.Errorf("聚类HNSW图未初始化")
+	}
+
+	// 使用HNSW图搜索
+	hnswResults, err := cluster.HNSWGraph.Search(query, k)
+	if err != nil {
+		return nil, fmt.Errorf("HNSW搜索失败: %w", err)
+	}
+
+	// 转换结果格式
+	results := make([]entity.Result, 0, len(hnswResults))
+	for _, hnswResult := range hnswResults {
+		// HNSW返回的是距离，转换为相似度
+		similarity := 1.0 / (1.0 + hnswResult.Similarity)
+		results = append(results, entity.Result{
+			Id:         hnswResult.Id,
+			Similarity: similarity,
+		})
+	}
+
+	return results, nil
+}
+
+// searchInClusterBruteForce 在聚类中使用暴力搜索
+func (db *VectorDB) searchInClusterBruteForce(query []float64, k int, cluster *IVFHNSWCluster) ([]entity.Result, error) {
+	results := make([]entity.Result, 0, len(cluster.VectorIDs))
+
+	// 计算查询向量与聚类中所有向量的相似度
+	for _, vectorID := range cluster.VectorIDs {
+		if vector, exists := db.vectors[vectorID]; exists {
+			similarity := acceler.CosineSimilarity(query, vector)
+			results = append(results, entity.Result{
+				Id:         vectorID,
+				Similarity: similarity,
+			})
+		}
+	}
+
+	// 按相似度降序排序
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Similarity > results[j].Similarity
+	})
+
+	// 返回top-k结果
+	if len(results) > k {
+		results = results[:k]
+	}
+
+	return results, nil
+}
+
+// calculateIVFHNSWClusterMetrics 计算聚类指标
+func (db *VectorDB) calculateIVFHNSWClusterMetrics(index *IVFHNSWIndex) {
+	for i := range index.Clusters {
+		cluster := &index.Clusters[i]
+		if len(cluster.VectorIDs) == 0 {
+			continue
+		}
+
+		// 计算方差
+		variance := 0.0
+		for _, vectorID := range cluster.VectorIDs {
+			if vector, exists := db.vectors[vectorID]; exists {
+				dist, _ := algorithm.EuclideanDistanceSquared(vector, cluster.Centroid)
+				variance += dist
+			}
+		}
+		variance /= float64(len(cluster.VectorIDs))
+
+		// 计算半径（最大距离）
+		radius := 0.0
+		for _, vectorID := range cluster.VectorIDs {
+			if vector, exists := db.vectors[vectorID]; exists {
+				dist, _ := algorithm.EuclideanDistanceSquared(vector, cluster.Centroid)
+				if dist > radius {
+					radius = dist
+				}
+			}
+		}
+
+		// 计算密度
+		density := float64(len(cluster.VectorIDs)) / (1.0 + radius)
+
+		cluster.Metrics = IVFHNSWClusterMetrics{
+			Variance:       variance,
+			Density:        density,
+			Radius:         radius,
+			QueryFrequency: 0.0,
+			LastRebalance:  time.Now(),
+		}
+	}
+}
+
+// updateIVFHNSWPerformanceStats 更新IVF-HNSW性能统计
+func (db *VectorDB) updateIVFHNSWPerformanceStats(latency time.Duration, resultCount int, isHybrid bool) {
+	if db.ivfHnswIndex == nil {
+		return
+	}
+
+	db.ivfHnswIndex.mu.Lock()
+	defer db.ivfHnswIndex.mu.Unlock()
+
+	stats := &db.ivfHnswIndex.PerformanceStats
+	stats.TotalQueries++
+
+	if isHybrid {
+		stats.HybridQueries++
+		// 更新混合查询平均延迟
+		if stats.HybridQueries == 1 {
+			stats.AvgHybridLatency = latency
+		} else {
+			stats.AvgHybridLatency = time.Duration(
+				(int64(stats.AvgHybridLatency)*int64(stats.HybridQueries-1) + int64(latency)) / int64(stats.HybridQueries),
+			)
+		}
+	}
+
+	// 计算QPS
+	if stats.TotalQueries > 0 {
+		elapsedTime := time.Since(stats.LastUpdated)
+		if elapsedTime > 0 {
+			stats.ThroughputQPS = float64(stats.TotalQueries) / elapsedTime.Seconds()
+		}
+	}
+
+	stats.LastUpdated = time.Now()
+}
+
+// optimizeIVFHNSWParameters 优化IVF-HNSW参数
+func (db *VectorDB) optimizeIVFHNSWParameters() {
+	if db.ivfHnswConfig == nil || db.ivfHnswIndex == nil {
+		return
+	}
+
+	db.mu.Lock()
+	dataSize := len(db.vectors)
+	vectorDim := db.vectorDim
+	db.mu.Unlock()
+
+	config := db.ivfHnswConfig
+
+	// 根据数据规模调整聚类数
+	if dataSize < 10000 {
+		config.NumClusters = 64
+	} else if dataSize < 100000 {
+		config.NumClusters = 256
+	} else if dataSize < 1000000 {
+		config.NumClusters = 1024
+	} else {
+		config.NumClusters = 4096
+	}
+
+	// 根据维度调整HNSW参数
+	if vectorDim <= 128 {
+		config.MaxConnections = 16
+		config.EfConstruction = 200
+		config.EfSearch = 50
+	} else if vectorDim <= 512 {
+		config.MaxConnections = 32
+		config.EfConstruction = 400
+		config.EfSearch = 100
+	} else {
+		config.MaxConnections = 64
+		config.EfConstruction = 800
+		config.EfSearch = 200
+	}
+
+	// 调整探测聚类数
+	config.Nprobe = int(math.Sqrt(float64(config.NumClusters)))
+	if config.Nprobe < 1 {
+		config.Nprobe = 1
+	}
+	if config.Nprobe > config.NumClusters/4 {
+		config.Nprobe = config.NumClusters / 4
+	}
+
+	// 调整聚类大小阈值
+	config.MinClusterSize = 50
+	config.MaxClusterSize = dataSize / config.NumClusters * 3
+
+	logger.Info("IVF-HNSW参数已优化: NumClusters=%d, Nprobe=%d, MaxConnections=%d",
+		config.NumClusters, config.Nprobe, config.MaxConnections)
+}
+
+// GetIVFHNSWStats 获取IVF-HNSW统计信息
+func (db *VectorDB) GetIVFHNSWStats() *IVFHNSWPerformanceStats {
+	if db.ivfHnswIndex == nil {
+		return nil
+	}
+
+	db.ivfHnswIndex.mu.RLock()
+	defer db.ivfHnswIndex.mu.RUnlock()
+
+	stats := db.ivfHnswIndex.PerformanceStats
+	return &stats
+}
+
+// InitializeIVFHNSWIndex 初始化IVF-HNSW混合索引
+func (db *VectorDB) InitializeIVFHNSWIndex() error {
+	// 添加panic恢复机制
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error("IVF-HNSW索引初始化发生panic: %v", r)
+		}
+	}()
+
+	// 检查数据库是否为空
+	if len(db.vectors) == 0 {
+		return fmt.Errorf("数据库为空，无法构建索引")
+	}
+
+	// 创建默认配置
+	config := &IVFHNSWConfig{
+		NumClusters:        256,
+		TrainingRatio:      0.1,
+		Nprobe:             16,
+		RebalanceThreshold: 1000,
+		MaxConnections:     32,
+		EfConstruction:     400.0,
+		EfSearch:           100.0,
+		MaxLevel:           5,
+		EnableHierarchical: true,
+		ClusterHNSWRatio:   0.1,
+		MinClusterSize:     50,
+		MaxClusterSize:     10000,
+		UsePQCompression:   false,
+		PQSubVectors:       8,
+		PQCentroids:        256,
+	}
+
+	// 根据数据规模调整配置
+	db.mu.RLock()
+	dataSize := len(db.vectors)
+	vectorDim := db.vectorDim
+	db.mu.RUnlock()
+
+	// 检查数据量是否足够
+	if dataSize < 10 {
+		return fmt.Errorf("数据量不足，需要至少10个向量才能构建IVF-HNSW索引")
+	}
+
+	if dataSize > 0 {
+		if dataSize < 1000 {
+			config.NumClusters = min(dataSize/10, 16) // 确保聚类数不超过数据量的1/10
+			if config.NumClusters < 4 {
+				config.NumClusters = 4
+			}
+			config.Nprobe = 4
+		} else if dataSize < 10000 {
+			config.NumClusters = 64
+			config.Nprobe = 8
+		} else if dataSize < 100000 {
+			config.NumClusters = 256
+			config.Nprobe = 16
+		} else if dataSize < 1000000 {
+			config.NumClusters = 1024
+			config.Nprobe = 32
+		} else {
+			config.NumClusters = 4096
+			config.Nprobe = 64
+		}
+	}
+
+	if vectorDim > 0 {
+		if vectorDim <= 128 {
+			config.MaxConnections = 16
+			config.EfConstruction = 200.0
+		} else if vectorDim <= 512 {
+			config.MaxConnections = 32
+			config.EfConstruction = 400.0
+		} else {
+			config.MaxConnections = 64
+			config.EfConstruction = 800.0
+		}
+	}
+
+	// 构建索引
+	return db.BuildIVFHNSWIndex(config)
 }

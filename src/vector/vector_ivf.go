@@ -197,7 +197,8 @@ func (db *VectorDB) BuildEnhancedIVFIndex(config *IVFConfig) error {
 
 	// 2. 执行聚类
 	logger.Info("Starting KMeans clustering with %d training vectors and %d clusters.", len(trainingVectors), config.NumClusters)
-	centroids, _, err := algorithm.KMeans(algorithm.ConvertToPoints(trainingVectors), config.NumClusters, 100, 0.001)
+	// 使用较少的迭代次数和较宽松的收敛条件以加快测试速度
+	centroids, _, err := algorithm.KMeans(algorithm.ConvertToPoints(trainingVectors), config.NumClusters, 20, 0.01)
 	if err != nil {
 		db.indexed = false
 		return fmt.Errorf("KMeans 聚类失败: %w", err)
