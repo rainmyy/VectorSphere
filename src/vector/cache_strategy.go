@@ -17,12 +17,12 @@ type CacheStrategy interface {
 
 // CacheStrategyStats 缓存策略统计信息
 type CacheStrategyStats struct {
-	Hits        int64
-	Misses      int64
-	Evictions   int64
-	Size        int
-	Capacity    int
-	HitRate     float64
+	Hits      int64
+	Misses    int64
+	Evictions int64
+	Size      int
+	Capacity  int
+	HitRate   float64
 }
 
 // LRUCache LRU缓存实现
@@ -145,12 +145,12 @@ func (c *LRUCache) updateHitRate() {
 
 // LFUCache LFU缓存实现
 type LFUCache struct {
-	capacity  int
-	cache     map[string]*LFUItem
-	freqMap   map[int]*list.List
-	minFreq   int
-	mutex     sync.RWMutex
-	stats     CacheStrategyStats
+	capacity int
+	cache    map[string]*LFUItem
+	freqMap  map[int]*list.List
+	minFreq  int
+	mutex    sync.RWMutex
+	stats    CacheStrategyStats
 }
 
 // LFUItem LFU缓存项
@@ -544,21 +544,6 @@ func (c *ARCCache) updateHitRate() {
 	if total > 0 {
 		c.stats.HitRate = float64(c.stats.Hits) / float64(total)
 	}
-}
-
-// 辅助函数
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // CacheManager 缓存管理器

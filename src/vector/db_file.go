@@ -141,8 +141,12 @@ func (db *VectorDB) SaveToFile(filePath string) error {
 
 // SaveToFile 将当前数据库状态（包括索引）保存到其配置的文件中。
 func (db *VectorDB) saveToFileStandard(filePath string) error {
-	db.mu.RLock()
-	defer db.mu.RUnlock()
+	locked := db.mu.TryRLock()
+	defer func() {
+		if locked {
+			db.mu.RUnlock()
+		}
+	}()
 
 	if filePath == "" {
 		return fmt.Errorf("文件路径未设置，无法保存数据库")

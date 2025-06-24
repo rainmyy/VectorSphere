@@ -3,7 +3,6 @@ package vector
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -45,7 +44,7 @@ func (cm *ConfigManager) LoadConfig() error {
 		return cm.SaveConfig()
 	}
 
-	data, err := ioutil.ReadFile(cm.configPath)
+	data, err := os.ReadFile(cm.configPath)
 	if err != nil {
 		return fmt.Errorf("failed to read config file: %v", err)
 	}
@@ -292,7 +291,7 @@ func (cm *ConfigManager) saveJSONConfig() error {
 		return err
 	}
 
-	return ioutil.WriteFile(cm.configPath, data, 0644)
+	return os.WriteFile(cm.configPath, data, 0644)
 }
 
 func (cm *ConfigManager) saveYAMLConfig() error {
@@ -315,7 +314,7 @@ func (cm *ConfigManager) saveYAMLConfig() error {
 		return err
 	}
 
-	return ioutil.WriteFile(cm.configPath, data, 0644)
+	return os.WriteFile(cm.configPath, data, 0644)
 }
 
 // 应用配置的私有方法

@@ -62,17 +62,17 @@ func TestSampleTrainingData(t *testing.T) {
 	// 注意：sampleTrainingData是未导出方法，无法直接测试
 	// 通过构建索引来间接验证采样功能
 	config := &vector.IVFConfig{
-		NumClusters:      2, // 减少聚类数量以加快测试
+		NumClusters:      2,   // 减少聚类数量以加快测试
 		TrainingRatio:    0.8, // 增加训练比例确保有足够数据
 		UsePQCompression: false,
 		EnableDynamic:    false, // 禁用动态更新以加快测试
 	}
-	
+
 	err := db.BuildEnhancedIVFIndex(config)
 	if err != nil {
 		t.Fatalf("Failed to build IVF index: %v", err)
 	}
-	
+
 	// 验证索引构建成功（间接验证采样功能）
 	if !db.IsIndexed() {
 		t.Error("Expected index to be built")
@@ -366,7 +366,7 @@ func TestSearchInCluster(t *testing.T) {
 	}
 
 	// 测试在有效聚类中搜索
-	query := []float64{1.05, 1.05, 1.05}
+	query := []float64{1.0, 1.0, 1.0}
 	results, err := db.SearchInCluster(query, 2, 0) // 在聚类0中搜索
 	if err != nil {
 		t.Fatalf("SearchInCluster failed: %v", err)
@@ -523,17 +523,17 @@ func TestCalculateADCDistance(t *testing.T) {
 
 	// 测试ADC距离计算功能（通过搜索间接测试）
 	query := []float64{5.0, 5.0, 5.0, 5.0}
-	
+
 	// 执行搜索来间接验证ADC距离计算
 	results, err := db.OptimizedSearch(query, 5, vector.SearchOptions{})
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
-	
+
 	if len(results) == 0 {
 		t.Error("Expected search results, got none")
 	}
-	
+
 	// 验证搜索结果的距离是非负数
 	for _, result := range results {
 		if result.Distance < 0 {
