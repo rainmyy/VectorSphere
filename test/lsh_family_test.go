@@ -268,7 +268,7 @@ func TestGetEffectiveness(t *testing.T) {
 
 	// 使用指数移动平均后的实际值计算期望
 	alpha := 0.1
-	expectedRecall := recall * alpha // 因为初始值为0
+	expectedRecall := recall * alpha       // 因为初始值为0
 	expectedPrecision := precision * alpha // 因为初始值为0
 	expected := expectedRecall*recallWeight + expectedPrecision*precisionWeight + timeScore*timeWeight
 	if abs(effectiveness-expected) > 0.001 {
@@ -304,7 +304,7 @@ func TestGetEffectivenessWithSlowQuery(t *testing.T) {
 
 	// 使用指数移动平均后的实际值计算期望
 	alpha := 0.1
-	expectedRecall := recall * alpha // 因为初始值为0
+	expectedRecall := recall * alpha       // 因为初始值为0
 	expectedPrecision := precision * alpha // 因为初始值为0
 	expected := expectedRecall*recallWeight + expectedPrecision*precisionWeight + timeScore*timeWeight
 	if abs(effectiveness-expected) > 0.001 {
@@ -506,12 +506,4 @@ func BenchmarkLSHFamilyOperations(b *testing.B) {
 			lshFamily.IsExpired(1 * time.Hour)
 		}
 	})
-}
-
-// 辅助函数：计算浮点数绝对值
-func abs(x float64) float64 {
-	if x < 0 {
-		return -x
-	}
-	return x
 }
