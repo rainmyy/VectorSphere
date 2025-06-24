@@ -392,7 +392,7 @@ func TestVectorDB_PerformanceMetrics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("建立索引失败: %v", err)
 	}
-
+	time.Sleep(1 * time.Second)
 	// 执行一些搜索以生成指标
 	query := []float64{5.0, 10.0, 15.0}
 	for i := 0; i < 5; i++ {
@@ -400,6 +400,7 @@ func TestVectorDB_PerformanceMetrics(t *testing.T) {
 		if err != nil {
 			t.Errorf("搜索失败: %v", err)
 		}
+		time.Sleep(1 * time.Second)
 	}
 
 	// 获取性能统计

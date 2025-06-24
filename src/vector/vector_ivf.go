@@ -102,9 +102,12 @@ func (db *VectorDB) sampleTrainingData(trainingRatio float64) ([][]float64, []st
 		trainingRatio = 0.1 // 默认采样10%的数据进行训练
 		logger.Warning("Invalid trainingRatio, defaulting to 0.1")
 	}
-
-	db.mu.RLock() // Read lock for accessing db.vectors
-	defer db.mu.RUnlock()
+	locked := db.mu.TryRLock()
+	defer func() {
+		if locked {
+			db.mu.RUnlock()
+		}
+	}()
 
 	if len(db.vectors) == 0 {
 		return [][]float64{}, []string{}
@@ -229,10 +232,10 @@ func (db *VectorDB) BuildEnhancedIVFIndex(config *IVFConfig) error {
 
 	// 5. 构建 PQ 压缩（如果启用）
 	if config.UsePQCompression {
-		if err := db.BuildIVFPQIndex(enhancedClusters, config); err != nil {
+		if err = db.BuildIVFPQIndex(enhancedClusters, config); err != nil {
 			logger.Warning("构建 IVF-PQ 索引失败: %v", err)
 			// 根据策略，这里可以选择是否因为PQ构建失败而整体失败
-			// return fmt.Errorf("构建 IVF-PQ 索引失败: %w", err)
+			return fmt.Errorf("构建 IVF-PQ 索引失败: %w", err)
 		}
 	}
 

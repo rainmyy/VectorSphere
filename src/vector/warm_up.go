@@ -430,115 +430,96 @@ func (db *VectorDB) warmupEnhancedLSHComponents(query []float64, ctx SearchConte
 	logger.Trace("增强LSH索引组件预热完成")
 }
 
+// warmupAdvancedIndexHelper 封装了高级预热中的参数和查询循环
+func (db *VectorDB) warmupAdvancedIndexHelper(
+	indexName string,
+	sampleQueries [][]float64,
+	paramIterator func(yield func(params map[string]interface{})),
+	searchFunc func(query []float64, params map[string]interface{}) error,
+) {
+	logger.Info("开始 %s 高级预热", indexName)
+
+	paramIterator(func(params map[string]interface{}) {
+		for i, query := range sampleQueries {
+			if i >= 2 { // 限制查询数量
+				break
+			}
+			err := searchFunc(query, params)
+			if err != nil {
+				logger.Trace("%s 参数 %v 预热失败: %v", indexName, params, err)
+			}
+		}
+	})
+
+	logger.Info("%s 高级预热完成", indexName)
+}
+
 // warmupEnhancedIVFAdvanced 增强IVF索引高级预热
 func (db *VectorDB) warmupEnhancedIVFAdvanced(sampleQueries [][]float64) {
 	if db.ivfIndex == nil || !db.ivfIndex.Enable {
 		return
 	}
 
-	logger.Info("开始增强IVF索引高级预热")
-
-	// 1. 预热不同的nprobe值
-	nprobeValues := []int{1, 5, 10, 20, 50}
-	for _, nprobe := range nprobeValues {
-		if nprobe > len(db.ivfIndex.Clusters) {
-			continue
-		}
-		for i, query := range sampleQueries {
-			if i >= 2 { // 限制查询数量
-				break
+	paramIterator := func(yield func(params map[string]interface{})) {
+		nprobeValues := []int{1, 5, 10, 20}
+		for _, nprobe := range nprobeValues {
+			if nprobe > len(db.ivfIndex.Clusters) {
+				continue
 			}
-			_, err := db.EnhancedIVFSearch(query, 5, nprobe)
-			if err != nil {
-				logger.Trace("nprobe=%d 预热失败: %v", nprobe, err)
-			}
+			yield(map[string]interface{}{"nprobe": nprobe})
 		}
 	}
 
-	// 2. 预热批量搜索 (使用单个查询模拟批量)
-	if len(sampleQueries) >= 3 {
-		for i := 0; i < min(3, len(sampleQueries)); i++ {
-			_, err := db.EnhancedIVFSearch(sampleQueries[i], 5, 10)
-			if err != nil {
-				logger.Trace("批量搜索预热失败: %v", err)
-			}
-		}
+	searchFunc := func(query []float64, params map[string]interface{}) error {
+		nprobe := params["nprobe"].(int)
+		_, err := db.EnhancedIVFSearch(query, 5, nprobe)
+		return err
 	}
 
-	// 3. 预热范围搜索 (使用标准搜索模拟)
+	db.warmupAdvancedIndexHelper("增强IVF索引", sampleQueries, paramIterator, searchFunc)
+
+	// 预热一个较大的k值
 	if len(sampleQueries) > 0 {
-		_, err := db.EnhancedIVFSearch(sampleQueries[0], 10, 10)
+		_, err := db.EnhancedIVFSearch(sampleQueries[0], 20, 10) // k=20
 		if err != nil {
-			logger.Trace("范围搜索预热失败: %v", err)
+			logger.Trace("大K值搜索预热失败: %v", err)
 		}
 	}
-
-	logger.Info("增强IVF索引高级预热完成")
 }
 
 // warmupEnhancedLSHAdvanced 增强LSH索引高级预热
 func (db *VectorDB) warmupEnhancedLSHAdvanced(sampleQueries [][]float64) {
-	if db.LshIndex == nil || !db.LshIndex.Enable {
+	if db.LshIndex == nil || !db.LshIndex.Enable || db.LshConfig == nil {
 		return
 	}
 
-	logger.Info("开始增强LSH索引高级预热")
+	originalR := db.LshConfig.R
+	originalW := db.LshConfig.W
+	defer func() { // 恢复原始参数
+		db.LshConfig.R = originalR
+		db.LshConfig.W = originalW
+	}()
 
-	// 1. 预热不同的LSH参数组合
-	if db.LshConfig != nil {
-		// 保存原始参数
-		originalR := db.LshConfig.R
-		originalW := db.LshConfig.W
-
-		// 尝试不同的参数组合
-		paramCombos := []struct {
-			R float64
-			W float64
-		}{
+	paramIterator := func(yield func(params map[string]interface{})) {
+		paramCombos := []struct{ R, W float64 }{
 			{R: originalR, W: originalW},
 			{R: originalR / 2, W: originalW},
 			{R: originalR, W: originalW / 2},
 		}
-
 		for _, combo := range paramCombos {
 			if combo.R <= 0 || combo.W <= 0 {
 				continue
 			}
-			// 临时调整参数
-			db.LshConfig.R = float64(combo.R)
-			db.LshConfig.W = float64(combo.W)
-
-			for i, query := range sampleQueries {
-				if i >= 2 { // 限制查询数量
-					break
-				}
-				_, err := db.EnhancedLSHSearch(query, 5)
-				if err != nil {
-					logger.Trace("LSH参数R=%.2f,W=%.2f 预热失败: %v", combo.R, combo.W, err)
-				}
-			}
-		}
-
-		// 恢复原始参数
-		db.LshConfig.R = originalR
-		db.LshConfig.W = originalW
-	}
-
-	// 2. 预热多表查询 (使用标准LSH搜索)
-	if len(sampleQueries) > 0 {
-		_, err := db.EnhancedLSHSearch(sampleQueries[0], 5)
-		if err != nil {
-			logger.Trace("多表查询预热失败: %v", err)
+			yield(map[string]interface{}{"R": combo.R, "W": combo.W})
 		}
 	}
 
-	// 3. 预热近似搜索 (使用标准LSH搜索)
-	if len(sampleQueries) > 0 {
-		_, err := db.EnhancedLSHSearch(sampleQueries[0], 5)
-		if err != nil {
-			logger.Trace("近似搜索预热失败: %v", err)
-		}
+	searchFunc := func(query []float64, params map[string]interface{}) error {
+		db.LshConfig.R = params["R"].(float64)
+		db.LshConfig.W = params["W"].(float64)
+		_, err := db.EnhancedLSHSearch(query, 5)
+		return err
 	}
 
-	logger.Info("增强LSH索引高级预热完成")
+	db.warmupAdvancedIndexHelper("增强LSH索引", sampleQueries, paramIterator, searchFunc)
 }

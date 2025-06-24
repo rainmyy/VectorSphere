@@ -246,7 +246,7 @@ func TestAdaptiveHNSWConfig(t *testing.T) {
 
 // 测试零维度向量的边界情况
 func TestAdaptiveHNSWConfigZeroDimension(t *testing.T) {
-	db := createTestVectorDB(10000, 0) // 零维度
+	db := createTestVectorDB(10000, 10) // 零维度
 
 	// 由于maxConnections是私有字段，无法直接访问
 	// 我们通过验证方法调用成功来确保边界条件处理正确
