@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"google.golang.org/grpc/credentials"
 	"io"
-	"io/ioutil"
 	"net"
 	"os"
 	"strings"
@@ -759,7 +758,7 @@ func LoadClientTLS(tlsConfig *config.TLSConfig) (credentials.TransportCredential
 
 	// 如果只有CA文件，创建仅验证服务端的TLS配置
 	if tlsConfig.CertFile == "" && tlsConfig.KeyFile == "" && tlsConfig.CAFile != "" {
-		caCert, err := ioutil.ReadFile(tlsConfig.CAFile)
+		caCert, err := os.ReadFile(tlsConfig.CAFile)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read CA file: %w", err)
 		}
@@ -788,7 +787,7 @@ func LoadClientTLS(tlsConfig *config.TLSConfig) (credentials.TransportCredential
 
 		// 如果有CA文件，添加到根证书池
 		if tlsConfig.CAFile != "" {
-			caCert, err := ioutil.ReadFile(tlsConfig.CAFile)
+			caCert, err := os.ReadFile(tlsConfig.CAFile)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read CA file: %w", err)
 			}

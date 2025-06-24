@@ -8,7 +8,6 @@ import (
 	"github.com/go-ego/gse"
 	"github.com/ledongthuc/pdf"
 	"github.com/unidoc/unioffice/document"
-	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -98,7 +97,7 @@ func (p *DefaultDocumentProcessor) ExtractText(filePath string) (string, error) 
 
 // extractFromTextFile 从文本文件提取内容
 func (p *DefaultDocumentProcessor) extractFromTextFile(filePath string) (string, error) {
-	data, err := ioutil.ReadFile(filePath)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return "", fmt.Errorf("读取文件失败: %w", err)
 	}
@@ -107,7 +106,7 @@ func (p *DefaultDocumentProcessor) extractFromTextFile(filePath string) (string,
 
 // extractFromHTML 从HTML文件提取内容
 func (p *DefaultDocumentProcessor) extractFromHTML(filePath string) (string, error) {
-	data, err := ioutil.ReadFile(filePath)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return "", fmt.Errorf("读取HTML文件失败: %w", err)
 	}
@@ -648,7 +647,7 @@ type FileDocumentReader struct{}
 
 // ReadDocument 从文件读取文档内容
 func (r *FileDocumentReader) ReadDocument(path string) (string, error) {
-	data, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("读取文件失败: %w", err)
 	}
