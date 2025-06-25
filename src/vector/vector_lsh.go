@@ -610,7 +610,7 @@ func (db *VectorDB) EnhancedLSHSearch(query []float64, k int) ([]entity.Result, 
 
 	// 5. 精确排序
 	results := make([]entity.Result, 0, len(candidateSet))
-	
+
 	// 获取向量数据的读锁
 	db.mu.RLock()
 	for id := range candidateSet {
@@ -825,7 +825,7 @@ func (db *VectorDB) generateProbeHashes(baseHash uint64, probeRadius int) []uint
 
 	// 4. 随机扰动（增加探测多样性）
 	if probeRadius >= 4 {
-		rand.Seed(time.Now().UnixNano())
+		rand.New(rand.NewSource(time.Now().UnixNano()))
 		for i := 0; i < 5; i++ { // 添加5个随机扰动的哈希值
 			// 随机翻转1-3位
 			mask := uint64(0)

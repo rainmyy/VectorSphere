@@ -130,7 +130,7 @@ func (db *VectorDB) sampleTrainingData(trainingRatio float64) ([][]float64, []st
 		allIDs = append(allIDs, id)
 	}
 
-	rand.Seed(time.Now().UnixNano()) // 使用当前时间作为随机种子
+	rand.New(rand.NewSource(time.Now().UnixNano())) // 使用当前时间作为随机种子
 	rand.Shuffle(len(allIDs), func(i, j int) {
 		allIDs[i], allIDs[j] = allIDs[j], allIDs[i]
 	})

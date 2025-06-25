@@ -99,7 +99,7 @@ func TestBuildEnhancedIVFIndex(t *testing.T) {
 	defer db.Close()
 
 	// 添加足够的测试向量
-	rand.Seed(42)
+	rand.New(rand.NewSource(42))
 	for i := 0; i < 50; i++ {
 		vec := make([]float64, 4)
 		for j := range vec {
@@ -208,7 +208,7 @@ func TestBuildIVFPQIndex(t *testing.T) {
 	defer db.Close()
 
 	// 添加测试向量
-	rand.Seed(42)
+	rand.New(rand.NewSource(42))
 	for i := 0; i < 30; i++ {
 		vec := make([]float64, 8)
 		for j := range vec {
@@ -698,7 +698,7 @@ func TestIVFIndexPerformance(t *testing.T) {
 
 	// 添加大量测试向量
 	const numVectors = 1000
-	rand.Seed(42)
+	rand.New(rand.NewSource(42))
 
 	start := time.Now()
 	for i := 0; i < numVectors; i++ {

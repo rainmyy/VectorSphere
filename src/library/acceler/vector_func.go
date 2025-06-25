@@ -383,7 +383,7 @@ func TrainPQCodebook(
 	subVectorDim := firstVectorDim / numSubvectors
 	allSubspaceCodebooks := make([][]entity.Point, numSubvectors)
 
-	rand.Seed(time.Now().UnixNano())
+	rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	fmt.Printf("开始训练PQ码本: %d 个子向量, 每个子空间 %d 个质心。保存路径: %s\n", numSubvectors, numCentroidsPerSubvector, codebookFilePath)
 

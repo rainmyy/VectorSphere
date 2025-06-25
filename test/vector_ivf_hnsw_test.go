@@ -11,7 +11,7 @@ import (
 
 // generateTestVectors 生成测试向量
 func generateTestVectors(count, dim int) [][]float64 {
-	rand.Seed(time.Now().UnixNano())
+	rand.New(rand.NewSource(time.Now().UnixNano()))
 	vectors := make([][]float64, count)
 	for i := 0; i < count; i++ {
 		vec := make([]float64, dim)

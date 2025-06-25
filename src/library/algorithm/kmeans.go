@@ -66,7 +66,7 @@ func KMeans(data []entity.Point, k int, maxIterations int, tolerance float64) ([
 	dim := len(data[0]) // 假设所有数据点维度相同
 
 	// 优化1: 对于大数据集，使用采样的K-Means++初始化
-	rand.Seed(time.Now().UnixNano())
+	rand.New(rand.NewSource(time.Now().UnixNano()))
 	var centroids []entity.Point
 	var err error
 

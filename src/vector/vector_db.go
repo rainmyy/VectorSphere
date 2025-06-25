@@ -5625,7 +5625,7 @@ func (db *VectorDB) performKMeansForIVFHNSW(data [][]float64, k int) ([][]float6
 	centroids := make([][]float64, k)
 
 	// 随机初始化聚类中心
-	rand.Seed(time.Now().UnixNano())
+	rand.New(rand.NewSource(time.Now().UnixNano()))
 	for i := 0; i < k; i++ {
 		centroids[i] = make([]float64, dim)
 		copy(centroids[i], data[rand.Intn(len(data))])
