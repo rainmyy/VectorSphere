@@ -3,7 +3,6 @@ package acceler
 import (
 	"fmt"
 	"sync"
-	"unsafe"
 )
 
 // Accelerator GPU 加速器接口
@@ -21,10 +20,10 @@ type FAISSAccelerator struct {
 	available       bool
 	mu              sync.RWMutex
 	indexType       string
-	gpuWrapper      unsafe.Pointer // C.FaissGpuWrapper*
 	dimension       int
 	strategy        *ComputeStrategySelector
 	currentStrategy ComputeStrategy
+	dataSize        int
 }
 
 // AccelResult 搜索结果结构体

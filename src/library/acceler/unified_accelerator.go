@@ -31,7 +31,7 @@ type UnifiedAccelerator interface {
 	ComputeDistance(query []float64, vectors [][]float64) ([]float64, error)
 	BatchComputeDistance(queries [][]float64, vectors [][]float64) ([][]float64, error)
 	BatchSearch(queries [][]float64, database [][]float64, k int) ([][]AccelResult, error)
-	//BatchCosineSimilarity(queries [][]float64, database [][]float64) ([][]float64, error)
+	BatchCosineSimilarity(queries [][]float64, database [][]float64) ([][]float64, error)
 
 	// 高级功能
 	AccelerateSearch(query []float64, database [][]float64, options entity.SearchOptions) ([]AccelResult, error)
@@ -46,6 +46,7 @@ type UnifiedAccelerator interface {
 	// 配置和调优
 	AutoTune(workload WorkloadProfile) error
 	//UpdateConfig(config interface{}) error
+	Cleanup() error
 }
 
 // HardwareCapabilities 硬件能力信息

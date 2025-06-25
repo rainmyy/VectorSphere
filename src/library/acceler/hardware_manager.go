@@ -2,9 +2,15 @@ package acceler
 
 import (
 	"VectorSphere/src/library/entity"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // HardwareManager 硬件管理器（整合原有代码）
@@ -13,14 +19,72 @@ type HardwareManager struct {
 	mutex        sync.RWMutex
 	defaultType  string
 	manager      *AcceleratorManager
+	config       *HardwareConfig
+}
+
+// HardwareConfig 硬件配置结构体
+type HardwareConfig struct {
+	CPU  CPUConfig  `json:"cpu" yaml:"cpu"`
+	GPU  GPUConfig  `json:"gpu" yaml:"gpu"`
+	FPGA FPGAConfig `json:"fpga" yaml:"fpga"`
+	PMem PMemConfig `json:"pmem" yaml:"pmem"`
+	RDMA RDMAConfig `json:"rdma" yaml:"rdma"`
+}
+
+// GetDefaultHardwareConfig 获取默认硬件配置
+func GetDefaultHardwareConfig() *HardwareConfig {
+	return &HardwareConfig{
+		CPU: CPUConfig{
+			Enable:      true,
+			IndexType:   "IDMap,Flat",
+			DeviceID:    0,
+			Threads:     0, // 0表示使用所有可用线程
+			VectorWidth: 256,
+		},
+		GPU: GPUConfig{
+			Enable:      true,
+			DeviceIDs:   []int{0},
+			MemoryLimit: 8 * 1024 * 1024 * 1024, // 8GB
+			BatchSize:   1000,
+			Precision:   "float32",
+			IndexType:   "IVF,Flat",
+		},
+		FPGA: FPGAConfig{
+			Enable:        false,
+			DeviceIDs:     []int{0},
+			BitstreamPath: "path/to/bitstream.bin",
+			BufferSize:    1024 * 1024 * 1024, // 1GB
+			ClockFreq:     200,
+			PipelineDepth: 8,
+		},
+		PMem: PMemConfig{
+			Enable:     false,
+			DevicePath: "/mnt/pmem0/vectors.db",
+			PoolSize:   10 * 1024 * 1024 * 1024, // 10GB
+			Mode:       "app_direct",
+		},
+		RDMA: RDMAConfig{
+			Enable:    false,
+			DeviceID:  0,
+			PortNum:   1,
+			QueueSize: 1024,
+			Protocol:  "RoCE",
+		},
+	}
 }
 
 // NewHardwareManager 创建新的硬件管理器
 func NewHardwareManager() *HardwareManager {
+	return NewHardwareManagerWithConfig(GetDefaultHardwareConfig())
+}
+
+// NewHardwareManagerWithConfig 使用指定配置创建新的硬件管理器
+func NewHardwareManagerWithConfig(config *HardwareConfig) *HardwareManager {
 	hm := &HardwareManager{
 		accelerators: make(map[string]UnifiedAccelerator),
 		defaultType:  "cpu",
 		manager:      NewAcceleratorManager(),
+		config:       config,
 	}
 
 	// 注册可用的硬件加速器
@@ -30,6 +94,16 @@ func NewHardwareManager() *HardwareManager {
 	hm.setupDefaultStrategies()
 
 	return hm
+}
+
+// NewHardwareManagerFromFile 从配置文件创建硬件管理器
+func NewHardwareManagerFromFile(configFilePath string) (*HardwareManager, error) {
+	config, err := LoadConfigFromFile(configFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("从文件加载配置失败: %v", err)
+	}
+
+	return NewHardwareManagerWithConfig(config), nil
 }
 
 // setupDefaultStrategies 配置默认策略
@@ -46,74 +120,105 @@ func (hm *HardwareManager) setupDefaultStrategies() {
 	hm.manager.SetStrategy("default", AcceleratorCPU)
 }
 
-// registerAllAccelerators 注册所有可用的硬件加速器
+// registerAllAccelerators 根据配置注册所有可用的硬件加速器
 func (hm *HardwareManager) registerAllAccelerators() {
 	// 注册CPU加速器 (使用FAISS作为CPU实现)
-	cpuAcc := NewFAISSAccelerator(0, "IDMap,Flat")
-	if cpuAcc.IsAvailable() {
-		hm.RegisterAccelerator(AcceleratorCPU, cpuAcc)
-		if err := hm.manager.RegisterAccelerator(cpuAcc); err != nil {
-			fmt.Printf("警告: 注册CPU加速器失败: %v\n", err)
+	if hm.config.CPU.Enable {
+		cpuAcc := NewFAISSAccelerator(hm.config.CPU.DeviceID, hm.config.CPU.IndexType)
+		if cpuAcc.IsAvailable() {
+			hm.RegisterAccelerator(AcceleratorCPU, cpuAcc)
+			if err := hm.manager.RegisterAccelerator(cpuAcc); err != nil {
+				fmt.Printf("警告: 注册CPU加速器失败: %v\n", err)
+			}
+
+			// 更新CPU配置
+			cpuConfig := map[string]interface{}{
+				"index_type": hm.config.CPU.IndexType,
+				"device_id":  hm.config.CPU.DeviceID,
+			}
+			if err := cpuAcc.UpdateConfig(cpuConfig); err != nil {
+				fmt.Printf("警告: 更新CPU加速器配置失败: %v\n", err)
+			}
 		}
 	}
 
 	// 注册GPU加速器
-	for i := 0; i < 4; i++ { // 最多检测4个GPU
-		gpuAcc := NewGPUAccelerator(i, "IVF,Flat", 128)
-		if gpuAcc.IsAvailable() {
-			name := fmt.Sprintf("AcceleratorGPU_%d", i)
-			hm.RegisterAccelerator(name, gpuAcc)
-			if err := hm.manager.RegisterAccelerator(gpuAcc); err != nil {
-				fmt.Printf("警告: 注册GPU加速器 %s 失败: %v\n", name, err)
-				continue
+	if hm.config.GPU.Enable {
+		for _, deviceID := range hm.config.GPU.DeviceIDs {
+			gpuAcc := NewGPUAccelerator(deviceID, hm.config.GPU.IndexType, hm.config.GPU.BatchSize)
+			if gpuAcc.IsAvailable() {
+				name := fmt.Sprintf("%s_%d", AcceleratorGPU, deviceID)
+				hm.RegisterAccelerator(name, gpuAcc)
+				if err := hm.manager.RegisterAccelerator(gpuAcc); err != nil {
+					fmt.Printf("警告: 注册GPU加速器 %s 失败: %v\n", name, err)
+					continue
+				}
+
+				// 更新GPU配置
+				gpuConfig := map[string]interface{}{
+					"device_id":    deviceID,
+					"memory_limit": hm.config.GPU.MemoryLimit,
+					"batch_size":   hm.config.GPU.BatchSize,
+					"precision":    hm.config.GPU.Precision,
+				}
+				if err := gpuAcc.UpdateConfig(gpuConfig); err != nil {
+					fmt.Printf("警告: 更新GPU加速器配置失败: %v\n", err)
+				}
+
+				hm.defaultType = name // 优先使用GPU
+				break                 // 只注册第一个可用的GPU
 			}
-			hm.defaultType = name // 优先使用GPU
-			break                 // 只注册第一个可用的GPU
 		}
 	}
 
 	// 注册FPGA加速器
-	for i := 0; i < 2; i++ { // 最多检测2个FPGA
-		config := &FPGAConfig{
-			DeviceID:      i,
-			BitstreamPath: fmt.Sprintf("path/to/bitstream_%d.bin", i), // 动态路径
-			BufferSize:    1024 * 1024 * 1024,                         // 1GB
-		}
-		fpgaAcc := NewFPGAAccelerator(i, config)
-		if fpgaAcc.IsAvailable() {
-			name := fmt.Sprintf("%s_%d", AcceleratorFPGA, i)
-			hm.RegisterAccelerator(name, fpgaAcc)
-			if err := hm.manager.RegisterAccelerator(fpgaAcc); err != nil {
-				fmt.Printf("警告: 注册FPGA加速器 %s 失败: %v\n", name, err)
-				continue
+	if hm.config.FPGA.Enable {
+		for _, deviceID := range hm.config.FPGA.DeviceIDs {
+			config := &FPGAConfig{
+				DeviceID:      deviceID,
+				BitstreamPath: hm.config.FPGA.BitstreamPath,
+				BufferSize:    hm.config.FPGA.BufferSize,
 			}
-			break
+			fpgaAcc := NewFPGAAccelerator(deviceID, config)
+			if fpgaAcc.IsAvailable() {
+				name := fmt.Sprintf("%s_%d", AcceleratorFPGA, deviceID)
+				hm.RegisterAccelerator(name, fpgaAcc)
+				if err := hm.manager.RegisterAccelerator(fpgaAcc); err != nil {
+					fmt.Printf("警告: 注册FPGA加速器 %s 失败: %v\n", name, err)
+					continue
+				}
+				break
+			}
 		}
 	}
 
 	// 注册PMem加速器
-	pmemConfig := &PMemConfig{
-		DevicePath: "/mnt/pmem0/vectors.db",
-		PoolSize:   10 * 1024 * 1024 * 1024, // 10GB
-	}
-	pmemAcc := NewPMemAccelerator(pmemConfig)
-	if pmemAcc.IsAvailable() {
-		hm.RegisterAccelerator(AcceleratorPMem, pmemAcc)
-		if err := hm.manager.RegisterAccelerator(pmemAcc); err != nil {
-			fmt.Printf("警告: 注册PMem加速器失败: %v\n", err)
+	if hm.config.PMem.Enable {
+		pmemConfig := &PMemConfig{
+			DevicePath: hm.config.PMem.DevicePath,
+			PoolSize:   hm.config.PMem.PoolSize,
+		}
+		pmemAcc := NewPMemAccelerator(pmemConfig)
+		if pmemAcc.IsAvailable() {
+			hm.RegisterAccelerator(AcceleratorPMem, pmemAcc)
+			if err := hm.manager.RegisterAccelerator(pmemAcc); err != nil {
+				fmt.Printf("警告: 注册PMem加速器失败: %v\n", err)
+			}
 		}
 	}
 
 	// 注册RDMA加速器
-	rdmaConfig := &RDMAConfig{
-		DeviceID: 0,
-		PortNum:  1,
-	}
-	rdmaAcc := NewRDMAAccelerator(0, 1, rdmaConfig)
-	if rdmaAcc.IsAvailable() {
-		hm.RegisterAccelerator(AcceleratorRDMA, rdmaAcc)
-		if err := hm.manager.RegisterAccelerator(rdmaAcc); err != nil {
-			fmt.Printf("警告: 注册RDMA加速器失败: %v\n", err)
+	if hm.config.RDMA.Enable {
+		rdmaConfig := &RDMAConfig{
+			DeviceID: hm.config.RDMA.DeviceID,
+			PortNum:  hm.config.RDMA.PortNum,
+		}
+		rdmaAcc := NewRDMAAccelerator(hm.config.RDMA.DeviceID, hm.config.RDMA.PortNum, rdmaConfig)
+		if rdmaAcc.IsAvailable() {
+			hm.RegisterAccelerator(AcceleratorRDMA, rdmaAcc)
+			if err := hm.manager.RegisterAccelerator(rdmaAcc); err != nil {
+				fmt.Printf("警告: 注册RDMA加速器失败: %v\n", err)
+			}
 		}
 	}
 }
@@ -453,6 +558,195 @@ func (hm *HardwareManager) selectNewDefault() {
 // GetManager 获取统一加速器管理器
 func (hm *HardwareManager) GetManager() *AcceleratorManager {
 	return hm.manager
+}
+
+// GetConfig 获取当前硬件配置
+func (hm *HardwareManager) GetConfig() *HardwareConfig {
+	return hm.config
+}
+
+// LoadConfigFromFile 从文件加载硬件配置
+func LoadConfigFromFile(filePath string) (*HardwareConfig, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("读取配置文件失败: %v", err)
+	}
+
+	config := &HardwareConfig{}
+
+	// 根据文件扩展名决定解析方式
+	ext := strings.ToLower(filepath.Ext(filePath))
+	switch ext {
+	case ".json":
+		err = json.Unmarshal(data, config)
+	case ".yaml", ".yml":
+		err = yaml.Unmarshal(data, config)
+	default:
+		return nil, fmt.Errorf("不支持的配置文件格式: %s", ext)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("解析配置文件失败: %v", err)
+	}
+
+	return config, nil
+}
+
+// SaveConfigToFile 保存硬件配置到文件
+func (hm *HardwareManager) SaveConfigToFile(filePath string) error {
+	// 根据文件扩展名决定序列化方式
+	ext := strings.ToLower(filepath.Ext(filePath))
+
+	var data []byte
+	var err error
+
+	switch ext {
+	case ".json":
+		data, err = json.MarshalIndent(hm.config, "", "  ")
+	case ".yaml", ".yml":
+		data, err = yaml.Marshal(hm.config)
+	default:
+		return fmt.Errorf("不支持的配置文件格式: %s", ext)
+	}
+
+	if err != nil {
+		return fmt.Errorf("序列化配置失败: %v", err)
+	}
+
+	// 确保目录存在
+	dir := filepath.Dir(filePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("创建目录失败: %v", err)
+	}
+
+	// 写入文件
+	if err := os.WriteFile(filePath, data, 0644); err != nil {
+		return fmt.Errorf("写入配置文件失败: %v", err)
+	}
+
+	return nil
+}
+
+// UpdateConfig 更新硬件配置
+func (hm *HardwareManager) UpdateConfig(config *HardwareConfig) error {
+	hm.mutex.Lock()
+	defer hm.mutex.Unlock()
+
+	// 保存旧配置，以便回滚
+	oldConfig := hm.config
+
+	// 更新配置
+	hm.config = config
+
+	// 关闭所有现有加速器
+	if err := hm.ShutdownAll(); err != nil {
+		fmt.Printf("警告: 关闭现有加速器时出错: %v\n", err)
+	}
+
+	// 清空现有加速器
+	hm.accelerators = make(map[string]UnifiedAccelerator)
+	hm.manager = NewAcceleratorManager()
+
+	// 根据新配置重新注册加速器
+	hm.registerAllAccelerators()
+
+	// 重新配置策略
+	hm.setupDefaultStrategies()
+
+	// 初始化所有加速器
+	if err := hm.InitializeAll(); err != nil {
+		// 初始化失败，回滚配置
+		fmt.Printf("错误: 初始化加速器失败，回滚配置: %v\n", err)
+		hm.config = oldConfig
+		hm.accelerators = make(map[string]UnifiedAccelerator)
+		hm.manager = NewAcceleratorManager()
+		hm.registerAllAccelerators()
+		hm.setupDefaultStrategies()
+		_ = hm.InitializeAll() // 尝试使用旧配置初始化
+		return fmt.Errorf("更新配置失败: %v", err)
+	}
+
+	return nil
+}
+
+// ApplyVectorConfig 应用向量数据库硬件配置
+func (hm *HardwareManager) ApplyVectorConfig(vectorConfig interface{}) error {
+	// 尝试将接口转换为硬件加速配置
+	hardwareConfig, ok := vectorConfig.(*HardwareConfig)
+	if !ok {
+		// 尝试从vector包的HardwareAccelerationConfig转换
+		vectorHardwareConfig, ok := vectorConfig.(interface {
+			GetGPUConfig() interface{}
+			GetCPUConfig() interface{}
+			GetFPGAConfig() interface{}
+			GetPMemConfig() interface{}
+			GetRDMAConfig() interface{}
+		})
+		if !ok {
+			return fmt.Errorf("无法识别的配置类型")
+		}
+
+		// 创建新的硬件配置
+		hardwareConfig = &HardwareConfig{}
+
+		// 转换GPU配置
+		if gpuConfig, ok := vectorHardwareConfig.GetGPUConfig().(interface {
+			IsEnabled() bool
+			GetDeviceIDs() []int
+			GetMemoryLimit() int64
+			GetBatchSize() int
+			GetPrecision() string
+		}); ok {
+			hardwareConfig.GPU.Enable = gpuConfig.IsEnabled()
+			hardwareConfig.GPU.DeviceIDs = gpuConfig.GetDeviceIDs()
+			hardwareConfig.GPU.MemoryLimit = gpuConfig.GetMemoryLimit()
+			hardwareConfig.GPU.BatchSize = gpuConfig.GetBatchSize()
+			hardwareConfig.GPU.Precision = gpuConfig.GetPrecision()
+		}
+
+		// 转换CPU配置
+		if cpuConfig, ok := vectorHardwareConfig.GetCPUConfig().(interface {
+			IsEnabled() bool
+			GetThreads() int
+		}); ok {
+			hardwareConfig.CPU.Enable = cpuConfig.IsEnabled()
+			hardwareConfig.CPU.Threads = cpuConfig.GetThreads()
+		}
+
+		// 转换FPGA配置
+		if fpgaConfig, ok := vectorHardwareConfig.GetFPGAConfig().(interface {
+			IsEnabled() bool
+			GetDeviceIDs() []int
+		}); ok {
+			hardwareConfig.FPGA.Enable = fpgaConfig.IsEnabled()
+			hardwareConfig.FPGA.DeviceIDs = fpgaConfig.GetDeviceIDs()
+		}
+
+		// 转换PMem配置
+		if pmemConfig, ok := vectorHardwareConfig.GetPMemConfig().(interface {
+			IsEnabled() bool
+			GetDevicePath() string
+			GetPoolSize() int64
+		}); ok {
+			hardwareConfig.PMem.Enable = pmemConfig.IsEnabled()
+			hardwareConfig.PMem.DevicePath = pmemConfig.GetDevicePath()
+			hardwareConfig.PMem.PoolSize = uint64(pmemConfig.GetPoolSize())
+		}
+
+		// 转换RDMA配置
+		if rdmaConfig, ok := vectorHardwareConfig.GetRDMAConfig().(interface {
+			IsEnabled() bool
+			GetDeviceID() int
+			GetPortNum() int
+		}); ok {
+			hardwareConfig.RDMA.Enable = rdmaConfig.IsEnabled()
+			hardwareConfig.RDMA.DeviceID = rdmaConfig.GetDeviceID()
+			hardwareConfig.RDMA.PortNum = rdmaConfig.GetPortNum()
+		}
+	}
+
+	// 应用配置
+	return hm.UpdateConfig(hardwareConfig)
 }
 
 // BatchComputeDistance 使用最佳加速器进行批量距离计算

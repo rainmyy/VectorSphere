@@ -13,6 +13,15 @@ import (
 	"time"
 )
 
+// CPUConfig CPU配置
+type CPUConfig struct {
+	Enable      bool   `json:"enable" yaml:"enable"`
+	IndexType   string `json:"index_type" yaml:"index_type"`
+	DeviceID    int    `json:"device_id" yaml:"device_id"`
+	Threads     int    `json:"threads" yaml:"threads"`
+	VectorWidth int    `json:"vector_width" yaml:"vector_width"`
+}
+
 func NewFAISSAccelerator(deviceID int, indexType string) *FAISSAccelerator {
 	return &FAISSAccelerator{
 		deviceID:    deviceID,
@@ -49,6 +58,8 @@ func getGPUDeviceCount() int {
 	// 简化实现，实际应该调用C.faiss_gpu_get_device_count()
 	return 0 // 默认假设有1个GPU设备
 }
+
+// Initialize 实现仅使用 CPU 的初始化
 func (c *FAISSAccelerator) Initialize() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -57,7 +68,7 @@ func (c *FAISSAccelerator) Initialize() error {
 		return nil
 	}
 
-	// 检测CPU硬件能力
+	// 检测 CPU 硬件能力
 	caps := c.strategy.GetHardwareCapabilities()
 	logger.Info("CPU加速器初始化: 检测到 %d 核心, AVX2: %v, AVX512: %v",
 		caps.CPUCores, caps.HasAVX2, caps.HasAVX512)
@@ -79,6 +90,7 @@ func (c *FAISSAccelerator) Initialize() error {
 
 	logger.Info("CPU加速器初始化完成，使用策略: %v", c.currentStrategy)
 	c.initialized = true
+	c.available = true
 	return nil
 }
 

@@ -39,6 +39,10 @@ type GPUConfig struct {
 	StreamCount       int     `json:"stream_count"`
 	TensorCores       bool    `json:"tensor_cores"`
 	PowerLimit        float64 `json:"power_limit"`
+
+	Enable    bool   `json:"enable" yaml:"enable"`
+	DeviceIDs []int  `json:"device_ids" yaml:"device_ids"`
+	IndexType string `json:"index_type" yaml:"index_type"`
 }
 
 // GPUStats GPU统计信息
@@ -208,6 +212,23 @@ func (g *GPUAccelerator) Shutdown() error {
 	// 模拟GPU资源清理
 	g.initialized = false
 	g.memoryUsed = 0
+
+	return nil
+}
+
+// Cleanup 清理GPU资源
+func (g *GPUAccelerator) Cleanup() error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if !g.initialized {
+		return nil // 已经清理
+	}
+
+	// 模拟GPU资源清理
+	g.initialized = false
+	g.memoryUsed = 0
+	g.stats = &GPUStats{}
 
 	return nil
 }

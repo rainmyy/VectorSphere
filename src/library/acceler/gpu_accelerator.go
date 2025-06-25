@@ -88,6 +88,53 @@ func NewFAISSGPUAccelerator(deviceID int, indexType string) *FAISSAccelerator {
 func (c *FAISSAccelerator) Initialize() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	if c.initialized {
+		return nil
+	}
+
+	// 检测 CPU 硬件能力
+	caps := c.strategy.GetHardwareCapabilities()
+	logger.Info("GPU加速器初始化: 检测到 %d 核心, AVX2: %v, AVX512: %v, GPU: %v",
+		caps.CPUCores, caps.HasAVX2, caps.HasAVX512, caps.HasGPU)
+
+	c.strategy = NewComputeStrategySelector()
+	// 选择最佳计算策略
+	c.currentStrategy = c.strategy.SelectOptimalStrategy(c.dataSize, c.dimension) // 默认参数
+
+	// 根据检测到的硬件能力设置最佳策略
+	// 获取 GPU 设备属性
+	var props C.cudaDeviceProp
+	if C.cudaGetDeviceProperties(&props, C.int(c.deviceID)) == C.cudaSuccess {
+		// 根据 GPU 计算能力选择最佳策略
+		c.currentStrategy = StrategyGPU
+		logger.Info("GPU 加速器初始化: 设备 %d (%s), 计算能力 %d.%d",
+			c.deviceID, C.GoString(&props.name[0]), props.major, props.minor)
+	} else if caps.HasAVX512 {
+		logger.Info("启用 AVX512 加速")
+		c.currentStrategy = StrategyAVX512
+	} else if caps.HasAVX2 {
+		logger.Info("启用 AVX2 加速")
+		c.currentStrategy = StrategyAVX2
+	} else {
+		logger.Info("使用标准计算方法")
+		c.currentStrategy = StrategyStandard
+	}
+
+	if err := c.initFaissWrapper(); err != nil {
+		logger.Error("FAISS wrapper init failed: %v", err)
+		return err
+	}
+
+	logger.Info("GPU加速器初始化完成，使用策略: %v", c.currentStrategy)
+	c.initialized = true
+	c.available = true
+	return nil
+}
+
+func (c *FAISSAccelerator) Initialize_bat() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.initialized {
 		return nil
 	}

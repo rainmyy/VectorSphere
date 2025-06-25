@@ -1,6 +1,7 @@
 package vector
 
 import (
+	"VectorSphere/src/library/acceler"
 	"fmt"
 	"time"
 )
@@ -746,6 +747,53 @@ func (db *VectorDB) applyHardwareConfig(config *HardwareAccelerationConfig) erro
 	if config.GPU.Enable && db.gpuAccelerator != nil {
 		db.HardwareCaps.HasGPU = true
 	}
+	return nil
+}
+
+// ApplyHardwareManager 应用硬件管理器
+func (db *VectorDB) ApplyHardwareManager(hardwareManager *acceler.HardwareManager) error {
+	// 检查参数
+	if hardwareManager == nil {
+		return fmt.Errorf("硬件管理器不能为空")
+	}
+
+	// 获取硬件配置
+	config := hardwareManager.GetConfig()
+
+	// 更新硬件能力信息
+	gpuAcc, hasGPU := hardwareManager.GetAccelerator(acceler.AcceleratorGPU)
+	if hasGPU && config.GPU.Enable {
+		// 设置GPU加速器
+		db.gpuAccelerator = gpuAcc
+
+		// 更新硬件能力信息
+		db.HardwareCaps.HasGPU = true
+		db.HardwareCaps.GPUDevices = len(config.GPU.DeviceIDs)
+	}
+
+	// 获取CPU加速器
+	cpuAcc, hasCPU := hardwareManager.GetAccelerator(acceler.AcceleratorCPU)
+	if hasCPU && config.CPU.Enable {
+		// 更新CPU能力信息
+		caps := cpuAcc.GetCapabilities()
+		db.HardwareCaps.HasAVX2 = caps.HasAVX2
+		db.HardwareCaps.HasAVX512 = caps.HasAVX512
+		db.HardwareCaps.CPUCores = caps.CPUCores
+	}
+
+	// 根据硬件能力选择最佳计算策略
+	if db.strategyComputeSelector != nil {
+		// 根据向量维度和数据量选择最佳计算策略
+		// 使用向量维度和估计的数据量作为参数
+		estimatedDataSize := 10000 // 默认估计数据量
+		db.mu.RLock()
+		if len(db.vectors) > 0 {
+			estimatedDataSize = len(db.vectors)
+		}
+		db.mu.RUnlock()
+		db.currentStrategy = db.strategyComputeSelector.SelectOptimalStrategy(estimatedDataSize, db.vectorDim)
+	}
+
 	return nil
 }
 

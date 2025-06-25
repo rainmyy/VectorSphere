@@ -36,6 +36,9 @@ type PMemConfig struct {
 	Reliability       *PMemReliabilityConfig  `json:"reliability"`
 	EnableCompression bool                    `json:"enable_compression"`
 	EnableEncryption  bool                    `json:"enable_encryption"`
+
+	Enable bool   `json:"enable" yaml:"enable"`
+	Mode   string `json:"mode" yaml:"mode"`
 }
 
 // PMemNamespace PMem命名空间配置

@@ -37,6 +37,10 @@ type RDMAConfig struct {
 	PerformanceTuning  *RDMAPerformanceTuningConfig  `json:"performance_tuning"`
 	EnableMultipath    bool                          `json:"enable_multipath"`
 	EnableCompression  bool                          `json:"enable_compression"`
+
+	Enable    bool   `json:"enable" yaml:"enable"`
+	QueueSize int    `json:"queue_size" yaml:"queue_size"`
+	Protocol  string `json:"protocol" yaml:"protocol"`
 }
 
 // RDMANetworkConfig RDMA网络配置

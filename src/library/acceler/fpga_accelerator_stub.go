@@ -35,6 +35,11 @@ type FPGAConfig struct {
 	ComputeUnits    int                        `json:"compute_units"`
 	ClockFrequency  int                        `json:"clock_frequency"`
 	PowerLimit      float64                    `json:"power_limit"`
+
+	Enable        bool  `json:"enable" yaml:"enable"`
+	DeviceIDs     []int `json:"device_ids" yaml:"device_ids"`
+	ClockFreq     int   `json:"clock_freq" yaml:"clock_freq"`
+	PipelineDepth int   `json:"pipeline_depth" yaml:"pipeline_depth"`
 }
 
 // FPGAParallelismConfig FPGA并行配置

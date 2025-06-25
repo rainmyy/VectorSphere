@@ -1,0 +1,81 @@
+{
+  "GPU": {
+    "Enable": true,
+    "Devices": [0, 1],
+    "CUDA": {
+      "Enable": true,
+      "MemoryLimit": 8192,
+      "BatchSize": 256,
+      "ComputeCapability": "7.5"
+    },
+    "OpenCL": {
+      "Enable": false,
+      "Platform": 0,
+      "Device": 0
+    },
+    "TensorRT": {
+      "Enable": false,
+      "PrecisionMode": "FP16",
+      "WorkspaceSize": 4096
+    },
+    "MultiGPU": {
+      "Enable": true,
+      "Strategy": "DataParallel",
+      "Communication": "NCCL",
+      "LoadBalancing": "Dynamic",
+      "Synchronization": "Barrier"
+    },
+    "MemoryManagement": {
+      "PoolingEnabled": true,
+      "PreallocationSize": 2048,
+      "CacheSize": 1024,
+      "PinnedMemory": true
+    },
+    "PerformanceTuning": {
+      "AutoTuneEnabled": true,
+      "PowerMode": "Performance",
+      "ClockBoost": true
+    }
+  },
+  "FPGA": {
+    "Enable": false,
+    "DeviceID": 0,
+    "BitStream": "vector_search.bit",
+    "ClockFrequency": 200
+  },
+  "PMem": {
+    "Enable": false,
+    "Path": "/mnt/pmem0",
+    "Size": 32768,
+    "Mode": "AppDirect"
+  },
+  "RDMA": {
+    "Enable": false,
+    "Interface": "mlx5_0",
+    "Port": 1,
+    "QueuePairs": 16,
+    "MTU": 4096
+  },
+  "CPU": {
+    "Enable": true,
+    "NumThreads": 16,
+    "EnableAVX": true,
+    "EnableAVX512": true,
+    "NUMA": {
+      "Enable": true,
+      "PreferredNode": 0
+    },
+    "CacheOptimization": {
+      "Enable": true,
+      "PrefetchDistance": 64,
+      "TileSize": 32
+    }
+  },
+  "NPU": {
+    "Enable": false,
+    "DeviceID": 0,
+    "Model": "Generic",
+    "Precision": "INT8",
+    "BatchSize": 64
+  }
+}
