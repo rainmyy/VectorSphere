@@ -18,6 +18,7 @@ type Accelerator interface {
 type FAISSAccelerator struct {
 	deviceID        int
 	initialized     bool
+	available       bool
 	mu              sync.RWMutex
 	indexType       string
 	gpuWrapper      unsafe.Pointer // C.FaissGpuWrapper*
@@ -30,8 +31,11 @@ type FAISSAccelerator struct {
 type AccelResult struct {
 	ID         string
 	Similarity float64
+	Distance   float64
 	Metadata   map[string]interface{}
 	DocIds     []string
+	Vector     []float64
+	Index      int
 }
 
 // checkVectorsDim checks if all vectors have the same dimension and returns it

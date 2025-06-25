@@ -2257,7 +2257,7 @@ func (db *VectorDB) GetMetadata(id string) (map[string]interface{}, bool) {
 }
 
 // SearchWithFilter 带过滤条件的向量搜索
-func (db *VectorDB) SearchWithFilter(query string, topK int, filter func(map[string]interface{}) bool) ([]SearchResult, error) {
+func (db *VectorDB) SearchWithFilter(query string, topK int, filter func(map[string]interface{}) bool) ([]entity.SearchResult, error) {
 	// 将查询文本向量化
 	queryVector, err := db.GetVectorForTextWithCache(query, db.vectorizedType)
 	if err != nil {
@@ -2271,7 +2271,7 @@ func (db *VectorDB) SearchWithFilter(query string, topK int, filter func(map[str
 	}
 
 	// 应用过滤器并计算相似度
-	var filteredResults []SearchResult
+	var filteredResults []entity.SearchResult
 	for _, result := range results {
 		// 获取元数据
 		metadata, exists := db.GetMetadata(result.Id)
@@ -2287,7 +2287,7 @@ func (db *VectorDB) SearchWithFilter(query string, topK int, filter func(map[str
 				continue
 			}
 
-			filteredResults = append(filteredResults, SearchResult{
+			filteredResults = append(filteredResults, entity.SearchResult{
 				ID:         result.Id,
 				Similarity: similarity,
 				Metadata:   metadata,

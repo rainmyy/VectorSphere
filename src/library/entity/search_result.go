@@ -1,4 +1,4 @@
-package vector
+package entity
 
 // SearchResult 搜索结果结构体
 type SearchResult struct {
