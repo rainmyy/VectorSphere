@@ -478,17 +478,14 @@ func (c *FAISSAccelerator) RunBenchmark(vectorDim, numVectors int) map[string]in
 }
 
 // AccelerateSearch 加速搜索（UnifiedAccelerator接口方法）
-func (c *FAISSAccelerator) AccelerateSearch(query []float64, results []AccelResult, options entity.SearchOptions) ([]AccelResult, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+func (c *FAISSAccelerator) AccelerateSearch(query []float64, database [][]float64, options entity.SearchOptions) ([]AccelResult, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	if !c.initialized {
-		return nil, fmt.Errorf("CPU accelerator not initialized")
+		return nil, fmt.Errorf("FPGA accelerator not initialized")
 	}
-
-	// 简单实现：直接返回输入的结果
-	// 在实际应用中，这里可以进行进一步的优化处理
-	return results, nil
+	return AccelerateSearch(query, database, options)
 }
 
 // Start 启动CPU加速器（UnifiedAccelerator接口方法）

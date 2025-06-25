@@ -49,7 +49,7 @@ func (hm *HardwareManager) setupDefaultStrategies() {
 // registerAllAccelerators 注册所有可用的硬件加速器
 func (hm *HardwareManager) registerAllAccelerators() {
 	// 注册CPU加速器 (使用FAISS作为CPU实现)
-	cpuAcc := NewFAISSAccelerator(&FAISSConfig{DeviceID: 0, IndexType: "IDMap,Flat"})
+	cpuAcc := NewFAISSAccelerator(0, "IDMap,Flat")
 	if cpuAcc.IsAvailable() {
 		hm.RegisterAccelerator(AcceleratorCPU, cpuAcc)
 		if err := hm.manager.RegisterAccelerator(cpuAcc); err != nil {
@@ -59,7 +59,7 @@ func (hm *HardwareManager) registerAllAccelerators() {
 
 	// 注册GPU加速器
 	for i := 0; i < 4; i++ { // 最多检测4个GPU
-		gpuAcc := NewGPUAccelerator(&GPUConfig{DeviceID: i, IndexType: "IVF,Flat", NumClusters: 128})
+		gpuAcc := NewGPUAccelerator(i, "IVF,Flat", 128)
 		if gpuAcc.IsAvailable() {
 			name := fmt.Sprintf("AcceleratorGPU_%d", i)
 			hm.RegisterAccelerator(name, gpuAcc)
@@ -79,7 +79,7 @@ func (hm *HardwareManager) registerAllAccelerators() {
 			BitstreamPath: fmt.Sprintf("path/to/bitstream_%d.bin", i), // 动态路径
 			BufferSize:    1024 * 1024 * 1024,                         // 1GB
 		}
-		fpgaAcc := NewFPGAAccelerator(0, config)
+		fpgaAcc := NewFPGAAccelerator(i, config)
 		if fpgaAcc.IsAvailable() {
 			name := fmt.Sprintf("%s_%d", AcceleratorFPGA, i)
 			hm.RegisterAccelerator(name, fpgaAcc)
@@ -109,7 +109,7 @@ func (hm *HardwareManager) registerAllAccelerators() {
 		DeviceID: 0,
 		PortNum:  1,
 	}
-	rdmaAcc := NewRDMAAccelerator(rdmaConfig)
+	rdmaAcc := NewRDMAAccelerator(0, 1, rdmaConfig)
 	if rdmaAcc.IsAvailable() {
 		hm.RegisterAccelerator(AcceleratorRDMA, rdmaAcc)
 		if err := hm.manager.RegisterAccelerator(rdmaAcc); err != nil {

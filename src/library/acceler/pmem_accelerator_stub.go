@@ -228,46 +228,16 @@ func (p *PMemAccelerator) BatchCosineSimilarity(queries, database [][]float64) (
 	return p.BatchComputeDistance(queries, database)
 }
 
-// AccelerateSearch 加速向量搜索
-func (p *PMemAccelerator) AccelerateSearch(query []float64, results []AccelResult, options entity.SearchOptions) ([]AccelResult, error) {
+func (p *PMemAccelerator) AccelerateSearch(query []float64, database [][]float64, options entity.SearchOptions) ([]AccelResult, error) {
 	start := time.Now()
 	defer func() {
 		p.updateStats(time.Since(start), nil)
 	}()
 
 	if !p.initialized {
-		return nil, fmt.Errorf("PMem accelerator not initialized")
+		return nil, fmt.Errorf("FPGA accelerator not initialized")
 	}
-
-	// 计算所有距离
-	distances, err := p.ComputeDistance(query, database)
-	if err != nil {
-		return nil, err
-	}
-
-	// 找到最小的k个距离
-	results := make([]AccelResult, 0, k)
-	for i := 0; i < len(distances) && len(results) < k; i++ {
-		minIdx := -1
-		minDist := math.Inf(1)
-		for j, dist := range distances {
-			if dist < minDist {
-				minDist = dist
-				minIdx = j
-			}
-		}
-		if minIdx >= 0 {
-			results = append(results, AccelResult{
-				ID:         fmt.Sprintf("vec_%d", minIdx),
-				Similarity: 1.0 - minDist, // 转换为相似度
-				Distance:   minDist,
-				Vector:     database[minIdx],
-			})
-			distances[minIdx] = math.Inf(1) // 标记为已使用
-		}
-	}
-
-	return results, nil
+	return AccelerateSearch(query, database, options)
 }
 
 // OptimizeMemory 优化内存使用
