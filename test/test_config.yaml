@@ -1,0 +1,3743 @@
+distributed:
+  index_config:
+    hnsw_config:
+      enable: true
+      max_connections: 32
+      ef_construction: 200
+      ef_search: 100
+      max_level: 6
+      recall_threshold: 0.95
+      usage_scenario: balanced
+    ivf_config:
+      enable: true
+      num_clusters: 100
+      nprobe: 10
+      training_ratio: 0.1
+      rebalance_threshold: 1000
+      usage_scenario: large_scale
+    pq_config:
+      enable: false
+      num_sub_vectors: 8
+      num_centroids: 256
+      compression_ratio: 0.25
+      usage_scenario: memory_critical
+    lsh_config:
+      enable: false
+      num_tables: 10
+      num_hash_functions: 8
+      bucket_size: 100
+      probe_radius: 2
+      usage_scenario: ultra_large
+    adaptive_selection:
+      enable: true
+      data_size_thresholds:
+        small_dataset: 10000
+        medium_dataset: 1000000
+        large_dataset: 100000000
+        ultra_large: 1000000000
+      quality_thresholds:
+        high_quality: 0.95
+        medium_quality: 0.85
+        acceptable_quality: 0.7
+      performance_thresholds:
+        low_latency: 10ms
+        medium_latency: 100ms
+        high_latency: 1s
+      selection_rules: []
+    hybrid_strategy:
+      enable: false
+      primary_index: hnsw
+      secondary_index: ivf
+      switching_thresholds:
+        cpu_usage_threshold: 0
+        memory_usage_threshold: 0
+        latency_threshold: 0s
+        qps_threshold: 0
+      load_balancing:
+        strategy: ""
+        primary_weight: 0
+        secondary_weight: 0
+        adaptive_rules: []
+  architecture_config:
+    sharding_config:
+      strategy: hash
+      num_shards: 8
+      replication_factor: 3
+      rebalance_config:
+        enable: true
+        trigger_threshold: 0.8
+        check_interval: 5m0s
+        max_concurrent_moves: 2
+        data_migration_rate: 104857600
+      range_sharding:
+        key_field: ""
+        ranges: []
+        auto_split: false
+        split_threshold: 0
+      hash_sharding:
+        hash_function: ""
+        virtual_nodes: 0
+        consistent_hash: false
+      cluster_sharding:
+        clustering_algorithm: ""
+        num_clusters: 0
+        re_cluster_threshold: 0
+        cluster_update_interval: 0s
+      adaptive_sharding:
+        enable: false
+        metrics: []
+        decision_interval: 0s
+        sharding_rules: []
+        fallback_strategy: ""
+    compute_storage_separation:
+      enable: true
+      compute_nodes:
+        min_nodes: 2
+        max_nodes: 10
+        node_specs:
+          cpu_cores: 8
+          memory_gb: 32
+          storage_gb: 100
+          network_gbps: 10
+          gpu_count: 1
+        scaling_policy:
+          name: ""
+          metrictype: ""
+          threshold: 0
+          direction: ""
+          cooldownperiod: 0s
+          mininstances: 0
+          maxinstances: 0
+          scalingfactor: 0
+          lastscaletime: 0001-01-01T00:00:00Z
+          enabled: false
+        cache_config:
+          enable: false
+          size_gb: 0
+          strategy: ""
+          ttl: 0s
+      storage_nodes:
+        min_nodes: 3
+        max_nodes: 20
+        node_specs:
+          cpu_cores: 0
+          memory_gb: 0
+          storage_gb: 0
+          network_gbps: 0
+          gpu_count: 0
+        replication_factor: 3
+        storage_type: nvme
+        compression_config:
+          enable: false
+          algorithm: ""
+          level: 0
+          threshold: 0
+      coordinator_nodes:
+        num_nodes: 0
+        node_specs:
+          cpu_cores: 0
+          memory_gb: 0
+          storage_gb: 0
+          network_gbps: 0
+          gpu_count: 0
+        election_config:
+          algorithm: ""
+          election_timeout: 0s
+          heartbeat_interval: 0s
+        health_check:
+          enable: false
+          interval: 0s
+          timeout: 0s
+          endpoints: []
+          dependencies: []
+          readiness:
+            enable: false
+            path: ""
+            initial_delay: 0s
+            period: 0s
+            timeout: 0s
+            failure_threshold: 0
+            success_threshold: 0
+          liveness:
+            enable: false
+            path: ""
+            initial_delay: 0s
+            period: 0s
+            timeout: 0s
+            failure_threshold: 0
+          startup:
+            enable: false
+            path: ""
+            initial_delay: 0s
+            period: 0s
+            timeout: 0s
+            failure_threshold: 0
+      metadata_service:
+        type: ""
+        endpoints: []
+        backup_config:
+          enable: false
+          interval: 0s
+          retention_period: 0s
+          storage_path: ""
+          compression: false
+        consistency_level: ""
+      networking:
+        protocol: ""
+        compression: false
+        encryption: false
+        bandwidth_limit: 0
+        connection_pool:
+          max_connections: 0
+          min_connections: 0
+          idle_timeout: 0s
+          connect_timeout: 0s
+          keepalive: false
+        rdma_config:
+          enable: false
+          device_name: ""
+          port_num: 0
+          queue_depth: 0
+          max_inline_data: 0
+    node_management:
+      discovery:
+        type: ""
+        endpoints: []
+        refresh_interval: 0s
+        health_check: false
+      registration:
+        auto_register: false
+        registry_ttl: 0s
+        renewal_interval: 0s
+        metadata: {}
+      monitoring:
+        metrics_interval: 0s
+        metrics_endpoint: ""
+        alert_rules: []
+      failover:
+        enable: false
+        detection_interval: 0s
+        failover_timeout: 0s
+        max_retries: 0
+        backoff_strategy: ""
+    load_balancing:
+      strategy: least_load
+      health_check_interval: 30s
+      weighted_config:
+        weight_update_interval: 0s
+        weight_factors: []
+      latency_config:
+        latency_window: 0s
+        latency_threshold: 0s
+        penalty_factor: 0
+        recovery_factor: 0
+      sticky_session:
+        enable: false
+        method: ""
+        ttl: 0s
+        cookie_name: ""
+        header_name: ""
+    consistent_hashing:
+      enable: false
+      virtual_nodes: 0
+      hash_function: ""
+      replication_factor: 0
+  performance_config:
+    query_acceleration:
+      enable: true
+      preprocessing:
+        normalization: true
+        dimension_reduction:
+          enable: false
+          method: pca
+          target_dim: 128
+          variance_ratio: 0
+          training_size: 0
+        quantization:
+          enable: false
+          method: ""
+          bits: 0
+          codebook_size: 0
+        filtering:
+          enable: false
+          pre_filtering:
+            enable: false
+            filter_ratio: 0
+            criteria: []
+            thresholds: []
+          post_filtering:
+            enable: false
+            similarity_threshold: 0
+            diversity_filter: false
+            diversity_ratio: 0
+          bloom_filter:
+            enable: false
+            expected_items: 0
+            false_positive_rate: 0
+            hash_functions: 0
+      multi_stage_search:
+        enable: true
+        stages: []
+        coarse_candidates: 1000
+        refinement_ratio: 0.1
+        adaptive_staging:
+          enable: false
+          latency_threshold: 0s
+          accuracy_threshold: 0
+          load_threshold: 0
+          adjustment_interval: 0s
+      parallel_search:
+        enable: false
+        max_workers: 0
+        workload_splitting:
+          strategy: ""
+          chunk_size: 0
+          overlap_ratio: 0
+          load_balancing: false
+        result_merging:
+          strategy: ""
+          merge_threshold: 0
+          duplicate_removal: false
+          similarity_threshold: 0
+      early_termination:
+        enable: false
+        confidence_threshold: 0
+        timeout_threshold: 0s
+        quality_threshold: 0
+        progressive_search:
+          enable: false
+          initial_candidates: 0
+          expansion_factor: 0
+          max_iterations: 0
+          convergence_threshold: 0
+      query_optimization:
+        enable: false
+        query_rewriting:
+          enable: false
+          expansion_terms: 0
+          synonym_expansion: false
+          query_normalization: false
+          stopword_removal: false
+        query_caching:
+          enable: false
+          cache_size: 0
+          ttl: 0s
+          similarity_threshold: 0
+          compression_ratio: 0
+        query_planning:
+          enable: false
+          cost_model:
+            cpu_weight: 0
+            memory_weight: 0
+            io_weight: 0
+            network_weight: 0
+            latency_weight: 0
+          plan_optimization:
+            algorithm: ""
+            optimization_goal: ""
+            max_iterations: 0
+            convergence_threshold: 0
+          adaptive_planning:
+            enable: false
+            learning_rate: 0
+            update_interval: 0s
+            history_window: 0
+            feedback_weight: 0
+        query_profiling:
+          enable: false
+          sampling_rate: 0
+          profiling_interval: 0s
+          metrics_collection: []
+          performance_analysis:
+            bottleneck_detection: false
+            trend_analysis: false
+            anomaly_detection: false
+            recommendations: false
+            alert_thresholds: []
+    concurrency_control:
+      max_concurrent_queries: 0
+      query_queue_size: 0
+      thread_pool_config:
+        core_threads: 0
+        max_threads: 0
+        queue_capacity: 0
+        keep_alive_time: 0s
+        rejection_policy: ""
+      rate_limiting:
+        enable: false
+        global_limit:
+          requests_per_second: 0
+          burst_size: 0
+          window_size: 0s
+          penalty_duration: 0s
+        per_user_limit:
+          requests_per_second: 0
+          burst_size: 0
+          window_size: 0s
+          penalty_duration: 0s
+        per_ip_limit:
+          requests_per_second: 0
+          burst_size: 0
+          window_size: 0s
+          penalty_duration: 0s
+        adaptive_rate_limit:
+          enable: false
+          base_rate: 0
+          max_rate: 0
+          adjustment_factor: 0
+          monitoring_window: 0s
+      resource_isolation:
+        enable: false
+        cpu_isolation:
+          enable: false
+          cpu_quota: 0
+          cpu_shares: 0
+          cpu_affinity: []
+          numa_binding: false
+        memory_isolation:
+          enable: false
+          memory_limit: 0
+          swap_limit: 0
+          oom_kill_disable: false
+          memory_reservation: 0
+        io_isolation:
+          enable: false
+          read_bandwidth: 0
+          write_bandwidth: 0
+          read_iops: 0
+          write_iops: 0
+          io_weight: 0
+        priority_queues:
+          enable: false
+          num_priority_levels: 0
+          priority_rules: []
+          scheduling_policy:
+            algorithm: ""
+            time_slice: 0s
+            preemption: false
+            starvation_prevention: false
+    memory_management:
+      memory_pool:
+        enable: false
+        pool_size: 0
+        chunk_size: 0
+        preallocation: false
+        growth_strategy: ""
+        shrink_threshold: 0
+      garbage_collection:
+        enable: false
+        gc_interval: 0s
+        gc_threshold: 0
+        concurrent_gc: false
+        generational_gc: false
+      memory_mapping:
+        enable: false
+        mmap_threshold: 0
+        advise_strategy: ""
+        huge_pages_enable: false
+        lock_memory: false
+      swap_management:
+        enable: false
+        swappiness: 0
+        swap_threshold: 0
+        swap_priority: 0
+        compressed_swap: false
+    batch_processing:
+      enable: false
+      batch_size: 0
+      batch_timeout: 0s
+      adaptive_batching:
+        enable: false
+        min_batch_size: 0
+        max_batch_size: 0
+        latency_target: 0s
+        throughput_target: 0
+        adjustment_factor: 0
+      pipelining:
+        enable: false
+        stages: 0
+        buffer_size: 0
+        parallel_stages: false
+        backpressure: false
+    prefetching:
+      enable: false
+      data_prefetching:
+        enable: false
+        prefetch_distance: 0
+        prefetch_ratio: 0
+        access_pattern: ""
+        cache_warmup: false
+      index_prefetching:
+        enable: false
+        prefetch_depth: 0
+        prefetch_width: 0
+        predictive_load: false
+        lazy_loading: false
+      query_prefetching:
+        enable: false
+        prediction_model: ""
+        history_window: 0
+        prefetch_count: 0
+        confidence_threshold: 0
+        update_interval: 0s
+  hardware_config:
+    gpu:
+      enable: false
+      device_ids: []
+      memory_limit: 8589934592
+      batch_size: 1000
+      compute_capability: ""
+      cuda_config:
+        enable: false
+        version: ""
+        streams: 0
+        block_size: 0
+        grid_size: 0
+        shared_memory_size: 0
+        optimization_level: 0
+      opencl_config:
+        enable: false
+        platform_id: 0
+        device_type: ""
+        work_group_size: 0
+        local_memory_size: 0
+        compiler_options: []
+      tensorrt_config:
+        enable: false
+        precision: ""
+        max_batch_size: 0
+        max_workspace_size: 0
+        optimization_level: 0
+        calibration_data: ""
+      multi_gpu:
+        enable: false
+        strategy: ""
+        communication:
+          backend: ""
+          topology: ""
+          compression_enable: false
+          bandwidth_limit: 0
+        load_balancing:
+          strategy: ""
+          monitoring_interval: 0s
+          rebalance_threshold: 0
+          migration_cost: 0
+        synchronization:
+          mode: ""
+          sync_interval: 0s
+          timeout_threshold: 0s
+          retry_count: 0
+      memory_management:
+        pooling: false
+        preallocation: false
+        fragmentation_threshold: 0
+        gc_threshold: 0
+        unified_memory: false
+        memory_mapping: false
+      performance_tuning:
+        auto_tuning: false
+        kernel_fusion: false
+        memory_coalescing: false
+        occupancy_optimization: false
+        power_management:
+          enable: false
+          power_limit: 0
+          frequency_scaling: false
+          voltage_scaling: false
+          idle_timeout: 0s
+        thermal_management:
+          enable: false
+          temperature_limit: 0
+          fan_control: false
+          throttling: false
+          cooling_strategy: ""
+    fpga:
+      enable: false
+      device_ids: []
+      bitstream: ""
+      clock_frequency: 0
+      memory_bandwidth: 0
+      pipeline_depth: 0
+      parallelism:
+        compute_units: 0
+        vector_width: 0
+        unroll_factor: 0
+        pipeline_stages: 0
+      optimization:
+        resource_sharing: false
+        memory_optimization: false
+        timing_optimization: false
+        power_optimization: false
+        area_optimization: false
+      reconfiguration:
+        enable: false
+        partial_reconfiguration: false
+        reconfiguration_time: 0s
+        bitstream_cache: false
+        hot_swap: false
+    pmem:
+      enable: false
+      device_paths: []
+      mode: ""
+      namespaces: []
+      interleaving:
+        enable: false
+        ways: 0
+        granularity: 0
+        alignment: 0
+      persistence:
+        flush_strategy: ""
+        flush_interval: 0s
+        checkpointing: false
+        checkpoint_interval: 0s
+        recovery_mode: ""
+      performance:
+        read_ahead: false
+        write_behind: false
+        batch_size: 0
+        queue_depth: 0
+        numa_optimization: false
+      reliability:
+        ecc: false
+        scrubbing: false
+        scrubbing_interval: 0s
+        bad_block_management: false
+        wear_leveling: false
+    rdma:
+      enable: false
+      devices: []
+      protocol: ""
+      transport_type: ""
+      queue_pairs:
+        max_qps: 0
+        send_queue_size: 0
+        receive_queue_size: 0
+        max_inline_data: 0
+        max_sge: 0
+        retry_count: 0
+        rnr_retry_count: 0
+        timeout: 0
+      memory_registration:
+        strategy: ""
+        cache_size: 0
+        huge_pages_enable: false
+        memory_pinning: false
+        registration_cache: false
+      congestion_control:
+        algorithm: ""
+        ecn_threshold: 0
+        rate_increase: 0
+        rate_decrease: 0
+        min_rate: 0
+        max_rate: 0
+      performance_tuning:
+        batch_size: 0
+        polling_mode: false
+        interrupt_coalescing: false
+        cpu_affinity: []
+        numa_optimization: false
+        zero_copy: false
+    cpu:
+      enable: false
+      vectorization:
+        enable: false
+        instruction_sets: []
+        vector_width: 0
+        auto_vectorization: false
+        unroll_factor: 0
+      cache_optimization:
+        enable: false
+        l1_optimization:
+          block_size: 0
+          associativity: 0
+          replacement_policy: ""
+          prefetch_distance: 0
+        l2_optimization:
+          block_size: 0
+          associativity: 0
+          replacement_policy: ""
+          prefetch_distance: 0
+        l3_optimization:
+          block_size: 0
+          associativity: 0
+          replacement_policy: ""
+          prefetch_distance: 0
+        cache_blocking:
+          enable: false
+          block_size_l1: 0
+          block_size_l2: 0
+          block_size_l3: 0
+          tiling_strategy: ""
+        data_layout:
+          enable: false
+          alignment: 0
+          padding: false
+          struct_packing: false
+          array_of_structs: false
+          struct_of_arrays: false
+      branch_prediction:
+        enable: false
+        predictor_type: ""
+        branch_hints: false
+        profile_guided: false
+        branch_elimination: false
+      prefetching:
+        enable: false
+        hardware_prefetch: false
+        software_prefetch: false
+        prefetch_distance: 0
+        prefetch_strategy: ""
+      parallelization:
+        enable: false
+        threads: 0
+        affinity:
+          enable: false
+          cpu_set: []
+          numa_nodes: []
+          isolated_cpus: []
+          hyper_threading: false
+        scheduling:
+          policy: ""
+          priority: 0
+          nice_value: 0
+          time_slice: 0s
+          preemption: false
+        synchronization:
+          primitive: ""
+          backoff_strategy: ""
+          lock_free_algorithms: false
+          wait_free_algorithms: false
+        load_balancing:
+          strategy: ""
+          migration_cost: 0
+          balance_interval: 0s
+          load_threshold: 0
+      power_management:
+        enable: false
+        governor: ""
+        frequency_scaling: false
+        voltage_scaling: false
+        c_states: false
+        p_states: false
+        turbo_boost: false
+        idle_timeout: 0s
+    npu:
+      enable: false
+      device_ids: []
+      model_format: ""
+      precision: ""
+      batch_size: 0
+      memory_limit: 0
+      compiler_options:
+        optimization_level: 0
+        target_device: ""
+        compiler_flags: []
+        debug_mode: false
+        profiling_enable: false
+      runtime_options:
+        threads: 0
+        memory_strategy: ""
+        scheduling_policy: ""
+        error_handling: ""
+      optimization:
+        graph_optimization: false
+        kernel_fusion: false
+        memory_optimization: false
+        quantization:
+          enable: false
+          method: ""
+          calibration_data: ""
+          accuracy_threshold: 0
+          mixed_precision: false
+        pruning:
+          enable: false
+          method: ""
+          sparsity_ratio: 0
+          gradual_pruning: false
+          finetuning: false
+        knowledge_distillation:
+          enable: false
+          teacher_model: ""
+          temperature: 0
+          alpha: 0
+          distillation_loss: ""
+  cache_config:
+    result_cache:
+      enable: true
+      max_size: 1073741824
+      max_entries: 10000
+      ttl: 30m0s
+      eviction_policy: LRU
+      compression_enable: false
+      compression_algorithm: ""
+      persistence:
+        enable: false
+        storage_path: ""
+        sync_interval: 0s
+        compression_level: 0
+        backup_enable: false
+        backup_interval: 0s
+        recovery_mode: ""
+      distribution:
+        enable: false
+        strategy: ""
+        replication_factor: 0
+        consistency_level: ""
+        partitioning:
+          method: ""
+          partitions: 0
+          hash_function: ""
+          virtual_nodes: 0
+          rebalance_enable: false
+          rebalance_threshold: 0
+        synchronization:
+          protocol: ""
+          sync_interval: 0s
+          batch_size: 0
+          conflict_resolution: ""
+          merge_strategy: ""
+        failover:
+          enable: false
+          detection_interval: 0s
+          failure_threshold: 0
+          recovery_timeout: 0s
+          backup_nodes: []
+          auto_failback: false
+      optimization:
+        prefetching:
+          enable: false
+          strategy: ""
+          lookahead_size: 0
+          prefetch_ratio: 0
+          adaptive_enable: false
+          learning_window: 0s
+          accuracy_threshold: 0
+        compaction:
+          enable: false
+          trigger_threshold: 0
+          compaction_interval: 0s
+          strategy: ""
+          max_compaction_time: 0s
+          background_enable: false
+        deduplication:
+          enable: false
+          method: ""
+          hash_function: ""
+          similarity_threshold: 0
+          window_size: 0
+          cleanup_interval: 0s
+        load_balancing:
+          enable: false
+          strategy: ""
+          health_check:
+            enable: false
+            interval: 0s
+            timeout: 0s
+            retry_count: 0
+            unhealthy_threshold: 0
+            healthy_threshold: 0
+          weighted_routing: false
+          sticky_session: false
+          failover_enable: false
+        memory_optimization:
+          enable: false
+          memory_pooling: false
+          object_pooling: false
+          gc_optimization: false
+          memory_mapping: false
+          compression_ratio: 0
+          fragmentation_threshold: 0
+      monitoring:
+        enable: false
+        metrics:
+          collection_interval: 0s
+          retention_period: 0s
+          hit_rate_tracking: false
+          latency_tracking: false
+          memory_tracking: false
+          throughput_tracking: false
+          error_tracking: false
+          custom_metrics: []
+        alerting:
+          enable: false
+          rules: []
+          notification:
+            channels: []
+            email_config:
+              smtp_server: ""
+              smtp_port: 0
+              username: ""
+              password: ""
+              from_address: ""
+              to_addresses: []
+              subject_template: ""
+              body_template: ""
+              tls_enable: false
+            slack_config:
+              webhook_url: ""
+              channel: ""
+              username: ""
+              icon_emoji: ""
+              message_template: ""
+            webhook_config:
+              url: ""
+              method: ""
+              headers: {}
+              payload_template: ""
+              timeout: 0s
+              retry_count: 0
+            rate_limiting:
+              enable: false
+              max_notifications: 0
+              time_window: 0s
+              cooldown_period: 0s
+              grouping_enable: false
+              grouping_window: 0s
+          escalation:
+            enable: false
+            levels: []
+            auto_escalation: false
+            escalation_delay: 0s
+        dashboard:
+          enable: false
+          port: 0
+          refresh_interval: 0s
+          charts: []
+          custom_dashboards: []
+          authentication_enable: false
+        profiling:
+          enable: false
+          sampling_rate: 0
+          profile_types: []
+          output_path: ""
+          retention_period: 0s
+          auto_analysis: false
+    vector_cache:
+      enable: true
+      max_size: 2147483648
+      max_vectors: 100000
+      ttl: 1h0m0s
+      eviction_policy: LFU
+      hot_data_strategy:
+        enable: false
+        detection_method: ""
+        hot_threshold: 0
+        cold_threshold: 0
+        analysis_window: 0s
+        promotion_policy: ""
+        demotion_policy: ""
+        resident_memory: false
+      compression_config:
+        enable: false
+        algorithm: ""
+        compression_ratio: 0
+        quality_threshold: 0
+        adaptive_enable: false
+        codebook_size: 0
+        subvector_count: 0
+      tiering:
+        enable: false
+        levels: []
+        promotion_policy:
+          strategy: ""
+          access_threshold: 0
+          time_threshold: 0s
+          batch_size: 0
+          promotion_interval: 0s
+          cost_model: ""
+        eviction_policy:
+          strategy: ""
+          eviction_ratio: 0
+          batch_size: 0
+          eviction_interval: 0s
+          protected_ratio: 0
+          cost_model: ""
+        migration_config:
+          enable: false
+          strategy: ""
+          batch_size: 0
+          migration_rate: 0
+          parallelism: 0
+          verification_enable: false
+          rollback_enable: false
+          timeout: 0s
+      prefetching:
+        enable: false
+        strategy: ""
+        neighbor_count: 0
+        prefetch_depth: 0
+        accuracy_threshold: 0
+        learning_window: 0s
+        adaptive_enable: false
+      monitoring:
+        enable: false
+        metrics:
+          collection_interval: 0s
+          retention_period: 0s
+          hit_rate_tracking: false
+          latency_tracking: false
+          memory_tracking: false
+          throughput_tracking: false
+          error_tracking: false
+          custom_metrics: []
+        alerting:
+          enable: false
+          rules: []
+          notification:
+            channels: []
+            email_config:
+              smtp_server: ""
+              smtp_port: 0
+              username: ""
+              password: ""
+              from_address: ""
+              to_addresses: []
+              subject_template: ""
+              body_template: ""
+              tls_enable: false
+            slack_config:
+              webhook_url: ""
+              channel: ""
+              username: ""
+              icon_emoji: ""
+              message_template: ""
+            webhook_config:
+              url: ""
+              method: ""
+              headers: {}
+              payload_template: ""
+              timeout: 0s
+              retry_count: 0
+            rate_limiting:
+              enable: false
+              max_notifications: 0
+              time_window: 0s
+              cooldown_period: 0s
+              grouping_enable: false
+              grouping_window: 0s
+          escalation:
+            enable: false
+            levels: []
+            auto_escalation: false
+            escalation_delay: 0s
+        dashboard:
+          enable: false
+          port: 0
+          refresh_interval: 0s
+          charts: []
+          custom_dashboards: []
+          authentication_enable: false
+        profiling:
+          enable: false
+          sampling_rate: 0
+          profile_types: []
+          output_path: ""
+          retention_period: 0s
+          auto_analysis: false
+    index_cache:
+      enable: true
+      max_size: 536870912
+      max_indices: 1000
+      ttl: 2h0m0s
+      eviction_policy: LRU
+      preloading:
+        enable: false
+        strategy: ""
+        common_indices: []
+        priority_weights: {}
+        loading_parallelism: 0
+        warmup_enable: false
+        warmup_queries: []
+      partial_caching:
+        enable: false
+        strategy: ""
+        cache_ratio: 0
+        hot_region_detection: false
+        region_size: 0
+        overlap_ratio: 0
+        dynamic_adjustment: false
+      compression:
+        enable: false
+        algorithm: ""
+        compression_level: 0
+        compression_ratio: 0
+        adaptive_enable: false
+        quality_threshold: 0
+      versioning:
+        enable: false
+        max_versions: 0
+        version_ttl: 0s
+        incremental_update: false
+        delta_compression: false
+        rollback_enable: false
+        conflict_resolution: ""
+      monitoring:
+        enable: false
+        metrics:
+          collection_interval: 0s
+          retention_period: 0s
+          hit_rate_tracking: false
+          latency_tracking: false
+          memory_tracking: false
+          throughput_tracking: false
+          error_tracking: false
+          custom_metrics: []
+        alerting:
+          enable: false
+          rules: []
+          notification:
+            channels: []
+            email_config:
+              smtp_server: ""
+              smtp_port: 0
+              username: ""
+              password: ""
+              from_address: ""
+              to_addresses: []
+              subject_template: ""
+              body_template: ""
+              tls_enable: false
+            slack_config:
+              webhook_url: ""
+              channel: ""
+              username: ""
+              icon_emoji: ""
+              message_template: ""
+            webhook_config:
+              url: ""
+              method: ""
+              headers: {}
+              payload_template: ""
+              timeout: 0s
+              retry_count: 0
+            rate_limiting:
+              enable: false
+              max_notifications: 0
+              time_window: 0s
+              cooldown_period: 0s
+              grouping_enable: false
+              grouping_window: 0s
+          escalation:
+            enable: false
+            levels: []
+            auto_escalation: false
+            escalation_delay: 0s
+        dashboard:
+          enable: false
+          port: 0
+          refresh_interval: 0s
+          charts: []
+          custom_dashboards: []
+          authentication_enable: false
+        profiling:
+          enable: false
+          sampling_rate: 0
+          profile_types: []
+          output_path: ""
+          retention_period: 0s
+          auto_analysis: false
+    query_cache:
+      enable: false
+      max_size: 0
+      max_queries: 0
+      ttl: 0s
+      eviction_policy: ""
+      key_generation:
+        strategy: ""
+        hash_function: ""
+        normalization: false
+        parameter_filtering: false
+        ignored_parameters: []
+        similarity_threshold: 0
+      invalidation:
+        strategy: ""
+        invalidation_events: []
+        dependency_tracking: false
+        batch_invalidation: false
+        grace_period: 0s
+        notification_enable: false
+      optimization:
+        enable: false
+        query_rewriting:
+          enable: false
+          expansion_terms: 0
+          synonym_expansion: false
+          query_normalization: false
+          stopword_removal: false
+        query_caching:
+          enable: false
+          cache_size: 0
+          ttl: 0s
+          similarity_threshold: 0
+          compression_ratio: 0
+        query_planning:
+          enable: false
+          cost_model:
+            cpu_weight: 0
+            memory_weight: 0
+            io_weight: 0
+            network_weight: 0
+            latency_weight: 0
+          plan_optimization:
+            algorithm: ""
+            optimization_goal: ""
+            max_iterations: 0
+            convergence_threshold: 0
+          adaptive_planning:
+            enable: false
+            learning_rate: 0
+            update_interval: 0s
+            history_window: 0
+            feedback_weight: 0
+        query_profiling:
+          enable: false
+          sampling_rate: 0
+          profiling_interval: 0s
+          metrics_collection: []
+          performance_analysis:
+            bottleneck_detection: false
+            trend_analysis: false
+            anomaly_detection: false
+            recommendations: false
+            alert_thresholds: []
+      monitoring:
+        enable: false
+        metrics:
+          collection_interval: 0s
+          retention_period: 0s
+          hit_rate_tracking: false
+          latency_tracking: false
+          memory_tracking: false
+          throughput_tracking: false
+          error_tracking: false
+          custom_metrics: []
+        alerting:
+          enable: false
+          rules: []
+          notification:
+            channels: []
+            email_config:
+              smtp_server: ""
+              smtp_port: 0
+              username: ""
+              password: ""
+              from_address: ""
+              to_addresses: []
+              subject_template: ""
+              body_template: ""
+              tls_enable: false
+            slack_config:
+              webhook_url: ""
+              channel: ""
+              username: ""
+              icon_emoji: ""
+              message_template: ""
+            webhook_config:
+              url: ""
+              method: ""
+              headers: {}
+              payload_template: ""
+              timeout: 0s
+              retry_count: 0
+            rate_limiting:
+              enable: false
+              max_notifications: 0
+              time_window: 0s
+              cooldown_period: 0s
+              grouping_enable: false
+              grouping_window: 0s
+          escalation:
+            enable: false
+            levels: []
+            auto_escalation: false
+            escalation_delay: 0s
+        dashboard:
+          enable: false
+          port: 0
+          refresh_interval: 0s
+          charts: []
+          custom_dashboards: []
+          authentication_enable: false
+        profiling:
+          enable: false
+          sampling_rate: 0
+          profile_types: []
+          output_path: ""
+          retention_period: 0s
+          auto_analysis: false
+    metadata_cache:
+      enable: false
+      max_size: 0
+      max_entries: 0
+      ttl: 0s
+      eviction_policy: ""
+      consistency:
+        level: ""
+        validation_enable: false
+        checksum_enable: false
+        refresh_interval: 0s
+        conflict_resolution: ""
+      synchronization:
+        strategy: ""
+        sync_interval: 0s
+        batch_size: 0
+        compression_enable: false
+        retry_policy:
+          max_retries: 0
+          retry_interval: 0s
+          backoff_strategy: ""
+          max_backoff_time: 0s
+          jitter_enable: false
+        conflict_detection: false
+      versioning:
+        enable: false
+        max_versions: 0
+        version_ttl: 0s
+        delta_storage: false
+        compression_enable: false
+        rollback_enable: false
+      monitoring:
+        enable: false
+        metrics:
+          collection_interval: 0s
+          retention_period: 0s
+          hit_rate_tracking: false
+          latency_tracking: false
+          memory_tracking: false
+          throughput_tracking: false
+          error_tracking: false
+          custom_metrics: []
+        alerting:
+          enable: false
+          rules: []
+          notification:
+            channels: []
+            email_config:
+              smtp_server: ""
+              smtp_port: 0
+              username: ""
+              password: ""
+              from_address: ""
+              to_addresses: []
+              subject_template: ""
+              body_template: ""
+              tls_enable: false
+            slack_config:
+              webhook_url: ""
+              channel: ""
+              username: ""
+              icon_emoji: ""
+              message_template: ""
+            webhook_config:
+              url: ""
+              method: ""
+              headers: {}
+              payload_template: ""
+              timeout: 0s
+              retry_count: 0
+            rate_limiting:
+              enable: false
+              max_notifications: 0
+              time_window: 0s
+              cooldown_period: 0s
+              grouping_enable: false
+              grouping_window: 0s
+          escalation:
+            enable: false
+            levels: []
+            auto_escalation: false
+            escalation_delay: 0s
+        dashboard:
+          enable: false
+          port: 0
+          refresh_interval: 0s
+          charts: []
+          custom_dashboards: []
+          authentication_enable: false
+        profiling:
+          enable: false
+          sampling_rate: 0
+          profile_types: []
+          output_path: ""
+          retention_period: 0s
+          auto_analysis: false
+    global_cache:
+      memory_limit: 0
+      memory_threshold: 0
+      gc_strategy: ""
+      gc_interval: 0s
+      statistics:
+        enable: false
+        collection_interval: 0s
+        retention_period: 0s
+        metrics: []
+        export_format: ""
+        export_path: ""
+        aggregation_enable: false
+      warmup:
+        enable: false
+        strategy: ""
+        warmup_data: []
+        warmup_queries: []
+        parallelism: 0
+        timeout: 0s
+        progress_tracking: false
+      backup:
+        enable: false
+        strategy: ""
+        backup_interval: 0s
+        backup_path: ""
+        retention_count: 0
+        compression_enable: false
+        encryption_enable: false
+        verification_enable: false
+      security:
+        encryption_enable: false
+        encryption_algorithm: ""
+        key_rotation_enable: false
+        key_rotation_interval: 0s
+        access_control:
+          enable: false
+          authentication_enable: false
+          authorization_enable: false
+          roles: []
+          permissions: {}
+          session_timeout: 0s
+        audit_logging:
+          enable: false
+          log_level: ""
+          log_path: ""
+          log_format: ""
+          logged_operations: []
+          retention_period: 0s
+          compression_enable: false
+  monitoring_config:
+    metrics:
+      enable: true
+      collection_interval: 10s
+      retention_period: 24h0m0s
+      exporter:
+        prometheus:
+          enable: true
+          endpoint: :9090
+          port: 9090
+          path: /metrics
+          push_gateway: ""
+          labels: {}
+          scrape_interval: 15s
+          timeout: 10s
+        influxdb:
+          enable: false
+          url: ""
+          database: ""
+          username: ""
+          password: ""
+          retention_policy: ""
+          batch_size: 0
+          flush_interval: 0s
+        elasticsearch:
+          enable: false
+          urls: []
+          index: ""
+          username: ""
+          password: ""
+          batch_size: 0
+          flush_interval: 0s
+          compression_enable: false
+        cloudwatch:
+          enable: false
+          region: ""
+          namespace: ""
+          access_key_id: ""
+          secret_access_key: ""
+          batch_size: 0
+          flush_interval: 0s
+        datadog:
+          enable: false
+          api_key: ""
+          site: ""
+          tags: {}
+          batch_size: 0
+          flush_interval: 0s
+      performance:
+        search_latency:
+          enable: false
+          percentiles: []
+          buckets: []
+          sampling_rate: 0
+          aggregation_window: 0s
+        index_build_time:
+          enable: false
+          buckets: []
+          aggregation_window: 0s
+        throughput:
+          enable: false
+          qps: false
+          rps: false
+          bandwidth: false
+          aggregation_window: 0s
+        resource_usage:
+          cpu:
+            enable: false
+            utilization: false
+            load_average: false
+            context_switches: false
+            interrupts: false
+            collection_interval: 0s
+          memory:
+            enable: false
+            usage: false
+            available: false
+            swap: false
+            page_faults: false
+            gc_stats: false
+            collection_interval: 0s
+          disk:
+            enable: false
+            usage: false
+            iops: false
+            throughput: false
+            latency: false
+            queue_depth: false
+            collection_interval: 0s
+          network:
+            enable: false
+            bandwidth: false
+            packets: false
+            errors: false
+            drops: false
+            connections: false
+            collection_interval: 0s
+          gpu:
+            enable: false
+            utilization: false
+            memory_usage: false
+            temperature: false
+            power_usage: false
+            fan_speed: false
+            collection_interval: 0s
+        cache_performance:
+          collection_interval: 0s
+          retention_period: 0s
+          hit_rate_tracking: false
+          latency_tracking: false
+          memory_tracking: false
+          throughput_tracking: false
+          error_tracking: false
+          custom_metrics: []
+      business:
+        enable: false
+        search_accuracy:
+          enable: false
+          recall: false
+          precision: false
+          f1_score: false
+          ndcg: false
+          mrr: false
+          evaluation_interval: 0s
+        user_satisfaction:
+          enable: false
+          click_through: false
+          dwell_time: false
+          bounce_rate: false
+          conversion_rate: false
+          user_feedback: false
+          tracking_window: 0s
+        data_quality:
+          enable: false
+          data_freshness: false
+          data_completeness: false
+          data_consistency: false
+          index_health: false
+          validation_interval: 0s
+        cost_metrics:
+          enable: false
+          compute_cost: false
+          storage_cost: false
+          network_cost: false
+          operational_cost: false
+          cost_per_query: false
+          calculation_interval: 0s
+      system:
+        enable: false
+        goroutines:
+          enable: false
+          count: false
+          stack_trace: false
+          leak_detection: false
+          collection_interval: 0s
+        gc:
+          enable: false
+          pause_time: false
+          frequency: false
+          heap_size: false
+          allocations: false
+          collection_interval: 0s
+        file_descriptors:
+          enable: false
+          open_count: false
+          max_count: false
+          usage_ratio: false
+          collection_interval: 0s
+        process_metrics:
+          enable: false
+          cpu_time: false
+          memory_usage: false
+          thread_count: false
+          start_time: false
+          collection_interval: 0s
+      custom:
+        enable: false
+        metrics: []
+        plugins: []
+    alerting:
+      enable: false
+      rules: []
+      notification:
+        channels: []
+        templates:
+          subject: ""
+          body: ""
+          slack_message: ""
+          webhook_payload: ""
+          sms_message: ""
+        rate_limiting:
+          enable: false
+          global_limit:
+            requests_per_second: 0
+            burst_size: 0
+            window_size: 0s
+            penalty_duration: 0s
+          per_user_limit:
+            requests_per_second: 0
+            burst_size: 0
+            window_size: 0s
+            penalty_duration: 0s
+          per_ip_limit:
+            requests_per_second: 0
+            burst_size: 0
+            window_size: 0s
+            penalty_duration: 0s
+          adaptive_rate_limit:
+            enable: false
+            base_rate: 0
+            max_rate: 0
+            adjustment_factor: 0
+            monitoring_window: 0s
+        grouping:
+          enable: false
+          group_by: []
+          group_wait: 0s
+          group_interval: 0s
+          repeat_interval: 0s
+      escalation:
+        enable: false
+        levels: []
+        auto_escalation: false
+        escalation_delay: 0s
+      suppression:
+        enable: false
+        rules: []
+        maintenance_mode:
+          enable: false
+          schedule: ""
+          duration: 0s
+          notify_before: 0s
+          auto_enable: false
+      inhibition:
+        enable: false
+        rules: []
+    auto_scaling:
+      enable: false
+      strategy: ""
+      metrics:
+        cpu_utilization:
+          enable: false
+          scale_up_threshold: 0
+          scale_down_threshold: 0
+          aggregation_window: 0s
+          weight: 0
+        memory_utilization:
+          enable: false
+          scale_up_threshold: 0
+          scale_down_threshold: 0
+          aggregation_window: 0s
+          weight: 0
+        query_latency:
+          enable: false
+          scale_up_threshold: 0s
+          scale_down_threshold: 0s
+          percentile: 0
+          aggregation_window: 0s
+          weight: 0
+        qps:
+          enable: false
+          scale_up_threshold: 0
+          scale_down_threshold: 0
+          aggregation_window: 0s
+          weight: 0
+        queue_length:
+          enable: false
+          scale_up_threshold: 0
+          scale_down_threshold: 0
+          aggregation_window: 0s
+          weight: 0
+        custom_metrics: []
+      policies: []
+      limits:
+        min_compute_nodes: 0
+        max_compute_nodes: 0
+        min_storage_nodes: 0
+        max_storage_nodes: 0
+        min_proxy_nodes: 0
+        max_proxy_nodes: 0
+        max_scale_up_rate: 0
+        max_scale_down_rate: 0
+      cooldown:
+        scale_up_cooldown: 0s
+        scale_down_cooldown: 0s
+        stabilization_window: 0s
+      prediction:
+        enable: false
+        algorithm: ""
+        look_ahead_window: 0s
+        training_window: 0s
+        update_interval: 0s
+        accuracy_threshold: 0
+        model_path: ""
+    logging:
+      enable: false
+      level: ""
+      format: ""
+      output:
+        console: false
+        file:
+          enable: false
+          path: ""
+          max_size: 0
+          max_age: 0
+          max_backups: 0
+          compress: false
+        syslog:
+          enable: false
+          network: ""
+          address: ""
+          facility: ""
+          tag: ""
+        elasticsearch:
+          enable: false
+          urls: []
+          index: ""
+          username: ""
+          password: ""
+          batch_size: 0
+          flush_interval: 0s
+        kafka:
+          enable: false
+          brokers: []
+          topic: ""
+          partition: 0
+          batch_size: 0
+          flush_interval: 0s
+      rotation:
+        enable: false
+        max_size: 0
+        max_age: 0s
+        max_backups: 0
+        compress: false
+        rotation_schedule: ""
+      sampling:
+        enable: false
+        initial: 0
+        thereafter: 0
+        tick: 0s
+      structured:
+        enable: false
+        fields: []
+        timestamp_format: ""
+        caller_info: false
+        stack_trace: false
+      audit:
+        enable: false
+        events: []
+        path: ""
+        format: ""
+        retention_period: 0s
+        encryption: false
+        integrity_check: false
+    tracing:
+      enable: false
+      provider: ""
+      sampling_rate: 0
+      jaeger:
+        endpoint: ""
+        service_name: ""
+        agent_host: ""
+        agent_port: 0
+        collector_endpoint: ""
+        username: ""
+        password: ""
+      zipkin:
+        endpoint: ""
+        service_name: ""
+        batch_size: 0
+        timeout: 0s
+      opentelemetry:
+        endpoint: ""
+        service_name: ""
+        service_version: ""
+        headers: {}
+        batch_timeout: 0s
+        export_timeout: 0s
+      custom_tags: {}
+      operation_filters: []
+    profiling:
+      enable: false
+      cpu:
+        enable: false
+        sampling_rate: 0
+        duration: 0s
+        output_path: ""
+        auto_trigger: false
+        trigger_threshold: 0
+      memory:
+        enable: false
+        sampling_rate: 0
+        interval: 0s
+        output_path: ""
+        auto_trigger: false
+        trigger_threshold: 0
+        gc_before_profile: false
+      goroutine:
+        enable: false
+        interval: 0s
+        output_path: ""
+        auto_trigger: false
+        trigger_threshold: 0
+        stack_trace: false
+      block:
+        enable: false
+        rate: 0
+        interval: 0s
+        output_path: ""
+        auto_trigger: false
+        trigger_threshold: 0s
+      mutex:
+        enable: false
+        rate: 0
+        interval: 0s
+        output_path: ""
+        auto_trigger: false
+        trigger_threshold: 0s
+      custom:
+        enable: false
+        profiles: []
+    dashboard:
+      enable: false
+      port: 0
+      host: ""
+      path: ""
+      authentication:
+        enable: false
+        type: ""
+        users: []
+        oauth:
+          provider: ""
+          client_id: ""
+          client_secret: ""
+          redirect_url: ""
+          scopes: []
+          auth_url: ""
+          token_url: ""
+        jwt:
+          secret: ""
+          issuer: ""
+          audience: ""
+          expiration: 0s
+          refresh_enable: false
+          refresh_expiration: 0s
+        session_timeout: 0s
+      charts: []
+      refresh_interval: 0s
+      theme: ""
+      customization:
+        logo: ""
+        title: ""
+        colors: {}
+        fonts: {}
+        layout: ""
+        custom_css: ""
+        custom_js: ""
+    health_check:
+      enable: false
+      interval: 0s
+      timeout: 0s
+      endpoints: []
+      dependencies: []
+      readiness:
+        enable: false
+        path: ""
+        initial_delay: 0s
+        period: 0s
+        timeout: 0s
+        failure_threshold: 0
+        success_threshold: 0
+      liveness:
+        enable: false
+        path: ""
+        initial_delay: 0s
+        period: 0s
+        timeout: 0s
+        failure_threshold: 0
+      startup:
+        enable: false
+        path: ""
+        initial_delay: 0s
+        period: 0s
+        timeout: 0s
+        failure_threshold: 0
+  auto_scaling_config:
+    enable: true
+    strategy: reactive
+    metrics:
+      cpu_utilization:
+        enable: true
+        scale_up_threshold: 70
+        scale_down_threshold: 30
+        aggregation_window: 0s
+        weight: 1
+      memory_utilization:
+        enable: true
+        scale_up_threshold: 80
+        scale_down_threshold: 40
+        aggregation_window: 0s
+        weight: 1
+      query_latency:
+        enable: false
+        scale_up_threshold: 0s
+        scale_down_threshold: 0s
+        percentile: 0
+        aggregation_window: 0s
+        weight: 0
+      qps:
+        enable: false
+        scale_up_threshold: 0
+        scale_down_threshold: 0
+        aggregation_window: 0s
+        weight: 0
+      queue_length:
+        enable: false
+        scale_up_threshold: 0
+        scale_down_threshold: 0
+        aggregation_window: 0s
+        weight: 0
+      custom_metrics: []
+    policies: []
+    limits:
+      min_compute_nodes: 0
+      max_compute_nodes: 0
+      min_storage_nodes: 0
+      max_storage_nodes: 0
+      min_proxy_nodes: 0
+      max_proxy_nodes: 0
+      max_scale_up_rate: 0
+      max_scale_down_rate: 0
+    cooldown:
+      scale_up_cooldown: 5m0s
+      scale_down_cooldown: 10m0s
+      stabilization_window: 0s
+    prediction:
+      enable: false
+      algorithm: ""
+      look_ahead_window: 0s
+      training_window: 0s
+      update_interval: 0s
+      accuracy_threshold: 0
+      model_path: ""
+performance:
+  query_acceleration:
+    enable: true
+    preprocessing:
+      normalization: true
+      dimension_reduction:
+        enable: false
+        method: pca
+        target_dim: 128
+        variance_ratio: 0.95
+        training_size: 10000
+      quantization:
+        enable: false
+        method: scalar
+        bits: 8
+        codebook_size: 256
+      filtering:
+        enable: false
+        pre_filtering:
+          enable: false
+          filter_ratio: 0
+          criteria: []
+          thresholds: []
+        post_filtering:
+          enable: false
+          similarity_threshold: 0
+          diversity_filter: false
+          diversity_ratio: 0
+        bloom_filter:
+          enable: false
+          expected_items: 0
+          false_positive_rate: 0
+          hash_functions: 0
+    multi_stage_search:
+      enable: true
+      stages:
+      - name: coarse
+        method: coarse
+        candidates: 1000
+        accuracy: 0.8
+        latency_budget: 50ms
+      - name: fine
+        method: fine
+        candidates: 100
+        accuracy: 0.95
+        latency_budget: 100ms
+      coarse_candidates: 1000
+      refinement_ratio: 0.1
+      adaptive_staging:
+        enable: false
+        latency_threshold: 0s
+        accuracy_threshold: 0
+        load_threshold: 0
+        adjustment_interval: 0s
+    parallel_search:
+      enable: true
+      max_workers: 8
+      workload_splitting:
+        strategy: data_parallel
+        chunk_size: 1000
+        overlap_ratio: 0.1
+        load_balancing: true
+      result_merging:
+        strategy: heap_merge
+        merge_threshold: 100
+        duplicate_removal: true
+        similarity_threshold: 0.99
+    early_termination:
+      enable: true
+      confidence_threshold: 0.95
+      timeout_threshold: 200ms
+      quality_threshold: 0.9
+      progressive_search:
+        enable: false
+        initial_candidates: 0
+        expansion_factor: 0
+        max_iterations: 0
+        convergence_threshold: 0
+    query_optimization:
+      enable: false
+      query_rewriting:
+        enable: false
+        expansion_terms: 0
+        synonym_expansion: false
+        query_normalization: false
+        stopword_removal: false
+      query_caching:
+        enable: false
+        cache_size: 0
+        ttl: 0s
+        similarity_threshold: 0
+        compression_ratio: 0
+      query_planning:
+        enable: false
+        cost_model:
+          cpu_weight: 0
+          memory_weight: 0
+          io_weight: 0
+          network_weight: 0
+          latency_weight: 0
+        plan_optimization:
+          algorithm: ""
+          optimization_goal: ""
+          max_iterations: 0
+          convergence_threshold: 0
+        adaptive_planning:
+          enable: false
+          learning_rate: 0
+          update_interval: 0s
+          history_window: 0
+          feedback_weight: 0
+      query_profiling:
+        enable: false
+        sampling_rate: 0
+        profiling_interval: 0s
+        metrics_collection: []
+        performance_analysis:
+          bottleneck_detection: false
+          trend_analysis: false
+          anomaly_detection: false
+          recommendations: false
+          alert_thresholds: []
+  concurrency_control:
+    max_concurrent_queries: 100
+    query_queue_size: 1000
+    thread_pool_config:
+      core_threads: 8
+      max_threads: 16
+      queue_capacity: 1000
+      keep_alive_time: 1m0s
+      rejection_policy: caller_runs
+    rate_limiting:
+      enable: true
+      global_limit:
+        requests_per_second: 1000
+        burst_size: 100
+        window_size: 1s
+        penalty_duration: 5s
+      per_user_limit:
+        requests_per_second: 100
+        burst_size: 10
+        window_size: 1s
+        penalty_duration: 10s
+      per_ip_limit:
+        requests_per_second: 0
+        burst_size: 0
+        window_size: 0s
+        penalty_duration: 0s
+      adaptive_rate_limit:
+        enable: false
+        base_rate: 0
+        max_rate: 0
+        adjustment_factor: 0
+        monitoring_window: 0s
+    resource_isolation:
+      enable: false
+      cpu_isolation:
+        enable: false
+        cpu_quota: 0
+        cpu_shares: 0
+        cpu_affinity: []
+        numa_binding: false
+      memory_isolation:
+        enable: false
+        memory_limit: 0
+        swap_limit: 0
+        oom_kill_disable: false
+        memory_reservation: 0
+      io_isolation:
+        enable: false
+        read_bandwidth: 0
+        write_bandwidth: 0
+        read_iops: 0
+        write_iops: 0
+        io_weight: 0
+      priority_queues:
+        enable: false
+        num_priority_levels: 0
+        priority_rules: []
+        scheduling_policy:
+          algorithm: ""
+          time_slice: 0s
+          preemption: false
+          starvation_prevention: false
+  memory_management:
+    memory_pool:
+      enable: true
+      pool_size: 1073741824
+      chunk_size: 4096
+      preallocation: true
+      growth_strategy: exponential
+      shrink_threshold: 0.5
+    garbage_collection:
+      enable: true
+      gc_interval: 5m0s
+      gc_threshold: 0.8
+      concurrent_gc: true
+      generational_gc: true
+    memory_mapping:
+      enable: false
+      mmap_threshold: 0
+      advise_strategy: ""
+      huge_pages_enable: false
+      lock_memory: false
+    swap_management:
+      enable: false
+      swappiness: 0
+      swap_threshold: 0
+      swap_priority: 0
+      compressed_swap: false
+  batch_processing:
+    enable: true
+    batch_size: 100
+    batch_timeout: 10ms
+    adaptive_batching:
+      enable: true
+      min_batch_size: 10
+      max_batch_size: 1000
+      latency_target: 50ms
+      throughput_target: 10000
+      adjustment_factor: 0.1
+    pipelining:
+      enable: false
+      stages: 0
+      buffer_size: 0
+      parallel_stages: false
+      backpressure: false
+  prefetching:
+    enable: true
+    data_prefetching:
+      enable: true
+      prefetch_distance: 10
+      prefetch_ratio: 0.2
+      access_pattern: adaptive
+      cache_warmup: true
+    index_prefetching:
+      enable: true
+      prefetch_depth: 3
+      prefetch_width: 5
+      predictive_load: true
+      lazy_loading: false
+    query_prefetching:
+      enable: false
+      prediction_model: ""
+      history_window: 0
+      prefetch_count: 0
+      confidence_threshold: 0
+      update_interval: 0s
+hardware:
+  gpu:
+    enable: false
+    device_ids:
+    - 0
+    memory_limit: 8589934592
+    batch_size: 1000
+    compute_capability: ""
+    cuda_config:
+      enable: true
+      version: ""
+      streams: 4
+      block_size: 256
+      grid_size: 65535
+      shared_memory_size: 49152
+      optimization_level: 3
+    opencl_config:
+      enable: false
+      platform_id: 0
+      device_type: ""
+      work_group_size: 0
+      local_memory_size: 0
+      compiler_options: []
+    tensorrt_config:
+      enable: false
+      precision: ""
+      max_batch_size: 0
+      max_workspace_size: 0
+      optimization_level: 0
+      calibration_data: ""
+    multi_gpu:
+      enable: false
+      strategy: data_parallel
+      communication:
+        backend: NCCL
+        topology: ring
+        compression_enable: false
+        bandwidth_limit: 10737418240
+      load_balancing:
+        strategy: ""
+        monitoring_interval: 0s
+        rebalance_threshold: 0
+        migration_cost: 0
+      synchronization:
+        mode: ""
+        sync_interval: 0s
+        timeout_threshold: 0s
+        retry_count: 0
+    memory_management:
+      pooling: true
+      preallocation: true
+      fragmentation_threshold: 0.8
+      gc_threshold: 0.9
+      unified_memory: false
+      memory_mapping: true
+    performance_tuning:
+      auto_tuning: true
+      kernel_fusion: true
+      memory_coalescing: true
+      occupancy_optimization: true
+      power_management:
+        enable: false
+        power_limit: 300
+        frequency_scaling: false
+        voltage_scaling: false
+        idle_timeout: 30s
+      thermal_management:
+        enable: true
+        temperature_limit: 85
+        fan_control: true
+        throttling: true
+        cooling_strategy: active
+  fpga:
+    enable: false
+    device_ids:
+    - 0
+    bitstream: ""
+    clock_frequency: 200
+    memory_bandwidth: 107374182400
+    pipeline_depth: 8
+    parallelism:
+      compute_units: 16
+      vector_width: 512
+      unroll_factor: 4
+      pipeline_stages: 8
+    optimization:
+      resource_sharing: true
+      memory_optimization: true
+      timing_optimization: true
+      power_optimization: false
+      area_optimization: false
+    reconfiguration:
+      enable: false
+      partial_reconfiguration: false
+      reconfiguration_time: 0s
+      bitstream_cache: false
+      hot_swap: false
+  pmem:
+    enable: false
+    device_paths: []
+    mode: app_direct
+    namespaces: []
+    interleaving:
+      enable: true
+      ways: 2
+      granularity: 4096
+      alignment: 4096
+    persistence:
+      flush_strategy: async
+      flush_interval: 100ms
+      checkpointing: true
+      checkpoint_interval: 5m0s
+      recovery_mode: auto
+    performance:
+      read_ahead: true
+      write_behind: true
+      batch_size: 64
+      queue_depth: 32
+      numa_optimization: true
+    reliability:
+      ecc: false
+      scrubbing: false
+      scrubbing_interval: 0s
+      bad_block_management: false
+      wear_leveling: false
+  rdma:
+    enable: false
+    devices: []
+    protocol: RoCE
+    transport_type: RC
+    queue_pairs:
+      max_qps: 1000
+      send_queue_size: 1024
+      receive_queue_size: 1024
+      max_inline_data: 64
+      max_sge: 16
+      retry_count: 7
+      rnr_retry_count: 7
+      timeout: 14
+    memory_registration:
+      strategy: lazy
+      cache_size: 1073741824
+      huge_pages_enable: true
+      memory_pinning: true
+      registration_cache: true
+    congestion_control:
+      algorithm: ""
+      ecn_threshold: 0
+      rate_increase: 0
+      rate_decrease: 0
+      min_rate: 0
+      max_rate: 0
+    performance_tuning:
+      batch_size: 32
+      polling_mode: true
+      interrupt_coalescing: true
+      cpu_affinity: []
+      numa_optimization: true
+      zero_copy: true
+  cpu:
+    enable: true
+    vectorization:
+      enable: true
+      instruction_sets:
+      - AVX2
+      - SSE4.2
+      vector_width: 256
+      auto_vectorization: true
+      unroll_factor: 4
+    cache_optimization:
+      enable: true
+      l1_optimization:
+        block_size: 64
+        associativity: 8
+        replacement_policy: LRU
+        prefetch_distance: 1
+      l2_optimization:
+        block_size: 64
+        associativity: 8
+        replacement_policy: LRU
+        prefetch_distance: 2
+      l3_optimization:
+        block_size: 64
+        associativity: 16
+        replacement_policy: LRU
+        prefetch_distance: 4
+      cache_blocking:
+        enable: true
+        block_size_l1: 32768
+        block_size_l2: 262144
+        block_size_l3: 8388608
+        tiling_strategy: adaptive
+      data_layout:
+        enable: true
+        alignment: 64
+        padding: true
+        struct_packing: true
+        array_of_structs: false
+        struct_of_arrays: true
+    branch_prediction:
+      enable: false
+      predictor_type: ""
+      branch_hints: false
+      profile_guided: false
+      branch_elimination: false
+    prefetching:
+      enable: false
+      hardware_prefetch: false
+      software_prefetch: false
+      prefetch_distance: 0
+      prefetch_strategy: ""
+    parallelization:
+      enable: true
+      threads: 8
+      affinity:
+        enable: true
+        cpu_set: []
+        numa_nodes: []
+        isolated_cpus: []
+        hyper_threading: false
+      scheduling:
+        policy: SCHED_NORMAL
+        priority: 0
+        nice_value: 0
+        time_slice: 10ms
+        preemption: true
+      synchronization:
+        primitive: atomic
+        backoff_strategy: exponential
+        lock_free_algorithms: true
+        wait_free_algorithms: false
+      load_balancing:
+        strategy: work_stealing
+        migration_cost: 0.1
+        balance_interval: 100ms
+        load_threshold: 0.8
+    power_management:
+      enable: false
+      governor: ""
+      frequency_scaling: false
+      voltage_scaling: false
+      c_states: false
+      p_states: false
+      turbo_boost: false
+      idle_timeout: 0s
+  npu:
+    enable: false
+    device_ids:
+    - 0
+    model_format: ONNX
+    precision: FP16
+    batch_size: 1000
+    memory_limit: 4294967296
+    compiler_options:
+      optimization_level: 3
+      target_device: ""
+      compiler_flags: []
+      debug_mode: false
+      profiling_enable: false
+    runtime_options:
+      threads: 4
+      memory_strategy: dynamic
+      scheduling_policy: fair
+      error_handling: strict
+    optimization:
+      graph_optimization: true
+      kernel_fusion: true
+      memory_optimization: true
+      quantization:
+        enable: false
+        method: post_training
+        calibration_data: ""
+        accuracy_threshold: 0.95
+        mixed_precision: true
+      pruning:
+        enable: false
+        method: ""
+        sparsity_ratio: 0
+        gradual_pruning: false
+        finetuning: false
+      knowledge_distillation:
+        enable: false
+        teacher_model: ""
+        temperature: 0
+        alpha: 0
+        distillation_loss: ""
+cache:
+  result_cache:
+    enable: true
+    max_size: 1073741824
+    max_entries: 100000
+    ttl: 30m0s
+    eviction_policy: LRU
+    compression_enable: true
+    compression_algorithm: lz4
+    persistence:
+      enable: false
+      storage_path: ""
+      sync_interval: 5m0s
+      compression_level: 6
+      backup_enable: false
+      backup_interval: 0s
+      recovery_mode: auto
+    distribution:
+      enable: false
+      strategy: replicated
+      replication_factor: 2
+      consistency_level: eventual
+      partitioning:
+        method: ""
+        partitions: 0
+        hash_function: ""
+        virtual_nodes: 0
+        rebalance_enable: false
+        rebalance_threshold: 0
+      synchronization:
+        protocol: ""
+        sync_interval: 0s
+        batch_size: 0
+        conflict_resolution: ""
+        merge_strategy: ""
+      failover:
+        enable: false
+        detection_interval: 0s
+        failure_threshold: 0
+        recovery_timeout: 0s
+        backup_nodes: []
+        auto_failback: false
+    optimization:
+      prefetching:
+        enable: true
+        strategy: pattern_based
+        lookahead_size: 10
+        prefetch_ratio: 0.2
+        adaptive_enable: true
+        learning_window: 1h0m0s
+        accuracy_threshold: 0.7
+      compaction:
+        enable: true
+        trigger_threshold: 0.8
+        compaction_interval: 1h0m0s
+        strategy: hybrid
+        max_compaction_time: 0s
+        background_enable: true
+      deduplication:
+        enable: true
+        method: hash_based
+        hash_function: xxhash
+        similarity_threshold: 0.95
+        window_size: 1000
+        cleanup_interval: 30m0s
+      load_balancing:
+        enable: false
+        strategy: ""
+        health_check:
+          enable: false
+          interval: 0s
+          timeout: 0s
+          retry_count: 0
+          unhealthy_threshold: 0
+          healthy_threshold: 0
+        weighted_routing: false
+        sticky_session: false
+        failover_enable: false
+      memory_optimization:
+        enable: false
+        memory_pooling: false
+        object_pooling: false
+        gc_optimization: false
+        memory_mapping: false
+        compression_ratio: 0
+        fragmentation_threshold: 0
+    monitoring:
+      enable: true
+      metrics:
+        collection_interval: 10s
+        retention_period: 24h0m0s
+        hit_rate_tracking: true
+        latency_tracking: true
+        memory_tracking: true
+        throughput_tracking: true
+        error_tracking: true
+        custom_metrics: []
+      alerting:
+        enable: false
+        rules: []
+        notification:
+          channels: []
+          email_config:
+            smtp_server: ""
+            smtp_port: 0
+            username: ""
+            password: ""
+            from_address: ""
+            to_addresses: []
+            subject_template: ""
+            body_template: ""
+            tls_enable: false
+          slack_config:
+            webhook_url: ""
+            channel: ""
+            username: ""
+            icon_emoji: ""
+            message_template: ""
+          webhook_config:
+            url: ""
+            method: ""
+            headers: {}
+            payload_template: ""
+            timeout: 0s
+            retry_count: 0
+          rate_limiting:
+            enable: false
+            max_notifications: 0
+            time_window: 0s
+            cooldown_period: 0s
+            grouping_enable: false
+            grouping_window: 0s
+        escalation:
+          enable: false
+          levels: []
+          auto_escalation: false
+          escalation_delay: 0s
+      dashboard:
+        enable: false
+        port: 0
+        refresh_interval: 0s
+        charts: []
+        custom_dashboards: []
+        authentication_enable: false
+      profiling:
+        enable: false
+        sampling_rate: 0
+        profile_types: []
+        output_path: ""
+        retention_period: 0s
+        auto_analysis: false
+  vector_cache:
+    enable: true
+    max_size: 2147483648
+    max_vectors: 1000000
+    ttl: 1h0m0s
+    eviction_policy: LRU
+    hot_data_strategy:
+      enable: true
+      detection_method: access_frequency
+      hot_threshold: 0.8
+      cold_threshold: 0.2
+      analysis_window: 1h0m0s
+      promotion_policy: batch
+      demotion_policy: batch
+      resident_memory: true
+    compression_config:
+      enable: true
+      algorithm: pq
+      compression_ratio: 0.25
+      quality_threshold: 0.9
+      adaptive_enable: true
+      codebook_size: 256
+      subvector_count: 8
+    tiering:
+      enable: true
+      levels:
+      - level: 1
+        name: L1_Memory
+        storage_type: memory
+        max_size: 536870912
+        max_vectors: 100000
+        access_latency: 1µs
+        bandwidth: 107374182400
+        compression_enable: false
+        replication_factor: 1
+      - level: 2
+        name: L2_SSD
+        storage_type: ssd
+        max_size: 10737418240
+        max_vectors: 1000000
+        access_latency: 100µs
+        bandwidth: 3221225472
+        compression_enable: true
+        replication_factor: 1
+      promotion_policy:
+        strategy: hybrid
+        access_threshold: 5
+        time_threshold: 10m0s
+        batch_size: 100
+        promotion_interval: 5m0s
+        cost_model: weighted
+      eviction_policy:
+        strategy: lru
+        eviction_ratio: 0.1
+        batch_size: 50
+        eviction_interval: 10m0s
+        protected_ratio: 0.1
+        cost_model: simple
+      migration_config:
+        enable: false
+        strategy: ""
+        batch_size: 0
+        migration_rate: 0
+        parallelism: 0
+        verification_enable: false
+        rollback_enable: false
+        timeout: 0s
+    prefetching:
+      enable: true
+      strategy: neighbor_based
+      neighbor_count: 10
+      prefetch_depth: 2
+      accuracy_threshold: 0.7
+      learning_window: 1h0m0s
+      adaptive_enable: true
+    monitoring:
+      enable: true
+      metrics:
+        collection_interval: 10s
+        retention_period: 24h0m0s
+        hit_rate_tracking: true
+        latency_tracking: true
+        memory_tracking: true
+        throughput_tracking: true
+        error_tracking: true
+        custom_metrics: []
+      alerting:
+        enable: false
+        rules: []
+        notification:
+          channels: []
+          email_config:
+            smtp_server: ""
+            smtp_port: 0
+            username: ""
+            password: ""
+            from_address: ""
+            to_addresses: []
+            subject_template: ""
+            body_template: ""
+            tls_enable: false
+          slack_config:
+            webhook_url: ""
+            channel: ""
+            username: ""
+            icon_emoji: ""
+            message_template: ""
+          webhook_config:
+            url: ""
+            method: ""
+            headers: {}
+            payload_template: ""
+            timeout: 0s
+            retry_count: 0
+          rate_limiting:
+            enable: false
+            max_notifications: 0
+            time_window: 0s
+            cooldown_period: 0s
+            grouping_enable: false
+            grouping_window: 0s
+        escalation:
+          enable: false
+          levels: []
+          auto_escalation: false
+          escalation_delay: 0s
+      dashboard:
+        enable: false
+        port: 0
+        refresh_interval: 0s
+        charts: []
+        custom_dashboards: []
+        authentication_enable: false
+      profiling:
+        enable: false
+        sampling_rate: 0
+        profile_types: []
+        output_path: ""
+        retention_period: 0s
+        auto_analysis: false
+  index_cache:
+    enable: true
+    max_size: 4294967296
+    max_indices: 100
+    ttl: 2h0m0s
+    eviction_policy: usage_based
+    preloading:
+      enable: true
+      strategy: frequent
+      common_indices: []
+      priority_weights: {}
+      loading_parallelism: 4
+      warmup_enable: true
+      warmup_queries: []
+    partial_caching:
+      enable: true
+      strategy: adaptive
+      cache_ratio: 0.3
+      hot_region_detection: true
+      region_size: 1000
+      overlap_ratio: 0.1
+      dynamic_adjustment: false
+    compression:
+      enable: false
+      algorithm: ""
+      compression_level: 0
+      compression_ratio: 0
+      adaptive_enable: false
+      quality_threshold: 0
+    versioning:
+      enable: false
+      max_versions: 0
+      version_ttl: 0s
+      incremental_update: false
+      delta_compression: false
+      rollback_enable: false
+      conflict_resolution: ""
+    monitoring:
+      enable: false
+      metrics:
+        collection_interval: 0s
+        retention_period: 0s
+        hit_rate_tracking: false
+        latency_tracking: false
+        memory_tracking: false
+        throughput_tracking: false
+        error_tracking: false
+        custom_metrics: []
+      alerting:
+        enable: false
+        rules: []
+        notification:
+          channels: []
+          email_config:
+            smtp_server: ""
+            smtp_port: 0
+            username: ""
+            password: ""
+            from_address: ""
+            to_addresses: []
+            subject_template: ""
+            body_template: ""
+            tls_enable: false
+          slack_config:
+            webhook_url: ""
+            channel: ""
+            username: ""
+            icon_emoji: ""
+            message_template: ""
+          webhook_config:
+            url: ""
+            method: ""
+            headers: {}
+            payload_template: ""
+            timeout: 0s
+            retry_count: 0
+          rate_limiting:
+            enable: false
+            max_notifications: 0
+            time_window: 0s
+            cooldown_period: 0s
+            grouping_enable: false
+            grouping_window: 0s
+        escalation:
+          enable: false
+          levels: []
+          auto_escalation: false
+          escalation_delay: 0s
+      dashboard:
+        enable: false
+        port: 0
+        refresh_interval: 0s
+        charts: []
+        custom_dashboards: []
+        authentication_enable: false
+      profiling:
+        enable: false
+        sampling_rate: 0
+        profile_types: []
+        output_path: ""
+        retention_period: 0s
+        auto_analysis: false
+  query_cache:
+    enable: false
+    max_size: 0
+    max_queries: 0
+    ttl: 0s
+    eviction_policy: ""
+    key_generation:
+      strategy: ""
+      hash_function: ""
+      normalization: false
+      parameter_filtering: false
+      ignored_parameters: []
+      similarity_threshold: 0
+    invalidation:
+      strategy: ""
+      invalidation_events: []
+      dependency_tracking: false
+      batch_invalidation: false
+      grace_period: 0s
+      notification_enable: false
+    optimization:
+      enable: false
+      query_rewriting:
+        enable: false
+        expansion_terms: 0
+        synonym_expansion: false
+        query_normalization: false
+        stopword_removal: false
+      query_caching:
+        enable: false
+        cache_size: 0
+        ttl: 0s
+        similarity_threshold: 0
+        compression_ratio: 0
+      query_planning:
+        enable: false
+        cost_model:
+          cpu_weight: 0
+          memory_weight: 0
+          io_weight: 0
+          network_weight: 0
+          latency_weight: 0
+        plan_optimization:
+          algorithm: ""
+          optimization_goal: ""
+          max_iterations: 0
+          convergence_threshold: 0
+        adaptive_planning:
+          enable: false
+          learning_rate: 0
+          update_interval: 0s
+          history_window: 0
+          feedback_weight: 0
+      query_profiling:
+        enable: false
+        sampling_rate: 0
+        profiling_interval: 0s
+        metrics_collection: []
+        performance_analysis:
+          bottleneck_detection: false
+          trend_analysis: false
+          anomaly_detection: false
+          recommendations: false
+          alert_thresholds: []
+    monitoring:
+      enable: false
+      metrics:
+        collection_interval: 0s
+        retention_period: 0s
+        hit_rate_tracking: false
+        latency_tracking: false
+        memory_tracking: false
+        throughput_tracking: false
+        error_tracking: false
+        custom_metrics: []
+      alerting:
+        enable: false
+        rules: []
+        notification:
+          channels: []
+          email_config:
+            smtp_server: ""
+            smtp_port: 0
+            username: ""
+            password: ""
+            from_address: ""
+            to_addresses: []
+            subject_template: ""
+            body_template: ""
+            tls_enable: false
+          slack_config:
+            webhook_url: ""
+            channel: ""
+            username: ""
+            icon_emoji: ""
+            message_template: ""
+          webhook_config:
+            url: ""
+            method: ""
+            headers: {}
+            payload_template: ""
+            timeout: 0s
+            retry_count: 0
+          rate_limiting:
+            enable: false
+            max_notifications: 0
+            time_window: 0s
+            cooldown_period: 0s
+            grouping_enable: false
+            grouping_window: 0s
+        escalation:
+          enable: false
+          levels: []
+          auto_escalation: false
+          escalation_delay: 0s
+      dashboard:
+        enable: false
+        port: 0
+        refresh_interval: 0s
+        charts: []
+        custom_dashboards: []
+        authentication_enable: false
+      profiling:
+        enable: false
+        sampling_rate: 0
+        profile_types: []
+        output_path: ""
+        retention_period: 0s
+        auto_analysis: false
+  metadata_cache:
+    enable: false
+    max_size: 0
+    max_entries: 0
+    ttl: 0s
+    eviction_policy: ""
+    consistency:
+      level: ""
+      validation_enable: false
+      checksum_enable: false
+      refresh_interval: 0s
+      conflict_resolution: ""
+    synchronization:
+      strategy: ""
+      sync_interval: 0s
+      batch_size: 0
+      compression_enable: false
+      retry_policy:
+        max_retries: 0
+        retry_interval: 0s
+        backoff_strategy: ""
+        max_backoff_time: 0s
+        jitter_enable: false
+      conflict_detection: false
+    versioning:
+      enable: false
+      max_versions: 0
+      version_ttl: 0s
+      delta_storage: false
+      compression_enable: false
+      rollback_enable: false
+    monitoring:
+      enable: false
+      metrics:
+        collection_interval: 0s
+        retention_period: 0s
+        hit_rate_tracking: false
+        latency_tracking: false
+        memory_tracking: false
+        throughput_tracking: false
+        error_tracking: false
+        custom_metrics: []
+      alerting:
+        enable: false
+        rules: []
+        notification:
+          channels: []
+          email_config:
+            smtp_server: ""
+            smtp_port: 0
+            username: ""
+            password: ""
+            from_address: ""
+            to_addresses: []
+            subject_template: ""
+            body_template: ""
+            tls_enable: false
+          slack_config:
+            webhook_url: ""
+            channel: ""
+            username: ""
+            icon_emoji: ""
+            message_template: ""
+          webhook_config:
+            url: ""
+            method: ""
+            headers: {}
+            payload_template: ""
+            timeout: 0s
+            retry_count: 0
+          rate_limiting:
+            enable: false
+            max_notifications: 0
+            time_window: 0s
+            cooldown_period: 0s
+            grouping_enable: false
+            grouping_window: 0s
+        escalation:
+          enable: false
+          levels: []
+          auto_escalation: false
+          escalation_delay: 0s
+      dashboard:
+        enable: false
+        port: 0
+        refresh_interval: 0s
+        charts: []
+        custom_dashboards: []
+        authentication_enable: false
+      profiling:
+        enable: false
+        sampling_rate: 0
+        profile_types: []
+        output_path: ""
+        retention_period: 0s
+        auto_analysis: false
+  global_cache:
+    memory_limit: 0
+    memory_threshold: 0
+    gc_strategy: ""
+    gc_interval: 0s
+    statistics:
+      enable: false
+      collection_interval: 0s
+      retention_period: 0s
+      metrics: []
+      export_format: ""
+      export_path: ""
+      aggregation_enable: false
+    warmup:
+      enable: false
+      strategy: ""
+      warmup_data: []
+      warmup_queries: []
+      parallelism: 0
+      timeout: 0s
+      progress_tracking: false
+    backup:
+      enable: false
+      strategy: ""
+      backup_interval: 0s
+      backup_path: ""
+      retention_count: 0
+      compression_enable: false
+      encryption_enable: false
+      verification_enable: false
+    security:
+      encryption_enable: false
+      encryption_algorithm: ""
+      key_rotation_enable: false
+      key_rotation_interval: 0s
+      access_control:
+        enable: false
+        authentication_enable: false
+        authorization_enable: false
+        roles: []
+        permissions: {}
+        session_timeout: 0s
+      audit_logging:
+        enable: false
+        log_level: ""
+        log_path: ""
+        log_format: ""
+        logged_operations: []
+        retention_period: 0s
+        compression_enable: false
+monitoring:
+  metrics:
+    enable: true
+    collection_interval: 10s
+    retention_period: 24h0m0s
+    exporter:
+      prometheus:
+        enable: true
+        endpoint: ""
+        port: 9090
+        path: /metrics
+        push_gateway: ""
+        labels: {}
+        scrape_interval: 15s
+        timeout: 10s
+      influxdb:
+        enable: false
+        url: ""
+        database: ""
+        username: ""
+        password: ""
+        retention_policy: ""
+        batch_size: 0
+        flush_interval: 0s
+      elasticsearch:
+        enable: false
+        urls: []
+        index: ""
+        username: ""
+        password: ""
+        batch_size: 0
+        flush_interval: 0s
+        compression_enable: false
+      cloudwatch:
+        enable: false
+        region: ""
+        namespace: ""
+        access_key_id: ""
+        secret_access_key: ""
+        batch_size: 0
+        flush_interval: 0s
+      datadog:
+        enable: false
+        api_key: ""
+        site: ""
+        tags: {}
+        batch_size: 0
+        flush_interval: 0s
+    performance:
+      search_latency:
+        enable: true
+        percentiles:
+        - 0.5
+        - 0.9
+        - 0.95
+        - 0.99
+        buckets:
+        - 0.001
+        - 0.005
+        - 0.01
+        - 0.05
+        - 0.1
+        - 0.5
+        - 1
+        - 5
+        sampling_rate: 1
+        aggregation_window: 1m0s
+      index_build_time:
+        enable: false
+        buckets: []
+        aggregation_window: 0s
+      throughput:
+        enable: true
+        qps: true
+        rps: true
+        bandwidth: true
+        aggregation_window: 1m0s
+      resource_usage:
+        cpu:
+          enable: true
+          utilization: true
+          load_average: true
+          context_switches: false
+          interrupts: false
+          collection_interval: 5s
+        memory:
+          enable: true
+          usage: true
+          available: true
+          swap: false
+          page_faults: false
+          gc_stats: true
+          collection_interval: 5s
+        disk:
+          enable: false
+          usage: false
+          iops: false
+          throughput: false
+          latency: false
+          queue_depth: false
+          collection_interval: 0s
+        network:
+          enable: false
+          bandwidth: false
+          packets: false
+          errors: false
+          drops: false
+          connections: false
+          collection_interval: 0s
+        gpu:
+          enable: false
+          utilization: false
+          memory_usage: false
+          temperature: false
+          power_usage: false
+          fan_speed: false
+          collection_interval: 0s
+      cache_performance:
+        collection_interval: 0s
+        retention_period: 0s
+        hit_rate_tracking: false
+        latency_tracking: false
+        memory_tracking: false
+        throughput_tracking: false
+        error_tracking: false
+        custom_metrics: []
+    business:
+      enable: true
+      search_accuracy:
+        enable: true
+        recall: true
+        precision: true
+        f1_score: true
+        ndcg: false
+        mrr: false
+        evaluation_interval: 1h0m0s
+      user_satisfaction:
+        enable: false
+        click_through: false
+        dwell_time: false
+        bounce_rate: false
+        conversion_rate: false
+        user_feedback: false
+        tracking_window: 0s
+      data_quality:
+        enable: false
+        data_freshness: false
+        data_completeness: false
+        data_consistency: false
+        index_health: false
+        validation_interval: 0s
+      cost_metrics:
+        enable: false
+        compute_cost: false
+        storage_cost: false
+        network_cost: false
+        operational_cost: false
+        cost_per_query: false
+        calculation_interval: 0s
+    system:
+      enable: false
+      goroutines:
+        enable: false
+        count: false
+        stack_trace: false
+        leak_detection: false
+        collection_interval: 0s
+      gc:
+        enable: false
+        pause_time: false
+        frequency: false
+        heap_size: false
+        allocations: false
+        collection_interval: 0s
+      file_descriptors:
+        enable: false
+        open_count: false
+        max_count: false
+        usage_ratio: false
+        collection_interval: 0s
+      process_metrics:
+        enable: false
+        cpu_time: false
+        memory_usage: false
+        thread_count: false
+        start_time: false
+        collection_interval: 0s
+    custom:
+      enable: false
+      metrics: []
+      plugins: []
+  alerting:
+    enable: true
+    rules:
+    - name: HighCPUUsage
+      description: CPU使用率过高
+      metric: cpu_utilization
+      condition:
+        operator: '>'
+        threshold: 70
+        aggregation: avg
+        time_window: 5m0s
+        group_by: []
+        filters: {}
+      duration: 2m0s
+      severity: warning
+      labels: {}
+      annotations: {}
+      enabled: true
+      runbook: ""
+    - name: HighQueryLatency
+      description: 查询延迟过高
+      metric: search_latency_p95
+      condition:
+        operator: '>'
+        threshold: 200
+        aggregation: avg
+        time_window: 5m0s
+        group_by: []
+        filters: {}
+      duration: 1m0s
+      severity: critical
+      labels: {}
+      annotations: {}
+      enabled: true
+      runbook: ""
+    - name: HighMemoryUsage
+      description: 内存使用率过高
+      metric: memory_usage_percent
+      condition:
+        operator: '>'
+        threshold: 80
+        aggregation: avg
+        time_window: 5m0s
+        group_by: []
+        filters: {}
+      duration: 3m0s
+      severity: warning
+      labels: {}
+      annotations: {}
+      enabled: true
+      runbook: ""
+    notification:
+      channels:
+      - name: default-email
+        type: email
+        config: {}
+        enabled: true
+        severity_filter:
+        - critical
+        - warning
+        label_matchers: {}
+      templates:
+        subject: ""
+        body: ""
+        slack_message: ""
+        webhook_payload: ""
+        sms_message: ""
+      rate_limiting:
+        enable: true
+        global_limit:
+          requests_per_second: 10
+          burst_size: 20
+          window_size: 1h0m0s
+          penalty_duration: 5m0s
+        per_user_limit:
+          requests_per_second: 5
+          burst_size: 10
+          window_size: 1h0m0s
+          penalty_duration: 5m0s
+        per_ip_limit:
+          requests_per_second: 3
+          burst_size: 5
+          window_size: 1h0m0s
+          penalty_duration: 10m0s
+        adaptive_rate_limit:
+          enable: false
+          base_rate: 0
+          max_rate: 0
+          adjustment_factor: 0
+          monitoring_window: 0s
+      grouping:
+        enable: false
+        group_by: []
+        group_wait: 0s
+        group_interval: 0s
+        repeat_interval: 0s
+    escalation:
+      enable: false
+      levels: []
+      auto_escalation: false
+      escalation_delay: 0s
+    suppression:
+      enable: false
+      rules: []
+      maintenance_mode:
+        enable: false
+        schedule: ""
+        duration: 0s
+        notify_before: 0s
+        auto_enable: false
+    inhibition:
+      enable: false
+      rules: []
+  auto_scaling:
+    enable: true
+    strategy: reactive
+    metrics:
+      cpu_utilization:
+        enable: true
+        scale_up_threshold: 70
+        scale_down_threshold: 30
+        aggregation_window: 5m0s
+        weight: 1
+      memory_utilization:
+        enable: true
+        scale_up_threshold: 80
+        scale_down_threshold: 40
+        aggregation_window: 5m0s
+        weight: 1
+      query_latency:
+        enable: true
+        scale_up_threshold: 200ms
+        scale_down_threshold: 50ms
+        percentile: 0.95
+        aggregation_window: 5m0s
+        weight: 1.5
+      qps:
+        enable: false
+        scale_up_threshold: 0
+        scale_down_threshold: 0
+        aggregation_window: 0s
+        weight: 0
+      queue_length:
+        enable: false
+        scale_up_threshold: 0
+        scale_down_threshold: 0
+        aggregation_window: 0s
+        weight: 0
+      custom_metrics: []
+    policies:
+    - name: cpu-scale-up
+      metrictype: cpu_utilization
+      threshold: 70
+      direction: scale_up
+      cooldownperiod: 5m0s
+      mininstances: 1
+      maxinstances: 10
+      scalingfactor: 1.5
+      lastscaletime: 0001-01-01T00:00:00Z
+      enabled: true
+    - name: memory-scale-up
+      metrictype: memory_utilization
+      threshold: 80
+      direction: scale_up
+      cooldownperiod: 3m0s
+      mininstances: 1
+      maxinstances: 5
+      scalingfactor: 1.3
+      lastscaletime: 0001-01-01T00:00:00Z
+      enabled: true
+    limits:
+      min_compute_nodes: 1
+      max_compute_nodes: 10
+      min_storage_nodes: 1
+      max_storage_nodes: 5
+      min_proxy_nodes: 1
+      max_proxy_nodes: 3
+      max_scale_up_rate: 2
+      max_scale_down_rate: 0.5
+    cooldown:
+      scale_up_cooldown: 5m0s
+      scale_down_cooldown: 10m0s
+      stabilization_window: 3m0s
+    prediction:
+      enable: false
+      algorithm: ""
+      look_ahead_window: 0s
+      training_window: 0s
+      update_interval: 0s
+      accuracy_threshold: 0
+      model_path: ""
+  logging:
+    enable: true
+    level: INFO
+    format: json
+    output:
+      console: true
+      file:
+        enable: true
+        path: ./logs/vectorsphere.log
+        max_size: 104857600
+        max_age: 7
+        max_backups: 10
+        compress: true
+      syslog:
+        enable: false
+        network: ""
+        address: ""
+        facility: ""
+        tag: ""
+      elasticsearch:
+        enable: false
+        urls: []
+        index: ""
+        username: ""
+        password: ""
+        batch_size: 0
+        flush_interval: 0s
+      kafka:
+        enable: false
+        brokers: []
+        topic: ""
+        partition: 0
+        batch_size: 0
+        flush_interval: 0s
+    rotation:
+      enable: true
+      max_size: 104857600
+      max_age: 168h0m0s
+      max_backups: 10
+      compress: true
+      rotation_schedule: ""
+    sampling:
+      enable: false
+      initial: 0
+      thereafter: 0
+      tick: 0s
+    structured:
+      enable: true
+      fields:
+      - timestamp
+      - level
+      - message
+      - caller
+      timestamp_format: "2006-01-02T15:04:05.000Z"
+      caller_info: true
+      stack_trace: false
+    audit:
+      enable: false
+      events: []
+      path: ""
+      format: ""
+      retention_period: 0s
+      encryption: false
+      integrity_check: false
+  tracing:
+    enable: false
+    provider: jaeger
+    sampling_rate: 0.1
+    jaeger:
+      endpoint: ""
+      service_name: vectorsphere
+      agent_host: localhost
+      agent_port: 6831
+      collector_endpoint: ""
+      username: ""
+      password: ""
+    zipkin:
+      endpoint: ""
+      service_name: ""
+      batch_size: 0
+      timeout: 0s
+    opentelemetry:
+      endpoint: ""
+      service_name: ""
+      service_version: ""
+      headers: {}
+      batch_timeout: 0s
+      export_timeout: 0s
+    custom_tags: {}
+    operation_filters: []
+  profiling:
+    enable: false
+    cpu:
+      enable: false
+      sampling_rate: 100
+      duration: 30s
+      output_path: ./profiles/cpu.prof
+      auto_trigger: false
+      trigger_threshold: 80
+    memory:
+      enable: false
+      sampling_rate: 0
+      interval: 1m0s
+      output_path: ./profiles/memory.prof
+      auto_trigger: false
+      trigger_threshold: 80
+      gc_before_profile: true
+    goroutine:
+      enable: false
+      interval: 0s
+      output_path: ""
+      auto_trigger: false
+      trigger_threshold: 0
+      stack_trace: false
+    block:
+      enable: false
+      rate: 0
+      interval: 0s
+      output_path: ""
+      auto_trigger: false
+      trigger_threshold: 0s
+    mutex:
+      enable: false
+      rate: 0
+      interval: 0s
+      output_path: ""
+      auto_trigger: false
+      trigger_threshold: 0s
+    custom:
+      enable: false
+      profiles: []
+  dashboard:
+    enable: true
+    port: 8080
+    host: 0.0.0.0
+    path: /dashboard
+    authentication:
+      enable: false
+      type: basic
+      users: []
+      oauth:
+        provider: ""
+        client_id: ""
+        client_secret: ""
+        redirect_url: ""
+        scopes: []
+        auth_url: ""
+        token_url: ""
+      jwt:
+        secret: ""
+        issuer: ""
+        audience: ""
+        expiration: 0s
+        refresh_enable: false
+        refresh_expiration: 0s
+      session_timeout: 24h0m0s
+    charts: []
+    refresh_interval: 30s
+    theme: dark
+    customization:
+      logo: ""
+      title: ""
+      colors: {}
+      fonts: {}
+      layout: ""
+      custom_css: ""
+      custom_js: ""
+  health_check:
+    enable: true
+    interval: 30s
+    timeout: 5s
+    endpoints:
+    - name: api-health
+      path: /health
+      method: GET
+      expected_status: 200
+      timeout: 3s
+      headers: {}
+      body: ""
+      enabled: true
+    dependencies: []
+    readiness:
+      enable: true
+      path: /ready
+      initial_delay: 10s
+      period: 10s
+      timeout: 5s
+      failure_threshold: 3
+      success_threshold: 1
+    liveness:
+      enable: true
+      path: /live
+      initial_delay: 30s
+      period: 30s
+      timeout: 5s
+      failure_threshold: 3
+    startup:
+      enable: false
+      path: ""
+      initial_delay: 0s
+      period: 0s
+      timeout: 0s
+      failure_threshold: 0

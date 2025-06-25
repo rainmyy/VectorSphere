@@ -834,15 +834,6 @@ func ComputeVectorHash(vec []float64) uint64 {
 	return h.Sum64()
 }
 
-// HardwareCapabilities 硬件能力检测结果
-type HardwareCapabilities struct {
-	HasAVX2    bool
-	HasAVX512  bool
-	HasGPU     bool
-	CPUCores   int
-	GPUDevices int
-}
-
 // ComputeStrategy 计算策略枚举
 type ComputeStrategy int
 
