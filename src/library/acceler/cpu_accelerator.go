@@ -4,6 +4,7 @@ package acceler
 
 import "C"
 import (
+	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/logger"
 	"fmt"
 	"math"
@@ -477,7 +478,7 @@ func (c *FAISSAccelerator) RunBenchmark(vectorDim, numVectors int) map[string]in
 }
 
 // AccelerateSearch 加速搜索（UnifiedAccelerator接口方法）
-func (c *FAISSAccelerator) AccelerateSearch(query []float64, results []AccelResult, options SearchOptions) ([]AccelResult, error) {
+func (c *FAISSAccelerator) AccelerateSearch(query []float64, results []AccelResult, options entity.SearchOptions) ([]AccelResult, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -595,7 +596,7 @@ func (c *FAISSAccelerator) GetStats() HardwareStats {
 		Temperature:       45.0,
 		PowerConsumption:  65.0,
 		ErrorRate:         0.05,
-		LastUsed:          time.Hour * 24,
+		LastUsed:          time.Now(),
 	}
 }
 
@@ -605,16 +606,19 @@ func (c *FAISSAccelerator) GetPerformanceMetrics() PerformanceMetrics {
 	defer c.mu.RUnlock()
 
 	return PerformanceMetrics{
-		LatencyCurrent:      time.Microsecond * 50,
-		LatencyMin:          time.Microsecond * 30,
-		LatencyMax:          time.Microsecond * 100,
-		LatencyP50:          float64(time.Microsecond * 45),
-		LatencyP95:          float64(time.Microsecond * 80),
-		LatencyP99:          float64(time.Microsecond * 95),
-		ThroughputCurrent:   1000.0,
-		ThroughputPeak:      1500.0,
-		CacheHitRate:        0.85,
-		ResourceUtilization: 0.6,
+		LatencyCurrent:    time.Microsecond * 50,
+		LatencyMin:        time.Microsecond * 30,
+		LatencyMax:        time.Microsecond * 100,
+		LatencyP50:        float64(time.Microsecond * 45),
+		LatencyP95:        float64(time.Microsecond * 80),
+		LatencyP99:        float64(time.Microsecond * 95),
+		ThroughputCurrent: 1000.0,
+		ThroughputPeak:    1500.0,
+		CacheHitRate:      0.85,
+		ResourceUtilization: map[string]float64{
+			"bandwidth":   0.6,
+			"persistence": 0.9,
+		},
 	}
 }
 
@@ -650,7 +654,7 @@ func (c *FAISSAccelerator) AutoTune(workload WorkloadProfile) error {
 	}
 
 	// 根据工作负载自动选择最佳策略
-	optimalStrategy := c.strategy.SelectOptimalStrategy(workload.VectorCount, workload.Dimension)
+	optimalStrategy := c.strategy.SelectOptimalStrategy(int(workload.DataSize), workload.VectorDimension)
 	c.currentStrategy = optimalStrategy
 
 	logger.Info("CPU加速器自动调优完成，选择策略: %v", optimalStrategy)

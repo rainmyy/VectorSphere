@@ -3,6 +3,7 @@
 package acceler
 
 import (
+	"VectorSphere/src/library/entity"
 	"fmt"
 	"math"
 	"sync"
@@ -208,7 +209,7 @@ func (f *FPGAAccelerator) BatchCosineSimilarity(queries, database [][]float64) (
 }
 
 // AccelerateSearch 加速向量搜索
-func (f *FPGAAccelerator) AccelerateSearch(query []float64, results []AccelResult, options SearchOptions) ([]AccelResult, error) {
+func (f *FPGAAccelerator) AccelerateSearch(query []float64, database [][]float64, options entity.SearchOptions) ([]AccelResult, error) {
 	start := time.Now()
 	defer func() {
 		f.updateStats(time.Since(start), nil)
@@ -217,34 +218,55 @@ func (f *FPGAAccelerator) AccelerateSearch(query []float64, results []AccelResul
 	if !f.initialized {
 		return nil, fmt.Errorf("FPGA accelerator not initialized")
 	}
-
-	// 模拟FPGA流水线搜索
-	distances, err := f.ComputeDistance(query, database)
-	if err != nil {
-		return nil, err
+	if len(query) == 0 || len(database) == 0 {
+		return nil, fmt.Errorf("empty query or database")
+	}
+	k := options.K
+	if k <= 0 {
+		return nil, fmt.Errorf("k must be positive")
 	}
 
-	// 找到最小的k个距离
-	results := make([]AccelResult, 0, k)
-	for i := 0; i < len(distances) && len(results) < k; i++ {
-		minIdx := -1
-		minDist := math.Inf(1)
-		for j, dist := range distances {
-			if dist < minDist {
-				minDist = dist
-				minIdx = j
+	distances := make([]struct {
+		index    int
+		distance float64
+	}, len(database))
+	for j, dbVector := range database {
+		if len(dbVector) != len(query) {
+			return nil, fmt.Errorf("dimension mismatch: query %d, database %d", len(query), len(dbVector))
+		}
+		dist := 0.0
+		for d := 0; d < len(query); d++ {
+			diff := query[d] - dbVector[d]
+			dist += diff * diff
+		}
+		distances[j] = struct {
+			index    int
+			distance float64
+		}{j, math.Sqrt(dist)}
+	}
+
+	// TopK 选择
+	for p := 0; p < k && p < len(distances); p++ {
+		minIdx := p
+		for q := p + 1; q < len(distances); q++ {
+			if distances[q].distance < distances[minIdx].distance {
+				minIdx = q
 			}
 		}
-		if minIdx >= 0 {
-			results = append(results, AccelResult{
-				ID:         fmt.Sprintf("vec_%d", minIdx),
-				Similarity: 1.0 - minDist,
-				Metadata:   map[string]interface{}{"distance": minDist},
-			})
-			distances[minIdx] = math.Inf(1)
+		if minIdx != p {
+			distances[p], distances[minIdx] = distances[minIdx], distances[p]
 		}
 	}
 
+	results := make([]AccelResult, 0, k)
+	for j := 0; j < k && j < len(distances); j++ {
+		results = append(results, AccelResult{
+			ID:         fmt.Sprintf("vec_%d", distances[j].index),
+			Similarity: 1.0 / (1.0 + distances[j].distance),
+			Distance:   distances[j].distance,
+			Index:      distances[j].index,
+		})
+	}
 	return results, nil
 }
 

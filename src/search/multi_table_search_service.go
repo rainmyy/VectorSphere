@@ -437,7 +437,7 @@ func (mts *MultiTableSearchService) Search(tableName string, query *messages2.Te
 		dataSize := table.VectorDB.GetDataSize()
 		if useANN || dataSize > 1000 {
 			// 使用 HybridSearch 进行近似最近邻搜索
-			options := vector.SearchOptions{
+			options := entity.SearchOptions{
 				Nprobe:        probe,
 				UseANN:        true,
 				SearchTimeout: 5 * time.Second, // 可配置的超时时间

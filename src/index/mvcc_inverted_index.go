@@ -800,7 +800,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) Search(
 							nprobe = 32
 						}
 
-						options := vector.SearchOptions{
+						options := entity.SearchOptions{
 							Nprobe:        nprobe,
 							NumHashTables: 4 + vectorCount/10000, // 根据数据规模调整哈希表数量
 							UseANN:        true,

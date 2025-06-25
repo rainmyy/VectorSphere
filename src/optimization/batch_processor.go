@@ -46,7 +46,7 @@ func (task *BatchSearchTask) Execute() {
 	}
 
 	// 创建搜索选项
-	searchOptions := vector.SearchOptions{
+	searchOptions := entity.SearchOptions{
 		Nprobe:        task.options.Nprobe,
 		SearchTimeout: task.options.Timeout,
 		QualityLevel:  task.options.QualityLevel,

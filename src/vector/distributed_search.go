@@ -224,7 +224,7 @@ func (dsm *DistributedSearchManager) AddNode(node *SearchNode) {
 }
 
 // DistributedSearch 分布式搜索
-func (dsm *DistributedSearchManager) DistributedSearch(ctx context.Context, query []float64, k int, options SearchOptions) ([]entity.Result, error) {
+func (dsm *DistributedSearchManager) DistributedSearch(ctx context.Context, query []float64, k int, options entity.SearchOptions) ([]entity.Result, error) {
 	if len(dsm.nodes) == 0 {
 		return nil, fmt.Errorf("没有可用的搜索节点")
 	}
@@ -316,7 +316,7 @@ func (dsm *DistributedSearchManager) selectNodeForShard(shardID int) *SearchNode
 }
 
 // searchOnNode 在指定节点上执行搜索
-func (dsm *DistributedSearchManager) searchOnNode(ctx context.Context, node *SearchNode, query []float64, k int, options SearchOptions) ([]entity.Result, error) {
+func (dsm *DistributedSearchManager) searchOnNode(ctx context.Context, node *SearchNode, query []float64, k int, options entity.SearchOptions) ([]entity.Result, error) {
 	// 这里应该实现实际的网络调用逻辑
 	// 目前返回空结果作为占位符
 	return []entity.Result{}, nil

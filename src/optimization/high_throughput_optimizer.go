@@ -1052,7 +1052,7 @@ func (hto *HighThroughputOptimizer) executeSearch(ctx context.Context, data []fl
 	}
 
 	// 创建与SearchContext对应的SearchOptions
-	searchOptions := vector.SearchOptions{
+	searchOptions := entity.SearchOptions{
 		Nprobe:        searchCtx.Nprobe,
 		SearchTimeout: searchCtx.Timeout,
 		QualityLevel:  searchCtx.QualityLevel,

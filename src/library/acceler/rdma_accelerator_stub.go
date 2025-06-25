@@ -3,6 +3,7 @@
 package acceler
 
 import (
+	"VectorSphere/src/library/entity"
 	"fmt"
 	"math"
 	"sync"
@@ -275,7 +276,7 @@ func (r *RDMAAccelerator) BatchCosineSimilarity(queries, database [][]float64) (
 }
 
 // AccelerateSearch 加速向量搜索
-func (r *RDMAAccelerator) AccelerateSearch(query []float64, results []AccelResult, options SearchOptions) ([]AccelResult, error) {
+func (r *RDMAAccelerator) AccelerateSearch(query []float64, results []AccelResult, options entity.SearchOptions) ([]AccelResult, error) {
 	start := time.Now()
 	defer func() {
 		r.updateStats(time.Since(start), nil)

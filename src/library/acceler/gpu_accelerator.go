@@ -859,7 +859,7 @@ func (c *FAISSAccelerator) SetMemoryFraction(fraction float64) error {
 }
 
 // AccelerateSearch 加速搜索（UnifiedAccelerator接口方法）
-func (c *FAISSAccelerator) AccelerateSearch(query []float64, results []AccelResult, options SearchOptions) ([]AccelResult, error) {
+func (c *FAISSAccelerator) AccelerateSearch(query []float64, results []AccelResult, options entity.SearchOptions) ([]AccelResult, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 

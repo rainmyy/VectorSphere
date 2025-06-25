@@ -3,6 +3,7 @@
 package acceler
 
 import (
+	"VectorSphere/src/library/entity"
 	"fmt"
 	"math"
 	"sync"
@@ -228,7 +229,7 @@ func (p *PMemAccelerator) BatchCosineSimilarity(queries, database [][]float64) (
 }
 
 // AccelerateSearch 加速向量搜索
-func (p *PMemAccelerator) AccelerateSearch(query []float64, results []AccelResult, options SearchOptions) ([]AccelResult, error) {
+func (p *PMemAccelerator) AccelerateSearch(query []float64, results []AccelResult, options entity.SearchOptions) ([]AccelResult, error) {
 	start := time.Now()
 	defer func() {
 		p.updateStats(time.Since(start), nil)

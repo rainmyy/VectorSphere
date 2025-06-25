@@ -1,6 +1,7 @@
 package acceler
 
 import (
+	"VectorSphere/src/library/entity"
 	"fmt"
 	"sync"
 	"time"
@@ -32,7 +33,7 @@ type UnifiedAccelerator interface {
 	//BatchCosineSimilarity(queries [][]float64, database [][]float64) ([][]float64, error)
 
 	// 高级功能
-	AccelerateSearch(query []float64, results []AccelResult, options SearchOptions) ([]AccelResult, error)
+	AccelerateSearch(query []float64, database [][]float64, options entity.SearchOptions) ([]AccelResult, error)
 	//OptimizeMemoryLayout(vectors [][]float64) error
 	//PrefetchData(vectors [][]float64) error
 
@@ -42,8 +43,8 @@ type UnifiedAccelerator interface {
 	GetPerformanceMetrics() PerformanceMetrics
 
 	// 配置和调优
-	//UpdateConfig(config interface{}) error
 	AutoTune(workload WorkloadProfile) error
+	//UpdateConfig(config interface{}) error
 }
 
 // HardwareCapabilities 硬件能力信息
@@ -103,16 +104,10 @@ type WorkloadProfile struct {
 	LatencyTarget    time.Duration `json:"latency_target"`
 	ThroughputTarget float64       `json:"throughput_target"`
 	Type             string        `json:"type"`
-}
-
-// SearchOptions 搜索选项
-type SearchOptions struct {
-	K                int           `json:"k"`
-	Threshold        float64       `json:"threshold"`
-	UseApproximation bool          `json:"use_approximation"`
-	MaxCandidates    int           `json:"max_candidates"`
-	Timeout          time.Duration `json:"timeout"`
-	Parallel         bool          `json:"parallel"`
+	AccuracyTarget   float64       `json:"accuracy_target"`
+	Concurrency      int           `json:"concurrency"`
+	MemoryBudget     int64         `json:"memory_budget"`
+	DataType         string        `json:"date_type"`
 }
 
 // AcceleratorManager 加速器管理器

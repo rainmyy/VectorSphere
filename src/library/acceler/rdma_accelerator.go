@@ -1,3 +1,4 @@
+//go:build rdma
 // +build rdma
 
 package acceler
@@ -77,8 +78,8 @@ type RDMAAccelerator struct {
 type RDMAConfig struct {
 	Enable             bool                         `json:"enable"`
 	Devices            []RDMADevice                 `json:"devices"`
-	Protocol           string                       `json:"protocol"`             // "IB", "RoCE", "iWARP"
-	TransportType      string                       `json:"transport_type"`       // "RC", "UC", "UD"
+	Protocol           string                       `json:"protocol"`       // "IB", "RoCE", "iWARP"
+	TransportType      string                       `json:"transport_type"` // "RC", "UC", "UD"
 	QueuePairs         RDMAQueuePairConfig          `json:"queue_pairs"`
 	MemoryRegistration RDMAMemoryRegistrationConfig `json:"memory_registration"`
 	CongestionControl  RDMACongestionControlConfig  `json:"congestion_control"`
@@ -110,7 +111,7 @@ type RDMAQueuePairConfig struct {
 
 // RDMAMemoryRegistrationConfig RDMA内存注册配置
 type RDMAMemoryRegistrationConfig struct {
-	Strategy          string `json:"strategy"`     // "eager", "lazy", "on_demand"
+	Strategy          string `json:"strategy"`   // "eager", "lazy", "on_demand"
 	CacheSize         int64  `json:"cache_size"` // bytes
 	HugePagesEnable   bool   `json:"huge_pages_enable"`
 	MemoryPinning     bool   `json:"memory_pinning"`
@@ -375,7 +376,7 @@ func (r *RDMAAccelerator) BatchCosineSimilarity(queries [][]float64, database []
 }
 
 // AccelerateSearch 加速搜索
-func (r *RDMAAccelerator) AccelerateSearch(query []float64, results []AccelResult, options SearchOptions) ([]AccelResult, error) {
+func (r *RDMAAccelerator) AccelerateSearch(query []float64, results []AccelResult, options entity.SearchOptions) ([]AccelResult, error) {
 	// RDMA可以提供分布式搜索加速
 	return results, nil
 }
@@ -418,12 +419,12 @@ func (r *RDMAAccelerator) GetPerformanceMetrics() PerformanceMetrics {
 		LatencyP99:        r.stats.AverageLatency * 1.5,
 		ThroughputCurrent: r.stats.Throughput,
 		ThroughputPeak:    r.stats.Throughput * 2.0, // RDMA可以达到很高的吞吐量
-		CacheHitRate:      0.0, // RDMA不使用缓存
+		CacheHitRate:      0.0,                      // RDMA不使用缓存
 		ResourceUtilization: map[string]float64{
-			"network":    0.6,
-			"bandwidth":  r.getNetworkUtilization(),
-			"latency":    r.getLatencyUtilization(),
-			"nodes":      float64(len(r.connections)) / 10.0, // 假设最大10个节点
+			"network":   0.6,
+			"bandwidth": r.getNetworkUtilization(),
+			"latency":   r.getLatencyUtilization(),
+			"nodes":     float64(len(r.connections)) / 10.0, // 假设最大10个节点
 		},
 	}
 }
@@ -500,7 +501,7 @@ func (r *RDMAAccelerator) updateCapabilities() {
 	result := C.rdma_get_device_info(C.int(r.deviceID), &name[0], &portCount, &guid)
 	if result == 0 {
 		r.capabilities.ComputeUnits = int(portCount)
-		r.capabilities.MemorySize = 1024 * 1024 * 1024 * 8 // 假设8GB内存
+		r.capabilities.MemorySize = 1024 * 1024 * 1024 * 8  // 假设8GB内存
 		r.capabilities.MaxBatchSize = 10000                 // 大批处理支持
 		r.capabilities.Bandwidth = 100 * 1024 * 1024 * 1024 // 100Gbps
 		r.capabilities.Latency = 1 * time.Microsecond       // 超低延迟
@@ -519,7 +520,7 @@ func (r *RDMAAccelerator) updateStats(duration time.Duration, operations int, su
 
 	// 更新平均延迟
 	if r.stats.TotalOperations > 0 {
-		totalTime := time.Duration(int64(r.stats.AverageLatency) * (r.stats.TotalOperations-int64(operations))) + duration
+		totalTime := time.Duration(int64(r.stats.AverageLatency)*(r.stats.TotalOperations-int64(operations))) + duration
 		r.stats.AverageLatency = totalTime / time.Duration(r.stats.TotalOperations)
 	}
 
@@ -538,8 +539,8 @@ func (r *RDMAAccelerator) updateStats(duration time.Duration, operations int, su
 
 	// 模拟其他指标
 	r.stats.MemoryUtilization = 0.5 // 假设50%内存利用率
-	r.stats.Temperature = 40.0       // 假设40°C
-	r.stats.PowerConsumption = 30.0  // 假设30W功耗
+	r.stats.Temperature = 40.0      // 假设40°C
+	r.stats.PowerConsumption = 30.0 // 假设30W功耗
 }
 
 // initializeClusterConnections 初始化集群连接

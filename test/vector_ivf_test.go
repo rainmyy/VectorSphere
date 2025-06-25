@@ -1,6 +1,7 @@
 package test
 
 import (
+	"VectorSphere/src/library/entity"
 	"VectorSphere/src/vector"
 	"fmt"
 	"math"
@@ -525,7 +526,7 @@ func TestCalculateADCDistance(t *testing.T) {
 	query := []float64{5.0, 5.0, 5.0, 5.0}
 
 	// 执行搜索来间接验证ADC距离计算
-	results, err := db.OptimizedSearch(query, 5, vector.SearchOptions{})
+	results, err := db.OptimizedSearch(query, 5, entity.SearchOptions{})
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}

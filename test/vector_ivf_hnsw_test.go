@@ -1,6 +1,7 @@
 package test
 
 import (
+	"VectorSphere/src/library/entity"
 	"fmt"
 	"math/rand"
 	"testing"
@@ -43,7 +44,7 @@ func TestIVFHNSWIndexBasic(t *testing.T) {
 
 	// 执行搜索测试
 	queryVector := generateTestVectors(1, 128)[0]
-	options := vector.SearchOptions{}
+	options := entity.SearchOptions{}
 	results, err := db.OptimizedSearch(queryVector, 10, options)
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
@@ -88,7 +89,7 @@ func TestIVFHNSWIndexPerformance(t *testing.T) {
 
 	// 性能测试
 	queryVectors := generateTestVectors(100, 256)
-	options := vector.SearchOptions{}
+	options := entity.SearchOptions{}
 	start = time.Now()
 	for _, queryVec := range queryVectors {
 		_, err := db.OptimizedSearch(queryVec, 10, options)
@@ -133,7 +134,7 @@ func TestIVFHNSWIndexConfiguration(t *testing.T) {
 
 	// 验证配置生效
 	queryVector := generateTestVectors(1, 64)[0]
-	options := vector.SearchOptions{}
+	options := entity.SearchOptions{}
 	results, err := db.OptimizedSearch(queryVector, 5, options)
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
@@ -185,7 +186,7 @@ func TestIVFHNSWIndexErrorHandling(t *testing.T) {
 
 	// 测试无效查询向量
 	invalidQuery := make([]float64, 16) // 错误的维度
-	options := vector.SearchOptions{}
+	options := entity.SearchOptions{}
 	_, err = db.OptimizedSearch(invalidQuery, 5, options)
 	if err == nil {
 		t.Error("Expected error when searching with invalid query vector")

@@ -1,6 +1,7 @@
 package acceler
 
 import (
+	"VectorSphere/src/library/entity"
 	"fmt"
 	"sync"
 	"time"
@@ -47,25 +48,24 @@ func (hm *HardwareManager) setupDefaultStrategies() {
 
 // registerAllAccelerators 注册所有可用的硬件加速器
 func (hm *HardwareManager) registerAllAccelerators() {
-	// 注册CPU加速器
-	cpuAcc := NewFAISSAccelerator(0, "IVFFlat")
+	// 注册CPU加速器 (使用FAISS作为CPU实现)
+	cpuAcc := NewFAISSAccelerator(&FAISSConfig{DeviceID: 0, IndexType: "IDMap,Flat"})
 	if cpuAcc.IsAvailable() {
-		hm.RegisterAccelerator("cpu", cpuAcc)
-		err := hm.manager.RegisterAccelerator(cpuAcc)
-		if err != nil {
-			return
+		hm.RegisterAccelerator(AcceleratorCPU, cpuAcc)
+		if err := hm.manager.RegisterAccelerator(cpuAcc); err != nil {
+			fmt.Printf("警告: 注册CPU加速器失败: %v\n", err)
 		}
 	}
 
 	// 注册GPU加速器
 	for i := 0; i < 4; i++ { // 最多检测4个GPU
-		gpuAcc := NewGPUAccelerator()
+		gpuAcc := NewGPUAccelerator(&GPUConfig{DeviceID: i, IndexType: "IVF,Flat", NumClusters: 128})
 		if gpuAcc.IsAvailable() {
-			name := fmt.Sprintf("gpu_%d", i)
+			name := fmt.Sprintf("AcceleratorGPU_%d", i)
 			hm.RegisterAccelerator(name, gpuAcc)
-			err := hm.manager.RegisterAccelerator(gpuAcc)
-			if err != nil {
-				return
+			if err := hm.manager.RegisterAccelerator(gpuAcc); err != nil {
+				fmt.Printf("警告: 注册GPU加速器 %s 失败: %v\n", name, err)
+				continue
 			}
 			hm.defaultType = name // 优先使用GPU
 			break                 // 只注册第一个可用的GPU
@@ -74,32 +74,46 @@ func (hm *HardwareManager) registerAllAccelerators() {
 
 	// 注册FPGA加速器
 	for i := 0; i < 2; i++ { // 最多检测2个FPGA
-		fpgaAcc := NewFPGAAccelerator(i, nil)
+		config := &FPGAConfig{
+			DeviceID:      i,
+			BitstreamPath: fmt.Sprintf("path/to/bitstream_%d.bin", i), // 动态路径
+			BufferSize:    1024 * 1024 * 1024,                         // 1GB
+		}
+		fpgaAcc := NewFPGAAccelerator(0, config)
 		if fpgaAcc.IsAvailable() {
 			name := fmt.Sprintf("%s_%d", AcceleratorFPGA, i)
 			hm.RegisterAccelerator(name, fpgaAcc)
-			err := hm.manager.RegisterAccelerator(fpgaAcc)
-			if err != nil {
-				return
+			if err := hm.manager.RegisterAccelerator(fpgaAcc); err != nil {
+				fmt.Printf("警告: 注册FPGA加速器 %s 失败: %v\n", name, err)
+				continue
 			}
-			break // 只注册第一个可用的FPGA
+			break
 		}
 	}
 
 	// 注册PMem加速器
-	pmemAcc := NewPMemAccelerator(nil)
+	pmemConfig := &PMemConfig{
+		DevicePath: "/mnt/pmem0/vectors.db",
+		PoolSize:   10 * 1024 * 1024 * 1024, // 10GB
+	}
+	pmemAcc := NewPMemAccelerator(pmemConfig)
 	if pmemAcc.IsAvailable() {
 		hm.RegisterAccelerator(AcceleratorPMem, pmemAcc)
-		hm.manager.RegisterAccelerator(pmemAcc)
+		if err := hm.manager.RegisterAccelerator(pmemAcc); err != nil {
+			fmt.Printf("警告: 注册PMem加速器失败: %v\n", err)
+		}
 	}
 
 	// 注册RDMA加速器
-	rdmaAcc := NewRDMAAccelerator(0, 1, nil)
+	rdmaConfig := &RDMAConfig{
+		DeviceID: 0,
+		PortNum:  1,
+	}
+	rdmaAcc := NewRDMAAccelerator(rdmaConfig)
 	if rdmaAcc.IsAvailable() {
 		hm.RegisterAccelerator(AcceleratorRDMA, rdmaAcc)
-		err := hm.manager.RegisterAccelerator(rdmaAcc)
-		if err != nil {
-			return
+		if err := hm.manager.RegisterAccelerator(rdmaAcc); err != nil {
+			fmt.Printf("警告: 注册RDMA加速器失败: %v\n", err)
 		}
 	}
 }
@@ -462,11 +476,11 @@ func (hm *HardwareManager) BatchSearch(queries [][]float64, database [][]float64
 }
 
 // AccelerateSearch 使用最佳加速器进行搜索加速
-func (hm *HardwareManager) AccelerateSearch(query []float64, results []AccelResult, options SearchOptions, workloadType string) ([]AccelResult, error) {
+func (hm *HardwareManager) AccelerateSearch(query []float64, database [][]float64, options entity.SearchOptions, workloadType string) ([]AccelResult, error) {
 	acc := hm.GetBestAccelerator(workloadType)
 	if acc == nil {
-		return results, nil // 如果没有加速器，返回原结果
+		return nil, fmt.Errorf("no available accelerator")
 	}
 
-	return acc.AccelerateSearch(query, results, options)
+	return acc.AccelerateSearch(query, database, options)
 }

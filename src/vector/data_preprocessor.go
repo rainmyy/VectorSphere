@@ -13,7 +13,7 @@ type DataPreprocessor interface {
 	ReduceDimension(vectors [][]float64, targetDim int) ([][]float64, error)
 	Quantize(vectors [][]float64, bits int) ([][]float64, error)
 	Filter(vectors [][]float64, criteria FilterCriteria) [][]float64
-	FilterResults(results []entity.Result, options SearchOptions) []entity.Result
+	FilterResults(results []entity.Result, options entity.SearchOptions) []entity.Result
 	GetStats() PreprocessorStats
 }
 
@@ -445,7 +445,7 @@ func (sp *StandardPreprocessor) GetStats() PreprocessorStats {
 }
 
 // FilterResults 过滤搜索结果
-func (sp *StandardPreprocessor) FilterResults(results []entity.Result, options SearchOptions) []entity.Result {
+func (sp *StandardPreprocessor) FilterResults(results []entity.Result, options entity.SearchOptions) []entity.Result {
 	sp.mutex.Lock()
 	defer sp.mutex.Unlock()
 

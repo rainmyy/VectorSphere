@@ -158,10 +158,10 @@ type VectorDB struct {
 	adaptiveSelector   *AdaptiveIndexSelector // 自适应索引选择器
 	cachePath          string
 	pcaConfig          *PCAConfig
-	performanceMonitor PerformanceMonitor // 性能监控器
-	dataPreprocessor   DataPreprocessor   // 数据预处理器
-	hardwareManager    *HardwareManager   // 硬件管理器
-	cacheManager       *CacheManager      // 缓存管理器
+	performanceMonitor PerformanceMonitor       // 性能监控器
+	dataPreprocessor   DataPreprocessor         // 数据预处理器
+	hardwareManager    *acceler.HardwareManager // 硬件管理器
+	cacheManager       *CacheManager            // 缓存管理器
 }
 
 const (
@@ -431,7 +431,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 }
 
 // OptimizedSearch 优化的搜索方法
-func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOptions) ([]entity.Result, error) {
+func (db *VectorDB) OptimizedSearch(query []float64, k int, options entity.SearchOptions) ([]entity.Result, error) {
 	// 查询向量维度检查
 	if len(query) != db.vectorDim {
 		return nil, fmt.Errorf("查询向量维度 %d 与数据库向量维度 %d 不匹配", len(query), db.vectorDim)
@@ -457,7 +457,7 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOption
 	}
 
 	// 硬件加速检查
-	var accelerator HardwareAccelerator
+	var accelerator acceler.UnifiedAccelerator
 	if db.hardwareManager != nil {
 		if options.UseGPU {
 			if gpu, exists := db.hardwareManager.GetAccelerator("gpu"); exists && gpu.IsAvailable() {
@@ -492,6 +492,53 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOption
 			}
 		}
 	}
+
+	// 硬件加速优先
+	if accelerator != nil {
+		db.mu.RLock()
+		// 1. 构建加速器需要的数据集和ID映射
+		database := make([][]float64, 0, len(db.vectors))
+		idMap := make(map[int]string, len(db.vectors))
+		i := 0
+		for id, vec := range db.vectors {
+			database = append(database, vec)
+			idMap[i] = id
+			i++
+		}
+		db.mu.RUnlock()
+
+		// 2. 调用硬件加速搜索
+		accelOpts := entity.SearchOptions{K: k}
+		if acceleratedResults, accelErr := accelerator.AccelerateSearch(processedQuery, database, accelOpts); accelErr == nil {
+			// 3. 处理加速结果
+			results := make([]entity.Result, len(acceleratedResults))
+			for i, res := range acceleratedResults {
+				results[i] = entity.Result{
+					Id:       idMap[res.Index],
+					Distance: res.Distance,
+				}
+			}
+
+			// 缓存结果
+			if options.UseCache && db.cacheManager != nil && cacheKey != "" {
+				if strategy, exists := db.cacheManager.GetStrategy(options.CacheStrategy); exists {
+					strategy.Put(cacheKey, results)
+				}
+			}
+
+			if tracker != nil {
+				tracker.AddTag("hardware_accelerated", "true")
+				tracker.End(true, nil)
+			}
+			return results, nil
+		} else {
+			logger.Warning("硬件加速搜索失败，回退到软件搜索: %v", accelErr)
+			if tracker != nil {
+				tracker.AddTag("hardware_fallback", "true")
+			}
+		}
+	}
+
 	// 构建搜索上下文
 	ctx := SearchContext{
 		QueryVector:  processedQuery,
@@ -545,47 +592,47 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOption
 
 	switch indexStrategy {
 	case StrategyBruteForce:
-		results, err = db.bruteForceSearch(query, k)
+		results, err = db.bruteForceSearch(processedQuery, k)
 	case StrategyIVF:
-		results, err = db.ivfSearchWithScores(query, k, ctx.Nprobe, db.GetOptimalStrategy(query))
+		results, err = db.ivfSearchWithScores(processedQuery, k, ctx.Nprobe, db.GetOptimalStrategy(processedQuery))
 	case StrategyHNSW:
-		results, err = db.hnswSearchWithScores(query, k)
+		results, err = db.hnswSearchWithScores(processedQuery, k)
 	case StrategyPQ:
-		results, err = db.pqSearchWithScores(query, k)
+		results, err = db.pqSearchWithScores(processedQuery, k)
 	case StrategyHybrid:
-		results, err = db.hybridSearchWithScores(query, k, ctx)
+		results, err = db.hybridSearchWithScores(processedQuery, k, ctx)
 	case StrategyEnhancedIVF:
-		results, err = db.EnhancedIVFSearch(query, k, ctx.Nprobe)
+		results, err = db.EnhancedIVFSearch(processedQuery, k, ctx.Nprobe)
 		if err != nil {
 			logger.Warning("EnhancedIVF搜索失败，回退到传统IVF: %v", err)
-			results, err = db.ivfSearchWithScores(query, k, ctx.Nprobe, db.GetOptimalStrategy(query))
+			results, err = db.ivfSearchWithScores(processedQuery, k, ctx.Nprobe, db.GetOptimalStrategy(processedQuery))
 		}
 	case StrategyEnhancedLSH:
-		results, err = db.EnhancedLSHSearch(query, k)
+		results, err = db.EnhancedLSHSearch(processedQuery, k)
 		if err != nil {
 			logger.Warning("EnhancedLSH搜索失败，回退到传统搜索: %v", err)
 			// 根据数据规模选择回退策略
 			if len(db.vectors) > 10000 {
-				results, err = db.ivfSearchWithScores(query, k, ctx.Nprobe, db.GetOptimalStrategy(query))
+				results, err = db.ivfSearchWithScores(processedQuery, k, ctx.Nprobe, db.GetOptimalStrategy(processedQuery))
 			} else {
-				results, err = db.bruteForceSearch(query, k)
+				results, err = db.bruteForceSearch(processedQuery, k)
 			}
 		}
 	case StrategyIVFHNSW:
-		results, err = db.ivfHnswSearchWithScores(query, k, ctx)
+		results, err = db.ivfHnswSearchWithScores(processedQuery, k, ctx)
 		if err != nil {
 			logger.Warning("IVF-HNSW混合搜索失败，回退到增强IVF: %v", err)
 			// 回退到增强IVF或传统搜索
 			if db.ivfIndex != nil && db.ivfIndex.Enable {
-				results, err = db.EnhancedIVFSearch(query, k, ctx.Nprobe)
+				results, err = db.EnhancedIVFSearch(processedQuery, k, ctx.Nprobe)
 			} else if len(db.vectors) > 10000 {
-				results, err = db.ivfSearchWithScores(query, k, ctx.Nprobe, db.GetOptimalStrategy(query))
+				results, err = db.ivfSearchWithScores(processedQuery, k, ctx.Nprobe, db.GetOptimalStrategy(processedQuery))
 			} else {
-				results, err = db.bruteForceSearch(query, k)
+				results, err = db.bruteForceSearch(processedQuery, k)
 			}
 		}
 	default:
-		results, err = db.ivfSearchWithScores(query, k, ctx.Nprobe, db.GetOptimalStrategy(query))
+		results, err = db.ivfSearchWithScores(processedQuery, k, ctx.Nprobe, db.GetOptimalStrategy(processedQuery))
 	}
 
 	// 多阶段搜索优化
@@ -608,16 +655,6 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options SearchOption
 				if tracker != nil {
 					tracker.AddTag("multi_stage", "true")
 				}
-			}
-		}
-	}
-
-	// 硬件加速后处理
-	if accelerator != nil && err == nil {
-		if acceleratedResults, accelErr := accelerator.AccelerateSearch(processedQuery, results, options); accelErr == nil {
-			results = acceleratedResults
-			if tracker != nil {
-				tracker.AddTag("hardware_accelerated", "true")
 			}
 		}
 	}
@@ -4246,7 +4283,7 @@ func (db *VectorDB) Findnearestwithscores1(query []float64, k int, nprobe int) (
 }
 
 // HybridSearch 混合搜索策略
-func (db *VectorDB) HybridSearch(query []float64, k int, options SearchOptions, nprobe int) ([]entity.Result, error) {
+func (db *VectorDB) HybridSearch(query []float64, k int, options entity.SearchOptions, nprobe int) ([]entity.Result, error) {
 	// 根据向量维度和数据规模自动选择最佳搜索策略
 	if len(db.vectors) < 1000 || !db.indexed {
 		// 小数据集使用暴力搜索
@@ -5067,7 +5104,7 @@ func (db *VectorDB) generateQueryKey(query []float64, k int) string {
 }
 
 // OptimizedBatchSearch GPU加速的批量搜索方法
-func (db *VectorDB) OptimizedBatchSearch(queries [][]float64, k int, options SearchOptions) ([][]entity.Result, error) {
+func (db *VectorDB) OptimizedBatchSearch(queries [][]float64, k int, options entity.SearchOptions) ([][]entity.Result, error) {
 	// 更新查询计数
 	db.statsMu.Lock()
 	db.stats.TotalQueries += int64(len(queries))
@@ -5131,7 +5168,7 @@ func (db *VectorDB) shouldUseGPUBatchSearch(queryCount, dbSize int) bool {
 }
 
 // gpuBatchSearch GPU加速的批量搜索实现
-func (db *VectorDB) gpuBatchSearch(queries [][]float64, k int, options SearchOptions) ([][]entity.Result, error) {
+func (db *VectorDB) gpuBatchSearch(queries [][]float64, k int, options entity.SearchOptions) ([][]entity.Result, error) {
 	// 准备数据库向量数组
 	database := make([][]float64, 0, len(db.vectors))
 	idMapping := make([]string, 0, len(db.vectors))
@@ -5174,7 +5211,7 @@ func (db *VectorDB) gpuBatchSearch(queries [][]float64, k int, options SearchOpt
 }
 
 // fallbackBatchSearch 传统批量搜索方法（回退方案）
-func (db *VectorDB) fallbackBatchSearch(queries [][]float64, k int, options SearchOptions) ([][]entity.Result, error) {
+func (db *VectorDB) fallbackBatchSearch(queries [][]float64, k int, options entity.SearchOptions) ([][]entity.Result, error) {
 	// 使用现有的BatchFindNearestWithScores方法
 	numWorkers := runtime.NumCPU()
 	return db.BatchFindNearestWithScores(queries, k, numWorkers)

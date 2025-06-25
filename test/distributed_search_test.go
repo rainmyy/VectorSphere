@@ -1,6 +1,7 @@
 package test
 
 import (
+	"VectorSphere/src/library/entity"
 	"VectorSphere/src/vector"
 	"context"
 	"fmt"
@@ -56,7 +57,7 @@ func TestDistributedSearch(t *testing.T) {
 	}
 
 	query := []float64{1.0, 2.0, 3.0}
-	options := vector.SearchOptions{
+	options := entity.SearchOptions{
 		MaxCandidates: 10,
 		QualityLevel:  0.8,
 	}
@@ -156,7 +157,7 @@ func TestDistributedSearchConcurrency(t *testing.T) {
 	}
 
 	query := []float64{1.0, 2.0, 3.0}
-	options := vector.SearchOptions{MaxCandidates: 10}
+	options := entity.SearchOptions{MaxCandidates: 10}
 
 	// 并发搜索
 	done := make(chan bool, 10)

@@ -11,7 +11,7 @@ import (
 )
 
 // generateCacheKey 生成缓存键
-func (db *VectorDB) generateCacheKey(query []float64, k int, options SearchOptions) string {
+func (db *VectorDB) generateCacheKey(query []float64, k int, options entity.SearchOptions) string {
 	// 使用查询向量的哈希、k值和关键选项生成缓存键
 	hash := md5.New()
 	for _, v := range query {
@@ -21,7 +21,7 @@ func (db *VectorDB) generateCacheKey(query []float64, k int, options SearchOptio
 	hash.Write([]byte(fmt.Sprintf("%s", options.ForceStrategy)))
 	hash.Write([]byte(fmt.Sprintf("%.3f", options.QualityLevel)))
 	hash.Write([]byte(fmt.Sprintf("%d", options.Nprobe)))
-	
+
 	return fmt.Sprintf("%x", hash.Sum(nil))
 }
 
@@ -33,14 +33,14 @@ func (db *VectorDB) deduplicateResults(results []entity.Result) []entity.Result 
 
 	seen := make(map[string]bool)
 	deduped := make([]entity.Result, 0, len(results))
-	
+
 	for _, result := range results {
 		if !seen[result.Id] {
 			seen[result.Id] = true
 			deduped = append(deduped, result)
 		}
 	}
-	
+
 	return deduped
 }
 
@@ -158,19 +158,19 @@ func maxInt(a, b int) int {
 // AdaptiveSearchOptions 自适应搜索选项
 type AdaptiveSearchOptions struct {
 	// 自动调整参数
-	AutoTuneNprobe   bool          // 自动调整nprobe
-	AutoTuneEf       bool          // 自动调整ef参数
-	AutoTuneTimeout  bool          // 自动调整超时时间
-	TargetLatency    time.Duration // 目标延迟
-	TargetRecall     float64       // 目标召回率
-	
+	AutoTuneNprobe  bool          // 自动调整nprobe
+	AutoTuneEf      bool          // 自动调整ef参数
+	AutoTuneTimeout bool          // 自动调整超时时间
+	TargetLatency   time.Duration // 目标延迟
+	TargetRecall    float64       // 目标召回率
+
 	// 负载均衡
 	EnableLoadBalance bool // 启用负载均衡
-	MaxConcurrency   int  // 最大并发数
-	
+	MaxConcurrency    int  // 最大并发数
+
 	// 预热策略
-	EnableWarmup     bool // 启用预热
-	WarmupQueries    int  // 预热查询数量
+	EnableWarmup  bool // 启用预热
+	WarmupQueries int  // 预热查询数量
 }
 
 // SearchMetrics 搜索指标
@@ -210,19 +210,19 @@ func (db *VectorDB) CalculateQualityMetrics(results []entity.Result, groundTruth
 
 	// 计算召回率
 	recall := db.calculateRecall(results, groundTruth)
-	
+
 	// 计算精确率
 	precision := db.calculatePrecision(results, groundTruth)
-	
+
 	// 计算F1分数
 	f1Score := 0.0
 	if recall+precision > 0 {
 		f1Score = 2 * (recall * precision) / (recall + precision)
 	}
-	
+
 	// 计算NDCG
 	ndcg := db.calculateNDCG(results, groundTruth)
-	
+
 	// 计算MRR
 	mrr := db.calculateMRR(results, groundTruth)
 

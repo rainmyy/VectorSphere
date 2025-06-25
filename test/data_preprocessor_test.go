@@ -169,7 +169,7 @@ func TestFilterResults(t *testing.T) {
 		{Id: "4", Distance: 1.2, Similarity: 0.1},
 	}
 
-	options := vector.SearchOptions{
+	options := entity.SearchOptions{
 		QualityLevel: 0.8, // 设置质量等级来过滤结果
 	}
 

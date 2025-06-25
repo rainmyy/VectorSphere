@@ -1,6 +1,7 @@
 package test
 
 import (
+	"VectorSphere/src/library/entity"
 	"VectorSphere/src/vector"
 	"fmt"
 	"math"
@@ -151,7 +152,7 @@ func TestVectorDB_SearchWithOptions(t *testing.T) {
 
 	// 测试不同的搜索选项
 	query := []float64{50.0, 100.0, 150.0}
-	options := vector.SearchOptions{
+	options := entity.SearchOptions{
 		Nprobe:        10,
 		QualityLevel:  0.8,
 		SearchTimeout: 100 * time.Millisecond,

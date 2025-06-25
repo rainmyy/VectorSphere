@@ -3,6 +3,7 @@
 package acceler
 
 import (
+	"VectorSphere/src/library/entity"
 	"fmt"
 	"math"
 	"runtime"
@@ -65,17 +66,17 @@ type GPUMetrics struct {
 }
 
 // NewGPUAccelerator 创建新的GPU加速器
-func NewGPUAccelerator() *GPUAccelerator {
+func NewGPUAccelerator(DeviceID int, Precision string, StreamCount int) *GPUAccelerator {
 	return &GPUAccelerator{
 		deviceCount: simulateGPUDeviceCount(),
 		config: &GPUConfig{
-			DeviceID:          0,
+			DeviceID:          DeviceID,
 			MemoryLimit:       8 * 1024 * 1024 * 1024, // 8GB
 			BatchSize:         1024,
-			Precision:         "fp32",
+			Precision:         Precision,
 			OptimizationLevel: 2,
 			CacheSize:         256 * 1024 * 1024, // 256MB
-			StreamCount:       4,
+			StreamCount:       StreamCount,
 			TensorCores:       true,
 			PowerLimit:        250.0, // 250W
 		},
@@ -422,22 +423,64 @@ func (g *GPUAccelerator) BatchSearch(queries [][]float64, database [][]float64, 
 	return results, nil
 }
 
-// AccelerateSearch 加速搜索
-func (g *GPUAccelerator) AccelerateSearch(query []float64, results []AccelResult, options SearchOptions) ([]AccelResult, error) {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-
-	if !g.initialized {
-		return nil, fmt.Errorf("GPU accelerator not initialized")
-	}
-
-	start := time.Now()
+func (g *GPUAccelerator) AccelerateSearch(query []float64, database [][]float64, options entity.SearchOptions) ([]AccelResult, error) {
+	//start := time.Now()
 	defer func() {
-		g.stats.ComputeTime += time.Since(start)
-		g.stats.KernelLaunches++
+		//g.updateStats(time.Since(start), nil)
 	}()
 
-	// 模拟GPU加速搜索 - 直接返回输入结果（存根实现）
+	if !g.initialized {
+		return nil, fmt.Errorf("FPGA accelerator not initialized")
+	}
+	if len(query) == 0 || len(database) == 0 {
+		return nil, fmt.Errorf("empty query or database")
+	}
+	k := options.K
+	if k <= 0 {
+		return nil, fmt.Errorf("k must be positive")
+	}
+
+	distances := make([]struct {
+		index    int
+		distance float64
+	}, len(database))
+	for j, dbVector := range database {
+		if len(dbVector) != len(query) {
+			return nil, fmt.Errorf("dimension mismatch: query %d, database %d", len(query), len(dbVector))
+		}
+		dist := 0.0
+		for d := 0; d < len(query); d++ {
+			diff := query[d] - dbVector[d]
+			dist += diff * diff
+		}
+		distances[j] = struct {
+			index    int
+			distance float64
+		}{j, math.Sqrt(dist)}
+	}
+
+	// TopK 选择
+	for p := 0; p < k && p < len(distances); p++ {
+		minIdx := p
+		for q := p + 1; q < len(distances); q++ {
+			if distances[q].distance < distances[minIdx].distance {
+				minIdx = q
+			}
+		}
+		if minIdx != p {
+			distances[p], distances[minIdx] = distances[minIdx], distances[p]
+		}
+	}
+
+	results := make([]AccelResult, 0, k)
+	for j := 0; j < k && j < len(distances); j++ {
+		results = append(results, AccelResult{
+			ID:         fmt.Sprintf("vec_%d", distances[j].index),
+			Similarity: 1.0 / (1.0 + distances[j].distance),
+			Distance:   distances[j].distance,
+			Index:      distances[j].index,
+		})
+	}
 	return results, nil
 }
 

@@ -1,6 +1,7 @@
 package acceler
 
 import (
+	"VectorSphere/src/library/entity"
 	"fmt"
 	"time"
 )
@@ -88,22 +89,8 @@ func (vda *VectorDBAdapter) Search(query []float64, database [][]float64, k int,
 		return vda.searchCPU(query, database, k), nil
 	}
 
-	acc := vda.hardwareManager.GetBestAccelerator(workloadType)
-	if acc == nil {
-		return vda.searchCPU(query, database, k), nil
-	}
-
-	// 使用硬件加速器进行搜索
-	results, err := acc.BatchSearch([][]float64{query}, database, k)
-	if err != nil {
-		return vda.searchCPU(query, database, k), nil
-	}
-
-	if len(results) > 0 {
-		return results[0], nil
-	}
-
-	return vda.searchCPU(query, database, k), nil
+	options := entity.SearchOptions{K: k}
+	return vda.hardwareManager.AccelerateSearch(query, database, options, workloadType)
 }
 
 // BatchSearch 批量向量搜索
@@ -116,12 +103,12 @@ func (vda *VectorDBAdapter) BatchSearch(queries [][]float64, database [][]float6
 }
 
 // OptimizeSearch 优化搜索结果
-func (vda *VectorDBAdapter) OptimizeSearch(query []float64, results []AccelResult, options SearchOptions, workloadType string) ([]AccelResult, error) {
+func (vda *VectorDBAdapter) OptimizeSearch(query []float64, database [][]float64, options entity.SearchOptions, workloadType string) ([]AccelResult, error) {
 	if !vda.IsEnabled() {
-		return results, nil
+		return vda.searchCPU(query, database, options.K), nil
 	}
 
-	return vda.hardwareManager.AccelerateSearch(query, results, options, workloadType)
+	return vda.hardwareManager.AccelerateSearch(query, database, options, workloadType)
 }
 
 // GetRecommendedAccelerator 获取推荐的加速器

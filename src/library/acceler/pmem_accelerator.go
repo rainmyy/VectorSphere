@@ -402,7 +402,7 @@ func (p *PMemAccelerator) BatchCosineSimilarity(queries [][]float64, database []
 }
 
 // AccelerateSearch 加速搜索
-func (p *PMemAccelerator) AccelerateSearch(query []float64, results []AccelResult, options SearchOptions) ([]AccelResult, error) {
+func (p *PMemAccelerator) AccelerateSearch(query []float64, results []AccelResult, options entity.SearchOptions) ([]AccelResult, error) {
 	// PMem可以提供持久化的搜索结果缓存
 	return results, nil
 }
@@ -567,7 +567,7 @@ func (p *PMemAccelerator) updateStats(duration time.Duration, operations int, su
 
 	// 更新平均延迟
 	if p.stats.TotalOperations > 0 {
-		totalTime := time.Duration(int64(p.stats.AverageLatency) * (p.stats.TotalOperations-int64(operations))) + duration
+		totalTime := time.Duration(int64(p.stats.AverageLatency)*(p.stats.TotalOperations-int64(operations))) + duration
 		p.stats.AverageLatency = totalTime / time.Duration(p.stats.TotalOperations)
 	}
 

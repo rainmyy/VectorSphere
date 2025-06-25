@@ -11,10 +11,10 @@ import (
 
 // HybridQueryEngine 混合查询引擎
 type HybridQueryEngine struct {
-	vectorDB        *VectorDB
-	scalarIndex     *ScalarIndex
-	queryOptimizer  *QueryOptimizer
-	resultMerger    *ResultMerger
+	vectorDB       *VectorDB
+	scalarIndex    *ScalarIndex
+	queryOptimizer *QueryOptimizer
+	resultMerger   *ResultMerger
 }
 
 // ScalarIndex 标量索引
@@ -85,7 +85,7 @@ type HybridQuery struct {
 	// 向量查询部分
 	QueryVector   []float64
 	K             int
-	VectorOptions SearchOptions
+	VectorOptions entity.SearchOptions
 
 	// 标量查询部分
 	Conditions []QueryCondition
@@ -288,7 +288,7 @@ func (hqe *HybridQueryEngine) executeScalarQuery(conditions []QueryCondition) ([
 
 	// 简化实现：遍历所有向量的元数据进行过滤
 	results := make([]int, 0)
-	
+
 	// 这里应该根据实际的元数据存储结构来实现
 	// 目前返回空结果作为占位符
 	return results, nil
@@ -310,7 +310,7 @@ func (qo *QueryOptimizer) OptimizeQuery(query *HybridQuery) *HybridQuery {
 		// 根据成本模型选择最优执行策略
 		vectorCost := qo.estimateVectorQueryCost(query.QueryVector, query.K)
 		scalarCost := qo.estimateScalarQueryCost(query.Conditions)
-		
+
 		if scalarCost < vectorCost {
 			// 标量查询成本更低，优先执行标量查询
 			optimizedQuery.MergeStrategy = MergeScalarFirst
@@ -337,7 +337,7 @@ func (qo *QueryOptimizer) reorderConditions(conditions []QueryCondition) []Query
 		for j := i + 1; j < len(reorderedConditions); j++ {
 			selectivity1 := qo.statistics.fieldSelectivity[reorderedConditions[i].Field]
 			selectivity2 := qo.statistics.fieldSelectivity[reorderedConditions[j].Field]
-			
+
 			if selectivity1 < selectivity2 { // 选择性高的在前
 				reorderedConditions[i], reorderedConditions[j] = reorderedConditions[j], reorderedConditions[i]
 			}
@@ -596,7 +596,7 @@ func NewQueryBuilder() *QueryBuilder {
 }
 
 // Vector 设置向量查询
-func (qb *QueryBuilder) Vector(queryVector []float64, k int, options SearchOptions) *QueryBuilder {
+func (qb *QueryBuilder) Vector(queryVector []float64, k int, options entity.SearchOptions) *QueryBuilder {
 	qb.query.QueryVector = queryVector
 	qb.query.K = k
 	qb.query.VectorOptions = options

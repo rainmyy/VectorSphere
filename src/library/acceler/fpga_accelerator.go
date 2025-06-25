@@ -445,7 +445,7 @@ func (f *FPGAAccelerator) BatchCosineSimilarity(queries [][]float64, database []
 }
 
 // AccelerateSearch 加速搜索
-func (f *FPGAAccelerator) AccelerateSearch(query []float64, results []AccelResult, options SearchOptions) ([]AccelResult, error) {
+func (f *FPGAAccelerator) AccelerateSearch(query []float64, results []AccelResult, options entity.SearchOptions) ([]AccelResult, error) {
 	// FPGA可以对搜索结果进行进一步优化
 	return results, nil
 }
