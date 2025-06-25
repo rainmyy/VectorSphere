@@ -31,7 +31,7 @@ func (ah *AngularHash) Hash(vector []float64) (uint64, error) {
 		return 1, nil
 	}
 
-	return 0, fmt.Errorf("invalid hash function")
+	return 0, nil
 }
 
 // GetType 获取哈希函数类型

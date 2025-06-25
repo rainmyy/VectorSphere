@@ -3,6 +3,7 @@
 package acceler
 
 import (
+	"VectorSphere/src/library/entity"
 	"fmt"
 	"sync"
 	"time"
@@ -145,7 +146,7 @@ func NewPMemAccelerator(config *PMemConfig) *PMemAccelerator {
 }
 
 // GetType 获取加速器类型
-func (p *PMemAccelerator) GetType() AcceleratorType {
+func (p *PMemAccelerator) GetType() string {
 	return AcceleratorPMem
 }
 
@@ -460,7 +461,7 @@ func (p *PMemAccelerator) GetCapabilities() HardwareCapabilities {
 func (p *PMemAccelerator) GetStats() HardwareStats {
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
-	p.stats.Uptime = time.Since(p.startTime)
+	p.stats.LastUsed = p.startTime
 	return p.stats
 }
 

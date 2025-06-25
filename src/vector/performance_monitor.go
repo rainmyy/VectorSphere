@@ -3,6 +3,7 @@ package vector
 import (
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -135,6 +136,9 @@ func (ot *OperationTracker) End(success bool, tags map[string]string) {
 		atomic.AddInt64(&ot.monitor.successfulOps, 1)
 	} else {
 		atomic.AddInt64(&ot.monitor.failedOps, 1)
+		// 记录错误指标
+		errorMetricName := ot.operationType + "_errors"
+		ot.monitor.RecordMetric(errorMetricName, 1, ot.tags)
 	}
 
 	// 合并标签
@@ -187,9 +191,17 @@ func (spm *StandardPerformanceMonitor) RecordMetric(name string, value float64, 
 
 	metric, exists := spm.metrics[key]
 	if !exists {
+		// 根据指标名称确定类型
+		metricType := "histogram"
+		if name == "requests_total" || strings.HasSuffix(name, "_total") || strings.HasSuffix(name, "_count") {
+			metricType = "counter"
+		} else if name == "memory_usage" || strings.HasSuffix(name, "_usage") || strings.HasSuffix(name, "_bytes") {
+			metricType = "gauge"
+		}
+		
 		metric = &MetricData{
 			Name:      name,
-			Type:      "histogram",
+			Type:      metricType,
 			Min:       value,
 			Max:       value,
 			Tags:      tags,
@@ -198,18 +210,39 @@ func (spm *StandardPerformanceMonitor) RecordMetric(name string, value float64, 
 		spm.metrics[key] = metric
 	}
 
-	metric.Count++
-	metric.Sum += value
-	metric.Value = value
-	metric.Average = metric.Sum / float64(metric.Count)
+	// 根据指标类型处理
+	switch metric.Type {
+	case "counter":
+		// 计数器累加
+		metric.Value += value
+		metric.Count++
+	case "gauge":
+		// 仪表盘记录最新值
+		metric.Value = value
+		metric.Count++
+	default: // histogram
+		metric.Count++
+		metric.Sum += value
+		metric.Value = value
+		metric.Average = metric.Sum / float64(metric.Count)
+		
+		if value < metric.Min {
+			metric.Min = value
+		}
+		if value > metric.Max {
+			metric.Max = value
+		}
+		
+		// 添加到延迟桶中用于百分位数计算
+		spm.latencyMutex.Lock()
+		if spm.latencyBuckets[key] == nil {
+			spm.latencyBuckets[key] = make([]float64, 0)
+		}
+		spm.latencyBuckets[key] = append(spm.latencyBuckets[key], value)
+		spm.latencyMutex.Unlock()
+	}
+	
 	metric.Timestamp = time.Now()
-
-	if value < metric.Min {
-		metric.Min = value
-	}
-	if value > metric.Max {
-		metric.Max = value
-	}
 }
 
 // GetMetrics 获取所有指标

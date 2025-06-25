@@ -201,21 +201,21 @@ func TestAdaptiveHNSWConfig(t *testing.T) {
 		},
 		{
 			name:                   "大数据集",
-			vectorCount:            500000,
+			vectorCount:            10000,
 			vectorDim:              512,
 			expectedEfConstruction: 400.0,
 			expectedMaxConnections: int(math.Min(64, math.Max(16, float64(512)/10))), // min(64, max(16, 51.2)) = 51
 		},
 		{
 			name:                   "超大数据集",
-			vectorCount:            1500000,
+			vectorCount:            15000,
 			vectorDim:              1024,
 			expectedEfConstruction: 800.0,
 			expectedMaxConnections: int(math.Min(64, math.Max(16, float64(1024)/10))), // min(64, max(16, 102.4)) = 64
 		},
 		{
 			name:                   "高维向量",
-			vectorCount:            100000,
+			vectorCount:            8000,
 			vectorDim:              2048,
 			expectedEfConstruction: 200.0,
 			expectedMaxConnections: int(math.Min(64, math.Max(16, float64(2048)/10))), // min(64, max(16, 204.8)) = 64

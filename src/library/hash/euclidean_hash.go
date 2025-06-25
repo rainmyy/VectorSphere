@@ -19,7 +19,7 @@ type EuclideanHash struct {
 func (eh *EuclideanHash) Hash(vector []float64) (uint64, error) {
 	if len(vector) != len(eh.RandomVector) {
 		logger.Warning("Vector dimension mismatch: expected %d, got %d", len(eh.RandomVector), len(vector))
-		return 0, fmt.Errorf("vector dimension mismatch: expected %d, got %d", eh.RandomVector, len(vector))
+		return 0, fmt.Errorf("vector dimension mismatch: expected %d, got %d", len(eh.RandomVector), len(vector))
 	}
 
 	// 计算点积

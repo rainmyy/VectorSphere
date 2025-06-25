@@ -3,6 +3,7 @@
 package acceler
 
 import (
+	"VectorSphere/src/library/entity"
 	"fmt"
 	"sync"
 	"time"
@@ -114,7 +115,7 @@ func NewFPGAAccelerator(deviceID int, config *FPGAConfig) *FPGAAccelerator {
 }
 
 // GetType 获取加速器类型
-func (f *FPGAAccelerator) GetType() AcceleratorType {
+func (f *FPGAAccelerator) GetType() string {
 	return AcceleratorFPGA
 }
 
@@ -473,7 +474,7 @@ func (f *FPGAAccelerator) GetCapabilities() HardwareCapabilities {
 func (f *FPGAAccelerator) GetStats() HardwareStats {
 	f.mutex.RLock()
 	defer f.mutex.RUnlock()
-	f.stats.Uptime = time.Since(f.startTime)
+	f.stats.LastUsed = f.startTime
 	return f.stats
 }
 

@@ -1,5 +1,4 @@
 //go:build rdma
-// +build rdma
 
 package acceler
 

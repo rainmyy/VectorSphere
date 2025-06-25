@@ -86,6 +86,11 @@ func TestConfigManagerValidateConfig(t *testing.T) {
 				EfSearch:        200,
 			},
 		},
+		ArchitectureConfig: vector.DistributedArchitectureConfig{
+			ShardingConfig: vector.ShardingConfig{
+				Strategy: "hash",
+			},
+		},
 	}
 	
 	err := cm.ValidateConfig()

@@ -111,6 +111,9 @@ func (sp *StandardPreprocessor) ReduceDimension(vectors [][]float64, targetDim i
 	}
 
 	originalDim := len(vectors[0])
+	if targetDim <= 0 {
+		return nil, fmt.Errorf("目标维度 %d 必须大于0", targetDim)
+	}
 	if targetDim >= originalDim {
 		return vectors, fmt.Errorf("目标维度 %d 必须小于原始维度 %d", targetDim, originalDim)
 	}

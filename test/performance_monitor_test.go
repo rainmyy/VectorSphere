@@ -75,9 +75,9 @@ func TestGetSystemStats(t *testing.T) {
 	}
 
 	if stats.MemoryUsage.UsagePercent < 0 {
-		t.Errorf("Expected positive memory usage, got %d", stats.MemoryUsage.UsagePercent)
+		t.Errorf("Expected positive memory usage, got %f", stats.MemoryUsage.UsagePercent)
 	}
-	
+
 	if stats.Goroutines <= 0 {
 		t.Errorf("Expected positive goroutine count, got %d", stats.Goroutines)
 	}

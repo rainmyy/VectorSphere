@@ -55,8 +55,13 @@ int faiss_gpu_set_device(int device_id);
 import "C"
 
 import (
+	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/logger"
 	"fmt"
+	"runtime"
+	"sort"
+	"sync"
+	"time"
 	"unsafe"
 )
 

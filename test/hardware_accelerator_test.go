@@ -1,12 +1,13 @@
 package test
 
 import (
-	"VectorSphere/src/vector"
+	"VectorSphere/src/library/acceler"
 	"testing"
 )
 
 func TestNewGPUAccelerator(t *testing.T) {
-	accelerator := vector.NewGPUAccelerator()
+	// 使用默认参数创建GPU加速器
+	accelerator := acceler.NewGPUAccelerator(0, "float32", 4)
 	if accelerator == nil {
 		t.Fatal("Expected non-nil GPU accelerator")
 	}
@@ -16,7 +17,7 @@ func TestNewGPUAccelerator(t *testing.T) {
 }
 
 func TestGPUAcceleratorBasicOperations(t *testing.T) {
-	accelerator := vector.NewGPUAccelerator()
+	accelerator := acceler.NewGPUAccelerator(0, "float32", 4)
 	
 	// 测试初始化
 	err := accelerator.Initialize()
@@ -36,7 +37,14 @@ func TestGPUAcceleratorBasicOperations(t *testing.T) {
 }
 
 func TestFPGAAccelerator(t *testing.T) {
-	accelerator := vector.NewFPGAAccelerator()
+	// FPGA加速器需要配置参数
+	config := &acceler.FPGAConfig{
+		DeviceID:       0,
+		ClockFrequency: 200,
+		BufferSize:     1024,
+		ComputeUnits:   8,
+	}
+	accelerator := acceler.NewFPGAAccelerator(0, config)
 	if accelerator == nil {
 		t.Fatal("Expected non-nil FPGA accelerator")
 	}
@@ -59,7 +67,7 @@ func TestFPGAAccelerator(t *testing.T) {
 }
 
 func TestGPUAcceleratorAdvanced(t *testing.T) {
-	accelerator := vector.NewGPUAccelerator()
+	accelerator := acceler.NewGPUAccelerator(0, "float32", 4)
 	
 	// GPU可能不可用，这是正常的
 	if accelerator == nil {
@@ -81,8 +89,15 @@ func TestGPUAcceleratorAdvanced(t *testing.T) {
 }
 
 func TestAcceleratorComparison(t *testing.T) {
-	gpuAccelerator := vector.NewGPUAccelerator()
-	fpgaAccelerator := vector.NewFPGAAccelerator()
+	gpuAccelerator := acceler.NewGPUAccelerator(0, "float32", 4)
+	// FPGA加速器需要配置参数
+	config := &acceler.FPGAConfig{
+		DeviceID:       0,
+		ClockFrequency: 200,
+		BufferSize:     1024,
+		ComputeUnits:   8,
+	}
+	fpgaAccelerator := acceler.NewFPGAAccelerator(0, config)
 	
 	// 测试GPU加速器
 	if gpuAccelerator != nil {
@@ -108,7 +123,7 @@ func TestAcceleratorComparison(t *testing.T) {
 }
 
 func TestAcceleratorMemoryManagement(t *testing.T) {
-	accelerator := vector.NewGPUAccelerator()
+	accelerator := acceler.NewGPUAccelerator(0, "float32", 4)
 	
 	// 测试大量内存分配和释放
 	for i := 0; i < 100; i++ {
@@ -132,7 +147,7 @@ func TestAcceleratorMemoryManagement(t *testing.T) {
 }
 
 func TestAcceleratorErrorHandling(t *testing.T) {
-	accelerator := vector.NewGPUAccelerator()
+	accelerator := acceler.NewGPUAccelerator(0, "float32", 4)
 	
 	// 测试不匹配的向量维度
 	vec1 := []float64{1.0, 2.0, 3.0}
@@ -156,7 +171,7 @@ func TestAcceleratorErrorHandling(t *testing.T) {
 
 func TestSIMDAccelerator(t *testing.T) {
 	// SIMD加速器不存在，使用GPU加速器代替
-	accelerator := vector.NewGPUAccelerator()
+	accelerator := acceler.NewGPUAccelerator(0, "float32", 4)
 	if accelerator == nil {
 		t.Skip("GPU accelerator not available, skipping test")
 	}
@@ -181,7 +196,7 @@ func TestSIMDAccelerator(t *testing.T) {
 
 func TestAcceleratorSelection(t *testing.T) {
 	// 测试GPU加速器
-	accelerator := vector.NewGPUAccelerator()
+	accelerator := acceler.NewGPUAccelerator(0, "float32", 4)
 	if accelerator == nil {
 		t.Fatal("Expected non-nil accelerator")
 	}
@@ -206,7 +221,7 @@ func TestAcceleratorSelection(t *testing.T) {
 }
 
 func TestAcceleratorConcurrency(t *testing.T) {
-	accelerator := vector.NewGPUAccelerator()
+	accelerator := acceler.NewGPUAccelerator(0, "float32", 4)
 	
 	// 并发执行向量操作
 	done := make(chan bool, 10)
@@ -236,11 +251,11 @@ func TestAcceleratorConcurrency(t *testing.T) {
 }
 
 func TestAcceleratorCapabilities(t *testing.T) {
-	accelerator := vector.NewGPUAccelerator()
+	accelerator := acceler.NewGPUAccelerator(0, "float32", 4)
 	
 	caps := accelerator.GetCapabilities()
 	
-	if caps.Type != "GPU" {
+	if caps.Type != "gpu" && caps.Type != "GPU" {
 		t.Errorf("Expected GPU accelerator type, got %s", caps.Type)
 	}
 	

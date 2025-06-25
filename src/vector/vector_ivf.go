@@ -254,6 +254,7 @@ func (db *VectorDB) BuildEnhancedIVFIndex(config *IVFConfig) error {
 		LastUpdateTime:   time.Now(),
 		TotalVectors:     len(db.vectors),
 		IndexVersion:     1,
+		Enable:           true,
 	}
 
 	// 8. 启动动态更新（如果启用）
