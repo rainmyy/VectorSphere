@@ -2,7 +2,6 @@
 
 package acceler
 
-import "C"
 import (
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/logger"

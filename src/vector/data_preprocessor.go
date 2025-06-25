@@ -2,6 +2,7 @@ package vector
 
 import (
 	"VectorSphere/src/library/entity"
+	"VectorSphere/src/library/algorithm"
 	"fmt"
 	"math"
 	"sync"
@@ -616,12 +617,23 @@ func (pq *ProductQuantizer) trainCodebook(vectors [][]float64, k int) ([][]float
 
 // euclideanDistance 计算欧几里得距离
 func (pq *ProductQuantizer) euclideanDistance(a, b []float64) float64 {
-	dist := 0.0
-	for i := range a {
-		diff := a[i] - b[i]
-		dist += diff * diff
+	// 尝试使用全局距离计算器
+	if calculator, ok := getGlobalDistanceCalculator(); ok {
+		return calculateDistanceWithCalculator(a, b, calculator)
 	}
-	return math.Sqrt(dist)
+	
+	// 回退到算法包中的EuclideanDistance函数
+	dist, err := algorithm.EuclideanDistance(a, b)
+	if err != nil {
+		// 出错时使用备用实现
+		dist := 0.0
+		for i := range a {
+			diff := a[i] - b[i]
+			dist += diff * diff
+		}
+		return math.Sqrt(dist)
+	}
+	return dist
 }
 
 // Encode 编码向量

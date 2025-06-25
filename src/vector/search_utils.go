@@ -120,6 +120,12 @@ func (db *VectorDB) executeSearch(query []float64, k int, strategy IndexStrategy
 
 // calculateDistance 计算两个向量之间的距离
 func (db *VectorDB) calculateDistance(v1, v2 []float64) float64 {
+	// 使用distanceCalculator通用组件计算距离
+	if db.distanceCalculator != nil {
+		return db.distanceCalculator.Calculate(v1, v2)
+	}
+	
+	// 兼容性保留的原始实现
 	if len(v1) != len(v2) {
 		return math.Inf(1)
 	}
@@ -130,6 +136,27 @@ func (db *VectorDB) calculateDistance(v1, v2 []float64) float64 {
 		sum += diff * diff
 	}
 	return math.Sqrt(sum)
+}
+
+// calculateDistanceSquared 计算两个向量之间的平方距离
+// 注意：此函数返回平方距离，而不是实际距离，避免开方运算
+func (db *VectorDB) calculateDistanceSquared(v1, v2 []float64) float64 {
+	// 使用distanceCalculator通用组件计算平方距离
+	if db.distanceCalculator != nil {
+		return db.distanceCalculator.CalculateSquared(v1, v2)
+	}
+	
+	// 兼容性保留的原始实现
+	if len(v1) != len(v2) {
+		return math.Inf(1)
+	}
+
+	var sum float64
+	for i := range v1 {
+		diff := v1[i] - v2[i]
+		sum += diff * diff
+	}
+	return sum // 返回平方距离，避免开方运算
 }
 
 // decodePQVector 解码PQ向量（占位符实现）

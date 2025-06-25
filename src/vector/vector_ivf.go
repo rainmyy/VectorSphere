@@ -88,12 +88,6 @@ type ClusterUpdate struct {
 
 type UpdateType int
 
-const (
-	UpdateTypeAdd UpdateType = iota
-	UpdateTypeRemove
-	UpdateTypeRebalance
-)
-
 // sampleTrainingData 从数据库中采样训练数据
 // trainingRatio: 采样比例 (0.0 to 1.0)
 // 返回: 训练向量列表和对应的ID列表
@@ -376,13 +370,25 @@ func (db *VectorDB) CalculateClusterMetrics(cluster *EnhancedCluster) {
 
 	for _, vecID := range cluster.VectorIDs {
 		if vector, ok := db.vectors[vecID]; ok {
-			distSq, err := algorithm.EuclideanDistanceSquared(vector, cluster.Centroid)
-			if err != nil {
-				logger.Warning("Error calculating distance for variance/radius for vector %s: %v", vecID, err)
-				continue
+			// 使用distanceCalculator如果可用
+			var distSq float64
+			var dist float64
+
+			if db.distanceCalculator != nil {
+				distSq = db.distanceCalculator.CalculateSquared(vector, cluster.Centroid)
+				dist = math.Sqrt(distSq)
+			} else {
+				// 兼容性保留的原始实现
+				var err error
+				distSq, err = algorithm.EuclideanDistanceSquared(vector, cluster.Centroid)
+				if err != nil {
+					logger.Warning("Error calculating distance for variance/radius for vector %s: %v", vecID, err)
+					continue
+				}
+				dist = math.Sqrt(distSq)
 			}
+
 			sumSquaredDist += distSq
-			dist := math.Sqrt(distSq)
 			if dist > maxDistToCentroid {
 				maxDistToCentroid = dist
 			}
@@ -597,20 +603,42 @@ func findNearestPQCentroid(subVector []float64, pqCodebookForSubVector [][]float
 		logger.Warning("findNearestPQCentroid called with empty PQ codebook for subvector.")
 		return 0 // 或者一个特殊的错误指示值
 	}
-	minDist := math.MaxFloat64
-	nearestCentroidIdx := 0
-	for idx, centroid := range pqCodebookForSubVector {
-		dist, err := algorithm.EuclideanDistanceSquared(subVector, centroid)
-		if err != nil {
-			logger.Warning("Error calculating distance for PQ centroid %d: %v", idx, err)
-			continue
-		}
-		if dist < minDist {
-			minDist = dist
-			nearestCentroidIdx = idx
-		}
+
+	// 使用sort.Slice可以避免手动跟踪最小距离和索引
+	indices := make([]int, len(pqCodebookForSubVector))
+	for i := range indices {
+		indices[i] = i
 	}
-	return nearestCentroidIdx
+
+	// 尝试使用全局距离计算器
+	if calculator, ok := getGlobalDistanceCalculator(); ok {
+		sort.Slice(indices, func(i, j int) bool {
+			distI := calculateDistanceWithCalculator(subVector, pqCodebookForSubVector[indices[i]], calculator)
+			distJ := calculateDistanceWithCalculator(subVector, pqCodebookForSubVector[indices[j]], calculator)
+			return distI < distJ
+		})
+	} else {
+		// 回退到原始实现
+		sort.Slice(indices, func(i, j int) bool {
+			distI, errI := algorithm.EuclideanDistanceSquared(subVector, pqCodebookForSubVector[indices[i]])
+			distJ, errJ := algorithm.EuclideanDistanceSquared(subVector, pqCodebookForSubVector[indices[j]])
+
+			// 处理错误情况
+			if errI != nil && errJ != nil {
+				return indices[i] < indices[j] // 两个都出错，保持原顺序
+			}
+			if errI != nil {
+				return false // i出错，j优先
+			}
+			if errJ != nil {
+				return true // j出错，i优先
+			}
+
+			return distI < distJ // 正常情况，按距离排序
+		})
+	}
+
+	return indices[0] // 返回距离最小的索引
 }
 
 // findNearestCluster 找到距离给定向量最近的聚类中心
@@ -624,6 +652,24 @@ func (db *VectorDB) findNearestCluster(vector []float64, centroids []entity.Poin
 		return -1 // 或者 panic，取决于错误处理策略
 	}
 
+	// 使用distanceCalculator如果可用
+	if db.distanceCalculator != nil {
+		indices := make([]int, len(centroids))
+		for i := range indices {
+			indices[i] = i
+		}
+
+		sort.Slice(indices, func(i, j int) bool {
+			// 使用平方距离进行比较，避免不必要的开方运算
+			distI := db.distanceCalculator.CalculateSquared(vector, centroids[indices[i]])
+			distJ := db.distanceCalculator.CalculateSquared(vector, centroids[indices[j]])
+			return distI < distJ
+		})
+
+		return indices[0] // 返回距离最小的索引
+	}
+
+	// 兼容性保留的原始实现
 	minDist := math.MaxFloat64
 	nearestClusterID := 0
 
@@ -892,10 +938,19 @@ func (db *VectorDB) SelectCandidateClusters(query []float64, nprobe int) []int {
 	distances := make([]clusterDistance, 0, len(db.ivfIndex.ClusterCentroids))
 
 	for i, centroid := range db.ivfIndex.ClusterCentroids {
-		dist, err := algorithm.EuclideanDistanceSquared(query, centroid)
-		if err != nil {
-			logger.Warning("Error calculating distance to centroid %d for candidate selection: %v", i, err)
-			continue // 跳过计算错误的质心
+		var dist float64
+		var err error
+
+		// 使用distanceCalculator如果可用
+		if db.distanceCalculator != nil {
+			dist = db.distanceCalculator.CalculateSquared(query, centroid)
+		} else {
+			// 兼容性保留的原始实现
+			dist, err = algorithm.EuclideanDistanceSquared(query, centroid)
+			if err != nil {
+				logger.Warning("Error calculating distance to centroid %d for candidate selection: %v", i, err)
+				continue // 跳过计算错误的质心
+			}
 		}
 		metrics := ClusterMetrics{} // 默认空指标
 		if i < len(db.ivfIndex.ClusterMetrics) {
@@ -982,11 +1037,21 @@ func (db *VectorDB) CalculateAdaptiveNprobe(query []float64, baseNprobe int) int
 	}, len(db.ivfIndex.ClusterCentroids))
 
 	for i, centroid := range db.ivfIndex.ClusterCentroids {
-		dist, err := algorithm.EuclideanDistanceSquared(query, centroid)
-		if err != nil {
-			logger.Warning("Error calculating distance to centroid %d: %v", i, err)
-			continue
+		var dist float64
+
+		// 使用distanceCalculator如果可用
+		if db.distanceCalculator != nil {
+			dist = db.distanceCalculator.CalculateSquared(query, centroid)
+		} else {
+			// 兼容性保留的原始实现
+			var err error
+			dist, err = algorithm.EuclideanDistanceSquared(query, centroid)
+			if err != nil {
+				logger.Warning("Error calculating distance to centroid %d: %v", i, err)
+				continue
+			}
 		}
+
 		distances[i] = struct {
 			clusterID int
 			distance  float64

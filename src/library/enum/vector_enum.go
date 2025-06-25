@@ -6,4 +6,6 @@ const (
 	CosineDistance
 	DotProduct
 	ManhattanDistance
+	EuclideanDistanceSquared
+	CosineSimilarity
 )

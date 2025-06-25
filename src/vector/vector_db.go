@@ -4,6 +4,7 @@ import (
 	"VectorSphere/src/library/acceler"
 	"VectorSphere/src/library/algorithm"
 	"VectorSphere/src/library/entity"
+	"VectorSphere/src/library/enum"
 	"VectorSphere/src/library/graph"
 	"VectorSphere/src/library/logger"
 	"VectorSphere/src/library/tree"
@@ -95,6 +96,9 @@ type VectorDB struct {
 	invertedIndex map[string][]string // 倒排索引，关键词 -> 文件ID列表
 	// 添加倒排索引锁，细化锁粒度
 	invertedMu sync.RWMutex
+
+	// 距离计算器
+	distanceCalculator algorithm.DistanceCalculator // 用于计算向量距离的通用组件
 
 	// 新增字段
 	vectorDim         int                  // 向量维度，用于验证
@@ -1264,18 +1268,22 @@ func (db *VectorDB) IsIndexed() bool {
 // 如果 filePath 非空且文件存在，则尝试从中加载数据。
 // numClusters 指定了用于索引的簇数量，如果 <=0，则不启用索引功能。
 func NewVectorDB(filePath string, numClusters int) *VectorDB {
+	// 创建默认的欧几里得距离计算器
+	distanceCalculator, _ := algorithm.NewDistanceCalculator(enum.EuclideanDistance)
+
 	db := &VectorDB{
-		vectors:           make(map[string][]float64),
-		filePath:          filePath,
-		numClusters:       numClusters,
-		clusters:          make([]Cluster, 0),
-		indexed:           false,
-		invertedIndex:     make(map[string][]string),
-		vectorDim:         0,
-		vectorizedType:    DefaultVectorized,
-		normalizedVectors: make(map[string][]float64),
-		config:            AdaptiveConfig{},
-		stats:             PerformanceStats{},
+		vectors:            make(map[string][]float64),
+		filePath:           filePath,
+		numClusters:        numClusters,
+		clusters:           make([]Cluster, 0),
+		indexed:            false,
+		invertedIndex:      make(map[string][]string),
+		vectorDim:          0,
+		vectorizedType:     DefaultVectorized,
+		normalizedVectors:  make(map[string][]float64),
+		config:             AdaptiveConfig{},
+		stats:              PerformanceStats{},
+		distanceCalculator: distanceCalculator, // 初始化距离计算器
 
 		// 初始化 PQ 相关字段
 		pqCodebook:               nil,
@@ -1340,6 +1348,10 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 	}
 
 	db.InitializeAdaptiveSelector()
+
+	// 设置全局距离计算器，供其他组件使用
+	setGlobalDistanceCalculator(distanceCalculator)
+
 	return db
 }
 
