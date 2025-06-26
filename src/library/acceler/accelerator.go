@@ -10,7 +10,7 @@ type Accelerator interface {
 	Initialize() error
 	BatchCosineSimilarity(queries [][]float64, database [][]float64) ([][]float64, error)
 	BatchSearch(queries [][]float64, database [][]float64, k int) ([][]AccelResult, error)
-	Cleanup() error
+	//Cleanup() error
 }
 
 // FAISSAccelerator FAISS 加速器实现

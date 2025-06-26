@@ -46,7 +46,7 @@ type UnifiedAccelerator interface {
 	// 配置和调优
 	AutoTune(workload WorkloadProfile) error
 	//UpdateConfig(config interface{}) error
-	Cleanup() error
+	//Cleanup() error
 }
 
 // HardwareCapabilities 硬件能力信息

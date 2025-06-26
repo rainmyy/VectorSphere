@@ -51,9 +51,11 @@ type SearchOptions struct {
 	TargetDimension  int  `json:"target_dimension,omitempty"` // PCA目标维度
 
 	// 分布式搜索选项
-	ShardingStrategy string `json:"sharding_strategy,omitempty"` // 分片策略: "range", "hash", "cluster"
-	ParallelSearch   bool   `json:"parallel_search"`             // 并行搜索
-	MaxShards        int    `json:"max_shards,omitempty"`        // 最大分片数
+	ShardingStrategy  string `json:"sharding_strategy,omitempty"` // 分片策略: "range", "hash", "cluster"
+	ParallelSearch    bool   `json:"parallel_search"`             // 并行搜索
+	MaxShards         int    `json:"max_shards,omitempty"`        // 最大分片数
+	DistributedSearch bool   `json:"distributed_search"`          // 启用分布式搜索
+	BatchSize         int    `json:"batch_size,omitempty"`
 
 	// 混合查询选项
 	EnableHybridQuery bool                   `json:"enable_hybrid_query"`      // 启用向量+标量混合查询
@@ -70,6 +72,10 @@ type SearchOptions struct {
 	EnablePQRefinement  bool  `json:"enable_pq_refinement"` // 启用PQ精化
 	EnableDeduplication bool  `json:"enable_deduplication"` // 启用结果去重
 	CacheTTL            int64 `json:"cache_ttl,omitempty"`  // 缓存TTL（秒）
+
+	// 工作负载优化选项
+	MemoryOptimized   bool `json:"memory_optimized"`   // 内存优化模式
+	PersistentStorage bool `json:"persistent_storage"` // 持久化存储模式
 
 	K                int           `json:"k"`
 	Threshold        float64       `json:"threshold"`

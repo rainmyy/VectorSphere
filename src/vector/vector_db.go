@@ -77,13 +77,13 @@ type Cluster struct {
 
 // PerformanceStats 性能统计结构
 type PerformanceStats struct {
-	TotalQueries       int64
-	CacheHits          int64
-	AvgQueryTime       time.Duration
-	IndexBuildTime     time.Duration
-	LastReindexTime    time.Time
-	MemoryUsage        uint64
-	
+	TotalQueries    int64
+	CacheHits       int64
+	AvgQueryTime    time.Duration
+	IndexBuildTime  time.Duration
+	LastReindexTime time.Time
+	MemoryUsage     uint64
+
 	// GPU相关统计
 	GPUComputations    int64         // GPU计算次数
 	GPUSearches        int64         // GPU搜索次数
@@ -273,17 +273,17 @@ type IVFHNSWPerformanceStats struct {
 func (db *VectorDB) GetStats() PerformanceStats {
 	db.statsMu.RLock()
 	defer db.statsMu.RUnlock()
-	
+
 	// 计算GPU平均计算时间
 	if db.stats.GPUComputations > 0 {
 		db.stats.AvgGPUTime = time.Duration(db.stats.TotalGPUTime / db.stats.GPUComputations)
 	}
-	
+
 	// 计算GPU利用率（GPU计算次数占总查询的比例）
 	if db.stats.TotalQueries > 0 {
 		db.stats.GPUUtilization = float64(db.stats.GPUComputations+db.stats.GPUSearches) / float64(db.stats.TotalQueries) * 100
 	}
-	
+
 	return db.stats
 }
 
@@ -293,12 +293,12 @@ func (db *VectorDB) GetGPUAccelerationStatus() string {
 	if !db.HardwareCaps.HasGPU {
 		return "不可用 - 硬件不支持"
 	}
-	
+
 	// 检查GPU加速器是否已初始化
 	if db.gpuAccelerator == nil {
 		return "不可用 - 未初始化"
 	}
-	
+
 	// 检查GPU加速器是否可用
 	if gpuAccel, ok := db.gpuAccelerator.(*acceler.FAISSAccelerator); ok {
 		if err := gpuAccel.CheckGPUAvailability(); err != nil {
@@ -306,7 +306,7 @@ func (db *VectorDB) GetGPUAccelerationStatus() string {
 		}
 		return "可用 - 正常运行"
 	}
-	
+
 	return "未知状态"
 }
 
@@ -314,65 +314,65 @@ func (db *VectorDB) GetGPUAccelerationStatus() string {
 func (db *VectorDB) GetGPUStats() map[string]interface{} {
 	db.statsMu.RLock()
 	defer db.statsMu.RUnlock()
-	
+
 	// 计算GPU平均计算时间
 	avgGPUTime := time.Duration(0)
 	if db.stats.GPUComputations > 0 {
 		avgGPUTime = time.Duration(db.stats.TotalGPUTime / db.stats.GPUComputations)
 	}
-	
+
 	// 计算GPU平均搜索时间
 	avgGPUSearchTime := time.Duration(0)
 	if db.stats.GPUSearches > 0 {
 		avgGPUSearchTime = time.Duration(db.stats.TotalGPUSearchTime / db.stats.GPUSearches)
 	}
-	
+
 	// 计算GPU利用率
 	gpuUtilization := 0.0
 	if db.stats.TotalQueries > 0 {
 		gpuUtilization = float64(db.stats.GPUComputations+db.stats.GPUSearches) / float64(db.stats.TotalQueries) * 100
 	}
-	
+
 	// 计算GPU错误率
 	gpuErrorRate := 0.0
 	totalGPUOperations := db.stats.GPUComputations + db.stats.GPUSearches
 	if totalGPUOperations > 0 {
 		gpuErrorRate = float64(db.stats.GPUErrors) / float64(totalGPUOperations) * 100
 	}
-	
+
 	// 获取GPU硬件信息
 	gpuHardwareInfo := map[string]interface{}{
-		"available": db.HardwareCaps.HasGPU,
+		"available":   db.HardwareCaps.HasGPU,
 		"initialized": db.gpuAccelerator != nil,
 	}
-	
+
 	// 如果有硬件管理器，获取更详细的GPU配置
 	if db.hardwareManager != nil {
 		config := db.hardwareManager.GetConfig()
 		if config != nil {
 			gpuHardwareInfo["config"] = map[string]interface{}{
-				"enabled": config.GPU.Enable,
-				"device_id": config.GPU.DeviceID,
+				"enabled":      config.GPU.Enable,
+				"device_id":    config.GPU.DeviceID,
 				"memory_limit": config.GPU.MemoryLimit,
-				"batch_size": config.GPU.BatchSize,
+				"batch_size":   config.GPU.BatchSize,
 			}
 		}
 	}
-	
+
 	// 构建详细的GPU统计信息
 	return map[string]interface{}{
-		"computations": db.stats.GPUComputations,
-		"searches": db.stats.GPUSearches,
-		"errors": db.stats.GPUErrors,
-		"total_gpu_time_ms": db.stats.TotalGPUTime,
+		"computations":             db.stats.GPUComputations,
+		"searches":                 db.stats.GPUSearches,
+		"errors":                   db.stats.GPUErrors,
+		"total_gpu_time_ms":        db.stats.TotalGPUTime,
 		"total_gpu_search_time_ms": db.stats.TotalGPUSearchTime,
-		"avg_gpu_time": fmt.Sprintf("%v", avgGPUTime),
-		"avg_gpu_search_time": fmt.Sprintf("%v", avgGPUSearchTime),
-		"gpu_utilization": fmt.Sprintf("%.2f%%", gpuUtilization),
-		"gpu_error_rate": fmt.Sprintf("%.2f%%", gpuErrorRate),
-		"hardware_info": gpuHardwareInfo,
-		"acceleration_status": db.GetGPUAccelerationStatus(),
-		"memory_usage": fmt.Sprintf("%.2f%%", db.stats.GPUUtilization),
+		"avg_gpu_time":             fmt.Sprintf("%v", avgGPUTime),
+		"avg_gpu_search_time":      fmt.Sprintf("%v", avgGPUSearchTime),
+		"gpu_utilization":          fmt.Sprintf("%.2f%%", gpuUtilization),
+		"gpu_error_rate":           fmt.Sprintf("%.2f%%", gpuErrorRate),
+		"hardware_info":            gpuHardwareInfo,
+		"acceleration_status":      db.GetGPUAccelerationStatus(),
+		"memory_usage":             fmt.Sprintf("%.2f%%", db.stats.GPUUtilization),
 	}
 }
 
@@ -572,21 +572,54 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options entity.Searc
 	// 硬件加速检查
 	var accelerator acceler.UnifiedAccelerator
 	if db.hardwareManager != nil {
+		// 创建工作负载配置文件
+		workloadType := acceler.WorkloadBalanced
+
+		// 根据搜索选项确定工作负载类型
+		if options.SearchTimeout > 0 && options.SearchTimeout < 10*time.Millisecond {
+			workloadType = acceler.WorkloadLowLatency
+		} else if options.BatchSize > 100 {
+			workloadType = acceler.WorkloadHighThroughput
+		} else if options.DistributedSearch {
+			workloadType = acceler.WorkloadDistributed
+		} else if options.PersistentStorage {
+			workloadType = acceler.WorkloadPersistent
+		} else if options.MemoryOptimized {
+			workloadType = acceler.WorkloadMemoryOptimal
+		}
+
+		// 创建工作负载配置
+		workload := acceler.CreateWorkloadProfile(workloadType, options.BatchSize, db.vectorDim)
+		workload.BatchSize = len(db.vectors)
+
+		// 显式指定加速器类型
 		if options.UseGPU {
-			if gpu, exists := db.hardwareManager.GetAccelerator("gpu"); exists && gpu.IsAvailable() {
+			if gpu, exists := db.hardwareManager.GetAccelerator(acceler.AcceleratorGPU); exists && gpu.IsAvailable() {
 				accelerator = gpu
+				logger.Debug("根据用户指定使用GPU加速器")
+				if tracker != nil {
+					tracker.AddTag("accelerator", "gpu_explicit")
+				}
 			}
 		} else if options.UseFPGA {
-			if fpga, exists := db.hardwareManager.GetAccelerator("fpga"); exists && fpga.IsAvailable() {
+			if fpga, exists := db.hardwareManager.GetAccelerator(acceler.AcceleratorFPGA); exists && fpga.IsAvailable() {
 				accelerator = fpga
+				logger.Debug("根据用户指定使用FPGA加速器")
+				if tracker != nil {
+					tracker.AddTag("accelerator", "fpga_explicit")
+				}
 			}
 		} else {
-			// 自动选择最佳硬件加速器
-			workloadType := "high_throughput"
-			if options.SearchTimeout > 0 && options.SearchTimeout < 10*time.Millisecond {
-				workloadType = "low_latency"
+			// 自动选择最佳加速器
+			bestAcc := db.hardwareManager.GetOptimalAccelerator(workload)
+			if bestAcc != nil && bestAcc.IsAvailable() {
+				accelerator = bestAcc
+				logger.Debug("自动选择最佳加速器: %s", bestAcc.GetType())
+				if tracker != nil {
+					tracker.AddTag("accelerator", "auto_selected_"+bestAcc.GetType())
+					tracker.AddTag("workload_type", workloadType)
+				}
 			}
-			accelerator = db.hardwareManager.GetBestAccelerator(workloadType)
 		}
 	}
 
@@ -622,6 +655,11 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options entity.Searc
 
 		// 2. 调用硬件加速搜索
 		accelOpts := entity.SearchOptions{K: k}
+		// 传递更多选项给加速器
+		accelOpts.BatchSize = options.BatchSize
+		accelOpts.QualityLevel = options.QualityLevel
+		accelOpts.SearchTimeout = options.SearchTimeout
+
 		if acceleratedResults, accelErr := accelerator.AccelerateSearch(processedQuery, database, accelOpts); accelErr == nil {
 			// 3. 处理加速结果
 			results := make([]entity.Result, len(acceleratedResults))
@@ -641,6 +679,7 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options entity.Searc
 
 			if tracker != nil {
 				tracker.AddTag("hardware_accelerated", "true")
+				tracker.AddTag("accelerator_type", accelerator.GetType())
 				tracker.End(true, nil)
 			}
 			return results, nil
@@ -648,6 +687,7 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options entity.Searc
 			logger.Warning("硬件加速搜索失败，回退到软件搜索: %v", accelErr)
 			if tracker != nil {
 				tracker.AddTag("hardware_fallback", "true")
+				tracker.AddTag("hardware_error", accelErr.Error())
 			}
 		}
 	}
@@ -823,12 +863,12 @@ func (db *VectorDB) MonitorGPUHealth() {
 	}
 
 	logger.Info("启动GPU健康监控服务")
-	
+
 	// 健康检查间隔
 	healthCheckTicker := time.NewTicker(30 * time.Second) // 每30秒检查一次
 	// 性能报告间隔
 	performanceReportTicker := time.NewTicker(5 * time.Minute) // 每5分钟报告一次性能
-	
+
 	defer func() {
 		healthCheckTicker.Stop()
 		performanceReportTicker.Stop()
@@ -845,17 +885,17 @@ func (db *VectorDB) MonitorGPUHealth() {
 			if err := db.CheckGPUStatus(); err != nil {
 				failureCount++
 				logger.Warning("GPU健康检查失败(%d/%d): %v", failureCount, maxFailures, err)
-				
+
 				// 更新统计信息
 				db.statsMu.Lock()
 				db.stats.GPUErrors++
 				db.statsMu.Unlock()
-				
+
 				// 连续失败达到阈值，禁用GPU加速
 				if failureCount >= maxFailures {
 					logger.Error("GPU连续%d次健康检查失败，自动禁用GPU加速", maxFailures)
 					db.HardwareCaps.HasGPU = false
-					
+
 					// 尝试重新初始化GPU加速器
 					go func() {
 						time.Sleep(5 * time.Minute) // 等待5分钟后尝试恢复
@@ -881,11 +921,11 @@ func (db *VectorDB) MonitorGPUHealth() {
 					failureCount = 0
 				}
 			}
-			
+
 		case <-performanceReportTicker.C:
 			// 定期报告GPU性能指标
 			db.reportGPUPerformanceMetrics()
-			
+
 		case <-db.stopCh:
 			logger.Info("停止GPU健康监控服务")
 			return
@@ -898,48 +938,48 @@ func (db *VectorDB) reportGPUPerformanceMetrics() {
 	if !db.HardwareCaps.HasGPU || db.gpuAccelerator == nil {
 		return
 	}
-	
+
 	// 获取GPU统计信息
 	db.statsMu.RLock()
 	gpuStats := db.stats
 	db.statsMu.RUnlock()
-	
+
 	// 计算GPU利用率
 	gpuUtilization := 0.0
 	if gpuStats.TotalQueries > 0 {
 		gpuUtilization = float64(gpuStats.GPUComputations+gpuStats.GPUSearches) / float64(gpuStats.TotalQueries) * 100
 	}
-	
+
 	// 计算GPU错误率
 	gpuErrorRate := 0.0
 	totalGPUOperations := gpuStats.GPUComputations + gpuStats.GPUSearches
 	if totalGPUOperations > 0 {
 		gpuErrorRate = float64(gpuStats.GPUErrors) / float64(totalGPUOperations) * 100
 	}
-	
+
 	// 计算平均GPU时间
 	avgGPUTime := time.Duration(0)
 	if gpuStats.GPUComputations > 0 {
 		avgGPUTime = time.Duration(gpuStats.TotalGPUTime / gpuStats.GPUComputations)
 	}
-	
+
 	// 计算平均GPU搜索时间
 	avgGPUSearchTime := time.Duration(0)
 	if gpuStats.GPUSearches > 0 {
 		avgGPUSearchTime = time.Duration(gpuStats.TotalGPUSearchTime / gpuStats.GPUSearches)
 	}
-	
+
 	// 获取GPU内存信息
 	memoryInfo := "未知"
 	if gpuAccel, ok := db.gpuAccelerator.(*acceler.FAISSAccelerator); ok {
 		free, total, err := gpuAccel.GetGPUMemoryInfo()
 		if err == nil {
-			memUsagePercent := float64(total-free)/float64(total)*100
-			memoryInfo = fmt.Sprintf("%.2f%% (可用: %d MB / 总计: %d MB)", 
+			memUsagePercent := float64(total-free) / float64(total) * 100
+			memoryInfo = fmt.Sprintf("%.2f%% (可用: %d MB / 总计: %d MB)",
 				memUsagePercent, free/(1024*1024), total/(1024*1024))
 		}
 	}
-	
+
 	// 报告性能指标
 	logger.Info("===== GPU性能报告 =====")
 	logger.Info("GPU计算次数: %d", gpuStats.GPUComputations)
@@ -958,7 +998,7 @@ func (db *VectorDB) reportGPUPerformanceMetrics() {
 func (db *VectorDB) InitializeGPUAccelerator(deviceID int, indexType string) error {
 	db.mu.Lock()
 	defer db.mu.Unlock()
-	
+
 	if !db.HardwareCaps.HasGPU {
 		return fmt.Errorf("系统不支持GPU加速")
 	}
@@ -967,25 +1007,45 @@ func (db *VectorDB) InitializeGPUAccelerator(deviceID int, indexType string) err
 	if db.gpuAccelerator != nil {
 		logger.Info("关闭现有GPU加速器")
 		// 这里可以添加关闭逻辑，如果加速器支持的话
+		if closer, ok := db.gpuAccelerator.(interface{ Cleanup() error }); ok {
+			if err := closer.Cleanup(); err != nil {
+				logger.Warning("关闭现有GPU加速器失败: %v", err)
+			}
+		}
 	}
 
 	// 记录初始化开始时间
 	startTime := time.Now()
-	
+
 	// 创建FAISS GPU加速器
-	gpuAccel := acceler.NewFAISSAccelerator(deviceID, indexType)
+	var gpuAccel acceler.Accelerator
+
+	// 优先使用硬件管理器获取GPU加速器
+	if db.hardwareManager != nil {
+		if acc, exists := db.hardwareManager.GetAccelerator(acceler.AcceleratorGPU); exists && acc.IsAvailable() {
+			gpuAccel = acc
+			logger.Info("使用硬件管理器获取GPU加速器")
+		}
+	}
+
+	// 如果硬件管理器未提供GPU加速器，则直接创建
+	if gpuAccel == nil {
+		gpuAccel = acceler.NewFAISSAccelerator(deviceID, indexType)
+		logger.Info("直接创建FAISS GPU加速器")
+	}
+
 	if err := gpuAccel.Initialize(); err != nil {
 		// 更新统计信息
 		db.statsMu.Lock()
 		db.stats.GPUErrors++
 		db.statsMu.Unlock()
-		
+
 		return fmt.Errorf("GPU加速器初始化失败: %w", err)
 	}
 
 	// 计算初始化耗时
 	initDuration := time.Since(startTime)
-	
+
 	// 更新统计信息
 	db.statsMu.Lock()
 	db.stats.TotalGPUTime += initDuration.Milliseconds()
@@ -993,8 +1053,7 @@ func (db *VectorDB) InitializeGPUAccelerator(deviceID int, indexType string) err
 	db.statsMu.Unlock()
 
 	db.gpuAccelerator = gpuAccel
-	logger.Info("GPU加速器初始化成功，设备ID: %d, 索引类型: %s, 耗时: %v", 
-		deviceID, indexType, initDuration)
+	logger.Info("GPU加速器初始化成功，耗时: %v", initDuration)
 
 	// 启动GPU健康监控（如果尚未启动）
 	if db.stopCh == nil {
@@ -1024,24 +1083,24 @@ func (db *VectorDB) CheckGPUStatus() error {
 		if err := gpuAccel.CheckGPUAvailability(); err != nil {
 			// 记录详细错误信息
 			logger.Error("GPU可用性检查失败: %v", err)
-			
+
 			// 获取GPU内存信息用于诊断
 			free, total, memErr := gpuAccel.GetGPUMemoryInfo()
 			if memErr == nil {
-				logger.Info("GPU内存状态: 可用 %d MB / 总计 %d MB (%.2f%%)", 
-					free/(1024*1024), 
-					total/(1024*1024), 
+				logger.Info("GPU内存状态: 可用 %d MB / 总计 %d MB (%.2f%%)",
+					free/(1024*1024),
+					total/(1024*1024),
 					float64(free)/float64(total)*100)
 			}
-			
+
 			// 更新统计信息
 			db.statsMu.Lock()
 			db.stats.GPUErrors++
 			db.statsMu.Unlock()
-			
+
 			return fmt.Errorf("GPU可用性检查失败: %w", err)
 		}
-		
+
 		// 记录GPU内存状态
 		free, total, memErr := gpuAccel.GetGPUMemoryInfo()
 		if memErr != nil {
@@ -1049,29 +1108,29 @@ func (db *VectorDB) CheckGPUStatus() error {
 			db.statsMu.Lock()
 			db.stats.GPUErrors++
 			db.statsMu.Unlock()
-			
+
 			return fmt.Errorf("获取GPU内存信息失败: %w", memErr)
 		}
-		
+
 		// 计算内存使用率
-		memUsagePercent := float64(total-free)/float64(total)*100
-		
+		memUsagePercent := float64(total-free) / float64(total) * 100
+
 		// 更新统计信息
 		db.statsMu.Lock()
 		db.stats.GPUUtilization = memUsagePercent
 		db.statsMu.Unlock()
-		
+
 		// 记录内存状态
-		logger.Debug("GPU内存状态正常: 可用 %d MB / 总计 %d MB (使用率: %.2f%%)", 
-			free/(1024*1024), 
-			total/(1024*1024), 
+		logger.Debug("GPU内存状态正常: 可用 %d MB / 总计 %d MB (使用率: %.2f%%)",
+			free/(1024*1024),
+			total/(1024*1024),
 			memUsagePercent)
-		
+
 		// 检查内存使用率是否过高
 		if memUsagePercent > 95 {
 			logger.Warning("GPU内存使用率过高 (%.2f%%)，可能影响性能", memUsagePercent)
 		}
-		
+
 		return nil
 	} else {
 		// 非FAISS加速器，只进行基本检查
@@ -1564,6 +1623,59 @@ func (db *VectorDB) IsIndexed() bool {
 // NewVectorDB 创建一个新的 VectorDB 实例。
 // 如果 filePath 非空且文件存在，则尝试从中加载数据。
 // numClusters 指定了用于索引的簇数量，如果 <=0，则不启用索引功能。
+// NewVectorDBWithDimension 创建一个具有指定维度和距离类型的 VectorDB 实例
+func NewVectorDBWithDimension(dimension int, distanceType string) (*VectorDB, error) {
+	// 将字符串距离类型转换为枚举值
+	var distanceTypeEnum int
+	switch distanceType {
+	case "euclidean":
+		distanceTypeEnum = enum.EuclideanDistance
+	case "cosine":
+		distanceTypeEnum = enum.CosineDistance
+	case "manhattan":
+		distanceTypeEnum = enum.ManhattanDistance
+	case "dot":
+		distanceTypeEnum = enum.DotProduct
+	case "euclidean_squared":
+		distanceTypeEnum = enum.EuclideanDistanceSquared
+	case "cosine_similarity":
+		distanceTypeEnum = enum.CosineSimilarity
+	default:
+		return nil, fmt.Errorf("不支持的距离类型: %s", distanceType)
+	}
+
+	// 创建距离计算器
+	distanceCalculator, err := algorithm.NewDistanceCalculator(distanceTypeEnum)
+	if err != nil {
+		return nil, err
+	}
+
+	// 创建 VectorDB 实例
+	db := &VectorDB{
+		vectors:            make(map[string][]float64),
+		filePath:           "", // 空文件路径
+		numClusters:        10,  // 默认簇数
+		clusters:           make([]Cluster, 0),
+		indexed:            false,
+		invertedIndex:      make(map[string][]string),
+		vectorDim:          dimension,
+		vectorizedType:     DefaultVectorized,
+		normalizedVectors:  make(map[string][]float64),
+		config:             AdaptiveConfig{},
+		stats:              PerformanceStats{},
+		distanceCalculator: distanceCalculator,
+
+		// 初始化 PQ 相关字段
+		pqCodebook:               nil,
+		numSubVectors:            0,
+		numCentroidsPerSubVector: 0,
+		usePQCompression:         false,
+		stopCh:                   make(chan struct{}),
+	}
+
+	return db, nil
+}
+
 func NewVectorDB(filePath string, numClusters int) *VectorDB {
 	// 创建默认的欧几里得距离计算器
 	distanceCalculator, _ := algorithm.NewDistanceCalculator(enum.EuclideanDistance)
@@ -1763,54 +1875,54 @@ func (db *VectorDB) gpuBatchCosineSimilarity(queries [][]float64, targets [][]fl
 
 	// 记录计算开始时间，用于性能分析
 	startTime := time.Now()
-	
+
 	// 记录计算规模
 	logger.Debug("开始GPU批量余弦相似度计算，查询数量: %d, 目标数量: %d", len(queries), len(targets))
-	
+
 	// 调用GPU加速器计算
 	results, err := db.gpuAccelerator.BatchCosineSimilarity(queries, targets)
-	
+
 	// 计算耗时
 	elapsed := time.Since(startTime)
-	
+
 	// 错误处理和回退逻辑
 	if err != nil {
 		// 记录详细错误信息
 		logger.Warning("GPU计算失败(耗时: %v)，回退到CPU: %v", elapsed, err)
-		
+
 		// 检查是否是内存不足错误
 		if strings.Contains(err.Error(), "memory") || strings.Contains(err.Error(), "CUDA") {
 			logger.Error("GPU内存不足或CUDA错误，考虑调整批处理大小或使用CPU计算")
-			
+
 			// 更新统计信息
 			db.statsMu.Lock()
 			db.stats.GPUErrors++
 			db.statsMu.Unlock()
 		}
-		
+
 		// 回退到CPU计算
 		cpuStartTime := time.Now()
 		cpuResults, cpuErr := db.standardBatchCosineSimilarity(queries, targets)
 		cpuElapsed := time.Since(cpuStartTime)
-		
+
 		if cpuErr != nil {
 			logger.Error("CPU回退计算也失败: %v", cpuErr)
 			return nil, fmt.Errorf("GPU和CPU计算均失败: %v, %v", err, cpuErr)
 		}
-		
+
 		logger.Info("CPU回退计算成功，耗时: %v (GPU尝试耗时: %v)", cpuElapsed, elapsed)
 		return cpuResults, nil
 	}
 
 	// 计算成功，记录性能信息
 	logger.Debug("GPU批量余弦相似度计算完成，耗时: %v", elapsed)
-	
+
 	// 更新统计信息
 	db.statsMu.Lock()
 	db.stats.GPUComputations++
 	db.stats.TotalGPUTime += elapsed.Milliseconds()
 	db.statsMu.Unlock()
-	
+
 	return results, nil
 }
 
@@ -4441,16 +4553,16 @@ func (db *VectorDB) fineRankingWithScores(query []float64, candidates []string, 
 	if len(candidates) == 0 {
 		return []entity.Result{}, nil
 	}
-	
+
 	// 记录开始时间，用于性能分析
 	startTime := time.Now()
-	
+
 	// 检查是否应该使用GPU加速
 	if db.shouldUseGPUBatchSearch(1, len(candidates)) && len(candidates) > 100 {
 		// 准备候选向量数组
 		candidateVectors := make([][]float64, 0, len(candidates))
 		idMapping := make([]string, 0, len(candidates))
-		
+
 		// 构建向量数组和ID映射
 		for _, candidateID := range candidates {
 			if vec, exists := db.vectors[candidateID]; exists {
@@ -4458,24 +4570,24 @@ func (db *VectorDB) fineRankingWithScores(query []float64, candidates []string, 
 				idMapping = append(idMapping, candidateID)
 			}
 		}
-		
+
 		// 使用GPU加速器进行搜索
 		if db.gpuAccelerator != nil && len(candidateVectors) > 0 {
 			logger.Debug("使用GPU加速单向量搜索，候选向量数量: %d", len(candidateVectors))
-			
+
 			// 将单个查询向量包装为批量查询
 			queries := [][]float64{query}
-			
+
 			// 调用GPU加速器的BatchSearch方法
 			gpuResults, err := db.gpuAccelerator.BatchSearch(queries, candidateVectors, k)
-			
+
 			// 计算耗时
 			elapsed := time.Since(startTime)
-			
+
 			// 错误处理
 			if err != nil {
 				logger.Warning("GPU单向量搜索失败(耗时: %v)，回退到CPU搜索: %v", elapsed, err)
-				
+
 				// 更新统计信息
 				db.statsMu.Lock()
 				db.stats.GPUErrors++
@@ -4500,13 +4612,13 @@ func (db *VectorDB) fineRankingWithScores(query []float64, candidates []string, 
 						}
 					}
 				}
-				
+
 				// 更新统计信息
 				db.statsMu.Lock()
 				db.stats.GPUSearches++
 				db.stats.TotalGPUSearchTime += elapsed.Milliseconds()
 				db.statsMu.Unlock()
-				
+
 				logger.Debug("GPU单向量搜索完成，耗时: %v，结果数量: %d", elapsed, len(results))
 				return results, nil
 			}
@@ -5582,10 +5694,10 @@ func (db *VectorDB) shouldUseGPUBatchSearch(queryCount, dbSize int) bool {
 
 	// 获取向量维度
 	vectorDim := db.vectorDim
-	
+
 	// 计算总计算量：查询数量 * 数据库大小 * 向量维度
 	totalComputeLoad := int64(queryCount) * int64(dbSize) * int64(vectorDim)
-	
+
 	// 获取GPU配置（如果有硬件管理器）
 	var batchSize int = 1000 // 默认批处理大小
 	if db.hardwareManager != nil {
@@ -5600,17 +5712,17 @@ func (db *VectorDB) shouldUseGPUBatchSearch(queryCount, dbSize int) bool {
 	if queryCount < 5 && dbSize < 1000 {
 		return false
 	}
-	
+
 	// 2. 中等规模计算：根据向量维度决定
 	if totalComputeLoad >= 10_000_000 { // 1千万次浮点运算
-		logger.Info("使用GPU加速批量搜索，计算量较大: %d (查询:%d x 数据库:%d x 维度:%d)", 
+		logger.Info("使用GPU加速批量搜索，计算量较大: %d (查询:%d x 数据库:%d x 维度:%d)",
 			totalComputeLoad, queryCount, dbSize, vectorDim)
 		return true
 	}
-	
+
 	// 3. 批量查询优化：当查询数量接近或超过批处理大小时
 	if queryCount >= batchSize/10 {
-		logger.Info("使用GPU加速批量搜索，查询批量较大: %d (批处理大小: %d)", 
+		logger.Info("使用GPU加速批量搜索，查询批量较大: %d (批处理大小: %d)",
 			queryCount, batchSize)
 		return true
 	}
@@ -5620,7 +5732,7 @@ func (db *VectorDB) shouldUseGPUBatchSearch(queryCount, dbSize int) bool {
 		logger.Info("使用GPU加速批量搜索，数据库规模较大: %d", dbSize)
 		return true
 	}
-	
+
 	// 5. 高维向量处理：高维向量更适合GPU并行计算
 	if vectorDim >= 512 && dbSize >= 10000 {
 		logger.Info("使用GPU加速批量搜索，高维向量: %d", vectorDim)
@@ -5634,16 +5746,16 @@ func (db *VectorDB) shouldUseGPUBatchSearch(queryCount, dbSize int) bool {
 func (db *VectorDB) gpuBatchSearch(queries [][]float64, k int, options entity.SearchOptions) ([][]entity.Result, error) {
 	// 记录开始时间，用于性能分析
 	startTime := time.Now()
-	
+
 	// 记录搜索规模
 	logger.Debug("开始GPU批量搜索，查询数量: %d, k值: %d, 数据库大小: %d", len(queries), k, len(db.vectors))
-	
+
 	// 检查GPU加速器是否初始化
 	if db.gpuAccelerator == nil {
 		logger.Warning("GPU加速器未初始化，回退到CPU搜索")
 		return db.fallbackBatchSearch(queries, k, options)
 	}
-	
+
 	// 准备数据库向量数组
 	database := make([][]float64, 0, len(db.vectors))
 	idMapping := make([]string, 0, len(db.vectors))
@@ -5656,35 +5768,35 @@ func (db *VectorDB) gpuBatchSearch(queries [][]float64, k int, options entity.Se
 
 	// 调用GPU加速器的BatchSearch方法
 	gpuResults, err := db.gpuAccelerator.BatchSearch(queries, database, k)
-	
+
 	// 计算耗时
 	elapsed := time.Since(startTime)
-	
+
 	// 错误处理和回退逻辑
 	if err != nil {
 		// 记录详细错误信息
 		logger.Warning("GPU批量搜索失败(耗时: %v)，回退到CPU搜索: %v", elapsed, err)
-		
+
 		// 检查是否是内存不足错误或CUDA错误
 		if strings.Contains(err.Error(), "memory") || strings.Contains(err.Error(), "CUDA") {
 			logger.Error("GPU内存不足或CUDA错误，考虑调整批处理大小或使用CPU搜索")
-			
+
 			// 更新统计信息
 			db.statsMu.Lock()
 			db.stats.GPUErrors++
 			db.statsMu.Unlock()
 		}
-		
+
 		// 回退到CPU搜索
 		cpuStartTime := time.Now()
 		cpuResults, cpuErr := db.fallbackBatchSearch(queries, k, options)
 		cpuElapsed := time.Since(cpuStartTime)
-		
+
 		if cpuErr != nil {
 			logger.Error("CPU回退搜索也失败: %v", cpuErr)
 			return nil, fmt.Errorf("GPU和CPU搜索均失败: %v, %v", err, cpuErr)
 		}
-		
+
 		logger.Info("CPU回退搜索成功，耗时: %v (GPU尝试耗时: %v)", cpuElapsed, elapsed)
 		return cpuResults, nil
 	}
@@ -5714,13 +5826,13 @@ func (db *VectorDB) gpuBatchSearch(queries [][]float64, k int, options entity.Se
 
 	// 计算成功，记录性能信息
 	logger.Debug("GPU批量搜索完成，耗时: %v，结果数量: %d", elapsed, len(results))
-	
+
 	// 更新统计信息
 	db.statsMu.Lock()
 	db.stats.GPUSearches++
 	db.stats.TotalGPUSearchTime += elapsed.Milliseconds()
 	db.statsMu.Unlock()
-	
+
 	return results, nil
 }
 
