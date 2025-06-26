@@ -356,11 +356,6 @@ func (c *FAISSAccelerator) Cleanup() error {
 	return nil
 }
 
-// CheckGPUAvailability 公共方法，供外部调用检查GPU可用性
-func (c *FAISSAccelerator) CheckGPUAvailability() error {
-	return fmt.Errorf("GPU加速功能未启用，使用CPU加速替代")
-}
-
 func (c *FAISSAccelerator) GetGPUMemoryInfo() (free, total uint64, err error) {
 	// 返回CPU内存信息作为替代
 	memStats := &runtime.MemStats{}

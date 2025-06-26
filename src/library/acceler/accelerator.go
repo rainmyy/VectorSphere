@@ -62,6 +62,36 @@ func toFloat32Flat(vectors [][]float64, dim int) []float32 {
 	return flat
 }
 
+// CheckGPUAvailability 检查GPU是否可用
+func (c *FAISSAccelerator) CheckGPUAvailability() error {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	// 检查是否已初始化
+	if !c.initialized {
+		return fmt.Errorf("GPU加速器未初始化")
+	}
+
+	// 检查GPU内存状态
+	free, total, err := c.GetGPUMemoryInfo()
+	if err != nil {
+		return fmt.Errorf("GPU内存检查失败: %v", err)
+	}
+
+	// 检查可用内存是否足够（至少100MB）
+	minRequiredMem := uint64(100 * 1024 * 1024) // 100MB
+	if free < minRequiredMem {
+		return fmt.Errorf("GPU内存不足: 可用 %d MB, 总计 %d MB", free/(1024*1024), total/(1024*1024))
+	}
+
+	// 检查可用内存比例（至少5%）
+	if float64(free)/float64(total) < 0.05 {
+		return fmt.Errorf("GPU内存使用率过高: 可用 %.2f%%", float64(free)/float64(total)*100)
+	}
+
+	return nil
+}
+
 func (c *FAISSAccelerator) SelectOptimalBatchSize(vectorDim, numQueries int) int {
 	// 获取 GPU 内存信息
 	free, _, err := c.GetGPUMemoryInfo()

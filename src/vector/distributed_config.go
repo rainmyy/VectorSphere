@@ -2,6 +2,7 @@ package vector
 
 import (
 	"VectorSphere/src/library/acceler"
+	"VectorSphere/src/library/logger"
 	"fmt"
 	"time"
 )
@@ -769,6 +770,10 @@ func (db *VectorDB) ApplyHardwareManager(hardwareManager *acceler.HardwareManage
 		// 更新硬件能力信息
 		db.HardwareCaps.HasGPU = true
 		db.HardwareCaps.GPUDevices = len(config.GPU.DeviceIDs)
+
+		// 记录GPU配置信息
+		logger.Info("已启用GPU加速，设备数量: %d, 批处理大小: %d",
+			db.HardwareCaps.GPUDevices, config.GPU.BatchSize)
 	}
 
 	// 获取CPU加速器
@@ -779,20 +784,27 @@ func (db *VectorDB) ApplyHardwareManager(hardwareManager *acceler.HardwareManage
 		db.HardwareCaps.HasAVX2 = caps.HasAVX2
 		db.HardwareCaps.HasAVX512 = caps.HasAVX512
 		db.HardwareCaps.CPUCores = caps.CPUCores
+
+		// 记录CPU配置信息
+		logger.Info("已启用CPU优化，核心数: %d, AVX2: %v, AVX512: %v",
+			db.HardwareCaps.CPUCores, db.HardwareCaps.HasAVX2, db.HardwareCaps.HasAVX512)
 	}
+
+	// 获取向量数据库的实际大小
+	db.mu.RLock()
+	actualDataSize := len(db.vectors)
+	db.mu.RUnlock()
 
 	// 根据硬件能力选择最佳计算策略
 	if db.strategyComputeSelector != nil {
-		// 根据向量维度和数据量选择最佳计算策略
-		// 使用向量维度和估计的数据量作为参数
-		estimatedDataSize := 10000 // 默认估计数据量
-		db.mu.RLock()
-		if len(db.vectors) > 0 {
-			estimatedDataSize = len(db.vectors)
-		}
-		db.mu.RUnlock()
-		db.currentStrategy = db.strategyComputeSelector.SelectOptimalStrategy(estimatedDataSize, db.vectorDim)
+		// 使用向量维度和实际数据量作为参数
+		db.currentStrategy = db.strategyComputeSelector.SelectOptimalStrategy(actualDataSize, db.vectorDim)
+		logger.Info("已选择最佳计算策略: %v，基于数据量: %d, 向量维度: %d",
+			db.currentStrategy, actualDataSize, db.vectorDim)
 	}
+
+	// 保存硬件管理器引用，以便后续使用
+	db.hardwareManager = hardwareManager
 
 	return nil
 }
