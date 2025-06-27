@@ -2,25 +2,25 @@ package test
 
 import (
 	"VectorSphere/src/library/entity"
-	"VectorSphere/src/vector"
+	"VectorSphere/src/search"
 	"context"
 	"fmt"
 	"testing"
 )
 
 func TestNewDistributedSearchManager(t *testing.T) {
-	strategy := &vector.RangeShardStrategy{}
-	manager := vector.NewDistributedSearchManager(strategy)
+	strategy := &search.RangeShardStrategy{}
+	manager := search.NewDistributedSearchManager(strategy)
 	if manager == nil {
 		t.Fatal("Expected non-nil DistributedSearchManager")
 	}
 }
 
 func TestAddSearchNode(t *testing.T) {
-	strategy := &vector.RangeShardStrategy{}
-	manager := vector.NewDistributedSearchManager(strategy)
+	strategy := &search.RangeShardStrategy{}
+	manager := search.NewDistributedSearchManager(strategy)
 
-	node := &vector.SearchNode{
+	node := &search.SearchNode{
 		ID:       "node1",
 		Address:  "localhost:8001",
 		Weight:   100,
@@ -43,11 +43,11 @@ func TestAddSearchNode(t *testing.T) {
 }
 
 func TestDistributedSearch(t *testing.T) {
-	strategy := &vector.RangeShardStrategy{}
-	manager := vector.NewDistributedSearchManager(strategy)
+	strategy := &search.RangeShardStrategy{}
+	manager := search.NewDistributedSearchManager(strategy)
 
 	// 添加搜索节点
-	nodes := []*vector.SearchNode{
+	nodes := []*search.SearchNode{
 		{ID: "node1", Address: "localhost:8001", Active: true, Capacity: 1000},
 		{ID: "node2", Address: "localhost:8002", Active: true, Capacity: 1000},
 	}
@@ -75,7 +75,7 @@ func TestDistributedSearch(t *testing.T) {
 }
 
 func TestShardStrategy(t *testing.T) {
-	strategy := &vector.HashShardStrategy{}
+	strategy := &search.HashShardStrategy{}
 
 	// 测试分片策略
 	shardID := strategy.GetShard(123, 4)
@@ -91,10 +91,10 @@ func TestShardStrategy(t *testing.T) {
 }
 
 func TestConsistentHashing(t *testing.T) {
-	hash := vector.NewDistributedConsistentHash(3)
+	hash := search.NewDistributedConsistentHash(3)
 
 	// 添加节点
-	nodes := []*vector.SearchNode{
+	nodes := []*search.SearchNode{
 		{ID: "node1", Address: "localhost:8001"},
 		{ID: "node2", Address: "localhost:8002"},
 		{ID: "node3", Address: "localhost:8003"},
@@ -105,7 +105,7 @@ func TestConsistentHashing(t *testing.T) {
 
 	// 测试一致性哈希
 	keys := []string{"key1", "key2", "key3", "key4", "key5"}
-	nodeAssignments := make(map[string]*vector.SearchNode)
+	nodeAssignments := make(map[string]*search.SearchNode)
 
 	for _, key := range keys {
 		node := hash.GetNode(key)
@@ -121,7 +121,7 @@ func TestConsistentHashing(t *testing.T) {
 }
 
 func TestSearchNodeHealthCheck(t *testing.T) {
-	node := &vector.SearchNode{
+	node := &search.SearchNode{
 		ID:      "node1",
 		Address: "localhost:8001",
 		Active:  true,
@@ -142,12 +142,12 @@ func TestSearchNodeHealthCheck(t *testing.T) {
 }
 
 func TestDistributedSearchConcurrency(t *testing.T) {
-	strategy := &vector.RangeShardStrategy{}
-	manager := vector.NewDistributedSearchManager(strategy)
+	strategy := &search.RangeShardStrategy{}
+	manager := search.NewDistributedSearchManager(strategy)
 
 	// 添加多个节点
 	for i := 0; i < 5; i++ {
-		node := &vector.SearchNode{
+		node := &search.SearchNode{
 			ID:       fmt.Sprintf("node%d", i),
 			Address:  fmt.Sprintf("localhost:800%d", i),
 			Active:   true,

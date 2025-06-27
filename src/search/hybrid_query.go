@@ -1,6 +1,7 @@
-package vector
+package search
 
 import (
+	"VectorSphere/src/vector"
 	"fmt"
 	"strconv"
 	"sync"
@@ -11,7 +12,7 @@ import (
 
 // HybridQueryEngine 混合查询引擎
 type HybridQueryEngine struct {
-	vectorDB       *VectorDB
+	vectorDB       *vector.VectorDB
 	scalarIndex    *ScalarIndex
 	queryOptimizer *QueryOptimizer
 	resultMerger   *ResultMerger
@@ -161,7 +162,7 @@ type ResultMerger struct {
 type MergeFunction func(vectorResults []entity.Result, scalarResults []int, weights QueryWeights) []entity.Result
 
 // NewHybridQueryEngine 创建混合查询引擎
-func NewHybridQueryEngine(vectorDB *VectorDB) *HybridQueryEngine {
+func NewHybridQueryEngine(vectorDB *vector.VectorDB) *HybridQueryEngine {
 	return &HybridQueryEngine{
 		vectorDB:       vectorDB,
 		scalarIndex:    NewScalarIndex(),

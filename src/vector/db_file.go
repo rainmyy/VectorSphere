@@ -20,12 +20,20 @@ type dataToSave struct {
 	Indexed                  bool
 	InvertedIndex            map[string][]string
 	VectorDim                int
+	VectorizedType           int
 	NormalizedVectors        map[string][]float64
 	CompressedVectors        map[string]entity.CompressedVector
-	PQCodebook               []float64
+	UseCompression           bool
+	PqCodebookFilePath       string
 	NumSubVectors            int
 	NumCentroidsPerSubVector int
 	UsePQCompression         bool
+	UseHNSWIndex             bool
+	MaxConnections           int
+	EfConstruction           float64
+	EfSearch                 float64
+	MultiIndex               *MultiLevelIndex
+	Config                   AdaptiveConfig
 }
 
 // SaveToFileWithMmap 使用 mmap 优化的保存方法
@@ -54,26 +62,7 @@ func (db *VectorDB) SaveToFileWithMmap(filePath string) error {
 	var buf bytes.Buffer
 	encoder := gob.NewEncoder(&buf)
 
-	data := struct {
-		Vectors                  map[string][]float64
-		Clusters                 []Cluster
-		NumClusters              int
-		Indexed                  bool
-		InvertedIndex            map[string][]string
-		VectorDim                int
-		VectorizedType           int
-		NormalizedVectors        map[string][]float64
-		CompressedVectors        map[string]entity.CompressedVector
-		UseCompression           bool
-		PqCodebookFilePath       string
-		NumSubVectors            int
-		NumCentroidsPerSubVector int
-		UsePQCompression         bool
-		UseHNSWIndex             bool
-		MaxConnections           int
-		EfConstruction           float64
-		EfSearch                 float64
-	}{
+	data := dataToSave{
 		Vectors:                  db.vectors,
 		Clusters:                 db.clusters,
 		NumClusters:              db.numClusters,
@@ -92,6 +81,8 @@ func (db *VectorDB) SaveToFileWithMmap(filePath string) error {
 		MaxConnections:           db.maxConnections,
 		EfConstruction:           db.efConstruction,
 		EfSearch:                 db.efSearch,
+		MultiIndex:               db.multiIndex,
+		Config:                   db.config,
 	}
 
 	if err := encoder.Encode(data); err != nil {
@@ -167,29 +158,7 @@ func (db *VectorDB) saveToFileStandard(filePath string) error {
 
 	// 序列化 VectorDB 的核心数据
 	// 为了向前兼容和模块化，可以考虑为每个主要部分创建独立的结构进行序列化
-	data := struct {
-		Vectors           map[string][]float64
-		Clusters          []Cluster
-		NumClusters       int
-		Indexed           bool
-		InvertedIndex     map[string][]string
-		VectorDim         int
-		VectorizedType    int
-		NormalizedVectors map[string][]float64
-		CompressedVectors map[string]entity.CompressedVector
-		UseCompression    bool
-		// PQ 相关字段也需要保存，以便下次加载时能正确恢复状态
-		PqCodebookFilePath       string // 保存码本路径，而不是码本本身，码本由外部文件管理
-		NumSubvectors            int
-		NumCentroidsPerSubvector int
-		UsePQCompression         bool
-		MultiIndex               *MultiLevelIndex // 如果 MultiLevelIndex 可序列化
-		Config                   AdaptiveConfig   // 如果 AdaptiveConfig 可序列化
-		UseHNSWIndex             bool
-		MaxConnections           int
-		EfConstruction           float64
-		EfSearch                 float64
-	}{
+	data := dataToSave{
 		Vectors:                  db.vectors,
 		Clusters:                 db.clusters,
 		NumClusters:              db.numClusters,
@@ -201,8 +170,8 @@ func (db *VectorDB) saveToFileStandard(filePath string) error {
 		CompressedVectors:        db.compressedVectors,
 		UseCompression:           db.useCompression,
 		PqCodebookFilePath:       db.pqCodebookFilePath, // 保存码本文件路径
-		NumSubvectors:            db.numSubVectors,
-		NumCentroidsPerSubvector: db.numCentroidsPerSubVector,
+		NumSubVectors:            db.numSubVectors,
+		NumCentroidsPerSubVector: db.numCentroidsPerSubVector,
 		UsePQCompression:         db.usePQCompression,
 		MultiIndex:               db.multiIndex,
 		Config:                   db.config,
@@ -273,26 +242,7 @@ func (db *VectorDB) LoadFromFileWithMmap(filePath string) error {
 	buf := bytes.NewReader(serializedData)
 	decoder := gob.NewDecoder(buf)
 
-	data := struct {
-		Vectors                  map[string][]float64
-		Clusters                 []Cluster
-		NumClusters              int
-		Indexed                  bool
-		InvertedIndex            map[string][]string
-		VectorDim                int
-		VectorizedType           int
-		NormalizedVectors        map[string][]float64
-		CompressedVectors        map[string]entity.CompressedVector
-		UseCompression           bool
-		PqCodebookFilePath       string
-		NumSubVectors            int
-		NumCentroidsPerSubVector int
-		UsePQCompression         bool
-		UseHNSWIndex             bool
-		MaxConnections           int
-		EfConstruction           float64
-		EfSearch                 float64
-	}{}
+	data := dataToSave{}
 
 	if err := decoder.Decode(&data); err != nil {
 		logger.Error("从 mmap 反序列化数据库失败: %v。将使用空数据库启动。", err)

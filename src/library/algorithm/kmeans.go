@@ -339,7 +339,7 @@ func ConvertToPoints(data [][]float64) []entity.Point {
 	}
 	points := make([]entity.Point, len(data))
 	for i, vec := range data {
-		points[i] = entity.Point(vec)
+		points[i] = vec
 	}
 	return points
 }
@@ -351,7 +351,7 @@ func ConvertToFloat64Slice(points []entity.Point) [][]float64 {
 	}
 	data := make([][]float64, len(points))
 	for i, p := range points {
-		data[i] = []float64(p)
+		data[i] = p
 	}
 	return data
 }

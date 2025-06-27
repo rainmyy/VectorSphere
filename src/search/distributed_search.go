@@ -1,6 +1,7 @@
-package vector
+package search
 
 import (
+	"VectorSphere/src/library/acceler"
 	"context"
 	"fmt"
 	"sort"
@@ -76,7 +77,7 @@ type HashShardStrategy struct{}
 
 func (h *HashShardStrategy) GetShard(vectorID int, totalShards int) int {
 	// 简单哈希分片
-	return hash(vectorID) % totalShards
+	return acceler.Hash(vectorID) % totalShards
 }
 
 func (h *HashShardStrategy) GetShardForQuery(query []float64, totalShards int) []int {
@@ -126,10 +127,10 @@ func (c *ClusterShardStrategy) findNearestClusters(query []float64, k int) []int
 		// 使用平方距离进行比较，避免不必要的开方运算
 		// 尝试使用全局距离计算器（如果可用）
 		var dist float64
-		if calculator, ok := getGlobalDistanceCalculator(); ok {
-			dist = calculateDistanceWithCalculator(query, center, calculator)
+		if calculator, ok := acceler.GetGlobalDistanceCalculator(); ok {
+			dist = acceler.CalculateDistanceWithCalculator(query, center, calculator)
 		} else {
-			dist = calculateEuclideanDistance(query, center)
+			dist = acceler.CalculateEuclideanDistance(query, center)
 		}
 		distances[i] = clusterDistance{index: i, distance: dist}
 	}
@@ -170,7 +171,7 @@ func (ch *DistributedConsistentHash) AddNode(node *SearchNode) {
 	defer ch.mu.Unlock()
 
 	for i := 0; i < ch.replicas; i++ {
-		hashValue := uint32(hash(fmt.Sprintf("%s:%d", node.ID, i)))
+		hashValue := uint32(acceler.Hash(fmt.Sprintf("%s:%d", node.ID, i)))
 		ch.hashRing[hashValue] = node
 		ch.sortedHashes = append(ch.sortedHashes, hashValue)
 	}
@@ -194,7 +195,7 @@ func (ch *DistributedConsistentHash) GetNode(key string) *SearchNode {
 		return nil
 	}
 
-	hashValue := uint32(hash(key))
+	hashValue := uint32(acceler.Hash(key))
 
 	// 找到第一个大于等于hashValue的节点
 	for _, h := range ch.sortedHashes {
@@ -389,69 +390,4 @@ func (dsm *DistributedSearchManager) GetHealthyNodes() []*SearchNode {
 	}
 
 	return healthyNodes
-}
-
-// hash 简单哈希函数
-func hash(key interface{}) int {
-	switch v := key.(type) {
-	case string:
-		h := 0
-		for _, c := range v {
-			h = 31*h + int(c)
-		}
-		return h
-	case int:
-		return v
-	default:
-		return 0
-	}
-}
-
-// calculateEuclideanDistance 计算欧几里得距离
-// 注意：此函数返回平方距离，而不是实际距离，避免开方运算
-// 保留此函数作为兼容性备份
-func calculateEuclideanDistance(v1, v2 []float64) float64 {
-	if len(v1) != len(v2) {
-		return float64(^uint(0) >> 1) // 返回最大float64值
-	}
-
-	sum := 0.0
-	for i := range v1 {
-		diff := v1[i] - v2[i]
-		sum += diff * diff
-	}
-	return sum // 返回平方距离，避免开方运算
-}
-
-// calculateDistanceWithCalculator 使用距离计算器计算向量距离
-// 如果提供了计算器，则使用计算器；否则使用默认的欧几里得距离
-// 注意：此函数返回平方距离，而不是实际距离，避免开方运算
-func calculateDistanceWithCalculator(v1, v2 []float64, calculator interface{}) float64 {
-	// 尝试使用DistanceCalculator接口
-	if calc, ok := calculator.(interface {
-		CalculateSquared([]float64, []float64) float64
-	}); ok {
-		return calc.CalculateSquared(v1, v2)
-	}
-
-	// 回退到默认实现
-	return calculateEuclideanDistance(v1, v2)
-}
-
-// 全局距离计算器实例，用于在没有VectorDB实例的情况下访问距离计算器
-var globalDistanceCalculator interface{}
-var globalDistanceCalculatorMu sync.RWMutex
-
-// setGlobalDistanceCalculator 设置全局距离计算器
-func setGlobalDistanceCalculator(calculator interface{}) {
-	globalDistanceCalculatorMu.Lock()
-	defer globalDistanceCalculatorMu.Unlock()
-	globalDistanceCalculator = calculator
-}
-
-// getGlobalDistanceCalculator 获取全局距离计算器
-func getGlobalDistanceCalculator() (interface{}, bool) {
-	globalDistanceCalculatorMu.RLock()
-	defer globalDistanceCalculatorMu.RUnlock()
-	return globalDistanceCalculator, globalDistanceCalculator != nil
 }

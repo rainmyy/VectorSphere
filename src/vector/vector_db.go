@@ -1035,7 +1035,7 @@ func (db *VectorDB) InitializeGPUAccelerator(deviceID int, indexType string) err
 	startTime := time.Now()
 
 	// 创建FAISS GPU加速器
-	var gpuAccel acceler.Accelerator
+	var gpuAccel acceler.UnifiedAccelerator
 
 	// 优先使用硬件管理器获取GPU加速器
 	if db.hardwareManager != nil {
@@ -1645,9 +1645,6 @@ func (db *VectorDB) IsIndexed() bool {
 	return db.indexed
 }
 
-// NewVectorDB 创建一个新的 VectorDB 实例。
-// 如果 filePath 非空且文件存在，则尝试从中加载数据。
-// numClusters 指定了用于索引的簇数量，如果 <=0，则不启用索引功能。
 // NewVectorDBWithDimension 创建一个具有指定维度和距离类型的 VectorDB 实例
 func NewVectorDBWithDimension(dimension int, distanceType string) (*VectorDB, error) {
 	// 将字符串距离类型转换为枚举值
@@ -1747,25 +1744,11 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 		gpuAccel := acceler.NewFAISSAccelerator(0, "Flat")
 
 		// 先检查GPU可用性，再进行初始化
-		if faissAccel, ok := gpuAccel.(*acceler.FAISSAccelerator); ok {
-			if err := faissAccel.CheckGPUAvailability(); err != nil {
-				logger.Warning("GPU可用性检查失败: %v", err)
-				db.HardwareCaps.HasGPU = false
-			} else {
-				// GPU可用性检查通过，进行初始化
-				if err := gpuAccel.Initialize(); err != nil {
-					logger.Warning("GPU加速器初始化失败: %v", err)
-					db.HardwareCaps.HasGPU = false
-				} else {
-					// 注册到硬件管理器
-					if err := db.hardwareManager.RegisterGPUAccelerator(gpuAccel); err != nil {
-						logger.Warning("注册GPU加速器失败: %v", err)
-						db.HardwareCaps.HasGPU = false
-					}
-				}
-			}
+		if err := gpuAccel.CheckGPUAvailability(); err != nil {
+			logger.Warning("GPU可用性检查失败: %v", err)
+			db.HardwareCaps.HasGPU = false
 		} else {
-			// 如果类型断言失败，直接尝试初始化
+			// GPU可用性检查通过，进行初始化
 			if err := gpuAccel.Initialize(); err != nil {
 				logger.Warning("GPU加速器初始化失败: %v", err)
 				db.HardwareCaps.HasGPU = false
@@ -1793,7 +1776,7 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 	db.InitializeAdaptiveSelector()
 
 	// 设置全局距离计算器，供其他组件使用
-	setGlobalDistanceCalculator(distanceCalculator)
+	acceler.SetGlobalDistanceCalculator(distanceCalculator)
 
 	return db
 }
@@ -3868,26 +3851,7 @@ func (db *VectorDB) initializeEmptyDB() {
 }
 
 // restoreDataFromStruct 从结构体恢复数据
-func (db *VectorDB) restoreDataFromStruct(data struct {
-	Vectors                  map[string][]float64
-	Clusters                 []Cluster
-	NumClusters              int
-	Indexed                  bool
-	InvertedIndex            map[string][]string
-	VectorDim                int
-	VectorizedType           int
-	NormalizedVectors        map[string][]float64
-	CompressedVectors        map[string]entity.CompressedVector
-	UseCompression           bool
-	PqCodebookFilePath       string
-	NumSubVectors            int
-	NumCentroidsPerSubVector int
-	UsePQCompression         bool
-	UseHNSWIndex             bool
-	MaxConnections           int
-	EfConstruction           float64
-	EfSearch                 float64
-}) {
+func (db *VectorDB) restoreDataFromStruct(data dataToSave) {
 	db.vectors = data.Vectors
 	db.clusters = data.Clusters
 	db.numClusters = data.NumClusters
@@ -3906,6 +3870,8 @@ func (db *VectorDB) restoreDataFromStruct(data struct {
 	db.maxConnections = data.MaxConnections
 	db.efConstruction = data.EfConstruction
 	db.efSearch = data.EfSearch
+	db.multiIndex = data.MultiIndex
+	db.config = data.Config
 
 	// 确保 map 不为 nil
 	if db.vectors == nil {
@@ -6710,26 +6676,24 @@ func (db *VectorDB) InitializeIVFHNSWIndex() error {
 		return fmt.Errorf("数据量不足，需要至少10个向量才能构建IVF-HNSW索引")
 	}
 
-	if dataSize > 0 {
-		if dataSize < 1000 {
-			config.NumClusters = min(dataSize/10, 16) // 确保聚类数不超过数据量的1/10
-			if config.NumClusters < 4 {
-				config.NumClusters = 4
-			}
-			config.Nprobe = 4
-		} else if dataSize < 10000 {
-			config.NumClusters = 64
-			config.Nprobe = 8
-		} else if dataSize < 100000 {
-			config.NumClusters = 256
-			config.Nprobe = 16
-		} else if dataSize < 1000000 {
-			config.NumClusters = 1024
-			config.Nprobe = 32
-		} else {
-			config.NumClusters = 4096
-			config.Nprobe = 64
+	if dataSize < 1000 {
+		config.NumClusters = min(dataSize/10, 16) // 确保聚类数不超过数据量的1/10
+		if config.NumClusters < 4 {
+			config.NumClusters = 4
 		}
+		config.Nprobe = 4
+	} else if dataSize < 10000 {
+		config.NumClusters = 64
+		config.Nprobe = 8
+	} else if dataSize < 100000 {
+		config.NumClusters = 256
+		config.Nprobe = 16
+	} else if dataSize < 1000000 {
+		config.NumClusters = 1024
+		config.Nprobe = 32
+	} else {
+		config.NumClusters = 4096
+		config.Nprobe = 64
 	}
 
 	if vectorDim > 0 {

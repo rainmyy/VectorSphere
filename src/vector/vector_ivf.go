@@ -611,10 +611,10 @@ func findNearestPQCentroid(subVector []float64, pqCodebookForSubVector [][]float
 	}
 
 	// 尝试使用全局距离计算器
-	if calculator, ok := getGlobalDistanceCalculator(); ok {
+	if calculator, ok := acceler.GetGlobalDistanceCalculator(); ok {
 		sort.Slice(indices, func(i, j int) bool {
-			distI := calculateDistanceWithCalculator(subVector, pqCodebookForSubVector[indices[i]], calculator)
-			distJ := calculateDistanceWithCalculator(subVector, pqCodebookForSubVector[indices[j]], calculator)
+			distI := acceler.CalculateDistanceWithCalculator(subVector, pqCodebookForSubVector[indices[i]], calculator)
+			distJ := acceler.CalculateDistanceWithCalculator(subVector, pqCodebookForSubVector[indices[j]], calculator)
 			return distI < distJ
 		})
 	} else {
