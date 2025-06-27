@@ -240,7 +240,7 @@ func (rm *RecoveryManager) reinitializeAccelerator(acceleratorType string) error
 	}
 
 	// 关闭现有加速器
-	if err := acc.Close(); err != nil {
+	if err := acc.Shutdown(); err != nil {
 		log.Printf("关闭加速器 %s 时出错: %v", acceleratorType, err)
 	}
 
@@ -255,52 +255,33 @@ func (rm *RecoveryManager) reinitializeAccelerator(acceleratorType string) error
 // restartAccelerator 重启加速器
 func (rm *RecoveryManager) restartAccelerator(acceleratorType string) error {
 	// 移除现有加速器
-	rm.hardwareManager.RemoveAccelerator(acceleratorType)
-
-	// 重新注册加速器
-	switch acceleratorType {
-	case "GPU":
-		gpuAccel := NewGPUAccelerator()
-		if gpuAccel != nil {
-			if err := gpuAccel.Initialize(); err == nil {
-				return rm.hardwareManager.RegisterAccelerator("GPU", gpuAccel)
-			}
-		}
-		return fmt.Errorf("无法重启GPU加速器")
-	case "RDMA":
-		rdmaAccel := NewRDMAAccelerator()
-		if rdmaAccel != nil {
-			if err := rdmaAccel.Initialize(); err == nil {
-				return rm.hardwareManager.RegisterAccelerator("RDMA", rdmaAccel)
-			}
-		}
-		return fmt.Errorf("无法重启RDMA加速器")
-	default:
-		return fmt.Errorf("不支持重启加速器类型: %s", acceleratorType)
+	err := rm.hardwareManager.RemoveAccelerator(acceleratorType)
+	if err != nil {
+		return err
 	}
+
+	// 尝试重新注册加速器
+	err = rm.hardwareManager.ReRegisterAccelerator(acceleratorType)
+	if err != nil {
+		return fmt.Errorf("重新注册加速器 %s 失败: %v", acceleratorType, err)
+	}
+	return nil
 }
 
 // fallbackAccelerator 回退到其他加速器
 func (rm *RecoveryManager) fallbackAccelerator(acceleratorType string) error {
-	// 禁用当前加速器
-	if err := rm.disableAccelerator(acceleratorType); err != nil {
-		return err
+	// 检查主加速器是否已存在且健康
+	if rm.hardwareManager.healthMonitor.IsHealthy(acceleratorType) {
+		fmt.Printf("主加速器 %s 已存在且健康，无需回退。\n", acceleratorType)
+		return nil
 	}
 
-	// 选择新的默认加速器
-	availableAccels := rm.hardwareManager.GetAvailableAccelerators()
-	for _, accelType := range availableAccels {
-		if accelType != acceleratorType && rm.hardwareManager.IsHealthy(accelType) {
-			acc, ok := rm.hardwareManager.GetAccelerator(accelType)
-			if !ok {
-				rm.hardwareManager.RegisterGPUAccelerator(acc)
-				log.Printf("已回退到加速器: %s", accelType)
-				return nil
-			}
-		}
+	// 尝试重新注册主加速器
+	err := rm.hardwareManager.ReRegisterAccelerator(acceleratorType)
+	if err != nil {
+		return fmt.Errorf("回退到主加速器 %s 失败: %v", acceleratorType, err)
 	}
-
-	return fmt.Errorf("没有可用的回退加速器")
+	return nil
 }
 
 // disableAccelerator 禁用加速器
@@ -311,12 +292,15 @@ func (rm *RecoveryManager) disableAccelerator(acceleratorType string) error {
 	}
 
 	// 关闭加速器
-	if err := acc.Close(); err != nil {
+	if err := acc.Shutdown(); err != nil {
 		log.Printf("关闭加速器 %s 时出错: %v", acceleratorType, err)
 	}
 
 	// 从管理器中移除
-	rm.hardwareManager.RemoveAccelerator(acceleratorType)
+	err := rm.hardwareManager.RemoveAccelerator(acceleratorType)
+	if err != nil {
+		return err
+	}
 
 	log.Printf("已禁用加速器: %s", acceleratorType)
 	return nil

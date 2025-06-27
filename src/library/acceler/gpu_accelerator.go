@@ -956,8 +956,7 @@ func (g *GPUAccelerator) Start() error {
 	return nil
 }
 
-// Stop 停止GPU加速器（UnifiedAccelerator接口方法）
-func (g *GPUAccelerator) Stop() error {
+func (g *GPUAccelerator) Close() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 

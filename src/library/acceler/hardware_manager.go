@@ -106,6 +106,101 @@ func NewHardwareManagerWithConfig(config *HardwareConfig) *HardwareManager {
 	return hm
 }
 
+// GetAcceleratorConfig 根据加速器类型获取其配置
+func (hm *HardwareManager) GetAcceleratorConfig(acceleratorType string) (interface{}, error) {
+	switch acceleratorType {
+	case AcceleratorCPU:
+		return hm.config.CPU, nil
+	case AcceleratorGPU:
+		return hm.config.GPU, nil
+	case AcceleratorFPGA:
+		return hm.config.FPGA, nil
+	case AcceleratorPMem:
+		return hm.config.PMem, nil
+	case AcceleratorRDMA:
+		return hm.config.RDMA, nil
+	default:
+		return nil, fmt.Errorf("未知加速器类型: %s", acceleratorType)
+	}
+}
+
+// CreateAcceleratorFromConfig 根据配置创建加速器实例
+func (hm *HardwareManager) CreateAcceleratorFromConfig(acceleratorType string, cfg interface{}) (UnifiedAccelerator, error) {
+	switch acceleratorType {
+	case AcceleratorCPU:
+		cpuCfg, ok := cfg.(CPUConfig)
+		if !ok {
+			return nil, fmt.Errorf("配置类型不匹配 CPUConfig")
+		}
+		return NewFAISSAccelerator(cpuCfg.DeviceID, cpuCfg.IndexType), nil
+	case AcceleratorGPU:
+		gpuCfg, ok := cfg.(GPUConfig)
+		if !ok {
+			return nil, fmt.Errorf("配置类型不匹配 GPUConfig")
+		}
+		// 假设我们只使用第一个DeviceID来创建实例，或者需要更复杂的逻辑来处理多个GPU
+		return NewGPUAccelerator(gpuCfg.DeviceIDs[0], gpuCfg.IndexType, gpuCfg.BatchSize), nil
+	case AcceleratorFPGA:
+		fpgaCfg, ok := cfg.(FPGAConfig)
+		if !ok {
+			return nil, fmt.Errorf("配置类型不匹配 FPGAConfig")
+		}
+		// 假设我们只使用第一个DeviceID来创建实例
+		return NewFPGAAccelerator(fpgaCfg.DeviceIDs[0], &fpgaCfg), nil
+	case AcceleratorPMem:
+		pmemCfg, ok := cfg.(PMemConfig)
+		if !ok {
+			return nil, fmt.Errorf("配置类型不匹配 PMemConfig")
+		}
+		return NewPMemAccelerator(&pmemCfg), nil
+	case AcceleratorRDMA:
+		rdmaCfg, ok := cfg.(RDMAConfig)
+		if !ok {
+			return nil, fmt.Errorf("配置类型不匹配 RDMAConfig")
+		}
+		return NewRDMAAccelerator(rdmaCfg.DeviceID, rdmaCfg.PortNum, &rdmaCfg), nil
+	default:
+		return nil, fmt.Errorf("未知加速器类型: %s", acceleratorType)
+	}
+}
+
+// ReRegisterAccelerator 重新注册加速器
+func (hm *HardwareManager) ReRegisterAccelerator(acceleratorType string) error {
+	hm.mutex.Lock()
+	defer hm.mutex.Unlock()
+
+	// 1. 获取旧的加速器实例并关闭
+	oldAcc, exists := hm.accelerators[acceleratorType]
+	if exists && oldAcc != nil {
+		if err := oldAcc.Shutdown(); err != nil {
+			fmt.Printf("警告: 关闭旧加速器 %s 失败: %v\n", acceleratorType, err)
+		}
+		delete(hm.accelerators, acceleratorType)
+	}
+
+	// 2. 获取加速器配置
+	config, err := hm.GetAcceleratorConfig(acceleratorType)
+	if err != nil {
+		return fmt.Errorf("获取加速器 %s 配置失败: %v", acceleratorType, err)
+	}
+
+	// 3. 根据配置创建新的加速器实例
+	newAcc, err := hm.CreateAcceleratorFromConfig(acceleratorType, config)
+	if err != nil {
+		return fmt.Errorf("从配置创建加速器 %s 失败: %v", acceleratorType, err)
+	}
+
+	// 4. 初始化新的加速器
+	if err := newAcc.Initialize(); err != nil {
+		return fmt.Errorf("初始化新加速器 %s 失败: %v", acceleratorType, err)
+	}
+
+	// 5. 注册新的加速器
+	hm.accelerators[acceleratorType] = newAcc
+	fmt.Printf("成功重新注册加速器: %s\n", acceleratorType)
+	return nil
+}
+
 // NewHardwareManagerFromFile 从配置文件创建硬件管理器
 func NewHardwareManagerFromFile(configFilePath string) (*HardwareManager, error) {
 	config, err := LoadConfigFromFile(configFilePath)
@@ -160,7 +255,7 @@ func (hm *HardwareManager) registerAllAccelerators() {
 				fmt.Printf("警告: 创建GPU加速器失败，设备ID: %d\n", deviceID)
 				continue
 			}
-			
+
 			if gpuAcc.IsAvailable() {
 				name := fmt.Sprintf("%s_%d", AcceleratorGPU, deviceID)
 				hm.RegisterAccelerator(name, gpuAcc)
@@ -904,21 +999,21 @@ func (hm *HardwareManager) UpdateRecoveryConfig(config *RecoveryConfig) {
 func (hm *HardwareManager) GetGPUAccelerator() UnifiedAccelerator {
 	hm.mutex.RLock()
 	defer hm.mutex.RUnlock()
-	
+
 	// 首先检查直接的GPU加速器
 	if acc, exists := hm.accelerators[AcceleratorGPU]; exists {
 		if acc.IsAvailable() {
 			return acc
 		}
 	}
-	
+
 	// 检查带设备ID的GPU加速器
 	for name, acc := range hm.accelerators {
 		if strings.HasPrefix(name, AcceleratorGPU+"_") && acc.IsAvailable() {
 			return acc
 		}
 	}
-	
+
 	return nil
 }
 
@@ -927,21 +1022,21 @@ func (hm *HardwareManager) RegisterGPUAccelerator(accelerator UnifiedAccelerator
 	if accelerator == nil {
 		return fmt.Errorf("GPU加速器不能为空")
 	}
-	
+
 	if !accelerator.IsAvailable() {
 		return fmt.Errorf("GPU加速器不可用")
 	}
-	
+
 	hm.mutex.Lock()
 	defer hm.mutex.Unlock()
-	
+
 	hm.accelerators[AcceleratorGPU] = accelerator
-	
+
 	// 同时注册到AcceleratorManager
 	if err := hm.manager.RegisterAccelerator(accelerator); err != nil {
 		return fmt.Errorf("注册GPU加速器到管理器失败: %v", err)
 	}
-	
+
 	return nil
 }
 
@@ -951,11 +1046,11 @@ func (hm *HardwareManager) SafeGPUCall(operation string, fn func(UnifiedAccelera
 	if gpuAccel == nil {
 		return fmt.Errorf("GPU加速器不可用，操作: %s", operation)
 	}
-	
+
 	if !gpuAccel.IsAvailable() {
 		return fmt.Errorf("GPU加速器状态不可用，操作: %s", operation)
 	}
-	
+
 	return fn(gpuAccel)
 }
 
@@ -963,35 +1058,35 @@ func (hm *HardwareManager) SafeGPUCall(operation string, fn func(UnifiedAccelera
 func (hm *HardwareManager) SafeGPUBatchSearch(queries [][]float64, database [][]float64, k int) ([][]AccelResult, error) {
 	var result [][]AccelResult
 	var lastErr error
-	
+
 	err := hm.errorHandler.SafeCall(AcceleratorGPU, "BatchSearch", func() error {
 		gpuAccel := hm.GetGPUAccelerator()
 		if gpuAccel == nil {
 			return fmt.Errorf("GPU加速器不可用")
 		}
-		
+
 		if !gpuAccel.IsAvailable() {
 			return fmt.Errorf("GPU加速器状态不可用")
 		}
-		
+
 		// 输入验证
 		if len(queries) == 0 || len(database) == 0 {
 			return fmt.Errorf("查询或数据库为空")
 		}
-		
+
 		if k <= 0 {
 			return fmt.Errorf("k必须为正数")
 		}
-		
+
 		var err error
 		result, err = gpuAccel.BatchSearch(queries, database, k)
 		lastErr = err
 		return err
 	})
-	
+
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return result, lastErr
 }

@@ -41,14 +41,15 @@ type HealthReport struct {
 
 // HealthMetrics 健康指标
 type HealthMetrics struct {
-	IsAvailable     bool    `json:"is_available"`
-	IsInitialized   bool    `json:"is_initialized"`
-	ErrorRate       float64 `json:"error_rate"`
-	LastErrorTime   *time.Time `json:"last_error_time,omitempty"`
-	ResponseTime    time.Duration `json:"response_time"`
-	MemoryUsage     float64 `json:"memory_usage"`
-	CPUUsage        float64 `json:"cpu_usage"`
-	Throughput      float64 `json:"throughput"`
+	IsAvailable                 bool          `json:"is_available"`
+	IsInitialized               bool          `json:"is_initialized"`
+	ErrorRate                   float64       `json:"error_rate"`
+	LastErrorTime               *time.Time    `json:"last_error_time,omitempty"`
+	ResponseTime                time.Duration `json:"response_time"`
+	MemoryUsage                 float64       `json:"memory_usage"`
+	CPUUsage                    float64       `json:"cpu_usage"`
+	Throughput                  float64       `json:"throughput"`
+	LastSuccessfulOperationTime *time.Time    `json:"last_successful_operation_time,omitempty"`
 }
 
 // HealthMonitor 健康监控器
@@ -127,7 +128,7 @@ func (hm *HealthMonitor) performHealthCheck() {
 // checkAcceleratorHealth 检查单个加速器的健康状态
 func (hm *HealthMonitor) checkAcceleratorHealth(name string, acc UnifiedAccelerator) *HealthReport {
 	start := time.Now()
-	
+
 	report := &HealthReport{
 		AcceleratorType: name,
 		Timestamp:       start,
@@ -174,6 +175,9 @@ func (hm *HealthMonitor) checkAcceleratorHealth(name string, acc UnifiedAccelera
 		report.Metrics.MemoryUsage = metrics.MemoryUsage
 		report.Metrics.CPUUsage = metrics.CPUUsage
 		report.Metrics.Throughput = metrics.Throughput
+		if metrics.LastSuccessfulOperationTime != nil {
+			report.Metrics.LastSuccessfulOperationTime = metrics.LastSuccessfulOperationTime
+		}
 	}
 
 	// 确定健康状态
@@ -186,18 +190,18 @@ func (hm *HealthMonitor) checkAcceleratorHealth(name string, acc UnifiedAccelera
 // measureResponseTime 测量响应时间
 func (hm *HealthMonitor) measureResponseTime(acc UnifiedAccelerator) time.Duration {
 	start := time.Now()
-	
+
 	// 执行一个简单的操作来测试响应时间
 	// 这里使用一个小的向量计算作为ping测试
 	testQuery := []float64{1.0, 2.0, 3.0}
 	testVectors := [][]float64{{1.0, 2.0, 3.0}, {4.0, 5.0, 6.0}}
-	
+
 	_, err := acc.ComputeDistance(testQuery, testVectors)
 	if err != nil {
 		// 如果出错，返回一个较大的响应时间
 		return time.Second
 	}
-	
+
 	return time.Since(start)
 }
 
@@ -264,6 +268,19 @@ func (hm *HealthMonitor) generateHealthMessage(status HealthStatus, metrics Heal
 	default:
 		return "未知状态"
 	}
+}
+
+// IsHealthy 检查指定加速器是否健康
+func (hm *HealthMonitor) IsHealthy(acceleratorType string) bool {
+	hm.mutex.RLock()
+	defer hm.mutex.RUnlock()
+
+	report, exists := hm.reports[acceleratorType]
+	if !exists {
+		return false // 如果没有报告，则认为不健康
+	}
+
+	return report.Status == HealthStatusHealthy
 }
 
 // GetHealthReport 获取健康报告

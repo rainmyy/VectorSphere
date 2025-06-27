@@ -94,6 +94,11 @@ type PerformanceMetrics struct {
 	ThroughputPeak      float64            `json:"throughput_peak"`
 	CacheHitRate        float64            `json:"cache_hit_rate"`
 	ResourceUtilization map[string]float64 `json:"resource_utilization"`
+
+	MemoryUsage                 float64
+	CPUUsage                    float64
+	Throughput                  float64
+	LastSuccessfulOperationTime *time.Time
 }
 
 // WorkloadProfile 工作负载配置文件
