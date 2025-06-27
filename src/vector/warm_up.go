@@ -65,7 +65,8 @@ func (db *VectorDB) WarmupIndex() {
 		case StrategyIVF:
 			canUse = db.indexed && len(db.clusters) > 0
 		case StrategyHybrid:
-			canUse = hwCaps.HasGPU && db.gpuAccelerator != nil
+			gpuAccelerator := db.hardwareManager.GetGPUAccelerator()
+			canUse = hwCaps.HasGPU && gpuAccelerator != nil
 		case StrategyEnhancedIVF:
 			// 检查增强IVF索引是否可用
 			canUse = db.ivfIndex != nil && db.ivfIndex.Enable && db.ivfConfig != nil
@@ -205,7 +206,8 @@ func (db *VectorDB) WarmupIndex() {
 	}
 
 	// 预热GPU加速器（如果可用）
-	if hwCaps.HasGPU && db.gpuAccelerator != nil {
+	gpuAccelerator := db.hardwareManager.GetGPUAccelerator()
+	if hwCaps.HasGPU && gpuAccelerator != nil {
 		logger.Info("开始预热GPU加速器...")
 
 		// 随机选择一些向量进行批量计算

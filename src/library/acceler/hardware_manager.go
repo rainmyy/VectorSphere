@@ -15,11 +15,14 @@ import (
 
 // HardwareManager 硬件管理器（整合原有代码）
 type HardwareManager struct {
-	accelerators map[string]UnifiedAccelerator
-	mutex        sync.RWMutex
-	defaultType  string
-	manager      *AcceleratorManager
-	config       *HardwareConfig
+	accelerators    map[string]UnifiedAccelerator
+	mutex           sync.RWMutex
+	defaultType     string
+	manager         *AcceleratorManager
+	config          *HardwareConfig
+	errorHandler    *ErrorHandler
+	healthMonitor   *HealthMonitor
+	recoveryManager *RecoveryManager
 }
 
 // HardwareConfig 硬件配置结构体
@@ -85,7 +88,14 @@ func NewHardwareManagerWithConfig(config *HardwareConfig) *HardwareManager {
 		defaultType:  "cpu",
 		manager:      NewAcceleratorManager(),
 		config:       config,
+		errorHandler: NewErrorHandler(),
 	}
+
+	// 初始化健康监控器
+	hm.healthMonitor = NewHealthMonitor(hm)
+
+	// 初始化恢复管理器
+	hm.recoveryManager = NewRecoveryManager(hm, DefaultRecoveryConfig())
 
 	// 注册可用的硬件加速器
 	hm.registerAllAccelerators()
@@ -146,6 +156,11 @@ func (hm *HardwareManager) registerAllAccelerators() {
 	if hm.config.GPU.Enable {
 		for _, deviceID := range hm.config.GPU.DeviceIDs {
 			gpuAcc := NewGPUAccelerator(deviceID, hm.config.GPU.IndexType, hm.config.GPU.BatchSize)
+			if gpuAcc == nil {
+				fmt.Printf("警告: 创建GPU加速器失败，设备ID: %d\n", deviceID)
+				continue
+			}
+			
 			if gpuAcc.IsAvailable() {
 				name := fmt.Sprintf("%s_%d", AcceleratorGPU, deviceID)
 				hm.RegisterAccelerator(name, gpuAcc)
@@ -777,4 +792,206 @@ func (hm *HardwareManager) AccelerateSearch(query []float64, database [][]float6
 	}
 
 	return acc.AccelerateSearch(query, database, options)
+}
+
+// GetErrorStats 获取硬件加速器错误统计
+func (hm *HardwareManager) GetErrorStats() map[string]int {
+	return hm.errorHandler.GetAllErrors()
+}
+
+// GetLastError 获取指定加速器的最后一个错误
+func (hm *HardwareManager) GetLastError(acceleratorType, operation string) *AcceleratorError {
+	return hm.errorHandler.GetLastError(acceleratorType, operation)
+}
+
+// ResetErrorCount 重置错误计数
+func (hm *HardwareManager) ResetErrorCount(acceleratorType, operation string) {
+	hm.errorHandler.Reset(acceleratorType, operation)
+}
+
+// StartHealthMonitoring 启动健康监控
+func (hm *HardwareManager) StartHealthMonitoring() {
+	if hm.healthMonitor != nil {
+		hm.healthMonitor.Start()
+	}
+}
+
+// StopHealthMonitoring 停止健康监控
+func (hm *HardwareManager) StopHealthMonitoring() {
+	if hm.healthMonitor != nil {
+		hm.healthMonitor.Stop()
+	}
+}
+
+// GetHealthReport 获取指定加速器的健康报告
+func (hm *HardwareManager) GetHealthReport(acceleratorType string) *HealthReport {
+	if hm.healthMonitor != nil {
+		return hm.healthMonitor.GetHealthReport(acceleratorType)
+	}
+	return nil
+}
+
+// GetAllHealthReports 获取所有加速器的健康报告
+func (hm *HardwareManager) GetAllHealthReports() map[string]*HealthReport {
+	if hm.healthMonitor != nil {
+		return hm.healthMonitor.GetAllHealthReports()
+	}
+	return nil
+}
+
+// GetOverallHealth 获取整体健康状态
+func (hm *HardwareManager) GetOverallHealth() HealthStatus {
+	if hm.healthMonitor != nil {
+		return hm.healthMonitor.GetOverallHealth()
+	}
+	return HealthStatusUnknown
+}
+
+// IsHealthy 检查指定加速器是否健康
+func (hm *HardwareManager) IsHealthy(acceleratorType string) bool {
+	report := hm.GetHealthReport(acceleratorType)
+	if report == nil {
+		return false
+	}
+	return report.Status == HealthStatusHealthy
+}
+
+// StartRecoveryManager 启动恢复管理器
+func (hm *HardwareManager) StartRecoveryManager() {
+	if hm.recoveryManager != nil {
+		hm.recoveryManager.Start()
+	}
+}
+
+// StopRecoveryManager 停止恢复管理器
+func (hm *HardwareManager) StopRecoveryManager() {
+	if hm.recoveryManager != nil {
+		hm.recoveryManager.Stop()
+	}
+}
+
+// GetRecoveryHistory 获取恢复历史
+func (hm *HardwareManager) GetRecoveryHistory() []RecoveryAction {
+	if hm.recoveryManager != nil {
+		return hm.recoveryManager.GetRecoveryHistory()
+	}
+	return nil
+}
+
+// GetRetryCount 获取指定加速器的重试次数
+func (hm *HardwareManager) GetRetryCount(acceleratorType string) int {
+	if hm.recoveryManager != nil {
+		return hm.recoveryManager.GetRetryCount(acceleratorType)
+	}
+	return 0
+}
+
+// ResetRetryCount 重置指定加速器的重试次数
+func (hm *HardwareManager) ResetRetryCount(acceleratorType string) {
+	if hm.recoveryManager != nil {
+		hm.recoveryManager.ResetRetryCount(acceleratorType)
+	}
+}
+
+// UpdateRecoveryConfig 更新恢复配置
+func (hm *HardwareManager) UpdateRecoveryConfig(config *RecoveryConfig) {
+	if hm.recoveryManager != nil {
+		hm.recoveryManager.UpdateConfig(config)
+	}
+}
+
+// GetGPUAccelerator 获取GPU加速器
+func (hm *HardwareManager) GetGPUAccelerator() UnifiedAccelerator {
+	hm.mutex.RLock()
+	defer hm.mutex.RUnlock()
+	
+	// 首先检查直接的GPU加速器
+	if acc, exists := hm.accelerators[AcceleratorGPU]; exists {
+		if acc.IsAvailable() {
+			return acc
+		}
+	}
+	
+	// 检查带设备ID的GPU加速器
+	for name, acc := range hm.accelerators {
+		if strings.HasPrefix(name, AcceleratorGPU+"_") && acc.IsAvailable() {
+			return acc
+		}
+	}
+	
+	return nil
+}
+
+// RegisterGPUAccelerator 注册GPU加速器
+func (hm *HardwareManager) RegisterGPUAccelerator(accelerator UnifiedAccelerator) error {
+	if accelerator == nil {
+		return fmt.Errorf("GPU加速器不能为空")
+	}
+	
+	if !accelerator.IsAvailable() {
+		return fmt.Errorf("GPU加速器不可用")
+	}
+	
+	hm.mutex.Lock()
+	defer hm.mutex.Unlock()
+	
+	hm.accelerators[AcceleratorGPU] = accelerator
+	
+	// 同时注册到AcceleratorManager
+	if err := hm.manager.RegisterAccelerator(accelerator); err != nil {
+		return fmt.Errorf("注册GPU加速器到管理器失败: %v", err)
+	}
+	
+	return nil
+}
+
+// SafeGPUCall 安全调用GPU加速器方法
+func (hm *HardwareManager) SafeGPUCall(operation string, fn func(UnifiedAccelerator) error) error {
+	gpuAccel := hm.GetGPUAccelerator()
+	if gpuAccel == nil {
+		return fmt.Errorf("GPU加速器不可用，操作: %s", operation)
+	}
+	
+	if !gpuAccel.IsAvailable() {
+		return fmt.Errorf("GPU加速器状态不可用，操作: %s", operation)
+	}
+	
+	return fn(gpuAccel)
+}
+
+// SafeGPUBatchSearch 安全的GPU批量搜索
+func (hm *HardwareManager) SafeGPUBatchSearch(queries [][]float64, database [][]float64, k int) ([][]AccelResult, error) {
+	var result [][]AccelResult
+	var lastErr error
+	
+	err := hm.errorHandler.SafeCall(AcceleratorGPU, "BatchSearch", func() error {
+		gpuAccel := hm.GetGPUAccelerator()
+		if gpuAccel == nil {
+			return fmt.Errorf("GPU加速器不可用")
+		}
+		
+		if !gpuAccel.IsAvailable() {
+			return fmt.Errorf("GPU加速器状态不可用")
+		}
+		
+		// 输入验证
+		if len(queries) == 0 || len(database) == 0 {
+			return fmt.Errorf("查询或数据库为空")
+		}
+		
+		if k <= 0 {
+			return fmt.Errorf("k必须为正数")
+		}
+		
+		var err error
+		result, err = gpuAccel.BatchSearch(queries, database, k)
+		lastErr = err
+		return err
+	})
+	
+	if err != nil {
+		return nil, err
+	}
+	
+	return result, lastErr
 }

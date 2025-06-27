@@ -745,8 +745,11 @@ func (db *VectorDB) applyPerformanceConfig(config *PerformanceOptimizationConfig
 // applyHardwareConfig 应用硬件配置
 func (db *VectorDB) applyHardwareConfig(config *HardwareAccelerationConfig) error {
 	// 配置GPU加速
-	if config.GPU.Enable && db.gpuAccelerator != nil {
-		db.HardwareCaps.HasGPU = true
+	if config.GPU.Enable && db.hardwareManager != nil {
+		gpuAccelerator := db.hardwareManager.GetGPUAccelerator()
+		if gpuAccelerator != nil {
+			db.HardwareCaps.HasGPU = true
+		}
 	}
 	return nil
 }
@@ -758,14 +761,20 @@ func (db *VectorDB) ApplyHardwareManager(hardwareManager *acceler.HardwareManage
 		return fmt.Errorf("硬件管理器不能为空")
 	}
 
+	// 设置硬件管理器
+	db.hardwareManager = hardwareManager
+
 	// 获取硬件配置
 	config := hardwareManager.GetConfig()
 
 	// 更新硬件能力信息
 	gpuAcc, hasGPU := hardwareManager.GetAccelerator(acceler.AcceleratorGPU)
 	if hasGPU && config.GPU.Enable {
-		// 设置GPU加速器
-		db.gpuAccelerator = gpuAcc
+		// 注册GPU加速器到硬件管理器
+		err := hardwareManager.RegisterGPUAccelerator(gpuAcc)
+		if err != nil {
+			return fmt.Errorf("注册GPU加速器失败: %v", err)
+		}
 
 		// 更新硬件能力信息
 		db.HardwareCaps.HasGPU = true
