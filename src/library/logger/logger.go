@@ -47,6 +47,10 @@ func init() {
 	_ = InitLogger(INFO, path.Join(basePath, "log", "vector_sphere.log"), 10, true) // 默认INFO级别，输出到终端，最大10MB
 }
 
+func SetLogLevel(l Level) {
+	DefaultLogger.level = l
+}
+
 // InitLogger 初始化日志，filePath为空则输出到终端，否则输出到文件
 func InitLogger(level Level, filePath string, maxSizeMB int64, toStdout bool) error {
 	var output io.Writer

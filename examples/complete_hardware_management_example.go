@@ -33,7 +33,9 @@ func main() {
 		fmt.Println("4. GPU加速器可用")
 
 		// 使用安全的GPU批量搜索
-		testQuery := []float64{1.0, 2.0, 3.0, 4.0}
+		testQuery := [][]float64{
+			{1.0, 2.0, 3.0, 4.0},
+		}
 		testDatabase := [][]float64{
 			{1.0, 2.0, 3.0, 4.0},
 			{2.0, 3.0, 4.0, 5.0},

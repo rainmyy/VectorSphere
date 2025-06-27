@@ -11,7 +11,7 @@ import (
 
 func main() {
 	// 设置日志级别
-	logger.SetLogLevel(logger.LevelInfo)
+	logger.SetLogLevel(logger.INFO)
 
 	// 示例1：使用默认配置创建向量数据库
 	db1 := vector.NewVectorDB("test_vectors.json", 16)
@@ -41,7 +41,7 @@ func main() {
 		},
 		CPU: acceler.CPUConfig{
 			Enable:       true,
-			NumThreads:   8,
+			Threads:      8,
 			EnableAVX:    true,
 			EnableAVX512: true,
 		},
