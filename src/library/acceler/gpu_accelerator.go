@@ -3,54 +3,57 @@
 package acceler
 
 /*
-集成FAISS-GPU 步骤:
-- 安装 FAISS-GPU 库和 CUDA 工具包
-- 配置 CGO 绑定和 C/C++ 头文件
-- 链接 CUDA 和 FAISS 库
-- 处理 C/C++ 与 Go 的数据类型转换
-*/
-
-/*
-#cgo windows CFLAGS: -I"C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.9/include" -IC:/faiss/include
-#cgo windows LDFLAGS: -L"C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.9/lib/x64" -LC:/faiss/lib -lcudart -lcuda -lfaiss -lfaiss_gpu
-#cgo linux CFLAGS: -I/usr/local/cuda/include -I/usr/local/include/faiss
-#cgo linux LDFLAGS: -L/usr/local/cuda/lib64 -L/usr/local/lib -lcudart -lcuda -lfaiss -lfaiss_gpu
+#cgo CFLAGS: -I/usr/local/cuda/include -I/usr/local/include/faiss
+#cgo LDFLAGS: -L/usr/local/cuda/lib64 -L/usr/local/lib -lcudart -lcublas -lfaiss_gpu -lfaiss -lstdc++
 
 #include <cuda_runtime.h>
-#include <cuda.h>
 #include <faiss/gpu/StandardGpuResources.h>
 #include <faiss/gpu/GpuIndexFlat.h>
-#include <faiss/gpu/GpuIndexIVF.h>
-#include <faiss/gpu/utils/DeviceUtils.h>
+#include <faiss/gpu/GpuIndexIVFFlat.h>
 #include <faiss/Index.h>
-#include <faiss/IndexFlat.h>
-#include <faiss/IndexIVF.h>
+#include <stdlib.h>
 
-// CUDA 错误处理宏
+// CUDA错误检查宏
 #define CUDA_CHECK(call) do { \
     cudaError_t err = call; \
     if (err != cudaSuccess) { \
-        return err; \
+        return -1; \
     } \
 } while(0)
 
-// FAISS GPU 资源包装器
+// FAISS GPU包装器结构体
 typedef struct {
     faiss::gpu::StandardGpuResources* resources;
-    faiss::gpu::GpuIndexFlat* index_flat;
-    faiss::gpu::GpuIndexIVF* index_ivf;
+    faiss::Index* index;
     int device_id;
+    int dimension;
     bool initialized;
 } FaissGpuWrapper;
 
-// C 接口函数声明
-FaissGpuWrapper* faiss_gpu_wrapper_new(int device_id);
-int faiss_gpu_wrapper_init(FaissGpuWrapper* wrapper, int dimension, const char* index_type);
-int faiss_gpu_wrapper_add_vectors(FaissGpuWrapper* wrapper, int n, const float* vectors);
-int faiss_gpu_wrapper_search(FaissGpuWrapper* wrapper, int n_queries, const float* queries, int k, float* distances, long* labels);
-void faiss_gpu_wrapper_free(FaissGpuWrapper* wrapper);
-int faiss_gpu_get_device_count();
-int faiss_gpu_set_device(int device_id);
+// StandardGpuResources类型定义
+typedef faiss::gpu::StandardGpuResources StandardGpuResources;
+
+// C接口函数声明
+extern "C" {
+    FaissGpuWrapper* faiss_gpu_wrapper_new(int device_id);
+    int faiss_gpu_wrapper_init(FaissGpuWrapper* wrapper, int dimension, const char* index_type);
+    int faiss_gpu_wrapper_add_vectors(FaissGpuWrapper* wrapper, int n, const float* vectors);
+    int faiss_gpu_wrapper_search(FaissGpuWrapper* wrapper, int n, const float* queries, int k, float* distances, long* labels);
+    int faiss_gpu_wrapper_batch_search(FaissGpuWrapper* wrapper, int db_size, const float* database, int query_size, const float* queries, int k, float* distances, long* labels);
+    void faiss_gpu_wrapper_free(FaissGpuWrapper* wrapper);
+
+    // GPU内存管理
+    int cudaMemGetInfo(size_t* free, size_t* total);
+    int cudaSetDevice(int device);
+    int cudaGetDeviceCount(int* count);
+    int cudaGetDeviceProperties(void* prop, int device);
+
+    // FAISS GPU资源管理
+    StandardGpuResources* faiss_StandardGpuResources_new();
+    void faiss_StandardGpuResources_free(StandardGpuResources* res);
+    int faiss_StandardGpuResources_setTempMemory(StandardGpuResources* res, size_t size);
+    int faiss_StandardGpuResources_setMemoryFraction(StandardGpuResources* res, float fraction);
+}
 */
 import "C"
 
@@ -58,6 +61,7 @@ import (
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/logger"
 	"fmt"
+	"math"
 	"runtime"
 	"sort"
 	"sync"
@@ -65,154 +69,494 @@ import (
 	"unsafe"
 )
 
-// getGPUDeviceCount 获取GPU设备数量
-func getGPUDeviceCount() int {
-	return C.faiss_gpu_get_device_count()
+// GPUAccelerator GPU加速器实现
+type GPUAccelerator struct {
+	deviceID        int
+	initialized     bool
+	available       bool
+	mu              sync.RWMutex
+	indexType       string
+	dimension       int
+	strategy        *ComputeStrategySelector
+	currentStrategy ComputeStrategy
+	dataSize        int
+	// GPU特定字段
+	operationCount int64
+	errorCount     int64
+	batchSize      int
+	streamCount    int
+	gpuWrapper     unsafe.Pointer // 用于存储C结构体指针
+	gpuResources   unsafe.Pointer // FAISS GPU资源
+
+	// 统计信息
+	stats struct {
+		TotalOperations int64
+		SuccessfulOps   int64
+		FailedOps       int64
+		ComputeTime     time.Duration
+		KernelLaunches  int64
+		MemoryTransfers int64
+		LastUsed        time.Time
+	}
+
+	// 性能指标
+	performanceMetrics PerformanceMetrics
+
+	// 内存管理
+	memoryUsed  int64
+	memoryTotal int64
+	deviceCount int
 }
 
-// NewGPUAccelerator creates a new GPU accelerator with default settings
-func NewGPUAccelerator() *FAISSAccelerator {
-	// We can use a default device ID and index type here, or implement logic to find the best available GPU.
-	return NewFAISSGPUAccelerator(0, "IVFFlat")
-}
-
-// NewFAISSGPUAccelerator creates a new FAISS GPU accelerator
-func NewFAISSGPUAccelerator(deviceID int, indexType string) *FAISSAccelerator {
-	return &FAISSAccelerator{
-		deviceID:  deviceID,
-		indexType: indexType,
+// NewGPUAccelerator 创建新的GPU加速器实例
+func NewGPUAccelerator(deviceID int) *GPUAccelerator {
+	return &GPUAccelerator{
+		deviceID:    deviceID,
+		indexType:   "IVF",
+		batchSize:   1000,
+		streamCount: 4,
+		strategy:    NewComputeStrategySelector(),
 	}
 }
 
-// 优化 Initialize 方法，增加硬件能力检测和策略选择
-func (c *FAISSAccelerator) Initialize() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// GetType 返回加速器类型
+func (g *GPUAccelerator) GetType() string {
+	return AcceleratorGPU
+}
 
-	if c.initialized {
+// IsAvailable 检查GPU是否可用
+func (g *GPUAccelerator) IsAvailable() bool {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.available
+}
+
+// Initialize 初始化GPU加速器
+func (g *GPUAccelerator) Initialize() error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if g.initialized {
 		return nil
 	}
 
-	// 检测 CPU 硬件能力
-	caps := c.strategy.GetHardwareCapabilities()
-	logger.Info("GPU加速器初始化: 检测到 %d 核心, AVX2: %v, AVX512: %v, GPU: %v",
-		caps.CPUCores, caps.HasAVX2, caps.HasAVX512, caps.HasGPU)
-
-	c.strategy = NewComputeStrategySelector()
-	// 选择最佳计算策略
-	c.currentStrategy = c.strategy.SelectOptimalStrategy(c.dataSize, c.dimension) // 默认参数
-
-	// 根据检测到的硬件能力设置最佳策略
-	// 获取 GPU 设备属性
-	var props C.cudaDeviceProp
-	if C.cudaGetDeviceProperties(&props, C.int(c.deviceID)) == C.cudaSuccess {
-		// 根据 GPU 计算能力选择最佳策略
-		c.currentStrategy = StrategyGPU
-		logger.Info("GPU 加速器初始化: 设备 %d (%s), 计算能力 %d.%d",
-			c.deviceID, C.GoString(&props.name[0]), props.major, props.minor)
-	} else if caps.HasAVX512 {
-		logger.Info("启用 AVX512 加速")
-		c.currentStrategy = StrategyAVX512
-	} else if caps.HasAVX2 {
-		logger.Info("启用 AVX2 加速")
-		c.currentStrategy = StrategyAVX2
-	} else {
-		logger.Info("使用标准计算方法")
-		c.currentStrategy = StrategyStandard
+	// 检查GPU可用性
+	if err := g.checkGPUAvailability(); err != nil {
+		return fmt.Errorf("GPU不可用: %v", err)
 	}
 
-	if err := c.initFaissWrapper(); err != nil {
-		logger.Error("FAISS wrapper init failed: %v", err)
-		return err
+	// 设置GPU设备
+	if err := g.checkAndSetDevice(); err != nil {
+		return fmt.Errorf("设置GPU设备失败: %v", err)
 	}
 
-	logger.Info("GPU加速器初始化完成，使用策略: %v", c.currentStrategy)
-	c.initialized = true
-	c.available = true
+	// 初始化FAISS GPU资源
+	if err := g.initializeFAISSResources(); err != nil {
+		return fmt.Errorf("初始化FAISS GPU资源失败: %v", err)
+	}
+
+	// 初始化FAISS包装器
+	if err := g.initFaissWrapper(); err != nil {
+		return fmt.Errorf("初始化FAISS包装器失败: %v", err)
+	}
+
+	// 验证初始化
+	if err := g.validateInitialization(); err != nil {
+		return fmt.Errorf("GPU初始化验证失败: %v", err)
+	}
+
+	g.initialized = true
+	g.available = true
+	g.stats.LastUsed = time.Now()
+
+	logger.Info("GPU加速器初始化成功，设备ID: %d", g.deviceID)
 	return nil
 }
 
-func (c *FAISSAccelerator) Initialize_bat() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.initialized {
-		return nil
+// checkGPUAvailability 检查GPU可用性
+func (g *GPUAccelerator) checkGPUAvailability() error {
+	// 获取GPU设备数量
+	var deviceCount C.int
+	if C.cudaGetDeviceCount(&deviceCount) != C.cudaSuccess {
+		return fmt.Errorf("无法获取GPU设备数量")
 	}
 
-	// 检测 GPU 硬件能力
-	if err := c.checkAndSetDevice(); err != nil {
-		logger.Error("GPU device check/set failed: %v", err)
-		return err
+	g.deviceCount = int(deviceCount)
+	if g.deviceCount == 0 {
+		return fmt.Errorf("未检测到GPU设备")
 	}
 
-	// 初始化策略选择器
-	c.strategy = NewComputeStrategySelector()
-
-	// 获取 GPU 设备属性
-	var props C.cudaDeviceProp
-	if C.cudaGetDeviceProperties(&props, C.int(c.deviceID)) == C.cudaSuccess {
-		// 根据 GPU 计算能力选择最佳策略
-		c.currentStrategy = StrategyGPU
-		logger.Info("GPU 加速器初始化: 设备 %d (%s), 计算能力 %d.%d",
-			c.deviceID, C.GoString(&props.name[0]), props.major, props.minor)
-	} else {
-		logger.Warning("无法获取 GPU 属性，使用默认策略")
-		c.currentStrategy = StrategyGPU
+	// 检查设备ID是否有效
+	if g.deviceID >= g.deviceCount {
+		return fmt.Errorf("GPU设备ID %d 超出范围 [0, %d)", g.deviceID, g.deviceCount)
 	}
 
-	if err := c.initFaissWrapper(); err != nil {
-		logger.Error("FAISS wrapper init failed: %v", err)
-		return err
+	// 获取设备属性
+	var prop C.struct_cudaDeviceProp
+	if C.cudaGetDeviceProperties(unsafe.Pointer(&prop), C.int(g.deviceID)) != C.cudaSuccess {
+		return fmt.Errorf("无法获取GPU设备 %d 的属性", g.deviceID)
 	}
 
-	c.initialized = true
-	logger.Info("FAISS GPU Accelerator initialized: device %d, type %s", c.deviceID, c.indexType)
+	// 验证设备名称
+	deviceName := C.GoString(&prop.name[0])
+	if len(deviceName) == 0 {
+		return fmt.Errorf("GPU设备 %d 名称为空", g.deviceID)
+	}
+
+	// 检查计算能力
+	computeCapability := float64(prop.major) + float64(prop.minor)/10.0
+	if computeCapability < 3.0 {
+		return fmt.Errorf("GPU设备 %d 计算能力 %.1f 过低，需要至少 3.0", g.deviceID, computeCapability)
+	}
+
+	// 测试内存分配
+	if err := g.testDeviceMemoryAllocation(); err != nil {
+		return fmt.Errorf("GPU内存分配测试失败: %v", err)
+	}
+
+	// 检查设备排他性
+	if prop.computeMode == C.cudaComputeModeExclusive {
+		logger.Warning("GPU设备 %d 处于排他模式", g.deviceID)
+	}
+
 	return nil
 }
 
-// checkAndSetDevice checks GPU availability and sets the device
-func (c *FAISSAccelerator) checkAndSetDevice() error {
-	if err := c.checkGPUAvailability(); err != nil {
-		return err
+// testDeviceMemoryAllocation 测试设备内存分配
+func (g *GPUAccelerator) testDeviceMemoryAllocation() error {
+	// 尝试分配小块内存进行测试
+	testSize := 1024 * 1024 // 1MB
+	var ptr unsafe.Pointer
+
+	if C.cudaMalloc(&ptr, C.size_t(testSize)) != C.cudaSuccess {
+		return fmt.Errorf("无法分配GPU内存")
 	}
-	deviceCount := int(C.faiss_gpu_get_device_count())
-	if c.deviceID >= deviceCount {
-		return fmt.Errorf("GPU device ID %d out of range, total: %d", c.deviceID, deviceCount)
-	}
-	if C.faiss_gpu_set_device(C.int(c.deviceID)) != 0 {
-		return fmt.Errorf("Failed to set GPU device %d", c.deviceID)
+
+	// 立即释放测试内存
+	C.cudaFree(ptr)
+	return nil
+}
+
+// checkAndSetDevice 检查并设置GPU设备
+func (g *GPUAccelerator) checkAndSetDevice() error {
+	if C.cudaSetDevice(C.int(g.deviceID)) != C.cudaSuccess {
+		return fmt.Errorf("无法设置GPU设备 %d", g.deviceID)
 	}
 	return nil
 }
 
-// initFaissWrapper initializes the FAISS GPU wrapper
-func (c *FAISSAccelerator) initFaissWrapper() error {
-	c.gpuWrapper = unsafe.Pointer(C.faiss_gpu_wrapper_new(C.int(c.deviceID)))
-	if c.gpuWrapper == nil {
-		return fmt.Errorf("Failed to create FAISS GPU wrapper")
+// initializeFAISSResources 初始化FAISS GPU资源
+func (g *GPUAccelerator) initializeFAISSResources() error {
+	// 创建FAISS GPU资源
+	g.gpuResources = unsafe.Pointer(C.faiss_StandardGpuResources_new())
+	if g.gpuResources == nil {
+		return fmt.Errorf("无法创建FAISS GPU资源")
 	}
-	c.dimension = 512 // default, can be updated later
-	indexTypeC := C.CString(c.indexType)
+
+	// 设置FAISS GPU临时内存
+	tempMemSize := 512 * 1024 * 1024 // 512MB
+	if C.faiss_StandardGpuResources_setTempMemory((*C.StandardGpuResources)(g.gpuResources), C.size_t(tempMemSize)) != 0 {
+		return fmt.Errorf("设置FAISS GPU临时内存失败")
+	}
+
+	// 根据索引类型进行不同的初始化
+	switch g.indexType {
+	case "IVF":
+		// IVF索引特定初始化
+		logger.Info("初始化IVF索引")
+	case "HNSW":
+		// HNSW索引特定初始化
+		logger.Info("初始化HNSW索引")
+	case "Flat":
+		// Flat索引特定初始化
+		logger.Info("初始化Flat索引")
+	default:
+		logger.Warning("未知索引类型 %s，使用默认IVF", g.indexType)
+		g.indexType = "IVF"
+	}
+
+	return nil
+}
+
+// initFaissWrapper 初始化FAISS包装器
+func (g *GPUAccelerator) initFaissWrapper() error {
+	g.gpuWrapper = unsafe.Pointer(C.faiss_gpu_wrapper_new(C.int(g.deviceID)))
+	if g.gpuWrapper == nil {
+		return fmt.Errorf("无法创建FAISS GPU包装器")
+	}
+	g.dimension = 512 // 默认维度，可以后续更新
+	indexTypeC := C.CString(g.indexType)
 	defer C.free(unsafe.Pointer(indexTypeC))
-	if C.faiss_gpu_wrapper_init((*C.FaissGpuWrapper)(c.gpuWrapper), C.int(c.dimension), indexTypeC) != 0 {
-		return fmt.Errorf("FAISS GPU wrapper initialization failed")
+	if C.faiss_gpu_wrapper_init((*C.FaissGpuWrapper)(g.gpuWrapper), C.int(g.dimension), indexTypeC) != 0 {
+		return fmt.Errorf("FAISS GPU包装器初始化失败")
 	}
 	return nil
 }
 
-// 优化 BatchSearch 方法，增加错误恢复
-func (c *FAISSAccelerator) BatchSearch(queries [][]float64, database [][]float64, k int) ([][]AccelResult, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
+// validateInitialization 验证初始化
+func (g *GPUAccelerator) validateInitialization() error {
+	// 测试GPU内存分配
+	free, total, err := g.GetGPUMemoryInfo()
+	if err != nil {
+		return fmt.Errorf("获取GPU内存信息失败: %v", err)
+	}
+
+	g.memoryTotal = int64(total)
+	g.memoryUsed = int64(total - free)
+
+	// 测试GPU内存拷贝
+	testData := make([]float32, 1000)
+	for i := range testData {
+		testData[i] = float32(i)
+	}
+
+	var devicePtr unsafe.Pointer
+	if C.cudaMalloc(&devicePtr, C.size_t(len(testData)*4)) != C.cudaSuccess {
+		return fmt.Errorf("GPU内存分配测试失败")
+	}
+	defer C.cudaFree(devicePtr)
+
+	if C.cudaMemcpy(devicePtr, unsafe.Pointer(&testData[0]), C.size_t(len(testData)*4), C.cudaMemcpyHostToDevice) != C.cudaSuccess {
+		return fmt.Errorf("GPU内存拷贝测试失败")
+	}
+
+	// 测试FAISS索引功能（批量相似度计算）
+	if err := g.testFAISSIndexFunctionality(); err != nil {
+		return fmt.Errorf("FAISS索引功能测试失败: %v", err)
+	}
+
+	// 执行性能基准测试
+	if err := g.performBenchmark(); err != nil {
+		logger.Warning("性能基准测试失败: %v", err)
+		// 不将基准测试失败视为致命错误
+	}
+
+	return nil
+}
+
+// testFAISSIndexFunctionality 测试FAISS索引功能
+func (g *GPUAccelerator) testFAISSIndexFunctionality() error {
+	// 创建测试向量
+	testVectors := make([]float32, 10*128) // 10个128维向量
+	for i := range testVectors {
+		testVectors[i] = float32(i%100) / 100.0
+	}
+
+	// 测试向量添加
+	if C.faiss_gpu_wrapper_add_vectors((*C.FaissGpuWrapper)(g.gpuWrapper), 10, &testVectors[0]) != 0 {
+		return fmt.Errorf("FAISS向量添加测试失败")
+	}
+
+	// 测试搜索
+	queryVector := testVectors[:128] // 使用第一个向量作为查询
+	distances := make([]float32, 5)
+	labels := make([]int64, 5)
+
+	if C.faiss_gpu_wrapper_search((*C.FaissGpuWrapper)(g.gpuWrapper), 1, &queryVector[0], 5, &distances[0], &labels[0]) != 0 {
+		return fmt.Errorf("FAISS搜索测试失败")
+	}
+
+	return nil
+}
+
+// performBenchmark 执行性能基准测试
+func (g *GPUAccelerator) performBenchmark() error {
+	// 创建基准测试数据
+	numVectors := 1000
+	dimension := 128
+	testData := make([]float32, numVectors*dimension)
+	for i := range testData {
+		testData[i] = float32(i%100) / 100.0
+	}
+
+	// 测量向量添加性能
+	start := time.Now()
+	if C.faiss_gpu_wrapper_add_vectors((*C.FaissGpuWrapper)(g.gpuWrapper), C.int(numVectors), &testData[0]) != 0 {
+		return fmt.Errorf("基准测试向量添加失败")
+	}
+	addTime := time.Since(start)
+
+	// 测量搜索性能
+	queryVector := testData[:dimension]
+	distances := make([]float32, 10)
+	labels := make([]int64, 10)
+
+	start = time.Now()
+	for i := 0; i < 100; i++ { // 执行100次搜索
+		if C.faiss_gpu_wrapper_search((*C.FaissGpuWrapper)(g.gpuWrapper), 1, &queryVector[0], 10, &distances[0], &labels[0]) != 0 {
+			return fmt.Errorf("基准测试搜索失败")
+		}
+	}
+	searchTime := time.Since(start)
+
+	// 记录性能指标
+	g.performanceMetrics.ThroughputCurrent = float64(numVectors) / addTime.Seconds()
+	g.performanceMetrics.LatencyCurrent = searchTime / 100
+
+	logger.Info("GPU性能基准测试完成 - 添加吞吐量: %.2f vectors/sec, 平均搜索延迟: %v",
+		g.performanceMetrics.ThroughputCurrent, g.performanceMetrics.LatencyCurrent)
+
+	return nil
+}
+
+// GetGPUMemoryInfo 获取GPU内存信息
+func (g *GPUAccelerator) GetGPUMemoryInfo() (free uint64, total uint64, err error) {
+	var freeBytes, totalBytes C.size_t
+	if C.cudaMemGetInfo(&freeBytes, &totalBytes) != C.cudaSuccess {
+		return 0, 0, fmt.Errorf("获取GPU内存信息失败")
+	}
+	return uint64(freeBytes), uint64(totalBytes), nil
+}
+
+// SetMemoryFraction 设置FAISS GPU资源的内存使用比例
+func (g *GPUAccelerator) SetMemoryFraction(fraction float32) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if g.gpuResources == nil {
+		return fmt.Errorf("GPU资源未初始化")
+	}
+
+	if C.faiss_StandardGpuResources_setMemoryFraction((*C.StandardGpuResources)(g.gpuResources), C.float(fraction)) != 0 {
+		return fmt.Errorf("设置内存比例失败")
+	}
+
+	return nil
+}
+
+// ComputeDistance 计算单个查询向量与多个向量的距离
+func (g *GPUAccelerator) ComputeDistance(query []float64, vectors [][]float64) ([]float64, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	if !g.initialized {
+		return nil, fmt.Errorf("GPU加速器未初始化")
+	}
+
+	start := time.Now()
+	defer func() {
+		g.stats.ComputeTime += time.Since(start)
+		g.stats.TotalOperations++
+	}()
+
+	// 转换为float32并执行GPU计算
+	queryF32 := make([]float32, len(query))
+	for i, v := range query {
+		queryF32[i] = float32(v)
+	}
+
+	vectorsF32 := make([]float32, len(vectors)*len(vectors[0]))
+	for i, vec := range vectors {
+		for j, v := range vec {
+			vectorsF32[i*len(vec)+j] = float32(v)
+		}
+	}
+
+	// 执行GPU距离计算
+	distances := make([]float32, len(vectors))
+	labels := make([]int64, len(vectors))
+
+	if C.faiss_gpu_wrapper_search((*C.FaissGpuWrapper)(g.gpuWrapper), 1, &queryF32[0], C.int(len(vectors)), &distances[0], &labels[0]) != 0 {
+		g.stats.FailedOps++
+		return nil, fmt.Errorf("GPU距离计算失败")
+	}
+
+	// 转换回float64
+	result := make([]float64, len(distances))
+	for i, d := range distances {
+		result[i] = float64(d)
+	}
+
+	g.stats.SuccessfulOps++
+	return result, nil
+}
+
+// BatchComputeDistance 批量计算向量距离
+func (g *GPUAccelerator) BatchComputeDistance(queries [][]float64, vectors [][]float64) ([][]float64, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	if !g.initialized {
+		return nil, fmt.Errorf("GPU加速器未初始化")
+	}
+
+	start := time.Now()
+	defer func() {
+		g.stats.ComputeTime += time.Since(start)
+		g.stats.KernelLaunches++
+		g.stats.MemoryTransfers += int64(len(queries) * len(vectors))
+	}()
+
+	results := make([][]float64, len(queries))
+	for i, query := range queries {
+		dist, err := g.ComputeDistance(query, vectors)
+		if err != nil {
+			return nil, err
+		}
+		results[i] = dist
+	}
+
+	return results, nil
+}
+
+// BatchCosineSimilarity 批量计算余弦相似度
+func (g *GPUAccelerator) BatchCosineSimilarity(queries [][]float64, database [][]float64) ([][]float64, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	if !g.initialized {
+		return nil, fmt.Errorf("GPU加速器未初始化")
+	}
+
+	// 基本参数检查
+	if len(queries) == 0 || len(database) == 0 {
+		return nil, fmt.Errorf("查询向量或数据库向量为空")
+	}
+
+	start := time.Now()
+	defer func() {
+		g.stats.ComputeTime += time.Since(start)
+		g.stats.KernelLaunches++
+		g.stats.MemoryTransfers += int64(len(queries) * len(database))
+	}()
+
+	results := make([][]float64, len(queries))
+	for i, query := range queries {
+		results[i] = make([]float64, len(database))
+		for j, vector := range database {
+			// 计算余弦相似度
+			dotProduct := 0.0
+			normA := 0.0
+			normB := 0.0
+			for k := 0; k < len(query) && k < len(vector); k++ {
+				dotProduct += query[k] * vector[k]
+				normA += query[k] * query[k]
+				normB += vector[k] * vector[k]
+			}
+			if normA > 0 && normB > 0 {
+				results[i][j] = dotProduct / (math.Sqrt(normA) * math.Sqrt(normB))
+			} else {
+				results[i][j] = 0.0
+			}
+		}
+	}
+
+	return results, nil
+}
+
+// BatchSearch 批量搜索
+func (g *GPUAccelerator) BatchSearch(queries [][]float64, database [][]float64, k int) ([][]AccelResult, error) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
 
 	// 基本检查
-	if !c.initialized {
-		return nil, fmt.Errorf("GPU accelerator not initialized")
+	if !g.initialized {
+		return nil, fmt.Errorf("GPU加速器未初始化")
 	}
 
 	// 参数验证
 	if len(queries) == 0 || len(database) == 0 {
-		return nil, fmt.Errorf("queries or database vectors empty")
+		return nil, fmt.Errorf("查询向量或数据库向量为空")
 	}
 
 	qDim, err := checkVectorsDim(queries)
@@ -226,33 +570,31 @@ func (c *FAISSAccelerator) BatchSearch(queries [][]float64, database [][]float64
 	}
 
 	if qDim != dbDim {
-		return nil, fmt.Errorf("query dim %d != db dim %d", qDim, dbDim)
+		return nil, fmt.Errorf("查询向量维度 %d != 数据库向量维度 %d", qDim, dbDim)
 	}
 
 	if k <= 0 {
-		return nil, fmt.Errorf("k must be > 0")
+		return nil, fmt.Errorf("k必须大于0")
 	}
 
 	if k > len(database) {
 		k = len(database)
 	}
 
-	// 尝试 GPU 计算，如果失败则回退到 CPU
-	results, gpuErr := c.batchSearchGPU(queries, database, k)
+	// 尝试GPU计算，如果失败则回退到CPU
+	results, gpuErr := g.batchSearchGPU(queries, database, k)
 	if gpuErr != nil {
-		logger.Warning("GPU search failed, falling back to CPU: %v", gpuErr)
-
-		// 回退到 CPU 实现
-		return c.batchSearchCPUFallback(queries, database, k)
+		logger.Warning("GPU搜索失败，回退到CPU: %v", gpuErr)
+		return g.batchSearchCPUFallback(queries, database, k)
 	}
 
 	return results, nil
 }
 
-// 新增 GPU 批量搜索实现
-func (c *FAISSAccelerator) batchSearchGPU(queries [][]float64, database [][]float64, k int) ([][]AccelResult, error) {
+// batchSearchGPU GPU批量搜索实现
+func (g *GPUAccelerator) batchSearchGPU(queries [][]float64, database [][]float64, k int) ([][]AccelResult, error) {
 	// 选择最佳批处理大小
-	batchSize := c.SelectOptimalBatchSize(len(queries[0]), len(queries))
+	batchSize := g.SelectOptimalBatchSize(len(queries[0]), len(queries))
 
 	// 准备数据库向量
 	dbVectors := toFloat32Flat(database, len(database[0]))
@@ -273,9 +615,9 @@ func (c *FAISSAccelerator) batchSearchGPU(queries [][]float64, database [][]floa
 		distances := make([]float32, len(currentBatch)*k)
 		labels := make([]int64, len(currentBatch)*k)
 
-		// 执行 GPU 批量搜索
+		// 执行GPU批量搜索
 		if C.faiss_gpu_wrapper_batch_search(
-			(*C.FaissGpuWrapper)(c.gpuWrapper),
+			(*C.FaissGpuWrapper)(g.gpuWrapper),
 			C.int(len(database)),
 			(*C.float)(&dbVectors[0]),
 			C.int(len(currentBatch)),
@@ -284,7 +626,7 @@ func (c *FAISSAccelerator) batchSearchGPU(queries [][]float64, database [][]floa
 			(*C.float)(&distances[0]),
 			(*C.long)(&labels[0]),
 		) != 0 {
-			return nil, fmt.Errorf("GPU batch search failed")
+			return nil, fmt.Errorf("GPU批量搜索失败")
 		}
 
 		// 处理结果
@@ -298,6 +640,7 @@ func (c *FAISSAccelerator) batchSearchGPU(queries [][]float64, database [][]floa
 				queryResults[j] = AccelResult{
 					ID:         fmt.Sprintf("%d", label),
 					Similarity: similarity,
+					Distance:   float64(distance),
 					Metadata:   make(map[string]interface{}),
 				}
 			}
@@ -308,11 +651,11 @@ func (c *FAISSAccelerator) batchSearchGPU(queries [][]float64, database [][]floa
 	return results, nil
 }
 
-// 新增 CPU 回退实现
-func (c *FAISSAccelerator) batchSearchCPUFallback(queries [][]float64, database [][]float64, k int) ([][]AccelResult, error) {
+// batchSearchCPUFallback CPU回退实现
+func (g *GPUAccelerator) batchSearchCPUFallback(queries [][]float64, database [][]float64, k int) ([][]AccelResult, error) {
 	results := make([][]AccelResult, len(queries))
 
-	// 使用 CPU 并行计算
+	// 使用CPU并行计算
 	cpuCores := runtime.NumCPU()
 	var wg sync.WaitGroup
 
@@ -335,7 +678,7 @@ func (c *FAISSAccelerator) batchSearchCPUFallback(queries [][]float64, database 
 					distances[j] = dist
 				}
 
-				// 找出 k 个最近邻
+				// 找出k个最近邻
 				type idxDist struct {
 					idx  int
 					dist float64
@@ -351,7 +694,7 @@ func (c *FAISSAccelerator) batchSearchCPUFallback(queries [][]float64, database 
 					return allDists[i].dist < allDists[j].dist
 				})
 
-				// 取前 k 个
+				// 取前k个
 				queryResults := make([]AccelResult, k)
 				for j := 0; j < k; j++ {
 					idx := allDists[j].idx
@@ -360,6 +703,7 @@ func (c *FAISSAccelerator) batchSearchCPUFallback(queries [][]float64, database 
 					queryResults[j] = AccelResult{
 						ID:         fmt.Sprintf("%d", idx),
 						Similarity: similarity,
+						Distance:   dist,
 						Metadata:   make(map[string]interface{}),
 					}
 				}
@@ -373,619 +717,215 @@ func (c *FAISSAccelerator) batchSearchCPUFallback(queries [][]float64, database 
 	return results, nil
 }
 
-// BatchCosineSimilarity computes batch cosine similarity on GPU
-func (c *FAISSAccelerator) BatchCosineSimilarity(queries [][]float64, database [][]float64) ([][]float64, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if !c.initialized {
-		return nil, fmt.Errorf("GPU accelerator not initialized")
+// AccelerateSearch 加速搜索
+func (g *GPUAccelerator) AccelerateSearch(query []float64, database [][]float64, options entity.SearchOptions) ([]AccelResult, error) {
+	if !g.initialized {
+		return nil, fmt.Errorf("GPU加速器未初始化")
 	}
 
-	// 基本参数检查
-	if len(queries) == 0 || len(database) == 0 {
-		return nil, fmt.Errorf("queries or database vectors empty")
-	}
-
-	// 向量维度检查
-	dbDim, err := checkVectorsDim(database)
+	// 使用BatchSearch实现单个查询
+	results, err := g.BatchSearch([][]float64{query}, database, options.K)
 	if err != nil {
 		return nil, err
 	}
-	qDim, err := checkVectorsDim(queries)
-	if err != nil {
-		return nil, err
-	}
-	if dbDim != qDim {
-		return nil, fmt.Errorf("query dim %d != db dim %d", qDim, dbDim)
+
+	if len(results) == 0 {
+		return []AccelResult{}, nil
 	}
 
-	// 优化：分批处理大型查询集
-	batchSize := 1000 // 可根据 GPU 内存调整
-	results := make([][]float64, len(queries))
-
-	for batchStart := 0; batchStart < len(queries); batchStart += batchSize {
-		batchEnd := batchStart + batchSize
-		if batchEnd > len(queries) {
-			batchEnd = len(queries)
-		}
-
-		currentBatch := queries[batchStart:batchEnd]
-		batchVectors := toFloat32Flat(currentBatch, qDim)
-		dbVectors := toFloat32Flat(database, dbDim)
-
-		// 添加向量到 GPU 索引
-		if C.faiss_gpu_wrapper_add_vectors((*C.FaissGpuWrapper)(c.gpuWrapper), C.int(len(database)), (*C.float)(&dbVectors[0])) != 0 {
-			return nil, fmt.Errorf("add vectors to GPU index failed")
-		}
-
-		// 执行批量搜索
-		k := len(database)
-		distances := make([]float32, len(currentBatch)*k)
-		labels := make([]C.long, len(currentBatch)*k)
-
-		if C.faiss_gpu_wrapper_search((*C.FaissGpuWrapper)(c.gpuWrapper), C.int(len(currentBatch)), (*C.float)(&batchVectors[0]), C.int(k), (*C.float)(&distances[0]), (*C.long)(&labels[0])) != 0 {
-			return nil, fmt.Errorf("GPU search failed")
-		}
-
-		// 处理结果
-		for i := 0; i < len(currentBatch); i++ {
-			results[batchStart+i] = make([]float64, k)
-			for j := 0; j < k; j++ {
-				idx := i*k + j
-				labelIdx := int(labels[idx])
-				if labelIdx < k {
-					results[batchStart+i][labelIdx] = float64(distances[idx])
-				}
-			}
-		}
-	}
-
-	return results, nil
+	return results[0], nil
 }
 
-// 优化 Cleanup 方法
-func (c *FAISSAccelerator) Cleanup() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// GetCapabilities 获取硬件能力
+func (g *GPUAccelerator) GetCapabilities() HardwareCapabilities {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
 
-	if !c.initialized {
-		return nil
+	return HardwareCapabilities{
+		Type:              "gpu",
+		GPUDevices:        g.deviceCount,
+		MemorySize:        g.memoryTotal,
+		ComputeUnits:      g.deviceCount * 2048, // 估算
+		MaxBatchSize:      g.batchSize,
+		SupportedOps:      []string{"distance", "similarity", "search", "batch_search"},
+		PerformanceRating: 9.0,                      // GPU通常有很高的性能评级
+		Bandwidth:         500 * 1024 * 1024 * 1024, // 500GB/s估算
+		Latency:           time.Microsecond * 100,
+		PowerConsumption:  250.0, // 250W估算
+		SpecialFeatures:   []string{"CUDA", "FAISS", "parallel_processing"},
 	}
-
-	// 释放 FAISS 资源
-	if c.gpuWrapper != nil {
-		C.faiss_gpu_wrapper_free((*C.FaissGpuWrapper)(c.gpuWrapper))
-		c.gpuWrapper = nil
-	}
-
-	// 清理 CUDA 上下文
-	if C.cudaDeviceReset() != C.cudaSuccess {
-		logger.Warning("CUDA device reset failed")
-	}
-
-	c.initialized = false
-	logger.Info("FAISS GPU Accelerator resources cleaned up")
-	return nil
 }
 
-// 新增 ResetGPUDevice 方法，用于在出现错误时重置设备
-func (c *FAISSAccelerator) ResetGPUDevice() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// GetStats 获取硬件统计信息
+func (g *GPUAccelerator) GetStats() HardwareStats {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
 
-	if !c.initialized {
-		return nil
+	// 获取GPU内存利用率
+	free, total, err := g.GetGPUMemoryInfo()
+	memoryUtilization := 0.0
+	if err == nil && total > 0 {
+		memoryUtilization = float64(total-free) / float64(total)
 	}
 
-	// 释放现有资源
-	if c.gpuWrapper != nil {
-		C.faiss_gpu_wrapper_free((*C.FaissGpuWrapper)(c.gpuWrapper))
-		c.gpuWrapper = nil
+	// 计算错误率
+	errorRate := 0.0
+	if g.stats.TotalOperations > 0 {
+		errorRate = float64(g.stats.FailedOps) / float64(g.stats.TotalOperations)
 	}
 
-	// 重置设备
-	if C.cudaDeviceReset() != C.cudaSuccess {
-		return fmt.Errorf("CUDA device reset failed")
+	// 计算平均延迟
+	averageLatency := time.Duration(0)
+	if g.stats.SuccessfulOps > 0 {
+		averageLatency = g.stats.ComputeTime / time.Duration(g.stats.SuccessfulOps)
 	}
 
-	// 重新初始化
-	if err := c.checkAndSetDevice(); err != nil {
-		return fmt.Errorf("重新初始化设备失败: %w", err)
+	// 计算吞吐量
+	throughput := 0.0
+	if g.stats.ComputeTime > 0 {
+		throughput = float64(g.stats.SuccessfulOps) / g.stats.ComputeTime.Seconds()
 	}
 
-	if err := c.initFaissWrapper(); err != nil {
-		return fmt.Errorf("重新初始化 FAISS 包装器失败: %w", err)
+	return HardwareStats{
+		TotalOperations:   g.stats.TotalOperations,
+		SuccessfulOps:     g.stats.SuccessfulOps,
+		FailedOps:         g.stats.FailedOps,
+		AverageLatency:    averageLatency,
+		Throughput:        throughput,
+		MemoryUtilization: memoryUtilization,
+		Temperature:       0.0, // 需要特殊API获取
+		PowerConsumption:  0.0, // 需要特殊API获取
+		ErrorRate:         errorRate,
+		LastUsed:          g.stats.LastUsed,
 	}
-
-	logger.Info("GPU 设备 %d 已重置并重新初始化", c.deviceID)
-	return nil
 }
 
-// checkGPUAvailability 检查 GPU 可用性
-func (c *FAISSAccelerator) checkGPUAvailability() error {
-	logger.Info("检查 GPU 设备 %d 的可用性...", c.deviceID)
+// GetPerformanceMetrics 获取性能指标
+func (g *GPUAccelerator) GetPerformanceMetrics() PerformanceMetrics {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
 
-	// 1. 首先检查 CUDA 驱动是否可用
-	var driverVersion C.int
-	if C.cudaDriverGetVersion(&driverVersion) != C.cudaSuccess {
-		return fmt.Errorf("CUDA 驱动不可用或未正确安装")
-	}
-	logger.Info("CUDA 驱动版本: %d", int(driverVersion))
-
-	// 2. 检查 CUDA Runtime 版本
-	var runtimeVersion C.int
-	if C.cudaRuntimeGetVersion(&runtimeVersion) != C.cudaSuccess {
-		return fmt.Errorf("CUDA Runtime 不可用")
-	}
-	logger.Info("CUDA Runtime 版本: %d", int(runtimeVersion))
-
-	// 3. 检查驱动和运行时版本兼容性
-	if driverVersion < runtimeVersion {
-		return fmt.Errorf("CUDA 驱动版本 (%d) 低于运行时版本 (%d)，请更新驱动",
-			int(driverVersion), int(runtimeVersion))
-	}
-
-	// 4. 获取 GPU 设备数量
-	var deviceCount C.int
-	if C.cudaGetDeviceCount(&deviceCount) != C.cudaSuccess {
-		return fmt.Errorf("无法获取 GPU 设备数量，可能 CUDA 驱动未正确安装")
-	}
-
-	if deviceCount == 0 {
-		return fmt.Errorf("系统中未检测到 CUDA 兼容的 GPU 设备")
-	}
-
-	if c.deviceID >= int(deviceCount) {
-		return fmt.Errorf("GPU 设备 ID %d 超出范围，可用设备数量: %d", c.deviceID, deviceCount)
-	}
-
-	// 5. 检查指定设备的详细属性
-	var props C.cudaDeviceProp
-	if C.cudaGetDeviceProperties(&props, C.int(c.deviceID)) != C.cudaSuccess {
-		return fmt.Errorf("无法获取 GPU 设备 %d 的属性", c.deviceID)
-	}
-
-	// 6. 验证设备名称（确保设备存在且可访问）
-	deviceName := C.GoString(&props.name[0])
-	logger.Info("GPU 设备 %d 名称: %s", c.deviceID, deviceName)
-
-	// 7. 检查计算能力（FAISS 需要 3.0 以上）
-	if props.major < 3 {
-		return fmt.Errorf("GPU 设备 %d (%s) 计算能力不足，需要 3.0 以上，当前: %d.%d",
-			c.deviceID, deviceName, props.major, props.minor)
-	}
-
-	// 8. 检查内存大小（至少需要 1GB）
-	if props.totalGlobalMem < 1024*1024*1024 {
-		return fmt.Errorf("GPU 设备 %d (%s) 内存不足，需要至少 1GB，当前: %d MB",
-			c.deviceID, deviceName, props.totalGlobalMem/(1024*1024))
-	}
-
-	// 9. 检查设备是否支持统一内存
-	if props.unifiedAddressing == 0 {
-		logger.Warning("GPU 设备 %d 不支持统一内存寻址，性能可能受影响", c.deviceID)
-	}
-
-	// 10. 尝试在设备上分配少量内存进行可用性测试
-	if err := c.testDeviceMemoryAllocation(); err != nil {
-		return fmt.Errorf("GPU 设备 %d 内存分配测试失败: %w", c.deviceID, err)
-	}
-
-	// 11. 检查设备是否被其他进程占用
-	if err := c.checkDeviceExclusivity(); err != nil {
-		logger.Warning("GPU 设备 %d 可能被其他进程使用: %v", c.deviceID, err)
-	}
-
-	logger.Info("GPU 设备 %d (%s) 可用性检查通过 - 计算能力: %d.%d, 内存: %d MB",
-		c.deviceID, deviceName, props.major, props.minor, props.totalGlobalMem/(1024*1024))
-	return c.checkGPUAvailability()
+	return g.performanceMetrics
 }
 
-// testDeviceMemoryAllocation 测试设备内存分配
-func (c *FAISSAccelerator) testDeviceMemoryAllocation() error {
-	// 设置当前设备
-	if C.cudaSetDevice(C.int(c.deviceID)) != C.cudaSuccess {
-		return fmt.Errorf("无法设置 GPU 设备 %d", c.deviceID)
+// AutoTune 自动调优
+func (g *GPUAccelerator) AutoTune(workload WorkloadProfile) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if !g.initialized {
+		return fmt.Errorf("GPU加速器未初始化")
 	}
 
-	// 尝试分配 1MB 测试内存
-	var testPtr unsafe.Pointer
-	testSize := C.size_t(1024 * 1024) // 1MB
-	if C.cudaMalloc(&testPtr, testSize) != C.cudaSuccess {
-		return fmt.Errorf("内存分配失败")
-	}
-	defer C.cudaFree(testPtr)
-
-	// 测试内存读写
-	testData := make([]byte, 1024)
-	for i := range testData {
-		testData[i] = byte(i % 256)
-	}
-
-	// Host to Device
-	if C.cudaMemcpy(testPtr, unsafe.Pointer(&testData[0]), C.size_t(len(testData)), C.cudaMemcpyHostToDevice) != C.cudaSuccess {
-		return fmt.Errorf("Host到Device内存拷贝失败")
-	}
-
-	// Device to Host
-	readData := make([]byte, len(testData))
-	if C.cudaMemcpy(unsafe.Pointer(&readData[0]), testPtr, C.size_t(len(testData)), C.cudaMemcpyDeviceToHost) != C.cudaSuccess {
-		return fmt.Errorf("Device到Host内存拷贝失败")
-	}
-
-	// 验证数据一致性
-	for i := range testData {
-		if testData[i] != readData[i] {
-			return fmt.Errorf("内存读写验证失败")
-		}
-	}
-
-	return nil
-}
-
-// checkDeviceExclusivity 检查设备独占性
-func (c *FAISSAccelerator) checkDeviceExclusivity() error {
-	// 尝试创建 CUDA 上下文来检查设备是否可用
-	var context C.CUcontext
-	if C.cuCtxCreate(&context, 0, C.CUdevice(c.deviceID)) != C.CUDA_SUCCESS {
-		return fmt.Errorf("无法创建 CUDA 上下文，设备可能被占用")
-	}
-	defer C.cuCtxDestroy(context)
-
-	return nil
-}
-
-// initializeCUDAContext 初始化 CUDA 上下文
-func (c *FAISSAccelerator) initializeCUDAContext() error {
-	logger.Info("初始化 CUDA 上下文...")
-
-	// 实际的 CUDA 上下文初始化（需要 CGO）
-	// 设置当前设备
-	if C.cudaSetDevice(C.int(c.deviceID)) != C.cudaSuccess {
-		return fmt.Errorf("无法设置 GPU 设备 %d", c.deviceID)
-	}
-
-	// 创建 CUDA 上下文
-	var context C.CUcontext
-	if C.cuCtxCreate(&context, 0, C.CUdevice(c.deviceID)) != C.CUDA_SUCCESS {
-		return fmt.Errorf("无法创建 CUDA 上下文")
-	}
-
-	// 设置上下文为当前
-	if C.cuCtxSetCurrent(context) != C.CUDA_SUCCESS {
-		return fmt.Errorf("无法设置 CUDA 上下文为当前")
-	}
-
-	logger.Info("CUDA 上下文初始化完成")
-	return nil
-}
-
-// setupMemoryPool 设置 GPU 内存池
-func (c *FAISSAccelerator) setupMemoryPool() error {
-	logger.Info("设置 GPU 内存池...")
-
-	// 实际的内存池设置（需要 CGO）
-	// 获取 GPU 内存信息
-	var free, total C.size_t
-	if C.cudaMemGetInfo(&free, &total) != C.cudaSuccess {
-		return fmt.Errorf("无法获取 GPU 内存信息")
-	}
-
-	logger.Info("GPU 内存信息: 可用 %d MB, 总计 %d MB",
-		free/(1024*1024), total/(1024*1024))
-
-	// 计算内存池大小（使用 80% 的可用内存）
-	poolSize := int64(free) * 8 / 10
-
-	// 创建内存池
-	var memPool C.cudaMemPool_t
-	var poolProps C.cudaMemPoolProps
-	poolProps.allocType = C.cudaMemAllocationTypePinned
-	poolProps.handleTypes = C.cudaMemHandleTypeNone
-	//poolProps.location.type = C.cudaMemLocationTypeDevice
-	poolProps.location = C.cudaMemLocationTypeDevice
-	poolProps.location.id = C.int(c.deviceID)
-
-	if C.cudaMemPoolCreate(&memPool, &poolProps) != C.cudaSuccess {
-		return fmt.Errorf("无法创建 GPU 内存池")
-	}
-
-	// 设置内存池阈值
-	threshold := C.uint64_t(poolSize)
-	if C.cudaMemPoolSetAttribute(memPool, C.cudaMemPoolAttrReleaseThreshold, &threshold) != C.cudaSuccess {
-		logger.Warning("设置内存池释放阈值失败")
-	}
-
-	// 启用内存池
-	if C.cudaDeviceSetMemPool(C.int(c.deviceID), memPool) != C.cudaSuccess {
-		logger.Warning("启用内存池失败")
-	}
-
-	logger.Info("GPU 内存池设置完成")
-	return nil
-}
-
-// initializeFAISSResources 初始化 FAISS GPU 资源
-func (c *FAISSAccelerator) initializeFAISSResources() error {
-	logger.Info("初始化 FAISS GPU 资源...")
-
-	// 实际的 FAISS GPU 资源初始化（需要 FAISS C++ 绑定）
-	// 1. 创建 GPU 资源对象
-	gpuRes := C.faiss_StandardGpuResources_new()
-	if gpuRes == nil {
-		return fmt.Errorf("无法创建 FAISS GPU 资源")
-	}
-	c.gpuWrapper = gpuRes
-
-	// 2. 设置设备
-	if C.faiss_StandardGpuResources_setDefaultDevice(gpuRes, C.int(c.deviceID)) != 0 {
-		return fmt.Errorf("无法设置 FAISS GPU 设备")
-	}
-
-	// 3. 设置内存管理策略
-	if C.faiss_StandardGpuResources_setMemoryFraction(gpuRes, 0.8) != 0 {
-		logger.Warning("设置 FAISS GPU 内存比例失败")
-	}
-
-	// 4. 设置临时内存大小
-	tempMemSize := C.size_t(512 * 1024 * 1024) // 512MB
-	if C.faiss_StandardGpuResources_setTempMemory(gpuRes, tempMemSize) != 0 {
-		logger.Warning("设置 FAISS GPU 临时内存失败")
-	}
-
-	// 根据索引类型进行不同的初始化
-	switch c.indexType {
-	case "IVF":
-		logger.Info("初始化 IVF GPU 索引配置")
-		// IVF 索引特定配置
-		// 设置 nprobe 参数
-		// 配置量化器
-
-	case "HNSW":
-		logger.Info("初始化 HNSW GPU 索引配置")
-		// HNSW 主要在 CPU 上运行，GPU 用于距离计算加速
-		// 设置连接数和搜索参数
-
-	case "Flat":
-		logger.Info("初始化 Flat GPU 索引配置")
-		// Flat 索引配置
-		// 设置距离度量类型
-
+	// 根据工作负载调整参数
+	switch workload.Type {
+	case "low_latency":
+		g.batchSize = 100
+		g.streamCount = 8
+	case "high_throughput":
+		g.batchSize = 2000
+		g.streamCount = 16
+	case "balanced":
+		g.batchSize = 1000
+		g.streamCount = 8
+	case "memory_efficient":
+		g.batchSize = 500
+		g.streamCount = 4
 	default:
-		return fmt.Errorf("不支持的索引类型: %s", c.indexType)
+		return fmt.Errorf("未知的工作负载类型: %s", workload.Type)
 	}
 
-	logger.Info("FAISS GPU 资源初始化完成")
-	return nil
-}
-
-// validateInitialization 验证初始化结果
-func (c *FAISSAccelerator) validateInitialization() error {
-	logger.Info("验证 GPU 初始化结果...")
-
-	// 1. 测试 GPU 内存分配
-	var testPtr unsafe.Pointer
-	testSize := C.size_t(1024 * 1024) // 1MB
-	if C.cudaMalloc(&testPtr, testSize) != C.cudaSuccess {
-		return fmt.Errorf("GPU 内存分配测试失败")
-	}
-	defer C.cudaFree(testPtr)
-
-	// 2. 测试内存拷贝
-	testData := make([]byte, 1024)
-	if C.cudaMemcpy(testPtr, unsafe.Pointer(&testData[0]), testSize, C.cudaMemcpyHostToDevice) != C.cudaSuccess {
-		return fmt.Errorf("GPU 内存拷贝测试失败")
-	}
-
-	// 3. 测试 FAISS 索引功能
-	// 创建测试向量
-	testVectors := [][]float64{
-		{1.0, 0.0, 0.0, 0.0},
-		{0.0, 1.0, 0.0, 0.0},
-		{0.0, 0.0, 1.0, 0.0},
-		{0.0, 0.0, 0.0, 1.0},
-	}
-
-	// 测试批量相似度计算
-	if _, err := c.BatchCosineSimilarity(testVectors[:1], testVectors); err != nil {
-		return fmt.Errorf("FAISS 功能测试失败: %w", err)
-	}
-
-	// 4. 性能基准测试
-	if err := c.performanceBenchmark(); err != nil {
-		logger.Warning("性能基准测试失败: %v", err)
-	}
-
-	logger.Info("GPU 初始化验证通过")
-	return nil
-}
-
-// 优化 performanceBenchmark 方法
-func (c *FAISSAccelerator) performanceBenchmark() error {
-	logger.Info("执行 GPU 性能基准测试...")
-
-	// 测试不同维度和数据量
-	dimensions := []int{128, 256, 512, 1024}
-	dataSizes := []int{1000, 10000, 100000}
-
-	results := make(map[string]interface{})
-
-	for _, dim := range dimensions {
-		for _, size := range dataSizes {
-			// 跳过太大的测试组合
-			if dim*size > 100000000 {
-				continue
-			}
-
-			// 创建测试数据
-			testDB := make([][]float64, size)
-			for i := 0; i < size; i++ {
-				testDB[i] = make([]float64, dim)
-				for j := 0; j < dim; j++ {
-					testDB[i][j] = float64(i*dim+j) / float64(dim*size)
-				}
-			}
-
-			queries := testDB[:10] // 使用前10个向量作为查询
-
-			// 测试批量搜索性能
-			startTime := time.Now()
-			_, err := c.BatchSearch(queries, testDB, 10)
-			duration := time.Since(startTime)
-
-			testKey := fmt.Sprintf("dim_%d_size_%d", dim, size)
-			results[testKey] = map[string]interface{}{
-				"dimension":      dim,
-				"database_size":  size,
-				"duration_ms":    duration.Milliseconds(),
-				"vectors_per_ms": float64(len(queries)) / (float64(duration.Milliseconds()) / 1000),
-				"error":          err != nil,
-			}
-
-			logger.Info("测试 %s: %d ms", testKey, duration.Milliseconds())
+	// 根据向量维度调整
+	if workload.VectorDimension > 0 {
+		g.dimension = workload.VectorDimension
+		if workload.VectorDimension > 1024 {
+			g.batchSize = g.batchSize / 2 // 高维向量减少批处理大小
 		}
 	}
 
-	// 保存结果
-	c.benchmarkResults = results
-
-	logger.Info("性能基准测试完成")
-	return nil
-}
-
-// 新增 GetBenchmarkResults 方法
-func (c *FAISSAccelerator) GetBenchmarkResults() map[string]interface{} {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	if c.benchmarkResults == nil {
-		return map[string]interface{}{"error": "未执行基准测试"}
-	}
-
-	return c.benchmarkResults
-}
-
-// GetGPUMemoryInfo 获取 GPU 内存使用信息
-func (c *FAISSAccelerator) GetGPUMemoryInfo() (free, total uint64, err error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	if !c.initialized {
-		return 0, 0, fmt.Errorf("GPU 加速器未初始化")
-	}
-
-	// 实际的内存信息获取（需要 CGO）
-	var freeBytes, totalBytes C.size_t
-	if C.cudaMemGetInfo(&freeBytes, &totalBytes) != C.cudaSuccess {
-		return 0, 0, fmt.Errorf("无法获取 GPU 内存信息")
-	}
-	return uint64(freeBytes), uint64(totalBytes), nil
-}
-
-// SetMemoryFraction 设置 GPU 内存使用比例
-func (c *FAISSAccelerator) SetMemoryFraction(fraction float64) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if !c.initialized {
-		return fmt.Errorf("GPU 加速器未初始化")
-	}
-
-	if fraction <= 0 || fraction > 1 {
-		return fmt.Errorf("内存比例必须在 (0, 1] 范围内")
-	}
-
-	// 设置 FAISS GPU 资源的内存使用比例（需要 CGO）
-	if c.gpuWrapper != nil {
-		gpuRes := (*C.faiss_StandardGpuResources)(c.gpuWrapper)
-		if C.faiss_StandardGpuResources_setMemoryFraction(gpuRes, C.float(fraction)) != 0 {
-			return fmt.Errorf("设置内存比例失败")
+	// 根据数据集大小调整
+	if workload.BatchSize > 0 {
+		if workload.BatchSize > 1000000 { // 大数据集
+			g.streamCount = g.streamCount * 2
 		}
 	}
 
-	logger.Info("GPU 内存使用比例设置为: %.2f", fraction)
+	logger.Info("GPU加速器自动调优完成 - 批处理大小: %d, 流数量: %d", g.batchSize, g.streamCount)
 	return nil
 }
 
-// AccelerateSearch 加速搜索（UnifiedAccelerator接口方法）
-func (c *FAISSAccelerator) AccelerateSearch(query []float64, results []AccelResult, options entity.SearchOptions) ([]AccelResult, error) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	if !c.initialized {
-		return nil, fmt.Errorf("GPU accelerator not initialized")
-	}
-
-	// 简单实现：直接返回输入的结果
-	// 在实际应用中，这里可以进行进一步的优化处理
-	return results, nil
-}
-
-// Shutdown 关闭GPU加速器（UnifiedAccelerator接口方法）
+// Shutdown 关闭GPU加速器
 func (g *GPUAccelerator) Shutdown() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
 	if !g.initialized {
-		return nil // 已经关闭
+		return nil
 	}
 
-	// 模拟GPU资源清理
+	// 清理FAISS包装器
+	if g.gpuWrapper != nil {
+		C.faiss_gpu_wrapper_free((*C.FaissGpuWrapper)(g.gpuWrapper))
+		g.gpuWrapper = nil
+	}
+
+	// 清理FAISS GPU资源
+	if g.gpuResources != nil {
+		C.faiss_StandardGpuResources_free((*C.StandardGpuResources)(g.gpuResources))
+		g.gpuResources = nil
+	}
+
+	// 重置CUDA设备
+	C.cudaDeviceReset()
+
 	g.initialized = false
-	g.memoryUsed = 0
+	g.available = false
 
+	logger.Info("GPU加速器已关闭")
 	return nil
 }
 
-// Start 启动GPU加速器（UnifiedAccelerator接口方法）
-func (g *GPUAccelerator) Start() error {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	if g.initialized {
-		return nil // 已经启动
+// SelectOptimalBatchSize 选择最佳批处理大小
+func (g *GPUAccelerator) SelectOptimalBatchSize(vectorDim, numQueries int) int {
+	// 基于可用GPU内存和向量维度计算最佳批处理大小
+	free, _, err := g.GetGPUMemoryInfo()
+	if err != nil {
+		return g.batchSize // 使用默认值
 	}
 
-	// 模拟GPU初始化
-	g.initialized = true
-	g.memoryUsed = 0
+	// 估算每个向量需要的内存（float32）
+	bytesPerVector := vectorDim * 4
+	// 为安全起见，只使用50%的可用内存
+	availableMemory := int64(free) / 2
 
-	return nil
+	// 计算可以处理的最大向量数
+	maxVectors := int(availableMemory / int64(bytesPerVector))
+
+	// 选择合适的批处理大小
+	optimalBatch := maxVectors / 4 // 保守估计
+	if optimalBatch < 100 {
+		optimalBatch = 100
+	} else if optimalBatch > 2000 {
+		optimalBatch = 2000
+	}
+
+	// 不超过查询数量
+	if optimalBatch > numQueries {
+		optimalBatch = numQueries
+	}
+
+	return optimalBatch
 }
 
-func (g *GPUAccelerator) Close() error {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	if !g.initialized {
-		return nil // 已经停止
+// toFloat32Flat 将float64二维数组转换为float32一维数组
+func toFloat32Flat(vectors [][]float64, dimension int) []float32 {
+	result := make([]float32, len(vectors)*dimension)
+	for i, vec := range vectors {
+		for j, val := range vec {
+			if j < dimension {
+				result[i*dimension+j] = float32(val)
+			}
+		}
 	}
-
-	// 模拟GPU停止
-	g.initialized = false
-
-	return nil
-}
-
-// GetPerformanceMetrics 获取性能指标（UnifiedAccelerator接口方法）
-func (g *GPUAccelerator) GetPerformanceMetrics() PerformanceMetrics {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
-
-	return PerformanceMetrics{
-		LatencyCurrent:    time.Microsecond * 100,
-		LatencyMin:        time.Microsecond * 50,
-		LatencyMax:        time.Microsecond * 200,
-		LatencyP50:        100.0,
-		LatencyP95:        180.0,
-		LatencyP99:        195.0,
-		ThroughputCurrent: 1000.0,
-		ThroughputPeak:    1500.0,
-		CacheHitRate:      0.85,
-		ResourceUtilization: map[string]float64{
-			"gpu_memory": float64(g.memoryUsed) / float64(g.memoryTotal),
-			"compute":    0.75,
-			"bandwidth":  0.60,
-		},
-	}
+	return result
 }

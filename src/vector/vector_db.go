@@ -356,9 +356,13 @@ func (db *VectorDB) GetGPUStats() map[string]interface{} {
 	if db.hardwareManager != nil {
 		config := db.hardwareManager.GetConfig()
 		if config != nil {
+			deviceID := 0
+			if len(config.GPU.DeviceIDs) > 0 {
+				deviceID = config.GPU.DeviceIDs[0]
+			}
 			gpuHardwareInfo["config"] = map[string]interface{}{
 				"enabled":      config.GPU.Enable,
-				"device_id":    config.GPU.DeviceID,
+				"device_id":    deviceID,
 				"memory_limit": config.GPU.MemoryLimit,
 				"batch_size":   config.GPU.BatchSize,
 			}
@@ -914,7 +918,11 @@ func (db *VectorDB) MonitorGPUHealth() {
 						if db.hardwareManager != nil {
 							config := db.hardwareManager.GetConfig()
 							if config != nil && config.GPU.Enable {
-								if err := db.InitializeGPUAccelerator(config.GPU.DeviceID, "Flat"); err == nil {
+							deviceID := 0
+							if len(config.GPU.DeviceIDs) > 0 {
+								deviceID = config.GPU.DeviceIDs[0]
+							}
+							if err := db.InitializeGPUAccelerator(deviceID, "Flat"); err == nil {
 									logger.Info("GPU加速已恢复")
 									db.HardwareCaps.HasGPU = true
 									failureCount = 0

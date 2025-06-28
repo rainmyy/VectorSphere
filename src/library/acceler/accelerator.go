@@ -3,6 +3,7 @@ package acceler
 import (
 	"fmt"
 	"sync"
+	"unsafe"
 )
 
 // Accelerator GPU 加速器接口
@@ -24,6 +25,12 @@ type FAISSAccelerator struct {
 	strategy        *ComputeStrategySelector
 	currentStrategy ComputeStrategy
 	dataSize        int
+	// GPU特定字段
+	operationCount int64
+	errorCount     int64
+	batchSize      int
+	streamCount    int
+	gpuWrapper     unsafe.Pointer // 用于存储C结构体指针
 }
 
 // AccelResult 搜索结果结构体
@@ -35,31 +42,6 @@ type AccelResult struct {
 	DocIds     []string
 	Vector     []float64
 	Index      int
-}
-
-// checkVectorsDim checks if all vectors have the same dimension and returns it
-func checkVectorsDim(vectors [][]float64) (int, error) {
-	if len(vectors) == 0 {
-		return 0, fmt.Errorf("empty vectors")
-	}
-	dim := len(vectors[0])
-	for i, v := range vectors {
-		if len(v) != dim {
-			return 0, fmt.Errorf("vector %d dimension mismatch: %d vs %d", i, len(v), dim)
-		}
-	}
-	return dim, nil
-}
-
-// toFloat32Flat flattens [][]float64 to []float32
-func toFloat32Flat(vectors [][]float64, dim int) []float32 {
-	flat := make([]float32, len(vectors)*dim)
-	for i, v := range vectors {
-		for j, val := range v {
-			flat[i*dim+j] = float32(val)
-		}
-	}
-	return flat
 }
 
 // CheckGPUAvailability 检查GPU是否可用

@@ -25,6 +25,16 @@ type HardwareManager struct {
 	recoveryManager *RecoveryManager
 }
 
+// GPUConfig GPU配置
+type GPUConfig struct {
+	Enable      bool    `json:"enable" yaml:"enable"`
+	DeviceIDs   []int   `json:"device_ids" yaml:"device_ids"`
+	MemoryLimit int64   `json:"memory_limit" yaml:"memory_limit"`
+	BatchSize   int     `json:"batch_size" yaml:"batch_size"`
+	Precision   string  `json:"precision" yaml:"precision"`
+	IndexType   string  `json:"index_type" yaml:"index_type"`
+}
+
 // HardwareConfig 硬件配置结构体
 type HardwareConfig struct {
 	CPU  CPUConfig  `json:"cpu" yaml:"cpu"`
@@ -156,8 +166,9 @@ func (hm *HardwareManager) CreateAcceleratorFromConfig(acceleratorType string, c
 		if !ok {
 			return nil, fmt.Errorf("配置类型不匹配 GPUConfig")
 		}
-		// 假设我们只使用第一个DeviceID来创建实例，或者需要更复杂的逻辑来处理多个GPU
-		return NewGPUAccelerator(gpuCfg.DeviceIDs[0], gpuCfg.IndexType, gpuCfg.BatchSize), nil
+		// 使用第一个DeviceID来创建GPU加速器实例
+		gpuAcc := NewGPUAccelerator(gpuCfg.DeviceIDs[0])
+		return gpuAcc, nil
 	case AcceleratorFPGA:
 		fpgaCfg, ok := cfg.(FPGAConfig)
 		if !ok {
@@ -254,21 +265,14 @@ func (hm *HardwareManager) registerAllAccelerators() {
 				fmt.Printf("警告: 注册CPU加速器失败: %v\n", err)
 			}
 
-			// 更新CPU配置
-			cpuConfig := map[string]interface{}{
-				"index_type": hm.config.CPU.IndexType,
-				"device_id":  hm.config.CPU.DeviceID,
-			}
-			if err := cpuAcc.UpdateConfig(cpuConfig); err != nil {
-				fmt.Printf("警告: 更新CPU加速器配置失败: %v\n", err)
-			}
+			// CPU配置通过构造函数设置，无需额外更新
 		}
 	}
 
 	// 注册GPU加速器
 	if hm.config.GPU.Enable {
 		for _, deviceID := range hm.config.GPU.DeviceIDs {
-			gpuAcc := NewGPUAccelerator(deviceID, hm.config.GPU.IndexType, hm.config.GPU.BatchSize)
+			gpuAcc := NewGPUAccelerator(deviceID)
 			if gpuAcc == nil {
 				fmt.Printf("警告: 创建GPU加速器失败，设备ID: %d\n", deviceID)
 				continue
@@ -282,16 +286,7 @@ func (hm *HardwareManager) registerAllAccelerators() {
 					continue
 				}
 
-				// 更新GPU配置
-				gpuConfig := map[string]interface{}{
-					"device_id":    deviceID,
-					"memory_limit": hm.config.GPU.MemoryLimit,
-					"batch_size":   hm.config.GPU.BatchSize,
-					"precision":    hm.config.GPU.Precision,
-				}
-				if err := gpuAcc.UpdateConfig(gpuConfig); err != nil {
-					fmt.Printf("警告: 更新GPU加速器配置失败: %v\n", err)
-				}
+				// GPU配置通过构造函数和AutoTune方法设置
 
 				hm.defaultType = name // 优先使用GPU
 				break                 // 只注册第一个可用的GPU

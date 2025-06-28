@@ -1061,3 +1061,17 @@ func EuclideanDistanceSquaredDefault(v1, v2 []float64) float64 {
 	}
 	return dist
 }
+
+// checkVectorsDim 检查向量维度一致性
+func checkVectorsDim(vectors [][]float64) (int, error) {
+	if len(vectors) == 0 {
+		return 0, fmt.Errorf("向量数组为空")
+	}
+	dim := len(vectors[0])
+	for i, v := range vectors {
+		if len(v) != dim {
+			return 0, fmt.Errorf("向量 %d 维度不匹配: %d vs %d", i, len(v), dim)
+		}
+	}
+	return dim, nil
+}
