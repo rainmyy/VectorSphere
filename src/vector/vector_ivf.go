@@ -154,6 +154,7 @@ func (db *VectorDB) BuildEnhancedIVFIndex(config *IVFConfig) error {
 		}
 		config = &IVFConfig{
 			NumClusters:        numClustersDefault,
+			Nprobe:             0,
 			TrainingRatio:      0.1, // 默认采样10%的数据
 			RebalanceThreshold: 1000,
 			UsePQCompression:   true,

@@ -53,12 +53,30 @@ func GetDefaultHardwareConfig() *HardwareConfig {
 			IndexType:   "IVF,Flat",
 		},
 		FPGA: FPGAConfig{
-			Enable:        false,
-			DeviceIDs:     []int{0},
-			BitstreamPath: "path/to/bitstream.bin",
-			BufferSize:    1024 * 1024 * 1024, // 1GB
-			ClockFreq:     200,
-			PipelineDepth: 8,
+			Enable:         false,
+			DeviceIDs:      []int{0},
+			ClockFrequency: 200,
+			PipelineDepth:  8,
+			Parallelism: FPGAParallelismConfig{
+				ComputeUnits:   4,
+				VectorWidth:    128,
+				UnrollFactor:   4,
+				PipelineStages: 8,
+			},
+			Optimization: FPGAOptimizationConfig{
+				ResourceSharing:    true,
+				MemoryOptimization: true,
+				TimingOptimization: true,
+				PowerOptimization:  false,
+				AreaOptimization:   false,
+			},
+			Reconfiguration: FPGAReconfigurationConfig{
+				Enable:                 false,
+				PartialReconfiguration: false,
+				ReconfigurationTime:    100 * time.Millisecond,
+				BitstreamCache:         true,
+				HotSwap:                false,
+			},
 		},
 		PMem: PMemConfig{
 			Enable:     false,
@@ -285,9 +303,13 @@ func (hm *HardwareManager) registerAllAccelerators() {
 	if hm.config.FPGA.Enable {
 		for _, deviceID := range hm.config.FPGA.DeviceIDs {
 			config := &FPGAConfig{
-				DeviceID:      deviceID,
-				BitstreamPath: hm.config.FPGA.BitstreamPath,
-				BufferSize:    hm.config.FPGA.BufferSize,
+				Enable:         true,
+				DeviceIDs:      []int{deviceID},
+				ClockFrequency: hm.config.FPGA.ClockFrequency,
+				PipelineDepth:  hm.config.FPGA.PipelineDepth,
+				Parallelism:    hm.config.FPGA.Parallelism,
+				Optimization:   hm.config.FPGA.Optimization,
+				Reconfiguration: hm.config.FPGA.Reconfiguration,
 			}
 			fpgaAcc := NewFPGAAccelerator(deviceID, config)
 			if fpgaAcc.IsAvailable() {

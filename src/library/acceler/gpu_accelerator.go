@@ -880,9 +880,6 @@ func (c *FAISSAccelerator) GetGPUMemoryInfo() (free, total uint64, err error) {
 		return 0, 0, fmt.Errorf("无法获取 GPU 内存信息")
 	}
 	return uint64(freeBytes), uint64(totalBytes), nil
-
-	// 模拟返回值
-	//return 8 * 1024 * 1024 * 1024, 12 * 1024 * 1024 * 1024, nil // 8GB free, 12GB total
 }
 
 // SetMemoryFraction 设置 GPU 内存使用比例

@@ -3389,19 +3389,6 @@ func (db *VectorDB) UpdateIndexIncrementally(id string, vector []float64) error 
 		queryVecForDist = acceler.NormalizeVector(vector) // 如果没有预计算，则动态计算
 	}
 
-	//for i, cluster := range db.clusters {
-	//	// 假设簇中心也是归一化的，或者在KMeans时已处理
-	//	dist, err := algorithm.EuclideanDistanceSquared(queryVecForDist, cluster.Centroid) // 或者使用余弦相似度
-	//	if err != nil {
-	//		log.Warning("计算到簇 %d 中心的距离失败: %v", i, err)
-	//		continue
-	//	}
-	//	if dist < minDist {
-	//		minDist = dist
-	//		nearestClusterIndex = i
-	//	}
-	//}
-
 	// 使用自适应策略查找最近质心
 	selectedStrategy := db.GetSelectStrategy()
 	centroids := make([]entity.Point, len(db.clusters))
