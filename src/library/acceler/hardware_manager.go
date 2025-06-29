@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -1106,4 +1107,113 @@ func (hm *HardwareManager) SafeGPUBatchSearch(queries [][]float64, database [][]
 	}
 
 	return result, lastErr
+}
+
+// SetDetectionInterval 设置硬件检测间隔
+func (hm *HardwareManager) SetDetectionInterval(interval time.Duration) {
+	if hm.healthMonitor != nil {
+		hm.healthMonitor.SetDetectionInterval(interval)
+	}
+}
+
+// SetGPUMemoryThreshold 设置GPU内存阈值
+func (hm *HardwareManager) SetGPUMemoryThreshold(threshold float64) {
+	hm.mutex.Lock()
+	defer hm.mutex.Unlock()
+	
+	if hm.config != nil {
+		// 更新配置中的GPU内存限制
+		if threshold > 0 && threshold <= 1.0 {
+			// 假设threshold是百分比，转换为实际字节数
+			if hm.config.GPU.MemoryLimit > 0 {
+				hm.config.GPU.MemoryLimit = int64(float64(hm.config.GPU.MemoryLimit) * threshold)
+			}
+		}
+	}
+}
+
+// SetCPUUsageThreshold 设置CPU使用率阈值
+func (hm *HardwareManager) SetCPUUsageThreshold(threshold float64) {
+	hm.mutex.Lock()
+	defer hm.mutex.Unlock()
+	
+	if hm.config != nil && threshold > 0 && threshold <= 1.0 {
+		// 更新CPU配置中的线程数，基于阈值调整
+		if threshold < 0.8 {
+			// 如果阈值较低，减少线程数
+			maxThreads := runtime.NumCPU()
+			hm.config.CPU.Threads = int(float64(maxThreads) * threshold)
+			if hm.config.CPU.Threads < 1 {
+				hm.config.CPU.Threads = 1
+			}
+		}
+	}
+}
+
+// SetAutoFallback 设置自动回退功能
+func (hm *HardwareManager) SetAutoFallback(enabled bool) {
+	if hm.recoveryManager != nil {
+		hm.recoveryManager.SetAutoFallback(enabled)
+	}
+}
+
+// CheckGPUHealth 检查GPU健康状态
+func (hm *HardwareManager) CheckGPUHealth() error {
+	gpuAccel := hm.GetGPUAccelerator()
+	if gpuAccel == nil {
+		return fmt.Errorf("GPU加速器不可用")
+	}
+	
+	if !gpuAccel.IsAvailable() {
+		return fmt.Errorf("GPU加速器状态异常")
+	}
+	
+	// 检查GPU统计信息
+	stats := gpuAccel.GetStats()
+	if stats.ErrorCount > 0 {
+		return fmt.Errorf("GPU存在错误，错误计数: %d", stats.ErrorCount)
+	}
+	
+	return nil
+}
+
+// DisableGPU 禁用GPU加速
+func (hm *HardwareManager) DisableGPU() error {
+	hm.mutex.Lock()
+	defer hm.mutex.Unlock()
+	
+	if hm.config != nil {
+		hm.config.GPU.Enable = false
+	}
+	
+	// 关闭GPU加速器
+	gpuAccel := hm.GetGPUAccelerator()
+	if gpuAccel != nil {
+		if err := gpuAccel.Shutdown(); err != nil {
+			return fmt.Errorf("关闭GPU加速器失败: %v", err)
+		}
+	}
+	
+	return nil
+}
+
+// RecoverGPU 恢复GPU加速
+func (hm *HardwareManager) RecoverGPU() error {
+	hm.mutex.Lock()
+	defer hm.mutex.Unlock()
+	
+	if hm.config != nil {
+		hm.config.GPU.Enable = true
+	}
+	
+	// 重新注册GPU加速器
+	return hm.ReRegisterAccelerator(AcceleratorGPU)
+}
+
+// IsGPUEnabled 检查GPU是否启用
+func (hm *HardwareManager) IsGPUEnabled() bool {
+	hm.mutex.RLock()
+	defer hm.mutex.RUnlock()
+	
+	return hm.config != nil && hm.config.GPU.Enable
 }

@@ -348,3 +348,13 @@ func (rm *RecoveryManager) GetConfig() *RecoveryConfig {
 
 	return rm.config
 }
+
+// SetAutoFallback 设置自动回退功能
+func (rm *RecoveryManager) SetAutoFallback(enabled bool) {
+	rm.mutex.Lock()
+	defer rm.mutex.Unlock()
+
+	if rm.config != nil {
+		rm.config.AutoRecoveryEnabled = enabled
+	}
+}

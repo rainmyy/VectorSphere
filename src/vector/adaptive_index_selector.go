@@ -879,3 +879,29 @@ func (ais *AdaptiveIndexSelector) calculateContextSimilarity(ctx SearchContext, 
 
 	return math.Max(0, math.Min(1, similarity))
 }
+
+// UpdateConfig 更新自适应索引选择器配置
+func (ais *AdaptiveIndexSelector) UpdateConfig(config *AdaptiveConfig) {
+	ais.mu.Lock()
+	defer ais.mu.Unlock()
+
+	if config == nil {
+		return
+	}
+
+	// 更新窗口大小
+	if config.WindowSize > 0 {
+		ais.windowSize = config.WindowSize
+		// 如果当前窗口超过新大小，截断
+		if len(ais.performanceWindow) > ais.windowSize {
+			ais.performanceWindow = ais.performanceWindow[len(ais.performanceWindow)-ais.windowSize:]
+		}
+	}
+
+	// 更新优化间隔
+	if config.OptimizationInterval > 0 {
+		ais.optimizationInterval = time.Duration(config.OptimizationInterval) * time.Second
+	}
+
+	logger.Info("自适应索引选择器配置已更新: 窗口大小=%d, 优化间隔=%v", ais.windowSize, ais.optimizationInterval)
+}

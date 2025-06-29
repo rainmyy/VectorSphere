@@ -82,8 +82,8 @@ func (g *GPUAccelerator) Initialize() error {
 	return nil
 }
 
-// checkGPUAvailability 模拟检查GPU可用性
-func (g *GPUAccelerator) checkGPUAvailability() error {
+// CheckGPUAvailability 模拟检查GPU可用性
+func (g *GPUAccelerator) CheckGPUAvailability() error {
 	// 模拟GPU检查，总是成功
 	return nil
 }

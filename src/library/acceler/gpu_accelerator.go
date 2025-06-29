@@ -102,7 +102,7 @@ func (g *GPUAccelerator) Initialize() error {
 	}
 
 	// 检查GPU可用性
-	if err := g.checkGPUAvailability(); err != nil {
+	if err := g.CheckGPUAvailability(); err != nil {
 		return fmt.Errorf("GPU不可用: %v", err)
 	}
 
@@ -134,8 +134,8 @@ func (g *GPUAccelerator) Initialize() error {
 	return nil
 }
 
-// checkGPUAvailability 检查GPU可用性
-func (g *GPUAccelerator) checkGPUAvailability() error {
+// CheckGPUAvailability 检查GPU可用性
+func (g *GPUAccelerator) CheckGPUAvailability() error {
 	// 获取GPU设备数量
 	var deviceCount C.int
 	if C.cudaGetDeviceCount(&deviceCount) != C.cudaSuccess {

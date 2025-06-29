@@ -293,26 +293,29 @@ func (db *VectorDB) GetGPUAccelerationStatus() string {
 		return "不可用 - 硬件管理器未初始化"
 	}
 
-	// 检查GPU是否可用
-	if !db.HardwareCaps.HasGPU {
-		return "不可用 - 硬件不支持"
+	// 统一通过硬件管理器检查GPU状态
+	config := db.hardwareManager.GetConfig()
+	if config == nil || !config.GPU.Enable {
+		return "不可用 - GPU未启用"
 	}
 
 	// 通过硬件管理器获取GPU加速器
-	gpuAccelerator, ok := db.hardwareManager.GetAccelerator("GPU")
+	gpuAccelerator, ok := db.hardwareManager.GetAccelerator(acceler.AcceleratorGPU)
 	if !ok {
-		return "不可用 - 未初始化"
+		return "不可用 - GPU加速器未初始化"
 	}
 
 	// 检查GPU加速器是否可用
-	if gpuAccel, ok := gpuAccelerator.(*acceler.FAISSAccelerator); ok {
-		if err := gpuAccel.CheckGPUAvailability(); err != nil {
-			return fmt.Sprintf("不可用 - %v", err)
-		}
-		return "可用 - 正常运行"
+	if !gpuAccelerator.IsAvailable() {
+		return "不可用 - GPU加速器不可用"
 	}
 
-	return "未知状态"
+	// 进行GPU健康检查
+	if err := db.hardwareManager.CheckGPUHealth(); err != nil {
+		return fmt.Sprintf("不可用 - %v", err)
+	}
+
+	return "可用 - 正常运行"
 }
 
 // GetGPUStats 获取GPU加速相关的详细统计信息
@@ -345,10 +348,18 @@ func (db *VectorDB) GetGPUStats() map[string]interface{} {
 		gpuErrorRate = float64(db.stats.GPUErrors) / float64(totalGPUOperations) * 100
 	}
 
-	// 获取GPU硬件信息
-	gpuAccelerator := db.hardwareManager.GetGPUAccelerator()
+	// 统一通过硬件管理器获取GPU信息
+	var gpuAccelerator acceler.UnifiedAccelerator
+	var gpuAvailable bool
+	if db.hardwareManager != nil {
+		if acc, exists := db.hardwareManager.GetAccelerator(acceler.AcceleratorGPU); exists {
+			gpuAccelerator = acc
+			gpuAvailable = acc.IsAvailable()
+		}
+	}
+
 	gpuHardwareInfo := map[string]interface{}{
-		"available":   db.HardwareCaps.HasGPU,
+		"available":   gpuAvailable,
 		"initialized": gpuAccelerator != nil,
 	}
 
@@ -432,7 +443,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 
 	// 4. GPU加速判断 - 新增GPU优先策略
 	gpuAccelerator := db.hardwareManager.GetGPUAccelerator()
-	if db.HardwareCaps.HasGPU && gpuAccelerator != nil && vectorCount > 10000 {
+	if db.hardwareManager != nil && db.hardwareManager.IsGPUEnabled() && gpuAccelerator != nil && vectorCount > 10000 {
 		// 对于大规模数据，优先考虑IVF-HNSW混合索引
 		if vectorCount > 100000 && ivfHnswIndexReady {
 			return StrategyIVFHNSW
@@ -516,7 +527,7 @@ func (db *VectorDB) SelectOptimalIndexStrategy(ctx SearchContext) IndexStrategy 
 	}
 
 	// 9. 硬件能力判断
-	if db.HardwareCaps.HasGPU && vectorCount > 50000 {
+	if db.hardwareManager != nil && db.hardwareManager.IsGPUEnabled() && vectorCount > 50000 {
 		if ivfHnswIndexReady {
 			return StrategyIVFHNSW // IVF-HNSW混合索引
 		}
@@ -872,8 +883,15 @@ func (db *VectorDB) MonitorGPUHealth() {
 	if db.hardwareManager == nil {
 		return
 	}
-	gpuAccelerator := db.hardwareManager.GetGPUAccelerator()
-	if !db.HardwareCaps.HasGPU || gpuAccelerator == nil {
+
+	// 统一通过硬件管理器检查GPU状态
+	config := db.hardwareManager.GetConfig()
+	if config == nil || !config.GPU.Enable {
+		return
+	}
+
+	gpuAccelerator, exists := db.hardwareManager.GetAccelerator(acceler.AcceleratorGPU)
+	if !exists || !gpuAccelerator.IsAvailable() {
 		return
 	}
 
@@ -897,7 +915,7 @@ func (db *VectorDB) MonitorGPUHealth() {
 		select {
 		case <-healthCheckTicker.C:
 			// 执行GPU健康检查
-			if err := db.CheckGPUStatus(); err != nil {
+			if err := db.hardwareManager.CheckGPUHealth(); err != nil {
 				failureCount++
 				logger.Warning("GPU健康检查失败(%d/%d): %v", failureCount, maxFailures, err)
 
@@ -906,30 +924,20 @@ func (db *VectorDB) MonitorGPUHealth() {
 				db.stats.GPUErrors++
 				db.statsMu.Unlock()
 
-				// 连续失败达到阈值，禁用GPU加速
+				// 连续失败达到阈值，通过硬件管理器禁用GPU
 				if failureCount >= maxFailures {
 					logger.Error("GPU连续%d次健康检查失败，自动禁用GPU加速", maxFailures)
-					db.HardwareCaps.HasGPU = false
+					db.hardwareManager.DisableGPU()
 
 					// 尝试重新初始化GPU加速器
 					go func() {
 						time.Sleep(5 * time.Minute) // 等待5分钟后尝试恢复
 						logger.Info("尝试恢复GPU加速...")
-						if db.hardwareManager != nil {
-							config := db.hardwareManager.GetConfig()
-							if config != nil && config.GPU.Enable {
-								deviceID := 0
-								if len(config.GPU.DeviceIDs) > 0 {
-									deviceID = config.GPU.DeviceIDs[0]
-								}
-								if err := db.InitializeGPUAccelerator(deviceID, "Flat"); err == nil {
-									logger.Info("GPU加速已恢复")
-									db.HardwareCaps.HasGPU = true
-									failureCount = 0
-								} else {
-									logger.Warning("GPU加速恢复失败: %v", err)
-								}
-							}
+						if err := db.hardwareManager.RecoverGPU(); err == nil {
+							logger.Info("GPU加速已恢复")
+							failureCount = 0
+						} else {
+							logger.Warning("GPU加速恢复失败: %v", err)
 						}
 					}()
 				}
@@ -954,8 +962,13 @@ func (db *VectorDB) MonitorGPUHealth() {
 
 // reportGPUPerformanceMetrics 报告GPU性能指标
 func (db *VectorDB) reportGPUPerformanceMetrics() {
-	gpuAccelerator := db.hardwareManager.GetGPUAccelerator()
-	if !db.HardwareCaps.HasGPU || gpuAccelerator == nil {
+	// 统一通过硬件管理器检查GPU状态
+	if db.hardwareManager == nil {
+		return
+	}
+
+	gpuAccelerator, exists := db.hardwareManager.GetAccelerator(acceler.AcceleratorGPU)
+	if !exists || !gpuAccelerator.IsAvailable() {
 		return
 	}
 
@@ -991,7 +1004,7 @@ func (db *VectorDB) reportGPUPerformanceMetrics() {
 
 	// 获取GPU内存信息
 	memoryInfo := "未知"
-	if gpuAccel, ok := gpuAccelerator.(*acceler.FAISSAccelerator); ok {
+	if gpuAccel, ok := gpuAccelerator.(*acceler.GPUAccelerator); ok {
 		free, total, err := gpuAccel.GetGPUMemoryInfo()
 		if err == nil {
 			memUsagePercent := float64(total-free) / float64(total) * 100
@@ -1019,7 +1032,7 @@ func (db *VectorDB) InitializeGPUAccelerator(deviceID int, indexType string) err
 	db.mu.Lock()
 	defer db.mu.Unlock()
 
-	if !db.HardwareCaps.HasGPU {
+	if db.hardwareManager == nil || !db.hardwareManager.IsGPUEnabled() {
 		return fmt.Errorf("系统不支持GPU加速")
 	}
 
@@ -1055,7 +1068,7 @@ func (db *VectorDB) InitializeGPUAccelerator(deviceID int, indexType string) err
 
 	// 如果硬件管理器未提供GPU加速器，则直接创建
 	if gpuAccel == nil {
-		gpuAccel = acceler.NewGPUAccelerator(deviceID, indexType)
+		gpuAccel = acceler.NewGPUAccelerator(deviceID)
 		logger.Info("直接创建FAISS GPU加速器")
 	}
 
@@ -1097,7 +1110,7 @@ func (db *VectorDB) CheckGPUStatus() error {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
-	if !db.HardwareCaps.HasGPU {
+	if db.hardwareManager == nil || !db.hardwareManager.IsGPUEnabled() {
 		return fmt.Errorf("系统未检测到GPU支持")
 	}
 
@@ -1111,7 +1124,7 @@ func (db *VectorDB) CheckGPUStatus() error {
 	}
 
 	// 如果是FAISS GPU加速器，进行详细检查
-	if gpuAccel, ok := gpuAccelerator.(*acceler.FAISSAccelerator); ok {
+	if gpuAccel, ok := gpuAccelerator.(*acceler.GPUAccelerator); ok {
 		// 检查GPU可用性
 		if err := gpuAccel.CheckGPUAvailability(); err != nil {
 			// 记录详细错误信息
@@ -1749,22 +1762,28 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 
 	// 如果支持GPU，初始化GPU加速器
 	if db.HardwareCaps.HasGPU && db.hardwareManager != nil {
-		gpuAccel := acceler.NewFAISSAccelerator(0, "Flat")
+		gpuAccel := acceler.NewGPUAccelerator(0)
 
 		// 先检查GPU可用性，再进行初始化
 		if err := gpuAccel.CheckGPUAvailability(); err != nil {
 			logger.Warning("GPU可用性检查失败: %v", err)
-			db.HardwareCaps.HasGPU = false
+			if db.hardwareManager != nil {
+				db.hardwareManager.DisableGPU()
+			}
 		} else {
 			// GPU可用性检查通过，进行初始化
 			if err := gpuAccel.Initialize(); err != nil {
 				logger.Warning("GPU加速器初始化失败: %v", err)
-				db.HardwareCaps.HasGPU = false
+				if db.hardwareManager != nil {
+					db.hardwareManager.DisableGPU()
+				}
 			} else {
 				// 注册到硬件管理器
 				if err := db.hardwareManager.RegisterGPUAccelerator(gpuAccel); err != nil {
 					logger.Warning("注册GPU加速器失败: %v", err)
-					db.HardwareCaps.HasGPU = false
+					if db.hardwareManager != nil {
+						db.hardwareManager.DisableGPU()
+					}
 				}
 			}
 		}
@@ -1782,6 +1801,24 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 	}
 
 	db.InitializeAdaptiveSelector()
+
+	// 尝试加载自适应配置文件
+	configPath := "config/adaptive_config.yaml"
+	if err := db.LoadConfigFromFile(configPath); err != nil {
+		logger.Info("未找到配置文件 %s，使用默认配置: %v", configPath, err)
+		// 使用默认配置
+		db.config = GetDefaultAdaptiveConfig()
+	} else {
+		logger.Info("成功加载配置文件: %s", configPath)
+	}
+
+	// 应用自适应配置
+	db.ApplyAdaptiveConfig()
+
+	// 如果启用了配置热重载，启动配置重载器
+	if db.config.EnableHotReload {
+		go db.StartConfigReloader()
+	}
 
 	// 设置全局距离计算器，供其他组件使用
 	acceler.SetGlobalDistanceCalculator(distanceCalculator)
@@ -2266,7 +2303,7 @@ func (db *VectorDB) SetComputeStrategy(strategy acceler.ComputeStrategy) error {
 			return fmt.Errorf("当前硬件不支持AVX512指令集")
 		}
 	case acceler.StrategyGPU:
-		if !db.HardwareCaps.HasGPU {
+		if db.hardwareManager == nil || !db.hardwareManager.IsGPUEnabled() {
 			return fmt.Errorf("当前系统不支持GPU加速")
 		}
 	default:
@@ -4045,7 +4082,7 @@ func (db *VectorDB) EnableGPUAcceleration(gpuID int, indexType string) error {
 	}
 
 	// 创建 GPU 加速器
-	gpuAccel := acceler.NewFAISSAccelerator(gpuID, indexType)
+	gpuAccel := acceler.NewGPUAccelerator(gpuID)
 
 	// 初始化 GPU 加速器
 	err := gpuAccel.Initialize()
@@ -5565,7 +5602,7 @@ func (db *VectorDB) CheckIndexHealth() map[string]bool {
 	health["traditional_ivf"] = db.indexed && len(db.clusters) > 0
 	health["hnsw"] = db.useHNSWIndex && db.indexed && db.hnsw != nil
 	health["pq"] = db.usePQCompression && db.pqCodebook != nil
-	health["gpu"] = db.HardwareCaps.HasGPU && gpuAccelerator != nil
+	health["gpu"] = db.hardwareManager != nil && db.hardwareManager.IsGPUEnabled() && gpuAccelerator != nil
 
 	return health
 }
@@ -5698,12 +5735,12 @@ func (db *VectorDB) shouldUseGPUBatchSearch(queryCount, dbSize int) bool {
 	// 获取GPU加速器
 	gpuAccelerator := db.hardwareManager.GetGPUAccelerator()
 	// 检查GPU是否可用
-	if !db.HardwareCaps.HasGPU || gpuAccelerator == nil {
+	if db.hardwareManager == nil || !db.hardwareManager.IsGPUEnabled() || gpuAccelerator == nil {
 		return false
 	}
 
 	// 检查GPU加速器是否已初始化
-	if gpuAccel, ok := gpuAccelerator.(*acceler.FAISSAccelerator); ok {
+	if gpuAccel, ok := gpuAccelerator.(*acceler.GPUAccelerator); ok {
 		if err := gpuAccel.CheckGPUAvailability(); err != nil {
 			logger.Warning("GPU不可用，回退到CPU搜索: %v", err)
 			return false

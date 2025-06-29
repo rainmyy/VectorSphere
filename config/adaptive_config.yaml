@@ -1,0 +1,67 @@
+# VectorSphere 自适应配置文件
+# 配置文件路径和热重载设置
+config_file_path: "config/adaptive_config.yaml"
+enable_hot_reload: true
+hot_reload_interval: 30  # 秒
+
+# 自适应开关配置
+adaptive_switches:
+  enable_adaptive: true           # 总开关
+  enable_hardware_adaptive: true  # 硬件自适应开关
+  enable_index_adaptive: true     # 索引自适应开关
+  enable_strategy_adaptive: true  # 策略自适应开关
+
+# 硬件自适应参数
+hardware_adaptive:
+  detection_interval: 60          # 硬件检测间隔（秒）
+  gpu_memory_threshold: 0.8       # GPU内存使用阈值
+  cpu_usage_threshold: 0.9        # CPU使用率阈值
+  enable_auto_fallback: true      # 自动回退开关
+
+# 索引自适应参数
+index_adaptive:
+  window_size: 100                # 性能窗口大小
+  optimization_interval: 300      # 优化间隔（秒）
+  min_samples: 10                 # 最小样本数
+
+# 策略自适应参数
+strategy_adaptive:
+  performance_weight: 0.6         # 性能权重
+  quality_weight: 0.4             # 质量权重
+  context_similarity_threshold: 0.7  # 上下文相似度阈值
+
+# 数据规模阈值
+data_thresholds:
+  small_data_threshold: 1000      # 小数据集阈值
+  medium_data_threshold: 10000    # 中等数据集阈值
+  large_data_threshold: 100000    # 大数据集阈值
+
+# 向量维度阈值
+dimension_thresholds:
+  low_dimension: 128              # 低维度阈值
+  medium_dimension: 512           # 中等维度阈值
+  high_dimension: 1024            # 高维度阈值
+
+# 质量等级配置
+quality_levels:
+  high_quality: 0.9               # 高质量阈值
+  medium_quality: 0.7             # 中等质量阈值
+  low_quality: 0.5                # 低质量阈值
+
+# 性能等级配置
+performance_levels:
+  high_performance: 0.1           # 高性能阈值（秒）
+  medium_performance: 0.5         # 中等性能阈值（秒）
+  low_performance: 1.0            # 低性能阈值（秒）
+
+# 缓存配置
+cache_config:
+  enable_cache: true              # 启用缓存
+  cache_size: 1000                # 缓存大小
+  cache_ttl: 3600                 # 缓存TTL（秒）
+
+# 日志配置
+logging:
+  enable_performance_logging: true  # 启用性能日志
+  log_level: "info"               # 日志级别
+  log_file: "logs/adaptive.log"   # 日志文件路径

@@ -332,3 +332,8 @@ func (hm *HealthMonitor) SetMonitorInterval(interval time.Duration) {
 
 	hm.monitorInterval = interval
 }
+
+// SetDetectionInterval 设置检测间隔（与SetMonitorInterval相同）
+func (hm *HealthMonitor) SetDetectionInterval(interval time.Duration) {
+	hm.SetMonitorInterval(interval)
+}

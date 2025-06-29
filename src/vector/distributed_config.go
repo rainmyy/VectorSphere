@@ -748,7 +748,8 @@ func (db *VectorDB) applyHardwareConfig(config *HardwareAccelerationConfig) erro
 	if config.GPU.Enable && db.hardwareManager != nil {
 		gpuAccelerator := db.hardwareManager.GetGPUAccelerator()
 		if gpuAccelerator != nil {
-			db.HardwareCaps.HasGPU = true
+			// GPU加速器已通过hardware_manager管理，无需直接设置HardwareCaps
+			logger.Info("GPU加速器配置已应用")
 		}
 	}
 	return nil
@@ -776,8 +777,7 @@ func (db *VectorDB) ApplyHardwareManager(hardwareManager *acceler.HardwareManage
 			return fmt.Errorf("注册GPU加速器失败: %v", err)
 		}
 
-		// 更新硬件能力信息
-		db.HardwareCaps.HasGPU = true
+		// 更新硬件能力信息（GPU状态由hardware_manager管理）
 		db.HardwareCaps.GPUDevices = len(config.GPU.DeviceIDs)
 
 		// 记录GPU配置信息

@@ -73,6 +73,7 @@ type HardwareStats struct {
 	TotalOperations   int64         `json:"total_operations"`
 	SuccessfulOps     int64         `json:"successful_ops"`
 	FailedOps         int64         `json:"failed_ops"`
+	ErrorCount        int64         `json:"error_count"`        // 错误计数
 	AverageLatency    time.Duration `json:"average_latency"`
 	Throughput        float64       `json:"throughput"`         // 操作/秒
 	MemoryUtilization float64       `json:"memory_utilization"` // 内存利用率
