@@ -1,5 +1,4 @@
 //go:build !gpu
-// +build !gpu
 
 package acceler
 
@@ -13,43 +12,6 @@ import (
 	"sync"
 	"time"
 )
-
-// GPUAccelerator GPU加速器模拟实现（非GPU环境）
-type GPUAccelerator struct {
-	deviceID        int
-	initialized     bool
-	available       bool
-	mu              sync.RWMutex
-	indexType       string
-	dimension       int
-	strategy        *ComputeStrategySelector
-	currentStrategy ComputeStrategy
-	dataSize        int
-	// GPU特定字段（模拟）
-	operationCount int64
-	errorCount     int64
-	batchSize      int
-	streamCount    int
-
-	// 统计信息
-	stats struct {
-		TotalOperations int64
-		SuccessfulOps   int64
-		FailedOps       int64
-		ComputeTime     time.Duration
-		KernelLaunches  int64
-		MemoryTransfers int64
-		LastUsed        time.Time
-	}
-
-	// 性能指标
-	performanceMetrics PerformanceMetrics
-
-	// 内存管理（模拟）
-	memoryUsed  int64
-	memoryTotal int64
-	deviceCount int
-}
 
 // NewGPUAccelerator 创建新的GPU加速器实例（模拟）
 func NewGPUAccelerator(deviceID int) *GPUAccelerator {
@@ -592,5 +554,3 @@ func (g *GPUAccelerator) simulateGPUCompute(query, target []float32, metric stri
 		return float32(math.Sqrt(float64(dist)))
 	}
 }
-
-// 注意：checkVectorsDim 和 EuclideanDistanceSquaredDefault 函数已在 accelerator.go 中定义

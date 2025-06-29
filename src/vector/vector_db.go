@@ -918,11 +918,11 @@ func (db *VectorDB) MonitorGPUHealth() {
 						if db.hardwareManager != nil {
 							config := db.hardwareManager.GetConfig()
 							if config != nil && config.GPU.Enable {
-							deviceID := 0
-							if len(config.GPU.DeviceIDs) > 0 {
-								deviceID = config.GPU.DeviceIDs[0]
-							}
-							if err := db.InitializeGPUAccelerator(deviceID, "Flat"); err == nil {
+								deviceID := 0
+								if len(config.GPU.DeviceIDs) > 0 {
+									deviceID = config.GPU.DeviceIDs[0]
+								}
+								if err := db.InitializeGPUAccelerator(deviceID, "Flat"); err == nil {
 									logger.Info("GPU加速已恢复")
 									db.HardwareCaps.HasGPU = true
 									failureCount = 0
@@ -1055,7 +1055,7 @@ func (db *VectorDB) InitializeGPUAccelerator(deviceID int, indexType string) err
 
 	// 如果硬件管理器未提供GPU加速器，则直接创建
 	if gpuAccel == nil {
-		gpuAccel = acceler.NewFAISSAccelerator(deviceID, indexType)
+		gpuAccel = acceler.NewGPUAccelerator(deviceID, indexType)
 		logger.Info("直接创建FAISS GPU加速器")
 	}
 

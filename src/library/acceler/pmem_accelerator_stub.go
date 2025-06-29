@@ -6,88 +6,8 @@ import (
 	"VectorSphere/src/library/entity"
 	"fmt"
 	"math"
-	"sync"
 	"time"
 )
-
-// PMemAccelerator 持久内存加速器模拟实现
-type PMemAccelerator struct {
-	devicePath   string
-	deviceSize   uint64
-	initialized  bool
-	available    bool
-	capabilities HardwareCapabilities
-	stats        HardwareStats
-	mutex        sync.RWMutex
-	config       *PMemConfig
-	memoryPool   map[string][]float64 // 模拟持久内存存储
-	namespaces   map[string]*PMemNamespace
-	performance  PerformanceMetrics
-}
-
-// PMemConfig PMem配置
-type PMemConfig struct {
-	DevicePath        string                  `json:"device_path"`
-	PoolSize          uint64                  `json:"pool_size"`
-	Namespaces        []*PMemNamespace        `json:"namespaces"`
-	Interleaving      *PMemInterleavingConfig `json:"interleaving"`
-	Persistence       *PMemPersistenceConfig  `json:"persistence"`
-	Performance       *PMemPerformanceConfig  `json:"performance"`
-	Reliability       *PMemReliabilityConfig  `json:"reliability"`
-	EnableCompression bool                    `json:"enable_compression"`
-	EnableEncryption  bool                    `json:"enable_encryption"`
-
-	Enable bool   `json:"enable" yaml:"enable"`
-	Mode   string `json:"mode" yaml:"mode"`
-}
-
-// PMemNamespace PMem命名空间配置
-type PMemNamespace struct {
-	Name       string `json:"name"`
-	Size       uint64 `json:"size"`
-	Mode       string `json:"mode"` // fsdax, devdax, sector
-	Alignment  uint64 `json:"alignment"`
-	SectorSize uint64 `json:"sector_size"`
-	MapSync    bool   `json:"map_sync"`
-}
-
-// PMemInterleavingConfig PMem交错配置
-type PMemInterleavingConfig struct {
-	Enabled     bool   `json:"enabled"`
-	Ways        int    `json:"ways"`
-	Granularity uint64 `json:"granularity"`
-	Alignment   uint64 `json:"alignment"`
-}
-
-// PMemPersistenceConfig PMem持久化配置
-type PMemPersistenceConfig struct {
-	FlushMode       string        `json:"flush_mode"` // auto, manual, async
-	FlushInterval   time.Duration `json:"flush_interval"`
-	SyncOnWrite     bool          `json:"sync_on_write"`
-	ChecksumEnabled bool          `json:"checksum_enabled"`
-	BackupEnabled   bool          `json:"backup_enabled"`
-	BackupInterval  time.Duration `json:"backup_interval"`
-}
-
-// PMemPerformanceConfig PMem性能配置
-type PMemPerformanceConfig struct {
-	ReadAhead        uint64 `json:"read_ahead"`
-	WriteBehind      uint64 `json:"write_behind"`
-	BatchSize        int    `json:"batch_size"`
-	PrefetchEnabled  bool   `json:"prefetch_enabled"`
-	CacheSize        uint64 `json:"cache_size"`
-	CompressionLevel int    `json:"compression_level"`
-}
-
-// PMemReliabilityConfig PMem可靠性配置
-type PMemReliabilityConfig struct {
-	ECCEnabled     bool          `json:"ecc_enabled"`
-	ScrubInterval  time.Duration `json:"scrub_interval"`
-	ErrorThreshold int           `json:"error_threshold"`
-	RepairEnabled  bool          `json:"repair_enabled"`
-	MirrorEnabled  bool          `json:"mirror_enabled"`
-	MirrorDevices  []string      `json:"mirror_devices"`
-}
 
 // NewPMemAccelerator 创建新的PMem加速器
 func NewPMemAccelerator(config *PMemConfig) *PMemAccelerator {
@@ -140,7 +60,7 @@ func (p *PMemAccelerator) Initialize() error {
 
 	// 模拟PMem设备初始化
 	for _, ns := range p.config.Namespaces {
-		p.namespaces[ns.Name] = ns
+		p.namespaces[ns.Name] = &ns
 	}
 
 	p.initialized = true

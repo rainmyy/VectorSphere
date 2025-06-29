@@ -69,45 +69,6 @@ import (
 	"unsafe"
 )
 
-// GPUAccelerator GPU加速器实现
-type GPUAccelerator struct {
-	deviceID        int
-	initialized     bool
-	available       bool
-	mu              sync.RWMutex
-	indexType       string
-	dimension       int
-	strategy        *ComputeStrategySelector
-	currentStrategy ComputeStrategy
-	dataSize        int
-	// GPU特定字段
-	operationCount int64
-	errorCount     int64
-	batchSize      int
-	streamCount    int
-	gpuWrapper     unsafe.Pointer // 用于存储C结构体指针
-	gpuResources   unsafe.Pointer // FAISS GPU资源
-
-	// 统计信息
-	stats struct {
-		TotalOperations int64
-		SuccessfulOps   int64
-		FailedOps       int64
-		ComputeTime     time.Duration
-		KernelLaunches  int64
-		MemoryTransfers int64
-		LastUsed        time.Time
-	}
-
-	// 性能指标
-	performanceMetrics PerformanceMetrics
-
-	// 内存管理
-	memoryUsed  int64
-	memoryTotal int64
-	deviceCount int
-}
-
 // NewGPUAccelerator 创建新的GPU加速器实例
 func NewGPUAccelerator(deviceID int) *GPUAccelerator {
 	return &GPUAccelerator{
@@ -915,17 +876,4 @@ func (g *GPUAccelerator) SelectOptimalBatchSize(vectorDim, numQueries int) int {
 	}
 
 	return optimalBatch
-}
-
-// toFloat32Flat 将float64二维数组转换为float32一维数组
-func toFloat32Flat(vectors [][]float64, dimension int) []float32 {
-	result := make([]float32, len(vectors)*dimension)
-	for i, vec := range vectors {
-		for j, val := range vec {
-			if j < dimension {
-				result[i*dimension+j] = float32(val)
-			}
-		}
-	}
-	return result
 }

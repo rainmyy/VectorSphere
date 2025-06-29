@@ -27,12 +27,12 @@ type HardwareManager struct {
 
 // GPUConfig GPU配置
 type GPUConfig struct {
-	Enable      bool    `json:"enable" yaml:"enable"`
-	DeviceIDs   []int   `json:"device_ids" yaml:"device_ids"`
-	MemoryLimit int64   `json:"memory_limit" yaml:"memory_limit"`
-	BatchSize   int     `json:"batch_size" yaml:"batch_size"`
-	Precision   string  `json:"precision" yaml:"precision"`
-	IndexType   string  `json:"index_type" yaml:"index_type"`
+	Enable      bool   `json:"enable" yaml:"enable"`
+	DeviceIDs   []int  `json:"device_ids" yaml:"device_ids"`
+	MemoryLimit int64  `json:"memory_limit" yaml:"memory_limit"`
+	BatchSize   int    `json:"batch_size" yaml:"batch_size"`
+	Precision   string `json:"precision" yaml:"precision"`
+	IndexType   string `json:"index_type" yaml:"index_type"`
 }
 
 // HardwareConfig 硬件配置结构体
@@ -160,7 +160,7 @@ func (hm *HardwareManager) CreateAcceleratorFromConfig(acceleratorType string, c
 		if !ok {
 			return nil, fmt.Errorf("配置类型不匹配 CPUConfig")
 		}
-		return NewFAISSAccelerator(cpuCfg.DeviceID, cpuCfg.IndexType), nil
+		return NewCPUAccelerator(cpuCfg.DeviceID, cpuCfg.IndexType), nil
 	case AcceleratorGPU:
 		gpuCfg, ok := cfg.(GPUConfig)
 		if !ok {
@@ -258,7 +258,7 @@ func (hm *HardwareManager) setupDefaultStrategies() {
 func (hm *HardwareManager) registerAllAccelerators() {
 	// 注册CPU加速器 (使用FAISS作为CPU实现)
 	if hm.config.CPU.Enable {
-		cpuAcc := NewFAISSAccelerator(hm.config.CPU.DeviceID, hm.config.CPU.IndexType)
+		cpuAcc := NewCPUAccelerator(hm.config.CPU.DeviceID, hm.config.CPU.IndexType)
 		if cpuAcc.IsAvailable() {
 			hm.RegisterAccelerator(AcceleratorCPU, cpuAcc)
 			if err := hm.manager.RegisterAccelerator(cpuAcc); err != nil {
@@ -298,12 +298,12 @@ func (hm *HardwareManager) registerAllAccelerators() {
 	if hm.config.FPGA.Enable {
 		for _, deviceID := range hm.config.FPGA.DeviceIDs {
 			config := &FPGAConfig{
-				Enable:         true,
-				DeviceIDs:      []int{deviceID},
-				ClockFrequency: hm.config.FPGA.ClockFrequency,
-				PipelineDepth:  hm.config.FPGA.PipelineDepth,
-				Parallelism:    hm.config.FPGA.Parallelism,
-				Optimization:   hm.config.FPGA.Optimization,
+				Enable:          true,
+				DeviceIDs:       []int{deviceID},
+				ClockFrequency:  hm.config.FPGA.ClockFrequency,
+				PipelineDepth:   hm.config.FPGA.PipelineDepth,
+				Parallelism:     hm.config.FPGA.Parallelism,
+				Optimization:    hm.config.FPGA.Optimization,
 				Reconfiguration: hm.config.FPGA.Reconfiguration,
 			}
 			fpgaAcc := NewFPGAAccelerator(deviceID, config)

@@ -1,4 +1,4 @@
-//go:build !gpu
+//go:build cpu
 
 package acceler
 
@@ -6,6 +6,7 @@ import (
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/logger"
 	"fmt"
+	"github.com/klauspost/cpuid"
 	"math"
 	"runtime"
 	"sort"
@@ -13,17 +14,22 @@ import (
 	"time"
 )
 
-// CPUConfig CPU配置
-type CPUConfig struct {
-	Enable      bool   `json:"enable" yaml:"enable"`
-	IndexType   string `json:"index_type" yaml:"index_type"`
-	DeviceID    int    `json:"device_id" yaml:"device_id"`
-	Threads     int    `json:"threads" yaml:"threads"`
-	VectorWidth int    `json:"vector_width" yaml:"vector_width"`
+// GetHardwareCapabilities 获取硬件能力（单例模式）
+func (hd *HardwareDetector) GetHardwareCapabilities() HardwareCapabilities {
+	hd.once.Do(func() {
+		hd.capabilities = HardwareCapabilities{
+			HasAVX2:    cpuid.CPU.AVX2(),
+			HasAVX512:  cpuid.CPU.AVX512F() && cpuid.CPU.AVX512DQ(),
+			HasGPU:     detectGPUSupport(),
+			CPUCores:   runtime.NumCPU(),
+			GPUDevices: getGPUDeviceCount(),
+		}
+	})
+	return hd.capabilities
 }
 
-func NewFAISSAccelerator(deviceID int, indexType string) *FAISSAccelerator {
-	return &FAISSAccelerator{
+func NewCPUAccelerator(deviceID int, indexType string) *CpuAccelerator {
+	return &CpuAccelerator{
 		deviceID:    deviceID,
 		indexType:   indexType,
 		strategy:    NewComputeStrategySelector(),
@@ -31,18 +37,18 @@ func NewFAISSAccelerator(deviceID int, indexType string) *FAISSAccelerator {
 	}
 }
 
-func (c *FAISSAccelerator) IsAvailable() bool {
+func (c *CPUAccelerator) IsAvailable() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	return c.available
 }
 
-func (c *FAISSAccelerator) GetType() string {
+func (c *CPUAccelerator) GetType() string {
 	return AcceleratorCPU
 }
 
-func (c *FAISSAccelerator) Shutdown() error {
+func (c *CPUAccelerator) Shutdown() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -60,7 +66,7 @@ func getGPUDeviceCount() int {
 }
 
 // Initialize 实现仅使用 CPU 的初始化
-func (c *FAISSAccelerator) Initialize() error {
+func (c *CPUAccelerator) Initialize() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -94,7 +100,7 @@ func (c *FAISSAccelerator) Initialize() error {
 	return nil
 }
 
-func (c *FAISSAccelerator) BatchCosineSimilarity(queries [][]float64, database [][]float64) ([][]float64, error) {
+func (c *CPUAccelerator) BatchCosineSimilarity(queries [][]float64, database [][]float64) ([][]float64, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -163,7 +169,7 @@ func (c *FAISSAccelerator) BatchCosineSimilarity(queries [][]float64, database [
 }
 
 // ComputeDistance 计算距离（UnifiedAccelerator接口方法）
-func (c *FAISSAccelerator) ComputeDistance(query []float64, targets [][]float64) ([]float64, error) {
+func (c *CPUAccelerator) ComputeDistance(query []float64, targets [][]float64) ([]float64, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -194,7 +200,7 @@ func (c *FAISSAccelerator) ComputeDistance(query []float64, targets [][]float64)
 	return distances, nil
 }
 
-func (c *FAISSAccelerator) BatchSearch(queries [][]float64, database [][]float64, k int) ([][]AccelResult, error) {
+func (c *CPUAccelerator) BatchSearch(queries [][]float64, database [][]float64, k int) ([][]AccelResult, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -343,7 +349,7 @@ func (c *FAISSAccelerator) BatchSearch(queries [][]float64, database [][]float64
 	return results, nil
 }
 
-func (c *FAISSAccelerator) Cleanup() error {
+func (c *CPUAccelerator) Cleanup() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -356,7 +362,7 @@ func (c *FAISSAccelerator) Cleanup() error {
 	return nil
 }
 
-func (c *FAISSAccelerator) GetGPUMemoryInfo() (free, total uint64, err error) {
+func (c *CPUAccelerator) GetGPUMemoryInfo() (free, total uint64, err error) {
 	// 返回CPU内存信息作为替代
 	memStats := &runtime.MemStats{}
 	runtime.ReadMemStats(memStats)
@@ -366,14 +372,14 @@ func (c *FAISSAccelerator) GetGPUMemoryInfo() (free, total uint64, err error) {
 }
 
 // GetCurrentStrategy 获取当前计算策略
-func (c *FAISSAccelerator) GetCurrentStrategy() ComputeStrategy {
+func (c *CPUAccelerator) GetCurrentStrategy() ComputeStrategy {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.currentStrategy
 }
 
 // SetComputeStrategy 设置计算策略
-func (c *FAISSAccelerator) SetComputeStrategy(strategy ComputeStrategy) error {
+func (c *CPUAccelerator) SetComputeStrategy(strategy ComputeStrategy) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -398,7 +404,7 @@ func (c *FAISSAccelerator) SetComputeStrategy(strategy ComputeStrategy) error {
 }
 
 // GetPerformanceInfo 获取性能信息
-func (c *FAISSAccelerator) GetPerformanceInfo() map[string]interface{} {
+func (c *CPUAccelerator) GetPerformanceInfo() map[string]interface{} {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -424,7 +430,7 @@ func (c *FAISSAccelerator) GetPerformanceInfo() map[string]interface{} {
 }
 
 // RunBenchmark 运行基准测试
-func (c *FAISSAccelerator) RunBenchmark(vectorDim, numVectors int) map[string]interface{} {
+func (c *CPUAccelerator) RunBenchmark(vectorDim, numVectors int) map[string]interface{} {
 	if !c.initialized {
 		return map[string]interface{}{"error": "CPU加速器未初始化"}
 	}
@@ -484,7 +490,7 @@ func (c *FAISSAccelerator) RunBenchmark(vectorDim, numVectors int) map[string]in
 }
 
 // AccelerateSearch 加速搜索（UnifiedAccelerator接口方法）
-func (c *FAISSAccelerator) AccelerateSearch(query []float64, database [][]float64, options entity.SearchOptions) ([]AccelResult, error) {
+func (c *CPUAccelerator) AccelerateSearch(query []float64, database [][]float64, options entity.SearchOptions) ([]AccelResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -495,7 +501,7 @@ func (c *FAISSAccelerator) AccelerateSearch(query []float64, database [][]float6
 }
 
 // Start 启动CPU加速器（UnifiedAccelerator接口方法）
-func (c *FAISSAccelerator) Start() error {
+func (c *CPUAccelerator) Start() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -507,7 +513,7 @@ func (c *FAISSAccelerator) Start() error {
 }
 
 // Stop 停止CPU加速器（UnifiedAccelerator接口方法）
-func (c *FAISSAccelerator) Stop() error {
+func (c *CPUAccelerator) Stop() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -520,7 +526,7 @@ func (c *FAISSAccelerator) Stop() error {
 }
 
 // OptimizeMemoryLayout 优化内存布局（UnifiedAccelerator接口方法）
-func (c *FAISSAccelerator) OptimizeMemoryLayout(vectors [][]float64) error {
+func (c *CPUAccelerator) OptimizeMemoryLayout(vectors [][]float64) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -540,7 +546,7 @@ func (c *FAISSAccelerator) OptimizeMemoryLayout(vectors [][]float64) error {
 }
 
 // PrefetchData 预取数据（UnifiedAccelerator接口方法）
-func (c *FAISSAccelerator) PrefetchData(vectors [][]float64) error {
+func (c *CPUAccelerator) PrefetchData(vectors [][]float64) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -564,7 +570,7 @@ func (c *FAISSAccelerator) PrefetchData(vectors [][]float64) error {
 }
 
 // GetCapabilities 获取CPU能力信息（UnifiedAccelerator接口方法）
-func (c *FAISSAccelerator) GetCapabilities() HardwareCapabilities {
+func (c *CPUAccelerator) GetCapabilities() HardwareCapabilities {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -585,7 +591,7 @@ func (c *FAISSAccelerator) GetCapabilities() HardwareCapabilities {
 }
 
 // GetStats 获取CPU统计信息（UnifiedAccelerator接口方法）
-func (c *FAISSAccelerator) GetStats() HardwareStats {
+func (c *CPUAccelerator) GetStats() HardwareStats {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -604,7 +610,7 @@ func (c *FAISSAccelerator) GetStats() HardwareStats {
 }
 
 // GetPerformanceMetrics 获取性能指标（UnifiedAccelerator接口方法）
-func (c *FAISSAccelerator) GetPerformanceMetrics() PerformanceMetrics {
+func (c *CPUAccelerator) GetPerformanceMetrics() PerformanceMetrics {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -626,7 +632,7 @@ func (c *FAISSAccelerator) GetPerformanceMetrics() PerformanceMetrics {
 }
 
 // UpdateConfig 更新配置（UnifiedAccelerator接口方法）
-func (c *FAISSAccelerator) UpdateConfig(config interface{}) error {
+func (c *CPUAccelerator) UpdateConfig(config interface{}) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -648,7 +654,7 @@ func (c *FAISSAccelerator) UpdateConfig(config interface{}) error {
 }
 
 // AutoTune 自动调优（UnifiedAccelerator接口方法）
-func (c *FAISSAccelerator) AutoTune(workload WorkloadProfile) error {
+func (c *CPUAccelerator) AutoTune(workload WorkloadProfile) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -665,7 +671,7 @@ func (c *FAISSAccelerator) AutoTune(workload WorkloadProfile) error {
 }
 
 // BatchComputeDistance 批量计算距离（UnifiedAccelerator接口方法）
-func (c *FAISSAccelerator) BatchComputeDistance(queries [][]float64, targets [][]float64) ([][]float64, error) {
+func (c *CPUAccelerator) BatchComputeDistance(queries [][]float64, targets [][]float64) ([][]float64, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 

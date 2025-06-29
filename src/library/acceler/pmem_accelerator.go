@@ -49,78 +49,6 @@ size_t pmem_get_available_space(const char* path);
 */
 import "C"
 
-// PMemAccelerator 持久内存加速器实现
-type PMemAccelerator struct {
-	devicePaths   []string
-	deviceHandles []unsafe.Pointer
-	initialized   bool
-	available     bool
-	capabilities  HardwareCapabilities
-	stats         HardwareStats
-	mutex         sync.RWMutex
-	config        *PMemConfig
-	lastStatsTime time.Time
-	startTime     time.Time
-	vectorCache   map[string][]float64 // 向量缓存
-	cacheMutex    sync.RWMutex
-}
-
-// PMemConfig 持久内存配置
-type PMemConfig struct {
-	Enable       bool                   `json:"enable"`
-	DevicePaths  []string               `json:"device_paths"`
-	Mode         string                 `json:"mode"` // "app_direct", "memory_mode", "mixed"
-	Namespaces   []PMemNamespace        `json:"namespaces"`
-	Interleaving PMemInterleavingConfig `json:"interleaving"`
-	Persistence  PMemPersistenceConfig  `json:"persistence"`
-	Performance  PMemPerformanceConfig  `json:"performance"`
-	Reliability  PMemReliabilityConfig  `json:"reliability"`
-}
-
-// PMemNamespace 持久内存命名空间
-type PMemNamespace struct {
-	Name       string `json:"name"`
-	Size       int64  `json:"size"` // bytes
-	Mode       string `json:"mode"` // "fsdax", "devdax", "sector"
-	Alignment  int    `json:"alignment"`
-	SectorSize int    `json:"sector_size"`
-}
-
-// PMemInterleavingConfig 持久内存交错配置
-type PMemInterleavingConfig struct {
-	Enable      bool `json:"enable"`
-	Ways        int  `json:"ways"`
-	Granularity int  `json:"granularity"` // bytes
-	Alignment   int  `json:"alignment"`
-}
-
-// PMemPersistenceConfig 持久内存持久化配置
-type PMemPersistenceConfig struct {
-	FlushStrategy      string        `json:"flush_strategy"` // "sync", "async", "lazy"
-	FlushInterval      time.Duration `json:"flush_interval"`
-	Checkpointing      bool          `json:"checkpointing"`
-	CheckpointInterval time.Duration `json:"checkpoint_interval"`
-	RecoveryMode       string        `json:"recovery_mode"` // "fast", "safe", "auto"
-}
-
-// PMemPerformanceConfig 持久内存性能配置
-type PMemPerformanceConfig struct {
-	ReadAhead        bool `json:"read_ahead"`
-	WriteBehind      bool `json:"write_behind"`
-	BatchSize        int  `json:"batch_size"`
-	QueueDepth       int  `json:"queue_depth"`
-	NUMAOptimization bool `json:"numa_optimization"`
-}
-
-// PMemReliabilityConfig 持久内存可靠性配置
-type PMemReliabilityConfig struct {
-	ECC                bool          `json:"ecc"`
-	Scrubbing          bool          `json:"scrubbing"`
-	ScrubbingInterval  time.Duration `json:"scrubbing_interval"`
-	BadBlockManagement bool          `json:"bad_block_management"`
-	WearLeveling       bool          `json:"wear_leveling"`
-}
-
 // NewPMemAccelerator 创建新的持久内存加速器
 func NewPMemAccelerator(config *PMemConfig) *PMemAccelerator {
 	pmem := &PMemAccelerator{
@@ -469,11 +397,11 @@ func (p *PMemAccelerator) GetStats() HardwareStats {
 func (p *PMemAccelerator) GetPerformanceMetrics() PerformanceMetrics {
 	p.mutex.RLock()
 	defer p.mutex.RUnlock()
-
+	latencyP95 := float64(p.stats.AverageLatency) * 1.5
 	return PerformanceMetrics{
-		LatencyP50:        p.stats.AverageLatency,
-		LatencyP95:        p.stats.AverageLatency * 1.5,
-		LatencyP99:        p.stats.AverageLatency * 2,
+		LatencyP50:        float64(p.stats.AverageLatency),
+		LatencyP95:        latencyP95,
+		LatencyP99:        float64(p.stats.AverageLatency * 2),
 		ThroughputCurrent: p.stats.Throughput,
 		ThroughputPeak:    p.stats.Throughput * 1.2,
 		CacheHitRate:      p.getCacheHitRate(),
