@@ -82,6 +82,16 @@ func (c *CPUAccelerator) GetType() string {
 	return AcceleratorCPU
 }
 
+// SetHardwareManager 设置硬件管理器（stub版本）
+func (c *CPUAccelerator) SetHardwareManager(hm *HardwareManager) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.hardwareManager = hm
+	if c.strategy != nil {
+		c.strategy.SetHardwareManager(hm)
+	}
+}
+
 // Initialize 初始化CPU加速器（stub版本）
 func (c *CPUAccelerator) Initialize() error {
 	logger.Info("初始化CPU加速器Stub")

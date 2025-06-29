@@ -804,8 +804,9 @@ func (db *VectorDB) ApplyHardwareManager(hardwareManager *acceler.HardwareManage
 	actualDataSize := len(db.vectors)
 	db.mu.RUnlock()
 
-	// 根据硬件能力选择最佳计算策略
+	// 将硬件管理器设置到策略选择器中
 	if db.strategyComputeSelector != nil {
+		db.strategyComputeSelector.SetHardwareManager(hardwareManager)
 		// 使用向量维度和实际数据量作为参数
 		db.currentStrategy = db.strategyComputeSelector.SelectOptimalStrategy(actualDataSize, db.vectorDim)
 		logger.Info("已选择最佳计算策略: %v，基于数据量: %d, 向量维度: %d",

@@ -300,8 +300,8 @@ func (db *VectorDB) GetGPUAccelerationStatus() string {
 	}
 
 	// 通过硬件管理器获取GPU加速器
-	gpuAccelerator, ok := db.hardwareManager.GetAccelerator(acceler.AcceleratorGPU)
-	if !ok {
+	gpuAccelerator, exists := db.hardwareManager.GetAccelerator(acceler.AcceleratorGPU)
+	if !exists {
 		return "不可用 - GPU加速器未初始化"
 	}
 
@@ -1280,7 +1280,7 @@ func (db *VectorDB) CalculateApproximateDistancePQWithStrategy(query []float64, 
 		centroid := db.pqCodebook[m][centroidIndex]
 
 		// 使用自适应策略计算距离
-		_, dist := acceler.AdaptiveFindNearestCentroid(querySubVector, []entity.Point{centroid}, strategy)
+		_, dist := acceler.AdaptiveFindNearestCentroidWithHardware(querySubVector, []entity.Point{centroid}, strategy, db.hardwareManager)
 		totalSquaredDistance += dist
 	}
 
@@ -1759,35 +1759,6 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 	logger.Info("硬件检测结果: AVX2=%v, AVX512=%v, GPU=%v, CPU核心=%d",
 		db.HardwareCaps.HasAVX2, db.HardwareCaps.HasAVX512,
 		db.HardwareCaps.HasGPU, db.HardwareCaps.CPUCores)
-
-	// 如果支持GPU，初始化GPU加速器
-	if db.HardwareCaps.HasGPU && db.hardwareManager != nil {
-		gpuAccel := acceler.NewGPUAccelerator(0)
-
-		// 先检查GPU可用性，再进行初始化
-		if err := gpuAccel.CheckGPUAvailability(); err != nil {
-			logger.Warning("GPU可用性检查失败: %v", err)
-			if db.hardwareManager != nil {
-				db.hardwareManager.DisableGPU()
-			}
-		} else {
-			// GPU可用性检查通过，进行初始化
-			if err := gpuAccel.Initialize(); err != nil {
-				logger.Warning("GPU加速器初始化失败: %v", err)
-				if db.hardwareManager != nil {
-					db.hardwareManager.DisableGPU()
-				}
-			} else {
-				// 注册到硬件管理器
-				if err := db.hardwareManager.RegisterGPUAccelerator(gpuAccel); err != nil {
-					logger.Warning("注册GPU加速器失败: %v", err)
-					if db.hardwareManager != nil {
-						db.hardwareManager.DisableGPU()
-					}
-				}
-			}
-		}
-	}
 	if filePath != "" {
 		if err := db.LoadFromFile(filePath); err != nil {
 			logger.Warning("警告: 从 %s 加载向量数据库时出错: %v。将使用空数据库启动。\n", filePath, err)
@@ -2330,7 +2301,26 @@ func (db *VectorDB) GetSelectStrategy() acceler.ComputeStrategy {
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
-	// 优先选择最高性能的可用策略
+	// 如果有硬件管理器，使用硬件管理器进行策略选择
+	if db.hardwareManager != nil {
+		// 设置硬件管理器到策略选择器
+		db.strategyComputeSelector.SetHardwareManager(db.hardwareManager)
+		
+		// 根据当前数据库大小和向量维度选择策略
+		dataSize := len(db.vectors)
+		vectorDim := db.vectorDim
+		if vectorDim == 0 && len(db.vectors) > 0 {
+			// 如果vectorDim未设置，从第一个向量获取维度
+			for _, vec := range db.vectors {
+				vectorDim = len(vec)
+				break
+			}
+		}
+		
+		return db.strategyComputeSelector.SelectOptimalStrategy(dataSize, vectorDim)
+	}
+
+	// 回退到原有逻辑：优先选择最高性能的可用策略
 	if db.HardwareCaps.HasAVX512 {
 		return acceler.StrategyAVX512
 	} else if db.HardwareCaps.HasAVX2 {
@@ -3441,7 +3431,7 @@ func (db *VectorDB) UpdateIndexIncrementally(id string, vector []float64) error 
 		centroids[i] = cluster.Centroid
 	}
 
-	nearestClusterIndex, _ = acceler.AdaptiveFindNearestCentroid(queryVecForDist, centroids, selectedStrategy)
+	nearestClusterIndex, _ = acceler.AdaptiveFindNearestCentroidWithHardware(queryVecForDist, centroids, selectedStrategy, db.hardwareManager)
 
 	if nearestClusterIndex != -1 {
 		// 从旧的簇中移除 (如果它之前在某个簇中)
@@ -4149,7 +4139,7 @@ func (db *VectorDB) coarseSearch(query []float64, k int, nprobe int) ([]string, 
 	selectedStrategy := db.GetSelectStrategy()
 
 	for i, cluster := range db.clusters {
-		dist, _ := acceler.AdaptiveEuclideanDistanceSquared(normalizedQuery, cluster.Centroid, selectedStrategy)
+		dist, _ := acceler.AdaptiveEuclideanDistanceSquaredWithHardware(normalizedQuery, cluster.Centroid, selectedStrategy, db.hardwareManager)
 		clusterDists[i] = dist
 	}
 
@@ -5139,7 +5129,7 @@ func (db *VectorDB) multiIndexSearch(query []float64, k int, nprobe int) ([]enti
 
 	selectedStrategy := db.GetSelectStrategy()
 	for i, cluster := range db.multiIndex.Clusters {
-		dist, err := acceler.AdaptiveEuclideanDistanceSquared(query, cluster.Centroid, selectedStrategy)
+		dist, err := acceler.AdaptiveEuclideanDistanceSquaredWithHardware(query, cluster.Centroid, selectedStrategy, db.hardwareManager)
 		if err != nil {
 			return nil, fmt.Errorf("error calculating distance to centroid %d: %w", i, err)
 		}
@@ -5171,7 +5161,7 @@ func (db *VectorDB) multiIndexSearch(query []float64, k int, nprobe int) ([]enti
 			// 回退到暴力搜索该簇内的向量
 			for _, id := range selectedCluster.VectorIDs {
 				if vec, exists := db.vectors[id]; exists {
-					dist, _ := acceler.AdaptiveEuclideanDistanceSquared(query, vec, selectedStrategy)
+					dist, _ := acceler.AdaptiveEuclideanDistanceSquaredWithHardware(query, vec, selectedStrategy, db.hardwareManager)
 					heap.Push(&resultHeap, entity.Result{Id: id, Similarity: dist})
 					if results.Len() > k {
 						heap.Pop(results)
@@ -5187,7 +5177,7 @@ func (db *VectorDB) multiIndexSearch(query []float64, k int, nprobe int) ([]enti
 			logger.Warning("Sub-index for cluster %d is not a KDTree or is nil. Performing brute-force.", clusterIdx)
 			for _, id := range selectedCluster.VectorIDs {
 				if vec, exists := db.vectors[id]; exists {
-					dist, _ := acceler.AdaptiveEuclideanDistanceSquared(query, vec, selectedStrategy)
+					dist, _ := acceler.AdaptiveEuclideanDistanceSquaredWithHardware(query, vec, selectedStrategy, db.hardwareManager)
 					heap.Push(&resultHeap, entity.Result{Id: id, Similarity: dist})
 					if results.Len() > k {
 						heap.Pop(results)
@@ -5261,7 +5251,7 @@ func (db *VectorDB) ivfSearch(query []float64, k int, nprobe int) ([]entity.Resu
 
 	// 找到查询向量最近的nprobe个簇中心
 	for i, cluster := range db.clusters {
-		distSq, err := acceler.AdaptiveEuclideanDistanceSquared(normalizedQuery, cluster.Centroid, selectedStrategy)
+		distSq, err := acceler.AdaptiveEuclideanDistanceSquaredWithHardware(normalizedQuery, cluster.Centroid, selectedStrategy, db.hardwareManager)
 		if err != nil {
 			continue
 		}

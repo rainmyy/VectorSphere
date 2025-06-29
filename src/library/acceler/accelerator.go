@@ -34,7 +34,11 @@ type CPUAccelerator struct {
 	strategy        *ComputeStrategySelector
 	currentStrategy ComputeStrategy
 	dataSize        int
+	hardwareManager *HardwareManager
 }
+
+// CpuAccelerator 为了兼容性，定义一个别名
+type CpuAccelerator = CPUAccelerator
 
 // AccelResult 搜索结果结构体
 type AccelResult struct {

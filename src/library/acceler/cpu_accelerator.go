@@ -28,12 +28,22 @@ func (hd *HardwareDetector) GetHardwareCapabilities() HardwareCapabilities {
 	return hd.capabilities
 }
 
-func NewCPUAccelerator(deviceID int, indexType string) *CpuAccelerator {
-	return &CpuAccelerator{
+func NewCPUAccelerator(deviceID int, indexType string) *CPUAccelerator {
+	return &CPUAccelerator{
 		deviceID:    deviceID,
 		indexType:   indexType,
 		strategy:    NewComputeStrategySelector(),
 		initialized: false,
+	}
+}
+
+// SetHardwareManager 设置硬件管理器
+func (c *CPUAccelerator) SetHardwareManager(hm *HardwareManager) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.hardwareManager = hm
+	if c.strategy != nil {
+		c.strategy.SetHardwareManager(hm)
 	}
 }
 
@@ -256,13 +266,13 @@ func (c *CPUAccelerator) BatchSearch(queries [][]float64, database [][]float64, 
 					// 计算所有距离
 					distances := make([]float64, len(database))
 					for j, dbVec := range database {
-						dist, err := AdaptiveEuclideanDistanceSquared(queries[i], dbVec, c.currentStrategy)
-						if err != nil {
-							// 如果出错，使用默认方法
-							distances[j] = EuclideanDistanceSquaredDefault(queries[i], dbVec)
-						} else {
-							distances[j] = dist
-						}
+					dist, err := AdaptiveEuclideanDistanceSquaredWithHardware(queries[i], dbVec, c.currentStrategy, c.hardwareManager)
+					if err != nil {
+						// 如果出错，使用默认方法
+						distances[j] = EuclideanDistanceSquaredDefault(queries[i], dbVec)
+					} else {
+						distances[j] = dist
+					}
 					}
 
 					// 找出k个最近邻
@@ -306,7 +316,7 @@ func (c *CPUAccelerator) BatchSearch(queries [][]float64, database [][]float64, 
 			// 计算所有距离
 			distances := make([]float64, len(database))
 			for j, dbVec := range database {
-				dist, err := AdaptiveEuclideanDistanceSquared(query, dbVec, c.currentStrategy)
+				dist, err := AdaptiveEuclideanDistanceSquaredWithHardware(query, dbVec, c.currentStrategy, c.hardwareManager)
 				if err != nil {
 					return nil, fmt.Errorf("计算距离失败: %w", err)
 				}

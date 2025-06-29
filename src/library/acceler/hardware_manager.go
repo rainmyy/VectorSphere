@@ -288,6 +288,8 @@ func (hm *HardwareManager) registerAllAccelerators() {
 	// 注册CPU加速器 (使用FAISS作为CPU实现)
 	if hm.config.CPU.Enable {
 		cpuAcc := NewCPUAccelerator(hm.config.CPU.DeviceID, hm.config.CPU.IndexType)
+		// 设置硬件管理器
+		cpuAcc.SetHardwareManager(hm)
 		if cpuAcc.IsAvailable() {
 			hm.RegisterAccelerator(AcceleratorCPU, cpuAcc)
 			if err := hm.manager.RegisterAccelerator(cpuAcc); err != nil {
