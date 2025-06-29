@@ -848,12 +848,6 @@ const (
 	StrategyHybrid // GPU + CPU 混合
 )
 
-// HardwareDetector 硬件检测器
-type HardwareDetector struct {
-	capabilities HardwareCapabilities
-	once         sync.Once
-}
-
 // detectGPUSupport a more stable and efficient way to detect GPU support.
 // It checks for the presence of NVIDIA drivers and a usable GPU by executing the `nvidia-smi` command.
 // This method avoids the circular dependency that occurred when GPU detection was part of the accelerator's initialization.

@@ -52,6 +52,10 @@ type ErrorHandler struct {
 	lastErrors map[string]*AcceleratorError
 	maxRetries int
 	retryDelay time.Duration
+
+	mu            sync.RWMutex
+	errorCounts   map[string]int
+	retryInterval time.Duration
 }
 
 // NewErrorHandler 创建新的错误处理器
@@ -196,17 +200,17 @@ func (eh *ErrorHandler) GetAllErrors() map[string]int {
 // SafeCall 安全调用函数，带错误处理和重试
 func (eh *ErrorHandler) SafeCall(acceleratorType, operation string, fn func() error) error {
 	var lastErr error
-	
+
 	for i := 0; i < eh.maxRetries; i++ {
 		if err := fn(); err != nil {
 			lastErr = err
 			accelErr := eh.HandleError(acceleratorType, operation, err)
-			
+
 			// 如果是致命错误，不重试
 			if accelErr.Type == ErrorTypeNilPointer || accelErr.Type == ErrorTypeInvalidConfig {
 				return accelErr
 			}
-			
+
 			// 等待后重试
 			if i < eh.maxRetries-1 {
 				time.Sleep(eh.retryDelay * time.Duration(i+1))
@@ -217,7 +221,7 @@ func (eh *ErrorHandler) SafeCall(acceleratorType, operation string, fn func() er
 			return nil
 		}
 	}
-	
+
 	return eh.HandleError(acceleratorType, operation, lastErr)
 }
 

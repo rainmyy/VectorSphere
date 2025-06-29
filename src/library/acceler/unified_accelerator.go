@@ -73,7 +73,7 @@ type HardwareStats struct {
 	TotalOperations   int64         `json:"total_operations"`
 	SuccessfulOps     int64         `json:"successful_ops"`
 	FailedOps         int64         `json:"failed_ops"`
-	ErrorCount        int64         `json:"error_count"`        // 错误计数
+	ErrorCount        int64         `json:"error_count"` // 错误计数
 	AverageLatency    time.Duration `json:"average_latency"`
 	Throughput        float64       `json:"throughput"`         // 操作/秒
 	MemoryUtilization float64       `json:"memory_utilization"` // 内存利用率
@@ -116,6 +116,14 @@ type WorkloadProfile struct {
 	Concurrency      int           `json:"concurrency"`
 	MemoryBudget     int64         `json:"memory_budget"`
 	DataType         string        `json:"date_type"`
+
+	QueriesPerSecond       float64 `json:"queries_per_second"`
+	RequiresHighThroughput bool    `json:"requires_high_throughput"`
+	RequiresLowLatency     bool    `json:"requires_low_latency"`
+	RequiresDistributed    bool    `json:"requires_distributed"`
+	RequiresPersistence    bool    `json:"requires_persistence"`
+	MemoryConstraint       int64   `json:"memory_constraint"`
+	PowerConstraint        float64 `json:"power_constraint"`
 }
 
 // AcceleratorManager 加速器管理器

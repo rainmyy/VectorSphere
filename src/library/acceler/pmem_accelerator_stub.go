@@ -11,31 +11,21 @@ import (
 
 // NewPMemAccelerator 创建新的PMem加速器
 func NewPMemAccelerator(config *PMemConfig) *PMemAccelerator {
+	capabilities := HardwareCapabilities{
+		Type:              AcceleratorPMem,
+		SupportedOps:      []string{"persistent_storage", "fast_access", "distance_compute", "vector_cache"},
+		PerformanceRating: 8.0,
+		SpecialFeatures:   []string{"persistent", "byte_addressable", "low_latency", "high_bandwidth"},
+	}
+	baseAccel := NewBaseAccelerator(0, "PMem", capabilities, HardwareStats{})
+
 	return &PMemAccelerator{
-		devicePath: config.DevicePath,
-		deviceSize: config.PoolSize,
-		config:     config,
-		memoryPool: make(map[string][]float64),
-		namespaces: make(map[string]*PMemNamespace),
-		available:  true, // 模拟环境下总是可用
-		capabilities: HardwareCapabilities{
-			Type:              "PMem",
-			MemorySize:        int64(config.PoolSize),
-			Bandwidth:         50 * 1024 * 1024 * 1024, // 50GB/s
-			Latency:           300 * time.Nanosecond,
-			PerformanceRating: 8.5,
-			SupportedOps:      []string{"distance", "similarity", "search", "persist"},
-			SpecialFeatures:   []string{"persistent", "large_capacity", "non_volatile"},
-			PowerConsumption:  15.0,
-		},
-		stats: HardwareStats{
-			TotalOperations: 0,
-			SuccessfulOps:   0,
-			FailedOps:       0,
-			AverageLatency:  300 * time.Nanosecond,
-			Throughput:      0,
-			LastUsed:        time.Now(),
-		},
+		BaseAccelerator: baseAccel,
+		devicePath:      config.DevicePath,
+		deviceSize:      config.PoolSize,
+		config:          config,
+		memoryPool:      make(map[string][]float64),
+		namespaces:      make(map[string]*PMemNamespace),
 	}
 }
 
@@ -51,8 +41,8 @@ func (p *PMemAccelerator) IsAvailable() bool {
 
 // Initialize 初始化PMem加速器
 func (p *PMemAccelerator) Initialize() error {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	if p.initialized {
 		return nil
@@ -71,8 +61,8 @@ func (p *PMemAccelerator) Initialize() error {
 
 // Shutdown 关闭PMem加速器
 func (p *PMemAccelerator) Shutdown() error {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	if !p.initialized {
 		return nil
@@ -165,8 +155,8 @@ func (p *PMemAccelerator) AccelerateSearch(query []float64, database [][]float64
 
 // OptimizeMemory 优化内存使用
 func (p *PMemAccelerator) OptimizeMemory() error {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	// 模拟内存优化
 	if p.config.Performance.PrefetchEnabled {
@@ -179,8 +169,8 @@ func (p *PMemAccelerator) OptimizeMemory() error {
 
 // PrefetchData 预取数据
 func (p *PMemAccelerator) PrefetchData(keys []string) error {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	// 模拟数据预取
 	for _, key := range keys {
@@ -195,29 +185,29 @@ func (p *PMemAccelerator) PrefetchData(keys []string) error {
 
 // GetCapabilities 获取硬件能力
 func (p *PMemAccelerator) GetCapabilities() HardwareCapabilities {
-	p.mutex.RLock()
-	defer p.mutex.RUnlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	return p.capabilities
 }
 
 // GetStats 获取统计信息
 func (p *PMemAccelerator) GetStats() HardwareStats {
-	p.mutex.RLock()
-	defer p.mutex.RUnlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	return p.stats
 }
 
 // GetPerformanceMetrics 获取性能指标
 func (p *PMemAccelerator) GetPerformanceMetrics() PerformanceMetrics {
-	p.mutex.RLock()
-	defer p.mutex.RUnlock()
-	return p.performance
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.performanceMetrics
 }
 
 // UpdateConfig 更新配置
 func (p *PMemAccelerator) UpdateConfig(config interface{}) error {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	if pmemConfig, ok := config.(*PMemConfig); ok {
 		p.config = pmemConfig
@@ -229,8 +219,8 @@ func (p *PMemAccelerator) UpdateConfig(config interface{}) error {
 
 // AutoTune 自动调优
 func (p *PMemAccelerator) AutoTune(workload WorkloadProfile) error {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	// 根据工作负载调整配置
 	switch workload.Type {
@@ -250,8 +240,8 @@ func (p *PMemAccelerator) AutoTune(workload WorkloadProfile) error {
 
 // updateStats 更新统计信息
 func (p *PMemAccelerator) updateStats(duration time.Duration, err error) {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	p.stats.TotalOperations++
 	if err == nil {
@@ -270,19 +260,19 @@ func (p *PMemAccelerator) updateStats(duration time.Duration, err error) {
 	p.stats.LastUsed = time.Now()
 
 	// 更新性能指标
-	p.performance.LatencyCurrent = duration
-	if duration < p.performance.LatencyMin || p.performance.LatencyMin == 0 {
-		p.performance.LatencyMin = duration
+	p.performanceMetrics.LatencyCurrent = duration
+	if duration < p.performanceMetrics.LatencyMin || p.performanceMetrics.LatencyMin == 0 {
+		p.performanceMetrics.LatencyMin = duration
 	}
-	if duration > p.performance.LatencyMax {
-		p.performance.LatencyMax = duration
+	if duration > p.performanceMetrics.LatencyMax {
+		p.performanceMetrics.LatencyMax = duration
 	}
 }
 
 // StoreVectors 存储向量到持久内存
 func (p *PMemAccelerator) StoreVectors(key string, vectors [][]float64) error {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	if !p.initialized {
 		return fmt.Errorf("PMem accelerator not initialized")
@@ -306,8 +296,8 @@ func (p *PMemAccelerator) StoreVectors(key string, vectors [][]float64) error {
 
 // LoadVectors 从持久内存加载向量
 func (p *PMemAccelerator) LoadVectors(key string, dimension int) ([][]float64, error) {
-	p.mutex.RLock()
-	defer p.mutex.RUnlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 
 	if !p.initialized {
 		return nil, fmt.Errorf("PMem accelerator not initialized")
@@ -331,8 +321,8 @@ func (p *PMemAccelerator) LoadVectors(key string, dimension int) ([][]float64, e
 
 // GetAvailableSpace 获取可用空间
 func (p *PMemAccelerator) GetAvailableSpace() uint64 {
-	p.mutex.RLock()
-	defer p.mutex.RUnlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 
 	usedSpace := uint64(0)
 	for _, vectors := range p.memoryPool {
@@ -344,8 +334,8 @@ func (p *PMemAccelerator) GetAvailableSpace() uint64 {
 
 // FlushData 刷新数据到持久存储
 func (p *PMemAccelerator) FlushData() error {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	// 模拟数据刷新
 	time.Sleep(5 * time.Millisecond)

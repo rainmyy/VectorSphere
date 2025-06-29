@@ -6,7 +6,6 @@ import (
 	"VectorSphere/src/library/entity"
 	"fmt"
 	"math"
-	"sync"
 	"time"
 	"unsafe"
 )
@@ -60,17 +59,23 @@ import "C"
 
 // NewFPGAAccelerator 创建新的FPGA加速器
 func NewFPGAAccelerator(deviceID int, config *FPGAConfig) *FPGAAccelerator {
+	capabilities := HardwareCapabilities{
+		Type:              AcceleratorFPGA,
+		SupportedOps:      []string{"distance_compute", "batch_compute", "cosine_similarity", "matrix_multiply", "convolution"},
+		PerformanceRating: 7.5,
+		SpecialFeatures:   []string{"reconfigurable", "low_latency", "parallel_processing", "custom_kernels"},
+	}
+	stats := HardwareStats{
+		TotalOperations: 0,
+		SuccessfulOps:   0,
+		FailedOps:       0,
+		AverageLatency:  50 * time.Nanosecond,
+		Throughput:      0,
+	}
+	baseAccel := NewBaseAccelerator(deviceID, "FPGA", capabilities, stats)
 	fpga := &FPGAAccelerator{
-		deviceID:      deviceID,
-		config:        config,
-		lastStatsTime: time.Now(),
-		startTime:     time.Now(),
-		capabilities: HardwareCapabilities{
-			Type:              AcceleratorFPGA,
-			SupportedOps:      []string{"distance_compute", "batch_compute", "cosine_similarity", "matrix_multiply", "convolution"},
-			PerformanceRating: 7.5,
-			SpecialFeatures:   []string{"reconfigurable", "low_latency", "parallel_processing", "custom_kernels"},
-		},
+		BaseAccelerator: baseAccel,
+		config:          config,
 	}
 
 	// 检测FPGA可用性
@@ -85,15 +90,15 @@ func (f *FPGAAccelerator) GetType() string {
 
 // IsAvailable 检查FPGA是否可用
 func (f *FPGAAccelerator) IsAvailable() bool {
-	f.mutex.RLock()
-	defer f.mutex.RUnlock()
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	return f.available
 }
 
 // Initialize 初始化FPGA
 func (f *FPGAAccelerator) Initialize() error {
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	if !f.available {
 		return fmt.Errorf("FPGA设备 %d 不可用", f.deviceID)
@@ -146,8 +151,8 @@ func (f *FPGAAccelerator) Initialize() error {
 
 // Shutdown 关闭FPGA
 func (f *FPGAAccelerator) Shutdown() error {
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	if !f.initialized {
 		return nil
@@ -176,8 +181,8 @@ func (f *FPGAAccelerator) Stop() error {
 
 // ComputeDistance 计算距离
 func (f *FPGAAccelerator) ComputeDistance(query []float64, vectors [][]float64) ([]float64, error) {
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	if !f.initialized {
 		return nil, fmt.Errorf("FPGA未初始化")
@@ -231,8 +236,8 @@ func (f *FPGAAccelerator) ComputeDistance(query []float64, vectors [][]float64) 
 
 // BatchComputeDistance 批量计算距离
 func (f *FPGAAccelerator) BatchComputeDistance(queries [][]float64, vectors [][]float64) ([][]float64, error) {
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	if !f.initialized {
 		return nil, fmt.Errorf("FPGA未初始化")
@@ -345,8 +350,8 @@ func (f *FPGAAccelerator) BatchSearch(queries [][]float64, database [][]float64,
 
 // BatchCosineSimilarity 批量余弦相似度计算
 func (f *FPGAAccelerator) BatchCosineSimilarity(queries [][]float64, database [][]float64) ([][]float64, error) {
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	if !f.initialized {
 		return nil, fmt.Errorf("FPGA未初始化")
@@ -411,8 +416,8 @@ func (f *FPGAAccelerator) BatchCosineSimilarity(queries [][]float64, database []
 
 // AccelerateSearch 加速搜索
 func (f *FPGAAccelerator) AccelerateSearch(query []float64, database [][]float64, options entity.SearchOptions) ([]AccelResult, error) {
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	if !f.initialized {
 		return nil, fmt.Errorf("FPGA未初始化")
@@ -658,8 +663,8 @@ func (f *FPGAAccelerator) fpgaPostProcess(results []AccelResult, options entity.
 
 // OptimizeMemoryLayout 优化内存布局
 func (f *FPGAAccelerator) OptimizeMemoryLayout(vectors [][]float64) error {
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	if !f.initialized {
 		return fmt.Errorf("FPGA未初始化")
@@ -1088,23 +1093,23 @@ func (f *FPGAAccelerator) PrefetchData(vectors [][]float64) error {
 
 // GetCapabilities 获取FPGA能力信息
 func (f *FPGAAccelerator) GetCapabilities() HardwareCapabilities {
-	f.mutex.RLock()
-	defer f.mutex.RUnlock()
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	return f.capabilities
 }
 
 // GetStats 获取FPGA统计信息
 func (f *FPGAAccelerator) GetStats() HardwareStats {
-	f.mutex.RLock()
-	defer f.mutex.RUnlock()
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 	f.stats.LastUsed = f.startTime
 	return f.stats
 }
 
 // GetPerformanceMetrics 获取性能指标
 func (f *FPGAAccelerator) GetPerformanceMetrics() PerformanceMetrics {
-	f.mutex.RLock()
-	defer f.mutex.RUnlock()
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 
 	return PerformanceMetrics{
 		LatencyP50:        float64(f.stats.AverageLatency),
@@ -1123,8 +1128,8 @@ func (f *FPGAAccelerator) GetPerformanceMetrics() PerformanceMetrics {
 
 // UpdateConfig 更新配置
 func (f *FPGAAccelerator) UpdateConfig(config interface{}) error {
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	if fpgaConfig, ok := config.(*FPGAConfig); ok {
 		f.config = fpgaConfig
@@ -1136,8 +1141,8 @@ func (f *FPGAAccelerator) UpdateConfig(config interface{}) error {
 
 // AutoTune 自动调优
 func (f *FPGAAccelerator) AutoTune(workload WorkloadProfile) error {
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	// 根据工作负载调整FPGA配置
 	if f.config != nil {
@@ -1321,8 +1326,8 @@ func (f *FPGAAccelerator) estimateFPGAStats() {
 
 // GetDetailedStats 获取详细的FPGA统计信息
 func (f *FPGAAccelerator) GetDetailedStats() map[string]interface{} {
-	f.mutex.RLock()
-	defer f.mutex.RUnlock()
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 
 	stats := map[string]interface{}{
 		"basic_stats":      f.stats,
@@ -1360,8 +1365,8 @@ func (f *FPGAAccelerator) GetDetailedStats() map[string]interface{} {
 
 // ResetStats 重置统计信息
 func (f *FPGAAccelerator) ResetStats() {
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	// 重置基本统计
 	f.stats.TotalOperations = 0
@@ -1385,8 +1390,8 @@ func (f *FPGAAccelerator) ResetStats() {
 
 // LoadBitstream 加载比特流
 func (f *FPGAAccelerator) LoadBitstream(path string) error {
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	if !f.initialized {
 		return fmt.Errorf("FPGA未初始化")
@@ -1408,8 +1413,8 @@ func (f *FPGAAccelerator) LoadBitstream(path string) error {
 
 // Reconfigure 重新配置FPGA
 func (f *FPGAAccelerator) Reconfigure(bitstreamPath string) error {
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	if !f.initialized {
 		return fmt.Errorf("FPGA未初始化")
@@ -1430,8 +1435,8 @@ func (f *FPGAAccelerator) Reconfigure(bitstreamPath string) error {
 
 // GetDeviceInfo 获取设备信息
 func (f *FPGAAccelerator) GetDeviceInfo() (map[string]interface{}, error) {
-	f.mutex.RLock()
-	defer f.mutex.RUnlock()
+	f.mu.RLock()
+	defer f.mu.RUnlock()
 
 	if !f.available {
 		return nil, fmt.Errorf("FPGA设备不可用")

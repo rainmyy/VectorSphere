@@ -36,15 +36,12 @@ func (hd *HardwareDetector) GetHardwareCapabilities() HardwareCapabilities {
 
 // NewCPUAccelerator 创建新的CPU加速器stub实例
 func NewCPUAccelerator(deviceID int, indexType string) *CPUAccelerator {
+	capabilities := HardwareCapabilities{
+		Type: AcceleratorCPU,
+	}
+	baseAccel := NewBaseAccelerator(deviceID, indexType, capabilities, HardwareStats{})
 	return &CPUAccelerator{
-		deviceID:        deviceID,
-		initialized:     false,
-		available:       true,
-		indexType:       indexType,
-		dimension:       0,
-		strategy:        NewComputeStrategySelector(),
-		currentStrategy: StrategyStandard,
-		dataSize:        0,
+		BaseAccelerator: baseAccel,
 	}
 }
 

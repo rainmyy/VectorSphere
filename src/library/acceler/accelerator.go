@@ -23,18 +23,9 @@ type CPUConfig struct {
 	VectorWidth int    `json:"vector_width" yaml:"vector_width"`
 }
 
-// CPUAccelerator FAISS 加速器实现
+// CPUAccelerator CPU加速器实现
 type CPUAccelerator struct {
-	deviceID        int
-	initialized     bool
-	available       bool
-	mu              sync.RWMutex
-	indexType       string
-	dimension       int
-	strategy        *ComputeStrategySelector
-	currentStrategy ComputeStrategy
-	dataSize        int
-	hardwareManager *HardwareManager
+	*BaseAccelerator
 }
 
 // CpuAccelerator 为了兼容性，定义一个别名
@@ -53,15 +44,7 @@ type AccelResult struct {
 
 // GPUAccelerator GPU加速器实现
 type GPUAccelerator struct {
-	deviceID        int
-	initialized     bool
-	available       bool
-	mu              sync.RWMutex
-	indexType       string
-	dimension       int
-	strategy        *ComputeStrategySelector
-	currentStrategy ComputeStrategy
-	dataSize        int
+	*BaseAccelerator
 	// GPU特定字段
 	operationCount int64
 	errorCount     int64
@@ -70,19 +53,12 @@ type GPUAccelerator struct {
 	gpuWrapper     unsafe.Pointer // 用于存储C结构体指针
 	gpuResources   unsafe.Pointer // FAISS GPU资源
 
-	// 统计信息
-	stats struct {
-		TotalOperations int64
-		SuccessfulOps   int64
-		FailedOps       int64
+	// GPU特定统计信息
+	gpuStats struct {
 		ComputeTime     time.Duration
 		KernelLaunches  int64
 		MemoryTransfers int64
-		LastUsed        time.Time
 	}
-
-	// 性能指标
-	performanceMetrics PerformanceMetrics
 
 	// 内存管理
 	memoryUsed  int64
@@ -92,24 +68,17 @@ type GPUAccelerator struct {
 
 // PMemAccelerator 持久内存加速器实现
 type PMemAccelerator struct {
+	*BaseAccelerator
+	// PMem特定字段
 	devicePaths   []string
 	deviceHandles []unsafe.Pointer
-	initialized   bool
-	available     bool
-	capabilities  HardwareCapabilities
-	stats         HardwareStats
-	mutex         sync.RWMutex
 	config        *PMemConfig
-	lastStatsTime time.Time
-	startTime     time.Time
 	vectorCache   map[string][]float64 // 向量缓存
 	cacheMutex    sync.RWMutex
-
-	devicePath  string
-	deviceSize  uint64
-	memoryPool  map[string][]float64 // 模拟持久内存存储
-	namespaces  map[string]*PMemNamespace
-	performance PerformanceMetrics
+	devicePath    string
+	deviceSize    uint64
+	memoryPool    map[string][]float64 // 模拟持久内存存储
+	namespaces    map[string]*PMemNamespace
 }
 
 // PMemConfig 持久内存配置
@@ -196,19 +165,11 @@ type PMemReliabilityConfig struct {
 
 // FPGAAccelerator FPGA加速器实现
 type FPGAAccelerator struct {
-	deviceID      int
+	*BaseAccelerator
+	// FPGA特定字段
 	deviceHandle  unsafe.Pointer
-	initialized   bool
-	available     bool
-	capabilities  HardwareCapabilities
-	stats         HardwareStats
-	mutex         sync.RWMutex
 	config        *FPGAConfig
 	bitstream     string
-	lastStatsTime time.Time
-	startTime     time.Time
-
-	performance PerformanceMetrics
 }
 
 // FPGAConfig FPGA配置

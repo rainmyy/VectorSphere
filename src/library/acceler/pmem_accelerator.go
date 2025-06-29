@@ -51,17 +51,22 @@ import "C"
 
 // NewPMemAccelerator 创建新的持久内存加速器
 func NewPMemAccelerator(config *PMemConfig) *PMemAccelerator {
+	capabilities := HardwareCapabilities{
+		Type:              AcceleratorPMem,
+		SupportedOps:      []string{"persistent_storage", "fast_access", "distance_compute", "vector_cache"},
+		PerformanceRating: 8.0,
+		SpecialFeatures:   []string{"persistent", "byte_addressable", "low_latency", "high_bandwidth"},
+	}
+	baseAccel := NewBaseAccelerator(0, "PMem", capabilities, HardwareStats{})
 	pmem := &PMemAccelerator{
-		config:        config,
-		lastStatsTime: time.Now(),
-		startTime:     time.Now(),
-		vectorCache:   make(map[string][]float64),
-		capabilities: HardwareCapabilities{
-			Type:              AcceleratorPMem,
-			SupportedOps:      []string{"persistent_storage", "fast_access", "distance_compute", "vector_cache"},
-			PerformanceRating: 8.0,
-			SpecialFeatures:   []string{"persistent", "byte_addressable", "low_latency", "high_bandwidth"},
-		},
+		BaseAccelerator: baseAccel,
+		devicePath:      config.DevicePath,
+		deviceSize:      config.PoolSize,
+		config:          config,
+		memoryPool:      make(map[string][]float64),
+		namespaces:      make(map[string]*PMemNamespace),
+
+		vectorCache: make(map[string][]float64),
 	}
 
 	if config != nil {
@@ -80,15 +85,15 @@ func (p *PMemAccelerator) GetType() string {
 
 // IsAvailable 检查PMem是否可用
 func (p *PMemAccelerator) IsAvailable() bool {
-	p.mutex.RLock()
-	defer p.mutex.RUnlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	return p.available
 }
 
 // Initialize 初始化PMem
 func (p *PMemAccelerator) Initialize() error {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	if !p.available {
 		return fmt.Errorf("PMem设备不可用")
@@ -134,8 +139,8 @@ func (p *PMemAccelerator) Initialize() error {
 
 // Shutdown 关闭PMem
 func (p *PMemAccelerator) Shutdown() error {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	if !p.initialized {
 		return nil
@@ -169,8 +174,8 @@ func (p *PMemAccelerator) Stop() error {
 
 // ComputeDistance 计算距离（使用PMem加速）
 func (p *PMemAccelerator) ComputeDistance(query []float64, vectors [][]float64) ([]float64, error) {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	if !p.initialized {
 		return nil, fmt.Errorf("PMem未初始化")
@@ -234,8 +239,8 @@ func (p *PMemAccelerator) ComputeDistance(query []float64, vectors [][]float64) 
 
 // BatchComputeDistance 批量计算距离
 func (p *PMemAccelerator) BatchComputeDistance(queries [][]float64, vectors [][]float64) ([][]float64, error) {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	if !p.initialized {
 		return nil, fmt.Errorf("PMem未初始化")
@@ -338,8 +343,8 @@ func (p *PMemAccelerator) AccelerateSearch(query []float64, results []AccelResul
 
 // OptimizeMemoryLayout 优化内存布局
 func (p *PMemAccelerator) OptimizeMemoryLayout(vectors [][]float64) error {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	if !p.initialized || len(p.deviceHandles) == 0 {
 		return fmt.Errorf("PMem未初始化")
@@ -380,23 +385,23 @@ func (p *PMemAccelerator) PrefetchData(vectors [][]float64) error {
 
 // GetCapabilities 获取PMem能力信息
 func (p *PMemAccelerator) GetCapabilities() HardwareCapabilities {
-	p.mutex.RLock()
-	defer p.mutex.RUnlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	return p.capabilities
 }
 
 // GetStats 获取PMem统计信息
 func (p *PMemAccelerator) GetStats() HardwareStats {
-	p.mutex.RLock()
-	defer p.mutex.RUnlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	p.stats.LastUsed = p.startTime
 	return p.stats
 }
 
 // GetPerformanceMetrics 获取性能指标
 func (p *PMemAccelerator) GetPerformanceMetrics() PerformanceMetrics {
-	p.mutex.RLock()
-	defer p.mutex.RUnlock()
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	latencyP95 := float64(p.stats.AverageLatency) * 1.5
 	return PerformanceMetrics{
 		LatencyP50:        float64(p.stats.AverageLatency),
@@ -415,8 +420,8 @@ func (p *PMemAccelerator) GetPerformanceMetrics() PerformanceMetrics {
 
 // UpdateConfig 更新配置
 func (p *PMemAccelerator) UpdateConfig(config interface{}) error {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	if pmemConfig, ok := config.(*PMemConfig); ok {
 		p.config = pmemConfig
@@ -428,8 +433,8 @@ func (p *PMemAccelerator) UpdateConfig(config interface{}) error {
 
 // AutoTune 自动调优
 func (p *PMemAccelerator) AutoTune(workload WorkloadProfile) error {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
 	// 根据工作负载调整PMem配置
 	if p.config != nil {

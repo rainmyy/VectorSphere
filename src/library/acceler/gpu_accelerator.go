@@ -71,12 +71,14 @@ import (
 
 // NewGPUAccelerator 创建新的GPU加速器实例
 func NewGPUAccelerator(deviceID int) *GPUAccelerator {
+	capabilities := HardwareCapabilities{
+		Type: AcceleratorGPU,
+	}
+	baseAccel := NewBaseAccelerator(deviceID, indexType, capabilities, HardwareStats{})
 	return &GPUAccelerator{
-		deviceID:    deviceID,
-		indexType:   "IVF",
-		batchSize:   1000,
-		streamCount: 4,
-		strategy:    NewComputeStrategySelector(),
+		BaseAccelerator: NewBaseAccelerator(deviceID, "IVF", AcceleratorGPU),
+		batchSize:       1000,
+		streamCount:     4,
 	}
 }
 
@@ -396,7 +398,13 @@ func (g *GPUAccelerator) ComputeDistance(query []float64, vectors [][]float64) (
 
 	start := time.Now()
 	defer func() {
-		g.stats.ComputeTime += time.Since(start)
+		// 更新平均延迟统计
+		duration := time.Since(start)
+		if g.stats.SuccessfulOps > 0 {
+			g.stats.AverageLatency = (g.stats.AverageLatency*time.Duration(g.stats.SuccessfulOps-1) + duration) / time.Duration(g.stats.SuccessfulOps)
+		} else {
+			g.stats.AverageLatency = duration
+		}
 		g.stats.TotalOperations++
 	}()
 
@@ -443,9 +451,13 @@ func (g *GPUAccelerator) BatchComputeDistance(queries [][]float64, vectors [][]f
 
 	start := time.Now()
 	defer func() {
-		g.stats.ComputeTime += time.Since(start)
-		g.stats.KernelLaunches++
-		g.stats.MemoryTransfers += int64(len(queries) * len(vectors))
+		// 更新平均延迟统计
+		duration := time.Since(start)
+		if g.stats.SuccessfulOps > 0 {
+			g.stats.AverageLatency = (g.stats.AverageLatency*time.Duration(g.stats.SuccessfulOps-1) + duration) / time.Duration(g.stats.SuccessfulOps)
+		} else {
+			g.stats.AverageLatency = duration
+		}
 	}()
 
 	results := make([][]float64, len(queries))
@@ -476,9 +488,13 @@ func (g *GPUAccelerator) BatchCosineSimilarity(queries [][]float64, database [][
 
 	start := time.Now()
 	defer func() {
-		g.stats.ComputeTime += time.Since(start)
-		g.stats.KernelLaunches++
-		g.stats.MemoryTransfers += int64(len(queries) * len(database))
+		// 更新平均延迟统计
+		duration := time.Since(start)
+		if g.stats.SuccessfulOps > 0 {
+			g.stats.AverageLatency = (g.stats.AverageLatency*time.Duration(g.stats.SuccessfulOps-1) + duration) / time.Duration(g.stats.SuccessfulOps)
+		} else {
+			g.stats.AverageLatency = duration
+		}
 	}()
 
 	results := make([][]float64, len(queries))
@@ -738,13 +754,13 @@ func (g *GPUAccelerator) GetStats() HardwareStats {
 	// 计算平均延迟
 	averageLatency := time.Duration(0)
 	if g.stats.SuccessfulOps > 0 {
-		averageLatency = g.stats.ComputeTime / time.Duration(g.stats.SuccessfulOps)
+		averageLatency = g.stats.AverageLatency
 	}
 
 	// 计算吞吐量
-	throughput := 0.0
-	if g.stats.ComputeTime > 0 {
-		throughput = float64(g.stats.SuccessfulOps) / g.stats.ComputeTime.Seconds()
+	var throughput float64
+	if g.stats.AverageLatency > 0 {
+		throughput = 1.0 / g.stats.AverageLatency.Seconds()
 	}
 
 	return HardwareStats{

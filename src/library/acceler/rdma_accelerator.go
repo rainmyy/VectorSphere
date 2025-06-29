@@ -59,19 +59,13 @@ import (
 
 // RDMAAccelerator RDMA网络加速器实现
 type RDMAAccelerator struct {
-	deviceID      int
-	deviceHandle  unsafe.Pointer
-	connections   []unsafe.Pointer
-	initialized   bool
-	available     bool
-	capabilities  HardwareCapabilities
-	stats         HardwareStats
-	mutex         sync.RWMutex
-	config        *RDMAConfig
-	lastStatsTime time.Time
-	startTime     time.Time
-	nodePool      map[string]*RDMANode // 节点池
-	nodeMutex     sync.RWMutex
+	*BaseAccelerator
+	// RDMA特定字段
+	deviceHandle unsafe.Pointer
+	connections  []unsafe.Pointer
+	config       *RDMAConfig
+	nodePool     map[string]*RDMANode // 节点池
+	nodeMutex    sync.RWMutex
 }
 
 // RDMANode RDMA节点信息
@@ -87,18 +81,18 @@ type RDMANode struct {
 
 // NewRDMAAccelerator 创建新的RDMA加速器
 func NewRDMAAccelerator(deviceID, portNum int, config *RDMAConfig) *RDMAAccelerator {
+	capabilities := HardwareCapabilities{
+		Type:              AcceleratorRDMA,
+		SupportedOps:      []string{"distributed_compute", "high_bandwidth_transfer", "low_latency_communication", "remote_memory_access"},
+		PerformanceRating: 9.0,
+		SpecialFeatures:   []string{"zero_copy", "kernel_bypass", "remote_dma", "high_throughput"},
+	}
+	baseAccel := NewBaseAccelerator(deviceID, "IVF", capabilities, HardwareStats{})
+
 	rdma := &RDMAAccelerator{
-		deviceID:      deviceID,
-		config:        config,
-		lastStatsTime: time.Now(),
-		startTime:     time.Now(),
-		nodePool:      make(map[string]*RDMANode),
-		capabilities: HardwareCapabilities{
-			Type:              AcceleratorRDMA,
-			SupportedOps:      []string{"distributed_compute", "high_bandwidth_transfer", "low_latency_communication", "remote_memory_access"},
-			PerformanceRating: 9.0,
-			SpecialFeatures:   []string{"zero_copy", "kernel_bypass", "remote_dma", "high_throughput"},
-		},
+		BaseAccelerator: baseAccel,
+		config:          config,
+		nodePool:        make(map[string]*RDMANode),
 	}
 
 	// 检测RDMA可用性
@@ -113,15 +107,15 @@ func (r *RDMAAccelerator) GetType() string {
 
 // IsAvailable 检查RDMA是否可用
 func (r *RDMAAccelerator) IsAvailable() bool {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.available
 }
 
 // Initialize 初始化RDMA
 func (r *RDMAAccelerator) Initialize() error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	if !r.available {
 		return fmt.Errorf("RDMA设备 %d 不可用", r.deviceID)
@@ -168,8 +162,8 @@ func (r *RDMAAccelerator) Initialize() error {
 
 // Shutdown 关闭RDMA
 func (r *RDMAAccelerator) Shutdown() error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	if !r.initialized {
 		return nil
@@ -209,8 +203,8 @@ func (r *RDMAAccelerator) Stop() error {
 
 // ComputeDistance 分布式计算距离
 func (r *RDMAAccelerator) ComputeDistance(query []float64, vectors [][]float64) ([]float64, error) {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	if !r.initialized {
 		return nil, fmt.Errorf("RDMA未初始化")
@@ -232,8 +226,8 @@ func (r *RDMAAccelerator) ComputeDistance(query []float64, vectors [][]float64) 
 
 // BatchComputeDistance 批量分布式计算距离
 func (r *RDMAAccelerator) BatchComputeDistance(queries [][]float64, vectors [][]float64) ([][]float64, error) {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	if !r.initialized {
 		return nil, fmt.Errorf("RDMA未初始化")
@@ -348,23 +342,23 @@ func (r *RDMAAccelerator) PrefetchData(vectors [][]float64) error {
 
 // GetCapabilities 获取RDMA能力信息
 func (r *RDMAAccelerator) GetCapabilities() HardwareCapabilities {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.capabilities
 }
 
 // GetStats 获取RDMA统计信息
 func (r *RDMAAccelerator) GetStats() HardwareStats {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	r.stats.LastUsed = r.startTime
 	return r.stats
 }
 
 // GetPerformanceMetrics 获取性能指标
 func (r *RDMAAccelerator) GetPerformanceMetrics() PerformanceMetrics {
-	r.mutex.RLock()
-	defer r.mutex.RUnlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	latencyP95 := float64(r.stats.AverageLatency) * 1.2
 	latencyP99 := float64(r.stats.AverageLatency) * 1.2
 	return PerformanceMetrics{
@@ -385,8 +379,8 @@ func (r *RDMAAccelerator) GetPerformanceMetrics() PerformanceMetrics {
 
 // UpdateConfig 更新配置
 func (r *RDMAAccelerator) UpdateConfig(config interface{}) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	if rdmaConfig, ok := config.(*RDMAConfig); ok {
 		r.config = rdmaConfig
@@ -398,8 +392,8 @@ func (r *RDMAAccelerator) UpdateConfig(config interface{}) error {
 
 // AutoTune 自动调优
 func (r *RDMAAccelerator) AutoTune(workload WorkloadProfile) error {
-	r.mutex.Lock()
-	defer r.mutex.Unlock()
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	// 根据工作负载调整RDMA配置
 	if r.config != nil {
