@@ -25,96 +25,8 @@ type RDMAAccelerator struct {
 	performance  PerformanceMetrics
 }
 
-// RDMAConfig RDMA配置
-type RDMAConfig struct {
-	DeviceID           int                           `json:"device_id"`
-	PortNum            int                           `json:"port_num"`
-	NetworkConfig      *RDMANetworkConfig            `json:"network_config"`
-	Devices            []*RDMADevice                 `json:"devices"`
-	QueuePair          *RDMAQueuePairConfig          `json:"queue_pair"`
-	MemoryRegistration *RDMAMemoryRegistrationConfig `json:"memory_registration"`
-	CongestionControl  *RDMACongestionControlConfig  `json:"congestion_control"`
-	PerformanceTuning  *RDMAPerformanceTuningConfig  `json:"performance_tuning"`
-	EnableMultipath    bool                          `json:"enable_multipath"`
-	EnableCompression  bool                          `json:"enable_compression"`
-
-	Enable    bool   `json:"enable" yaml:"enable"`
-	QueueSize int    `json:"queue_size" yaml:"queue_size"`
-	Protocol  string `json:"protocol" yaml:"protocol"`
-}
-
-// RDMANetworkConfig RDMA网络配置
-type RDMANetworkConfig struct {
-	Subnet       string        `json:"subnet"`
-	MTU          int           `json:"mtu"`
-	Timeout      time.Duration `json:"timeout"`
-	RetryCount   int           `json:"retry_count"`
-	ServiceLevel int           `json:"service_level"`
-	TrafficClass int           `json:"traffic_class"`
-	FlowLabel    int           `json:"flow_label"`
-	HopLimit     int           `json:"hop_limit"`
-}
-
-// RDMADevice RDMA设备配置
-type RDMADevice struct {
-	Name        string `json:"name"`
-	GUID        string `json:"guid"`
-	PortCount   int    `json:"port_count"`
-	VendorID    int    `json:"vendor_id"`
-	DeviceID    int    `json:"device_id"`
-	MaxMR       int    `json:"max_mr"`
-	MaxQP       int    `json:"max_qp"`
-	MaxCQ       int    `json:"max_cq"`
-	MaxSRQ      int    `json:"max_srq"`
-	PageSizeCAP int    `json:"page_size_cap"`
-}
-
-// RDMAQueuePairConfig RDMA队列对配置
-type RDMAQueuePairConfig struct {
-	MaxSendWR     int    `json:"max_send_wr"`
-	MaxRecvWR     int    `json:"max_recv_wr"`
-	MaxSendSGE    int    `json:"max_send_sge"`
-	MaxRecvSGE    int    `json:"max_recv_sge"`
-	MaxInlineData int    `json:"max_inline_data"`
-	QPType        string `json:"qp_type"` // RC, UC, UD
-	SignalAll     bool   `json:"signal_all"`
-	SQPSN         int    `json:"sq_psn"`
-	RQPSN         int    `json:"rq_psn"`
-}
-
-// RDMAMemoryRegistrationConfig RDMA内存注册配置
-type RDMAMemoryRegistrationConfig struct {
-	AccessFlags   []string `json:"access_flags"` // LOCAL_WRITE, REMOTE_READ, REMOTE_WRITE
-	BufferSize    uint64   `json:"buffer_size"`
-	Alignment     int      `json:"alignment"`
-	EnableODP     bool     `json:"enable_odp"` // On-Demand Paging
-	PrefaultPages bool     `json:"prefault_pages"`
-	HugepageSize  int      `json:"hugepage_size"`
-}
-
-// RDMACongestionControlConfig RDMA拥塞控制配置
-type RDMACongestionControlConfig struct {
-	Algorithm          string        `json:"algorithm"` // DCQCN, TIMELY, PFC
-	CCKeyViolations    int           `json:"cc_key_violations"`
-	CCKeyViolationTime time.Duration `json:"cc_key_violation_time"`
-	TargetRate         uint64        `json:"target_rate"`
-	RateToDecrease     float64       `json:"rate_to_decrease"`
-	RateToIncrease     float64       `json:"rate_to_increase"`
-	MinRate            uint64        `json:"min_rate"`
-	MaxRate            uint64        `json:"max_rate"`
-}
-
-// RDMAPerformanceTuningConfig RDMA性能调优配置
-type RDMAPerformanceTuningConfig struct {
-	EnableCQModeration    bool          `json:"enable_cq_moderation"`
-	CQModerationUsec      int           `json:"cq_moderation_usec"`
-	CQModerationPkts      int           `json:"cq_moderation_pkts"`
-	EnableAdaptiveRouting bool          `json:"enable_adaptive_routing"`
-	EnableECN             bool          `json:"enable_ecn"`
-	RNRTimeout            time.Duration `json:"rnr_timeout"`
-	RNRRetryCount         int           `json:"rnr_retry_count"`
-	PacketLifeTime        int           `json:"packet_life_time"`
-}
+// 注意：RDMAConfig及相关结构体现在统一在hardware_manager.go中定义
+// 这里只保留stub特有的结构体
 
 // RDMAConnection RDMA连接
 type RDMAConnection struct {
@@ -132,6 +44,17 @@ type ClusterNode struct {
 	Latency   time.Duration
 	Load      float64
 	LastSeen  time.Time
+}
+
+// RDMANode RDMA节点信息
+type RDMANode struct {
+	Address    string
+	Port       int
+	Connection interface{} // 模拟连接指针
+	Connected  bool
+	LastSeen   time.Time
+	Latency    time.Duration
+	Bandwidth  int64
 }
 
 // NewRDMAAccelerator 创建新的RDMA加速器
@@ -213,6 +136,16 @@ func (r *RDMAAccelerator) Shutdown() error {
 	return nil
 }
 
+// Start 启动RDMA
+func (r *RDMAAccelerator) Start() error {
+	return r.Initialize()
+}
+
+// Stop 停止RDMA
+func (r *RDMAAccelerator) Stop() error {
+	return r.Shutdown()
+}
+
 // ComputeDistance 计算向量距离（分布式）
 func (r *RDMAAccelerator) ComputeDistance(query []float64, targets [][]float64) ([]float64, error) {
 	start := time.Now()
@@ -274,8 +207,60 @@ func (r *RDMAAccelerator) BatchComputeDistance(queries, targets [][]float64) ([]
 	return results, nil
 }
 
+// AddNode 添加新节点
+func (r *RDMAAccelerator) AddNode(address string, port int) error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	nodeAddr := fmt.Sprintf("%s:%d", address, port)
+	if _, exists := r.nodes[nodeAddr]; exists {
+		return fmt.Errorf("节点 %s 已存在", nodeAddr)
+	}
+
+	// 模拟连接建立
+	time.Sleep(10 * time.Millisecond)
+
+	// 添加到节点池
+	r.nodes[nodeAddr] = &ClusterNode{
+		Address:   address,
+		Connected: true,
+		Latency:   1 * time.Microsecond,
+		Load:      0.1,
+		LastSeen:  time.Now(),
+	}
+
+	// 添加连接
+	r.connections[nodeAddr] = &RDMAConnection{
+		RemoteAddr: nodeAddr,
+		Connected:  true,
+		Latency:    1 * time.Microsecond,
+		Bandwidth:  100 * 1024 * 1024 * 1024, // 100Gbps
+		LastUsed:   time.Now(),
+	}
+
+	return nil
+}
+
+// RemoveNode 移除节点
+func (r *RDMAAccelerator) RemoveNode(address string, port int) error {
+	r.mutex.Lock()
+	defer r.mutex.Unlock()
+
+	nodeAddr := fmt.Sprintf("%s:%d", address, port)
+	if _, exists := r.nodes[nodeAddr]; !exists {
+		return fmt.Errorf("节点 %s 不存在", nodeAddr)
+	}
+
+	// 从节点池中移除
+	delete(r.nodes, nodeAddr)
+	// 从连接中移除
+	delete(r.connections, nodeAddr)
+
+	return nil
+}
+
 // BatchCosineSimilarity 批量计算余弦相似度
-func (r *RDMAAccelerator) BatchCosineSimilarity(queries, database [][]float64) ([][]float64, error) {
+func (r *RDMAAccelerator) BatchCosineSimilarity(queries [][]float64, database [][]float64) ([][]float64, error) {
 	return r.BatchComputeDistance(queries, database)
 }
 
@@ -286,10 +271,28 @@ func (r *RDMAAccelerator) AccelerateSearch(query []float64, database [][]float64
 	}()
 
 	if !r.initialized {
-		return nil, fmt.Errorf("FPGA accelerator not initialized")
+		return nil, fmt.Errorf("RDMA accelerator not initialized")
 	}
 
-	return AccelerateSearch(query, database, options)
+	// RDMA可以提供分布式搜索加速
+	distances, err := r.ComputeDistance(query, database)
+	if err != nil {
+		return nil, err
+	}
+	
+	// 转换为AccelResult格式
+	results := make([]AccelResult, len(distances))
+	for i, dist := range distances {
+		results[i] = AccelResult{
+			ID:         fmt.Sprintf("vec_%d", i),
+			Similarity: 1.0 / (1.0 + dist),
+			Distance:   dist,
+			Index:      i,
+			Metadata:   map[string]interface{}{"distributed": true},
+		}
+	}
+	
+	return results, nil
 }
 
 // OptimizeMemory 优化内存使用
@@ -298,21 +301,27 @@ func (r *RDMAAccelerator) OptimizeMemory() error {
 	defer r.mutex.Unlock()
 
 	// 模拟RDMA内存优化
-	if r.config.MemoryRegistration.EnableODP {
-		// 模拟按需分页优化
+	if r.config.MemoryRegistration != nil && r.config.MemoryRegistration.HugePagesEnable {
+		// 模拟大页内存优化
 		time.Sleep(2 * time.Millisecond)
 	}
 
 	return nil
 }
 
+// OptimizeMemoryLayout 优化内存布局
+func (r *RDMAAccelerator) OptimizeMemoryLayout(vectors [][]float64) error {
+	// RDMA可以优化内存注册和远程访问模式
+	return nil
+}
+
 // PrefetchData 预取数据
-func (r *RDMAAccelerator) PrefetchData(keys []string) error {
+func (r *RDMAAccelerator) PrefetchData(vectors [][]float64) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
 	// 模拟RDMA数据预取
-	for range keys {
+	for range vectors {
 		time.Sleep(50 * time.Microsecond) // 网络预取延迟
 	}
 
@@ -361,14 +370,29 @@ func (r *RDMAAccelerator) AutoTune(workload WorkloadProfile) error {
 	// 根据工作负载调整RDMA配置
 	switch workload.Type {
 	case "distributed":
-		r.config.EnableMultipath = true
-		r.config.PerformanceTuning.EnableAdaptiveRouting = true
+		// 注意：hardware_manager.go中的RDMAConfig没有EnableMultipath字段
+		if r.config.PerformanceTuning != nil {
+			r.config.PerformanceTuning.PollingMode = true
+		}
 	case "low_latency":
-		r.config.QueuePair.SignalAll = true
-		r.config.PerformanceTuning.EnableCQModeration = false
+		if r.config.QueuePairs != nil {
+			// 低延迟配置：减少队列大小，启用轮询
+			r.config.QueuePairs.SendQueueSize = 64
+			r.config.QueuePairs.ReceiveQueueSize = 64
+		}
+		if r.config.PerformanceTuning != nil {
+			r.config.PerformanceTuning.PollingMode = true
+			r.config.PerformanceTuning.InterruptCoalescing = false
+		}
 	case "high_throughput":
-		r.config.QueuePair.MaxSendWR = 1024
-		r.config.PerformanceTuning.EnableCQModeration = true
+		if r.config.QueuePairs != nil {
+			r.config.QueuePairs.SendQueueSize = 1024
+			r.config.QueuePairs.ReceiveQueueSize = 1024
+		}
+		if r.config.PerformanceTuning != nil {
+			r.config.PerformanceTuning.BatchSize = 64
+			r.config.PerformanceTuning.InterruptCoalescing = true
+		}
 	}
 
 	return nil
@@ -505,10 +529,23 @@ func (r *RDMAAccelerator) GatherResults() ([][]AccelResult, error) {
 }
 
 // GetClusterInfo 获取集群信息
-func (r *RDMAAccelerator) GetClusterInfo() map[string]*ClusterNode {
+func (r *RDMAAccelerator) GetClusterInfo() map[string]*RDMANode {
 	r.mutex.RLock()
 	defer r.mutex.RUnlock()
-	return r.nodes
+	
+	// 转换ClusterNode到RDMANode格式
+	info := make(map[string]*RDMANode)
+	for addr, node := range r.nodes {
+		info[addr] = &RDMANode{
+			Address:   node.Address,
+			Port:      18515, // 默认RDMA端口
+			Connected: node.Connected,
+			LastSeen:  node.LastSeen,
+			Latency:   node.Latency,
+			Bandwidth: 100 * 1024 * 1024 * 1024, // 100Gbps
+		}
+	}
+	return info
 }
 
 // GetConnectionInfo 获取连接信息

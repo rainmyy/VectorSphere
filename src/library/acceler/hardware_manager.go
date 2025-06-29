@@ -188,6 +188,34 @@ func (hm *HardwareManager) CreateAcceleratorFromConfig(acceleratorType string, c
 		if !ok {
 			return nil, fmt.Errorf("配置类型不匹配 RDMAConfig")
 		}
+		// 确保配置完整性，如果缺少必要字段则使用默认值
+		if rdmaCfg.QueuePairs == nil {
+			rdmaCfg.QueuePairs = &RDMAQueuePairConfig{
+				MaxQPs:           256,
+				SendQueueSize:    rdmaCfg.QueueSize,
+				ReceiveQueueSize: rdmaCfg.QueueSize,
+				MaxInlineData:    64,
+				MaxSGE:           16,
+				RetryCount:       7,
+				RNRRetryCount:    7,
+				Timeout:          14,
+			}
+		}
+		if rdmaCfg.TransportType == "" {
+			rdmaCfg.TransportType = "RC"
+		}
+		if len(rdmaCfg.Devices) == 0 {
+			rdmaCfg.Devices = []RDMADevice{
+				{
+					Name:      fmt.Sprintf("mlx5_%d", rdmaCfg.DeviceID),
+					Port:      rdmaCfg.PortNum,
+					GID:       "",
+					LID:       0,
+					MTU:       4096,
+					LinkLayer: "Ethernet",
+				},
+			}
+		}
 		return NewRDMAAccelerator(rdmaCfg.DeviceID, rdmaCfg.PortNum, &rdmaCfg), nil
 	default:
 		return nil, fmt.Errorf("未知加速器类型: %s", acceleratorType)
@@ -337,10 +365,60 @@ func (hm *HardwareManager) registerAllAccelerators() {
 
 	// 注册RDMA加速器
 	if hm.config.RDMA.Enable {
+		// 创建完整的RDMA配置，包含默认值
 		rdmaConfig := &RDMAConfig{
-			DeviceID: hm.config.RDMA.DeviceID,
-			PortNum:  hm.config.RDMA.PortNum,
+			Enable:        hm.config.RDMA.Enable,
+			DeviceID:      hm.config.RDMA.DeviceID,
+			PortNum:       hm.config.RDMA.PortNum,
+			QueueSize:     hm.config.RDMA.QueueSize,
+			Protocol:      hm.config.RDMA.Protocol,
+			TransportType: "RC", // 默认使用可靠连接
+			Devices: []RDMADevice{
+				{
+					Name:      fmt.Sprintf("mlx5_%d", hm.config.RDMA.DeviceID),
+					Port:      hm.config.RDMA.PortNum,
+					GID:       "",
+					LID:       0,
+					MTU:       4096,
+					LinkLayer: "Ethernet",
+				},
+			},
+			QueuePairs: &RDMAQueuePairConfig{
+				MaxQPs:           256,
+				SendQueueSize:    hm.config.RDMA.QueueSize,
+				ReceiveQueueSize: hm.config.RDMA.QueueSize,
+				MaxInlineData:    64,
+				MaxSGE:           16,
+				RetryCount:       7,
+				RNRRetryCount:    7,
+				Timeout:          14,
+			},
+			MemoryRegistration: &RDMAMemoryRegistrationConfig{
+				Strategy:          "eager",
+				CacheSize:         1024 * 1024 * 1024, // 1GB
+				HugePagesEnable:   true,
+				MemoryPinning:     true,
+				RegistrationCache: true,
+			},
+			CongestionControl: &RDMACongestionControlConfig{
+				Algorithm:    "DCQCN",
+				ECNThreshold: 0.5,
+				RateIncrease: 0.1,
+				RateDecrease: 0.5,
+				MinRate:      1024 * 1024,              // 1MB/s
+				MaxRate:      100 * 1024 * 1024 * 1024, // 100GB/s
+			},
+			PerformanceTuning: &RDMAPerformanceTuningConfig{
+				BatchSize:           32,
+				PollingMode:         true,
+				InterruptCoalescing: true,
+				CPUAffinity:         []int{},
+				NUMAOptimization:    true,
+				ZeroCopy:            true,
+			},
+			ClusterNodes: []string{}, // 默认为空，可以后续添加
 		}
+
 		rdmaAcc := NewRDMAAccelerator(hm.config.RDMA.DeviceID, hm.config.RDMA.PortNum, rdmaConfig)
 		if rdmaAcc.IsAvailable() {
 			hm.RegisterAccelerator(AcceleratorRDMA, rdmaAcc)
@@ -1120,7 +1198,7 @@ func (hm *HardwareManager) SetDetectionInterval(interval time.Duration) {
 func (hm *HardwareManager) SetGPUMemoryThreshold(threshold float64) {
 	hm.mutex.Lock()
 	defer hm.mutex.Unlock()
-	
+
 	if hm.config != nil {
 		// 更新配置中的GPU内存限制
 		if threshold > 0 && threshold <= 1.0 {
@@ -1136,7 +1214,7 @@ func (hm *HardwareManager) SetGPUMemoryThreshold(threshold float64) {
 func (hm *HardwareManager) SetCPUUsageThreshold(threshold float64) {
 	hm.mutex.Lock()
 	defer hm.mutex.Unlock()
-	
+
 	if hm.config != nil && threshold > 0 && threshold <= 1.0 {
 		// 更新CPU配置中的线程数，基于阈值调整
 		if threshold < 0.8 {
@@ -1163,17 +1241,17 @@ func (hm *HardwareManager) CheckGPUHealth() error {
 	if gpuAccel == nil {
 		return fmt.Errorf("GPU加速器不可用")
 	}
-	
+
 	if !gpuAccel.IsAvailable() {
 		return fmt.Errorf("GPU加速器状态异常")
 	}
-	
+
 	// 检查GPU统计信息
 	stats := gpuAccel.GetStats()
 	if stats.ErrorCount > 0 {
 		return fmt.Errorf("GPU存在错误，错误计数: %d", stats.ErrorCount)
 	}
-	
+
 	return nil
 }
 
@@ -1181,11 +1259,11 @@ func (hm *HardwareManager) CheckGPUHealth() error {
 func (hm *HardwareManager) DisableGPU() error {
 	hm.mutex.Lock()
 	defer hm.mutex.Unlock()
-	
+
 	if hm.config != nil {
 		hm.config.GPU.Enable = false
 	}
-	
+
 	// 关闭GPU加速器
 	gpuAccel := hm.GetGPUAccelerator()
 	if gpuAccel != nil {
@@ -1193,7 +1271,7 @@ func (hm *HardwareManager) DisableGPU() error {
 			return fmt.Errorf("关闭GPU加速器失败: %v", err)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -1201,11 +1279,11 @@ func (hm *HardwareManager) DisableGPU() error {
 func (hm *HardwareManager) RecoverGPU() error {
 	hm.mutex.Lock()
 	defer hm.mutex.Unlock()
-	
+
 	if hm.config != nil {
 		hm.config.GPU.Enable = true
 	}
-	
+
 	// 重新注册GPU加速器
 	return hm.ReRegisterAccelerator(AcceleratorGPU)
 }
@@ -1214,6 +1292,6 @@ func (hm *HardwareManager) RecoverGPU() error {
 func (hm *HardwareManager) IsGPUEnabled() bool {
 	hm.mutex.RLock()
 	defer hm.mutex.RUnlock()
-	
+
 	return hm.config != nil && hm.config.GPU.Enable
 }

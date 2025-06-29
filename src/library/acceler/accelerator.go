@@ -6,7 +6,7 @@ import (
 	"unsafe"
 )
 
-// Accelerator GPU 加速器接口
+// Accelerator 加速器接口
 //type Accelerator interface {
 //	Initialize() error
 //	BatchCosineSimilarity(queries [][]float64, database [][]float64) ([][]float64, error)
@@ -188,6 +188,131 @@ type PMemReliabilityConfig struct {
 	RepairEnabled  bool          `json:"repair_enabled"`
 	MirrorEnabled  bool          `json:"mirror_enabled"`
 	MirrorDevices  []string      `json:"mirror_devices"`
+}
+
+// FPGAAccelerator FPGA加速器实现
+type FPGAAccelerator struct {
+	deviceID      int
+	deviceHandle  unsafe.Pointer
+	initialized   bool
+	available     bool
+	capabilities  HardwareCapabilities
+	stats         HardwareStats
+	mutex         sync.RWMutex
+	config        *FPGAConfig
+	bitstream     string
+	lastStatsTime time.Time
+	startTime     time.Time
+
+	performance PerformanceMetrics
+}
+
+// FPGAConfig FPGA配置
+type FPGAConfig struct {
+	Enable          bool                      `json:"enable"`
+	DeviceIDs       []int                     `json:"device_ids"`
+	Bitstream       string                    `json:"bitstream"`
+	ClockFrequency  int                       `json:"clock_frequency"`  // MHz
+	MemoryBandwidth int64                     `json:"memory_bandwidth"` // bytes/sec
+	PipelineDepth   int                       `json:"pipeline_depth"`
+	Parallelism     FPGAParallelismConfig     `json:"parallelism"`
+	Optimization    FPGAOptimizationConfig    `json:"optimization"`
+	Reconfiguration FPGAReconfigurationConfig `json:"reconfiguration"`
+}
+
+// FPGAParallelismConfig FPGA并行配置
+type FPGAParallelismConfig struct {
+	ComputeUnits   int `json:"compute_units"`
+	VectorWidth    int `json:"vector_width"`
+	UnrollFactor   int `json:"unroll_factor"`
+	PipelineStages int `json:"pipeline_stages"`
+}
+
+// FPGAOptimizationConfig FPGA优化配置
+type FPGAOptimizationConfig struct {
+	ResourceSharing    bool `json:"resource_sharing"`
+	MemoryOptimization bool `json:"memory_optimization"`
+	TimingOptimization bool `json:"timing_optimization"`
+	PowerOptimization  bool `json:"power_optimization"`
+	AreaOptimization   bool `json:"area_optimization"`
+}
+
+// FPGAReconfigurationConfig FPGA重配置
+type FPGAReconfigurationConfig struct {
+	Enable                 bool          `json:"enable"`
+	PartialReconfiguration bool          `json:"partial_reconfiguration"`
+	ReconfigurationTime    time.Duration `json:"reconfiguration_time"`
+	BitstreamCache         bool          `json:"bitstream_cache"`
+	HotSwap                bool          `json:"hot_swap"`
+}
+
+// RDMAConfig RDMA配置
+type RDMAConfig struct {
+	Enable    bool   `json:"enable" yaml:"enable"`
+	DeviceID  int    `json:"device_id" yaml:"device_id"`
+	PortNum   int    `json:"port_num" yaml:"port_num"`
+	QueueSize int    `json:"queue_size" yaml:"queue_size"`
+	Protocol  string `json:"protocol" yaml:"protocol"`
+
+	// 为了兼容RDMA加速器，添加必要的字段
+	Devices            []RDMADevice                  `json:"devices,omitempty"`
+	TransportType      string                        `json:"transport_type,omitempty"`
+	QueuePairs         *RDMAQueuePairConfig          `json:"queue_pairs,omitempty"`
+	MemoryRegistration *RDMAMemoryRegistrationConfig `json:"memory_registration,omitempty"`
+	CongestionControl  *RDMACongestionControlConfig  `json:"congestion_control,omitempty"`
+	PerformanceTuning  *RDMAPerformanceTuningConfig  `json:"performance_tuning,omitempty"`
+	ClusterNodes       []string                      `json:"cluster_nodes,omitempty"`
+}
+
+// RDMADevice RDMA设备
+type RDMADevice struct {
+	Name      string `json:"name"`
+	Port      int    `json:"port"`
+	GID       string `json:"gid"`
+	LID       int    `json:"lid"`
+	MTU       int    `json:"mtu"`
+	LinkLayer string `json:"link_layer"`
+}
+
+// RDMAQueuePairConfig RDMA队列对配置
+type RDMAQueuePairConfig struct {
+	MaxQPs           int `json:"max_qps"`
+	SendQueueSize    int `json:"send_queue_size"`
+	ReceiveQueueSize int `json:"receive_queue_size"`
+	MaxInlineData    int `json:"max_inline_data"`
+	MaxSGE           int `json:"max_sge"`
+	RetryCount       int `json:"retry_count"`
+	RNRRetryCount    int `json:"rnr_retry_count"`
+	Timeout          int `json:"timeout"`
+}
+
+// RDMAMemoryRegistrationConfig RDMA内存注册配置
+type RDMAMemoryRegistrationConfig struct {
+	Strategy          string `json:"strategy"`
+	CacheSize         int64  `json:"cache_size"`
+	HugePagesEnable   bool   `json:"huge_pages_enable"`
+	MemoryPinning     bool   `json:"memory_pinning"`
+	RegistrationCache bool   `json:"registration_cache"`
+}
+
+// RDMACongestionControlConfig RDMA拥塞控制配置
+type RDMACongestionControlConfig struct {
+	Algorithm    string  `json:"algorithm"`
+	ECNThreshold float64 `json:"ecn_threshold"`
+	RateIncrease float64 `json:"rate_increase"`
+	RateDecrease float64 `json:"rate_decrease"`
+	MinRate      int64   `json:"min_rate"`
+	MaxRate      int64   `json:"max_rate"`
+}
+
+// RDMAPerformanceTuningConfig RDMA性能调优配置
+type RDMAPerformanceTuningConfig struct {
+	BatchSize           int   `json:"batch_size"`
+	PollingMode         bool  `json:"polling_mode"`
+	InterruptCoalescing bool  `json:"interrupt_coalescing"`
+	CPUAffinity         []int `json:"cpu_affinity"`
+	NUMAOptimization    bool  `json:"numa_optimization"`
+	ZeroCopy            bool  `json:"zero_copy"`
 }
 
 //// 新增 EnableHybridMode 方法

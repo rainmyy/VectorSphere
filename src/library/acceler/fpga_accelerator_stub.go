@@ -6,62 +6,8 @@ import (
 	"VectorSphere/src/library/entity"
 	"fmt"
 	"math"
-	"sync"
 	"time"
 )
-
-// FPGAAccelerator FPGA加速器模拟实现
-type FPGAAccelerator struct {
-	deviceID     int
-	deviceHandle interface{}
-	initialized  bool
-	available    bool
-	capabilities HardwareCapabilities
-	stats        HardwareStats
-	mutex        sync.RWMutex
-	config       *FPGAConfig
-	bitstream    string
-	performance  PerformanceMetrics
-}
-
-// FPGAConfig FPGA配置
-type FPGAConfig struct {
-	Enable          bool                      `json:"enable"`
-	DeviceIDs       []int                     `json:"device_ids"`
-	Bitstream       string                    `json:"bitstream"`
-	ClockFrequency  int                       `json:"clock_frequency"`  // MHz
-	MemoryBandwidth int64                     `json:"memory_bandwidth"` // bytes/sec
-	PipelineDepth   int                       `json:"pipeline_depth"`
-	Parallelism     FPGAParallelismConfig     `json:"parallelism"`
-	Optimization    FPGAOptimizationConfig    `json:"optimization"`
-	Reconfiguration FPGAReconfigurationConfig `json:"reconfiguration"`
-}
-
-// FPGAParallelismConfig FPGA并行配置
-type FPGAParallelismConfig struct {
-	ComputeUnits   int `json:"compute_units"`
-	VectorWidth    int `json:"vector_width"`
-	UnrollFactor   int `json:"unroll_factor"`
-	PipelineStages int `json:"pipeline_stages"`
-}
-
-// FPGAOptimizationConfig FPGA优化配置
-type FPGAOptimizationConfig struct {
-	ResourceSharing    bool `json:"resource_sharing"`
-	MemoryOptimization bool `json:"memory_optimization"`
-	TimingOptimization bool `json:"timing_optimization"`
-	PowerOptimization  bool `json:"power_optimization"`
-	AreaOptimization   bool `json:"area_optimization"`
-}
-
-// FPGAReconfigurationConfig FPGA重配置
-type FPGAReconfigurationConfig struct {
-	Enable                 bool          `json:"enable"`
-	PartialReconfiguration bool          `json:"partial_reconfiguration"`
-	ReconfigurationTime    time.Duration `json:"reconfiguration_time"`
-	BitstreamCache         bool          `json:"bitstream_cache"`
-	HotSwap                bool          `json:"hot_swap"`
-}
 
 // NewFPGAAccelerator 创建新的FPGA加速器
 func NewFPGAAccelerator(deviceID int, config *FPGAConfig) *FPGAAccelerator {
