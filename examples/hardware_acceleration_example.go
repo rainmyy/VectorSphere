@@ -30,8 +30,8 @@ func main() {
 	// 创建硬件配置
 	hardwareConfig := &acceler.HardwareConfig{
 		GPU: acceler.GPUConfig{
-			Enable:  true,
-			Devices: []int{0}, // 使用第一个GPU设备
+			Enable:    true,
+			DeviceIDs: []int{0}, // 使用第一个GPU设备
 			CUDA: acceler.CUDAConfig{
 				Enable:            true,
 				MemoryLimit:       4096, // 4GB

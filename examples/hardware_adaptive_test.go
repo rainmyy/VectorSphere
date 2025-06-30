@@ -59,22 +59,22 @@ func main() {
 	for _, strategy := range strategies {
 		logger.Info("测试策略: %s", strategy)
 		start := time.Now()
-		
+
 		results, err := db.FindNearest(queryVector, 10, 5)
 		if err != nil {
 			logger.Error("搜索失败 (%s): %v", strategy, err)
 			continue
 		}
-		
+
 		elapsed := time.Since(start)
 		logger.Info("策略 %s: 找到 %d 个结果，耗时 %v", strategy, len(results), elapsed)
-		
+
 		// 显示前3个结果
 		for i, result := range results {
 			if i >= 3 {
 				break
 			}
-			logger.Info("  结果 %d: ID=%s, 距离=%.6f", i+1, result.ID, result.Distance)
+			logger.Info("  结果 %d: ID=%s, 距离=%.6f", i+1, result.Id, result.Distance)
 		}
 	}
 
