@@ -3,6 +3,7 @@ package test
 import (
 	"VectorSphere/src/library/enum"
 	"VectorSphere/src/vector"
+	"math"
 	"testing"
 	"time"
 )
@@ -165,12 +166,12 @@ func TestUpdatePerformance(t *testing.T) {
 	// 检查指数移动平均计算
 	alpha := 0.1
 	expectedRecall := recall1 * alpha
-	if abs(lshFamily.Performance.AvgRecall-expectedRecall) > 0.001 {
+	if math.Abs(lshFamily.Performance.AvgRecall-expectedRecall) > 0.001 {
 		t.Errorf("期望平均召回率为%f，实际为%f", expectedRecall, lshFamily.Performance.AvgRecall)
 	}
 
 	expectedPrecision := precision1 * alpha
-	if abs(lshFamily.Performance.AvgPrecision-expectedPrecision) > 0.001 {
+	if math.Abs(lshFamily.Performance.AvgPrecision-expectedPrecision) > 0.001 {
 		t.Errorf("期望平均精确率为%f，实际为%f", expectedPrecision, lshFamily.Performance.AvgPrecision)
 	}
 
@@ -196,7 +197,7 @@ func TestUpdatePerformance(t *testing.T) {
 
 	// 检查指数移动平均更新
 	expectedRecall2 := expectedRecall*(1-alpha) + recall2*alpha
-	if abs(lshFamily.Performance.AvgRecall-expectedRecall2) > 0.001 {
+	if math.Abs(lshFamily.Performance.AvgRecall-expectedRecall2) > 0.001 {
 		t.Errorf("期望平均召回率为%f，实际为%f", expectedRecall2, lshFamily.Performance.AvgRecall)
 	}
 }
@@ -271,7 +272,7 @@ func TestGetEffectiveness(t *testing.T) {
 	expectedRecall := recall * alpha       // 因为初始值为0
 	expectedPrecision := precision * alpha // 因为初始值为0
 	expected := expectedRecall*recallWeight + expectedPrecision*precisionWeight + timeScore*timeWeight
-	if abs(effectiveness-expected) > 0.001 {
+	if math.Abs(effectiveness-expected) > 0.001 {
 		t.Errorf("期望有效性为%f，实际为%f", expected, effectiveness)
 	}
 }
@@ -307,7 +308,7 @@ func TestGetEffectivenessWithSlowQuery(t *testing.T) {
 	expectedRecall := recall * alpha       // 因为初始值为0
 	expectedPrecision := precision * alpha // 因为初始值为0
 	expected := expectedRecall*recallWeight + expectedPrecision*precisionWeight + timeScore*timeWeight
-	if abs(effectiveness-expected) > 0.001 {
+	if math.Abs(effectiveness-expected) > 0.001 {
 		t.Errorf("期望有效性为%f，实际为%f", expected, effectiveness)
 	}
 }
