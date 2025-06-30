@@ -63,10 +63,10 @@ func NewPMemAccelerator(config *PMemConfig) *PMemAccelerator {
 		devicePath:      config.DevicePath,
 		deviceSize:      config.PoolSize,
 		config:          config,
-		memoryPool:      make(map[string][]float64),
-		namespaces:      make(map[string]*PMemNamespace),
+		MemoryPool:      make(map[string][]float64),
+		Namespaces:      make(map[string]*PMemNamespace),
 
-		vectorCache: make(map[string][]float64),
+		VectorCache: make(map[string][]float64),
 	}
 
 	if config != nil {
@@ -188,12 +188,12 @@ func (p *PMemAccelerator) ComputeDistance(query []float64, vectors [][]float64) 
 
 	// 检查缓存
 	queryKey := p.generateQueryKey(query)
-	p.cacheMutex.RLock()
-	if cachedResult, exists := p.vectorCache[queryKey]; exists {
-		p.cacheMutex.RUnlock()
+	p.CacheMutex.RLock()
+	if cachedResult, exists := p.VectorCache[queryKey]; exists {
+		p.CacheMutex.RUnlock()
 		return cachedResult, nil
 	}
-	p.cacheMutex.RUnlock()
+	p.CacheMutex.RUnlock()
 
 	// 转换数据格式
 	queryFlat := make([]float32, len(query))
@@ -230,9 +230,9 @@ func (p *PMemAccelerator) ComputeDistance(query []float64, vectors [][]float64) 
 	}
 
 	// 缓存结果
-	p.cacheMutex.Lock()
-	p.vectorCache[queryKey] = results
-	p.cacheMutex.Unlock()
+	p.CacheMutex.Lock()
+	p.VectorCache[queryKey] = results
+	p.CacheMutex.Unlock()
 
 	return results, nil
 }
@@ -550,15 +550,15 @@ func (p *PMemAccelerator) generateQueryKey(query []float64) string {
 
 // getCacheHitRate 获取缓存命中率
 func (p *PMemAccelerator) getCacheHitRate() float64 {
-	p.cacheMutex.RLock()
-	defer p.cacheMutex.RUnlock()
+	p.CacheMutex.RLock()
+	defer p.CacheMutex.RUnlock()
 
 	if p.stats.TotalOperations == 0 {
 		return 0.0
 	}
 
 	// 简单估算缓存命中率
-	cacheSize := len(p.vectorCache)
+	cacheSize := len(p.VectorCache)
 	if cacheSize > 1000 {
 		return 0.9 // 高缓存命中率
 	} else if cacheSize > 100 {
@@ -570,11 +570,11 @@ func (p *PMemAccelerator) getCacheHitRate() float64 {
 
 // FlushCache 刷新缓存
 func (p *PMemAccelerator) FlushCache() error {
-	p.cacheMutex.Lock()
-	defer p.cacheMutex.Unlock()
+	p.CacheMutex.Lock()
+	defer p.CacheMutex.Unlock()
 
 	// 清空向量缓存
-	p.vectorCache = make(map[string][]float64)
+	p.VectorCache = make(map[string][]float64)
 
 	// 刷新PMem数据
 	if p.initialized {
@@ -591,12 +591,12 @@ func (p *PMemAccelerator) FlushCache() error {
 
 // GetCacheStats 获取缓存统计
 func (p *PMemAccelerator) GetCacheStats() map[string]interface{} {
-	p.cacheMutex.RLock()
-	defer p.cacheMutex.RUnlock()
+	p.CacheMutex.RLock()
+	defer p.CacheMutex.RUnlock()
 
 	return map[string]interface{}{
-		"cache_size":     len(p.vectorCache),
+		"cache_size":     len(p.VectorCache),
 		"cache_hit_rate": p.getCacheHitRate(),
-		"memory_usage":   len(p.vectorCache) * 512 * 8, // 估算内存使用
+		"memory_usage":   len(p.VectorCache) * 512 * 8, // 估算内存使用
 	}
 }

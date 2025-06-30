@@ -37,7 +37,7 @@ func (cm *ConfigManager) LoadConfig() (*DistributedConfig, error) {
 	}
 
 	// 验证配置
-	if err := cm.validateConfig(&config); err != nil {
+	if err := cm.ValidateConfig(&config); err != nil {
 		return nil, fmt.Errorf("配置验证失败: %v", err)
 	}
 
@@ -52,8 +52,8 @@ func (cm *ConfigManager) LoadConfig() (*DistributedConfig, error) {
 	return &config, nil
 }
 
-// validateConfig 验证配置
-func (cm *ConfigManager) validateConfig(config *DistributedConfig) error {
+// ValidateConfig 验证配置
+func (cm *ConfigManager) ValidateConfig(config *DistributedConfig) error {
 	if config.ServiceName == "" {
 		return fmt.Errorf("serviceName不能为空")
 	}
@@ -371,7 +371,7 @@ func (cm *ConfigManager) UpdateConfig(updates map[string]interface{}) error {
 	}
 
 	// 验证更新后的配置
-	if err := cm.validateConfig(cm.config); err != nil {
+	if err := cm.ValidateConfig(cm.config); err != nil {
 		return fmt.Errorf("配置更新后验证失败: %v", err)
 	}
 

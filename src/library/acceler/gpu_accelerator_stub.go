@@ -21,9 +21,9 @@ func NewGPUAccelerator(deviceID int) *GPUAccelerator {
 	baseAccel := NewBaseAccelerator(deviceID, "IVF", capabilities, HardwareStats{})
 	return &GPUAccelerator{
 		BaseAccelerator: baseAccel,
-		memoryTotal:     8 * 1024 * 1024 * 1024, // 8GB模拟GPU内存
-		memoryUsed:      0,
-		deviceCount:     1, // 模拟1个GPU设备
+		MemoryTotal:     8 * 1024 * 1024 * 1024, // 8GB模拟GPU内存
+		MemoryUsed:      0,
+		DeviceCount:     1, // 模拟1个GPU设备
 	}
 }
 
@@ -92,8 +92,8 @@ func (g *GPUAccelerator) GetGPUMemoryInfo() (free uint64, total uint64, err erro
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
-	total = uint64(g.memoryTotal)
-	free = uint64(g.memoryTotal - g.memoryUsed)
+	total = uint64(g.MemoryTotal)
+	free = uint64(g.MemoryTotal - g.MemoryUsed)
 	return free, total, nil
 }
 
@@ -382,10 +382,10 @@ func (g *GPUAccelerator) GetCapabilities() HardwareCapabilities {
 
 	return HardwareCapabilities{
 		Type:              "gpu",
-		GPUDevices:        g.deviceCount,
-		MemorySize:        g.memoryTotal,
-		ComputeUnits:      g.deviceCount * 1024, // 模拟计算单元
-		MaxBatchSize:      g.batchSize,
+		GPUDevices:        g.DeviceCount,
+		MemorySize:        g.MemoryTotal,
+		ComputeUnits:      g.DeviceCount * 1024, // 模拟计算单元
+		MaxBatchSize:      g.BatchSize,
 		SupportedOps:      []string{"distance", "similarity", "search", "batch_search"},
 		PerformanceRating: 7.0,                      // 模拟GPU性能评级
 		Bandwidth:         100 * 1024 * 1024 * 1024, // 100GB/s模拟带宽
@@ -401,7 +401,7 @@ func (g *GPUAccelerator) GetStats() HardwareStats {
 	defer g.mu.RUnlock()
 
 	// 模拟GPU内存利用率
-	memoryUtilization := float64(g.memoryUsed) / float64(g.memoryTotal)
+	memoryUtilization := float64(g.MemoryUsed) / float64(g.MemoryTotal)
 
 	// 计算错误率
 	errorRate := 0.0
@@ -455,17 +455,17 @@ func (g *GPUAccelerator) AutoTune(workload WorkloadProfile) error {
 	// 根据工作负载调整参数
 	switch workload.Type {
 	case "low_latency":
-		g.batchSize = 100
-		g.streamCount = 8
+		g.BatchSize = 100
+		g.StreamCount = 8
 	case "high_throughput":
-		g.batchSize = 2000
-		g.streamCount = 16
+		g.BatchSize = 2000
+		g.StreamCount = 16
 	case "balanced":
-		g.batchSize = 1000
-		g.streamCount = 8
+		g.BatchSize = 1000
+		g.StreamCount = 8
 	case "memory_efficient":
-		g.batchSize = 500
-		g.streamCount = 4
+		g.BatchSize = 500
+		g.StreamCount = 4
 	default:
 		return fmt.Errorf("未知的工作负载类型: %s", workload.Type)
 	}
@@ -474,18 +474,18 @@ func (g *GPUAccelerator) AutoTune(workload WorkloadProfile) error {
 	if workload.VectorDimension > 0 {
 		g.dimension = workload.VectorDimension
 		if workload.VectorDimension > 1024 {
-			g.batchSize = g.batchSize / 2 // 高维向量减少批处理大小
+			g.BatchSize = g.BatchSize / 2 // 高维向量减少批处理大小
 		}
 	}
 
 	// 根据数据集大小调整
 	if workload.DataSize > 0 {
 		if workload.DataSize > 1000000 { // 大数据集
-			g.streamCount = g.streamCount * 2
+			g.StreamCount = g.StreamCount * 2
 		}
 	}
 
-	logger.Info("模拟GPU加速器自动调优完成 - 批处理大小: %d, 流数量: %d", g.batchSize, g.streamCount)
+	logger.Info("模拟GPU加速器自动调优完成 - 批处理大小: %d, 流数量: %d", g.BatchSize, g.StreamCount)
 	return nil
 }
 
@@ -503,7 +503,7 @@ func (g *GPUAccelerator) Shutdown() error {
 
 	g.initialized = false
 	g.available = false
-	g.memoryUsed = 0
+	g.MemoryUsed = 0
 
 	logger.Info("模拟GPU加速器已关闭")
 	return nil
@@ -514,7 +514,7 @@ func (g *GPUAccelerator) SelectOptimalBatchSize(vectorDim, numQueries int) int {
 	// 基于模拟GPU内存计算最佳批处理大小
 	free, _, err := g.GetGPUMemoryInfo()
 	if err != nil {
-		return g.batchSize // 使用默认值
+		return g.BatchSize // 使用默认值
 	}
 
 	// 估算每个向量需要的内存（float32）
