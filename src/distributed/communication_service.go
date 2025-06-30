@@ -20,6 +20,8 @@ type CommunicationService struct {
 	connections map[string]*grpc.ClientConn // slave地址 -> 连接
 	clients     map[string]interface{}      // slave地址 -> 客户端
 	timeout     time.Duration
+	etcdClient  *clientv3.Client
+	serviceName string
 }
 
 const (
@@ -33,6 +35,8 @@ func NewCommunicationService(etcdClient *clientv3.Client, serviceName string) *C
 		connections: make(map[string]*grpc.ClientConn),
 		clients:     make(map[string]interface{}),
 		timeout:     30 * time.Second, // 默认超时时间
+		etcdClient:  etcdClient,
+		serviceName: serviceName,
 	}
 }
 
