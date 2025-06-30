@@ -46,12 +46,12 @@ type AccelResult struct {
 type GPUAccelerator struct {
 	*BaseAccelerator
 	// GPU特定字段
-	operationCount int64
-	errorCount     int64
-	batchSize      int
-	streamCount    int
-	gpuWrapper     unsafe.Pointer // 用于存储C结构体指针
-	gpuResources   unsafe.Pointer // FAISS GPU资源
+	OperationCount int64
+	ErrorCount     int64
+	BatchSize      int
+	StreamCount    int
+	GpuWrapper     unsafe.Pointer // 用于存储C结构体指针
+	GpuResources   unsafe.Pointer // FAISS GPU资源
 
 	// GPU特定统计信息
 	gpuStats struct {
@@ -61,9 +61,9 @@ type GPUAccelerator struct {
 	}
 
 	// 内存管理
-	memoryUsed  int64
-	memoryTotal int64
-	deviceCount int
+	MemoryUsed  int64
+	MemoryTotal int64
+	DeviceCount int
 }
 
 // PMemAccelerator 持久内存加速器实现
@@ -73,12 +73,12 @@ type PMemAccelerator struct {
 	devicePaths   []string
 	deviceHandles []unsafe.Pointer
 	config        *PMemConfig
-	vectorCache   map[string][]float64 // 向量缓存
-	cacheMutex    sync.RWMutex
+	VectorCache   map[string][]float64 // 向量缓存
+	CacheMutex    sync.RWMutex
 	devicePath    string
 	deviceSize    uint64
-	memoryPool    map[string][]float64 // 模拟持久内存存储
-	namespaces    map[string]*PMemNamespace
+	MemoryPool    map[string][]float64 // 模拟持久内存存储
+	Namespaces    map[string]*PMemNamespace
 }
 
 // PMemConfig 持久内存配置
@@ -167,9 +167,9 @@ type PMemReliabilityConfig struct {
 type FPGAAccelerator struct {
 	*BaseAccelerator
 	// FPGA特定字段
-	deviceHandle  unsafe.Pointer
-	config        *FPGAConfig
-	bitstream     string
+	deviceHandle unsafe.Pointer
+	config       *FPGAConfig
+	bitstream    string
 }
 
 // FPGAConfig FPGA配置

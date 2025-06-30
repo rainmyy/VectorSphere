@@ -24,8 +24,8 @@ func NewPMemAccelerator(config *PMemConfig) *PMemAccelerator {
 		devicePath:      config.DevicePath,
 		deviceSize:      config.PoolSize,
 		config:          config,
-		memoryPool:      make(map[string][]float64),
-		namespaces:      make(map[string]*PMemNamespace),
+		MemoryPool:      make(map[string][]float64),
+		Namespaces:      make(map[string]*PMemNamespace),
 	}
 }
 
@@ -36,7 +36,7 @@ func (p *PMemAccelerator) GetType() string {
 
 // IsAvailable 检查PMem是否可用
 func (p *PMemAccelerator) IsAvailable() bool {
-	return p.available
+	return p.Available
 }
 
 // Initialize 初始化PMem加速器
@@ -44,16 +44,16 @@ func (p *PMemAccelerator) Initialize() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.initialized {
+	if p.Initialized {
 		return nil
 	}
 
 	// 模拟PMem设备初始化
 	for _, ns := range p.config.Namespaces {
-		p.namespaces[ns.Name] = &ns
+		p.Namespaces[ns.Name] = &ns
 	}
 
-	p.initialized = true
+	p.Initialized = true
 	p.stats.LastUsed = time.Now()
 
 	return nil
@@ -64,7 +64,7 @@ func (p *PMemAccelerator) Shutdown() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if !p.initialized {
+	if !p.Initialized {
 		return nil
 	}
 
@@ -74,7 +74,7 @@ func (p *PMemAccelerator) Shutdown() error {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	p.initialized = false
+	p.Initialized = false
 	return nil
 }
 
@@ -85,7 +85,7 @@ func (p *PMemAccelerator) ComputeDistance(query []float64, targets [][]float64) 
 		p.updateStats(time.Since(start), nil)
 	}()
 
-	if !p.initialized {
+	if !p.Initialized {
 		return nil, fmt.Errorf("PMem accelerator not initialized")
 	}
 
@@ -120,7 +120,7 @@ func (p *PMemAccelerator) BatchComputeDistance(queries, targets [][]float64) ([]
 		p.updateStats(time.Since(start), nil)
 	}()
 
-	if !p.initialized {
+	if !p.Initialized {
 		return nil, fmt.Errorf("PMem accelerator not initialized")
 	}
 
@@ -147,7 +147,7 @@ func (p *PMemAccelerator) AccelerateSearch(query []float64, database [][]float64
 		p.updateStats(time.Since(start), nil)
 	}()
 
-	if !p.initialized {
+	if !p.Initialized {
 		return nil, fmt.Errorf("FPGA accelerator not initialized")
 	}
 	return AccelerateSearch(query, database, options)
@@ -174,7 +174,7 @@ func (p *PMemAccelerator) PrefetchData(keys []string) error {
 
 	// 模拟数据预取
 	for _, key := range keys {
-		if _, exists := p.memoryPool[key]; exists {
+		if _, exists := p.MemoryPool[key]; exists {
 			// 模拟预取延迟
 			time.Sleep(100 * time.Microsecond)
 		}
@@ -274,7 +274,7 @@ func (p *PMemAccelerator) StoreVectors(key string, vectors [][]float64) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if !p.initialized {
+	if !p.Initialized {
 		return fmt.Errorf("PMem accelerator not initialized")
 	}
 
@@ -284,7 +284,7 @@ func (p *PMemAccelerator) StoreVectors(key string, vectors [][]float64) error {
 		flatVectors = append(flatVectors, vec...)
 	}
 
-	p.memoryPool[key] = flatVectors
+	p.MemoryPool[key] = flatVectors
 
 	// 模拟持久化
 	if p.config.Persistence.SyncOnWrite {
@@ -299,11 +299,11 @@ func (p *PMemAccelerator) LoadVectors(key string, dimension int) ([][]float64, e
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	if !p.initialized {
+	if !p.Initialized {
 		return nil, fmt.Errorf("PMem accelerator not initialized")
 	}
 
-	flatVectors, exists := p.memoryPool[key]
+	flatVectors, exists := p.MemoryPool[key]
 	if !exists {
 		return nil, fmt.Errorf("vectors not found for key: %s", key)
 	}
@@ -325,7 +325,7 @@ func (p *PMemAccelerator) GetAvailableSpace() uint64 {
 	defer p.mu.RUnlock()
 
 	usedSpace := uint64(0)
-	for _, vectors := range p.memoryPool {
+	for _, vectors := range p.MemoryPool {
 		usedSpace += uint64(len(vectors) * 8) // float64 = 8 bytes
 	}
 
@@ -349,7 +349,7 @@ func (p *PMemAccelerator) BatchSearch(queries [][]float64, database [][]float64,
 		p.updateStats(time.Since(start), nil)
 	}()
 
-	if !p.initialized {
+	if !p.Initialized {
 		return nil, fmt.Errorf("PMem accelerator not initialized")
 	}
 

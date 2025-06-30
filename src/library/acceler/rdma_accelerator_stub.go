@@ -76,7 +76,7 @@ func (r *RDMAAccelerator) GetType() string {
 
 // IsAvailable 检查RDMA是否可用
 func (r *RDMAAccelerator) IsAvailable() bool {
-	return r.available
+	return r.Available
 }
 
 // Initialize 初始化RDMA加速器
@@ -84,7 +84,7 @@ func (r *RDMAAccelerator) Initialize() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.initialized {
+	if r.Initialized {
 		return nil
 	}
 
@@ -94,7 +94,7 @@ func (r *RDMAAccelerator) Initialize() error {
 	// 模拟发现集群节点
 	r.discoverNodes()
 
-	r.initialized = true
+	r.Initialized = true
 	r.stats.LastUsed = time.Now()
 
 	return nil
@@ -105,7 +105,7 @@ func (r *RDMAAccelerator) Shutdown() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if !r.initialized {
+	if !r.Initialized {
 		return nil
 	}
 
@@ -114,7 +114,7 @@ func (r *RDMAAccelerator) Shutdown() error {
 		delete(r.connections, addr)
 	}
 
-	r.initialized = false
+	r.Initialized = false
 	return nil
 }
 
@@ -135,7 +135,7 @@ func (r *RDMAAccelerator) ComputeDistance(query []float64, targets [][]float64) 
 		r.updateStats(time.Since(start), nil)
 	}()
 
-	if !r.initialized {
+	if !r.Initialized {
 		return nil, fmt.Errorf("RDMA accelerator not initialized")
 	}
 
@@ -172,7 +172,7 @@ func (r *RDMAAccelerator) BatchComputeDistance(queries, targets [][]float64) ([]
 		r.updateStats(time.Since(start), nil)
 	}()
 
-	if !r.initialized {
+	if !r.Initialized {
 		return nil, fmt.Errorf("RDMA accelerator not initialized")
 	}
 
@@ -252,7 +252,7 @@ func (r *RDMAAccelerator) AccelerateSearch(query []float64, database [][]float64
 		r.updateStats(time.Since(start), nil)
 	}()
 
-	if !r.initialized {
+	if !r.Initialized {
 		return nil, fmt.Errorf("RDMA accelerator not initialized")
 	}
 
@@ -431,7 +431,7 @@ func (r *RDMAAccelerator) ConnectToNode(address string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if !r.initialized {
+	if !r.Initialized {
 		return fmt.Errorf("RDMA accelerator not initialized")
 	}
 
@@ -463,7 +463,7 @@ func (r *RDMAAccelerator) BroadcastQuery(query []float64) error {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	if !r.initialized {
+	if !r.Initialized {
 		return fmt.Errorf("RDMA accelerator not initialized")
 	}
 
@@ -484,7 +484,7 @@ func (r *RDMAAccelerator) GatherResults() ([][]AccelResult, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	if !r.initialized {
+	if !r.Initialized {
 		return nil, fmt.Errorf("RDMA accelerator not initialized")
 	}
 
@@ -615,7 +615,7 @@ func (r *RDMAAccelerator) BatchSearch(queries [][]float64, database [][]float64,
 		r.updateStats(time.Since(start), nil)
 	}()
 
-	if !r.initialized {
+	if !r.Initialized {
 		return nil, fmt.Errorf("RDMA accelerator not initialized")
 	}
 

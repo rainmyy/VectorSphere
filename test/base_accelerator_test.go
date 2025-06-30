@@ -122,7 +122,7 @@ func TestBaseAccelerator(t *testing.T) {
 		}
 		base := acceler.NewBaseAccelerator(0, "test", capabilities, stats)
 		if base.IsInitialized() {
-			t.Error("新创建的加速器不应该已初始化")
+			t.Error("��创建的加速器不应该已初始化")
 		}
 	})
 
@@ -306,5 +306,251 @@ func TestBaseAcceleratorConcurrency(t *testing.T) {
 	stats2 := base.GetStats()
 	if stats2.TotalOperations != 100 {
 		t.Errorf("期望总操作数为100，实际为%d", stats2.TotalOperations)
+	}
+}
+
+// TestUpdatePerformanceMetrics 测试性能指标更新
+func TestUpdatePerformanceMetrics(t *testing.T) {
+	capabilities := acceler.HardwareCapabilities{
+		HasAVX2:           true,
+		HasAVX512:         false,
+		HasGPU:            false,
+		CPUCores:          8,
+		Type:              "CPU",
+		MemorySize:        8 * 1024 * 1024 * 1024,
+		MaxBatchSize:      100,
+		PerformanceRating: 8.5,
+	}
+	stats := acceler.HardwareStats{
+		TotalOperations: 0,
+		SuccessfulOps:   0,
+		FailedOps:       0,
+		Throughput:      0.0,
+	}
+	base := acceler.NewBaseAccelerator(0, "test", capabilities, stats)
+
+	// Update performance metrics
+	latency := time.Millisecond * 50
+	throughput := 1000.0
+	base.UpdatePerformanceMetrics(latency, throughput)
+
+	metrics := base.GetPerformanceMetrics()
+	if metrics.LatencyCurrent != latency {
+		t.Errorf("Expected current latency %v, got %v", latency, metrics.LatencyCurrent)
+	}
+	if metrics.ThroughputCurrent != throughput {
+		t.Errorf("Expected current throughput %f, got %f", throughput, metrics.ThroughputCurrent)
+	}
+	if metrics.LatencyMin != latency {
+		t.Errorf("Expected min latency %v, got %v", latency, metrics.LatencyMin)
+	}
+	if metrics.LatencyMax != latency {
+		t.Errorf("Expected max latency %v, got %v", latency, metrics.LatencyMax)
+	}
+	if metrics.ThroughputPeak != throughput {
+		t.Errorf("Expected peak throughput %f, got %f", throughput, metrics.ThroughputPeak)
+	}
+
+	// Update with higher throughput and different latency
+	higherThroughput := 1500.0
+	lowerLatency := time.Millisecond * 30
+	base.UpdatePerformanceMetrics(lowerLatency, higherThroughput)
+
+	metrics = base.GetPerformanceMetrics()
+	if metrics.LatencyMin != lowerLatency {
+		t.Errorf("Expected min latency %v, got %v", lowerLatency, metrics.LatencyMin)
+	}
+	if metrics.LatencyMax != latency {
+		t.Errorf("Expected max latency %v, got %v", latency, metrics.LatencyMax)
+	}
+	if metrics.ThroughputPeak != higherThroughput {
+		t.Errorf("Expected peak throughput %f, got %f", higherThroughput, metrics.ThroughputPeak)
+	}
+}
+
+// TestValidateInputsSuccess 测试输入验证成功
+func TestValidateInputsSuccess(t *testing.T) {
+	capabilities := acceler.HardwareCapabilities{
+		HasAVX2:           true,
+		HasAVX512:         false,
+		HasGPU:            false,
+		CPUCores:          8,
+		Type:              "CPU",
+		MemorySize:        8 * 1024 * 1024 * 1024,
+		MaxBatchSize:      100,
+		PerformanceRating: 8.5,
+	}
+	stats := acceler.HardwareStats{
+		TotalOperations: 0,
+		SuccessfulOps:   0,
+		FailedOps:       0,
+		Throughput:      0.0,
+	}
+	base := acceler.NewBaseAccelerator(0, "test", capabilities, stats)
+	base.SetInitialized(true)
+	base.SetAvailable(true)
+
+	query := []float64{1.0, 2.0, 3.0}
+	vectors := [][]float64{
+		{1.0, 2.0, 3.0},
+		{4.0, 5.0, 6.0},
+		{7.0, 8.0, 9.0},
+	}
+
+	err := base.ValidateInputs(query, vectors)
+	if err != nil {
+		t.Errorf("Expected validation to succeed, got error: %v", err)
+	}
+}
+
+// TestSetHardwareManager 测试设置硬件管理器
+func TestSetHardwareManager(t *testing.T) {
+	capabilities := acceler.HardwareCapabilities{
+		HasAVX2:           true,
+		HasAVX512:         false,
+		HasGPU:            false,
+		CPUCores:          8,
+		Type:              "CPU",
+		MemorySize:        8 * 1024 * 1024 * 1024,
+		MaxBatchSize:      100,
+		PerformanceRating: 8.5,
+	}
+	stats := acceler.HardwareStats{
+		TotalOperations: 0,
+		SuccessfulOps:   0,
+		FailedOps:       0,
+		Throughput:      0.0,
+	}
+	base := acceler.NewBaseAccelerator(0, "test", capabilities, stats)
+
+	// Create a hardware manager
+	hm := &acceler.HardwareManager{}
+	
+	// Set hardware manager
+	base.SetHardwareManager(hm)
+
+	// Verify that the hardware manager was set by attempting to use AutoTune
+	// which internally uses the strategy selector that should have the hardware manager
+	workload := acceler.WorkloadProfile{
+		VectorDimension: 128,
+		DataSize:        1000,
+		BatchSize:       10,
+	}
+	
+	err := base.AutoTune(workload)
+	if err != nil {
+		t.Errorf("Expected AutoTune to succeed after setting hardware manager, got error: %v", err)
+	}
+}
+
+// TestValidateInputsNotInitialized 测试未初始化时的输入验证
+func TestValidateInputsNotInitialized(t *testing.T) {
+	capabilities := acceler.HardwareCapabilities{
+		HasAVX2:           true,
+		HasAVX512:         false,
+		HasGPU:            false,
+		CPUCores:          8,
+		Type:              "CPU",
+		MemorySize:        8 * 1024 * 1024 * 1024,
+		MaxBatchSize:      100,
+		PerformanceRating: 8.5,
+	}
+	stats := acceler.HardwareStats{
+		TotalOperations: 0,
+		SuccessfulOps:   0,
+		FailedOps:       0,
+		Throughput:      0.0,
+	}
+	base := acceler.NewBaseAccelerator(0, "test", capabilities, stats)
+	// Don't set initialized to true
+
+	query := []float64{1.0, 2.0, 3.0}
+	vectors := [][]float64{
+		{1.0, 2.0, 3.0},
+		{4.0, 5.0, 6.0},
+	}
+
+	err := base.ValidateInputs(query, vectors)
+	if err == nil {
+		t.Error("Expected validation to fail when not initialized")
+	}
+	if err.Error() != "加速器未初始化" {
+		t.Errorf("Expected error message '加速器未初始化', got '%s'", err.Error())
+	}
+}
+
+// TestValidateInputsDimensionMismatch 测试维度不匹配时的输入验证
+func TestValidateInputsDimensionMismatch(t *testing.T) {
+	capabilities := acceler.HardwareCapabilities{
+		HasAVX2:           true,
+		HasAVX512:         false,
+		HasGPU:            false,
+		CPUCores:          8,
+		Type:              "CPU",
+		MemorySize:        8 * 1024 * 1024 * 1024,
+		MaxBatchSize:      100,
+		PerformanceRating: 8.5,
+	}
+	stats := acceler.HardwareStats{
+		TotalOperations: 0,
+		SuccessfulOps:   0,
+		FailedOps:       0,
+		Throughput:      0.0,
+	}
+	base := acceler.NewBaseAccelerator(0, "test", capabilities, stats)
+	base.SetInitialized(true)
+	base.SetAvailable(true)
+
+	query := []float64{1.0, 2.0, 3.0}
+	vectors := [][]float64{
+		{1.0, 2.0, 3.0},
+		{4.0, 5.0}, // Dimension mismatch
+		{7.0, 8.0, 9.0},
+	}
+
+	err := base.ValidateInputs(query, vectors)
+	if err == nil {
+		t.Error("Expected validation to fail due to dimension mismatch")
+	}
+	expectedError := "向量 1 维度不匹配: 期望 3, 实际 2"
+	if err.Error() != expectedError {
+		t.Errorf("Expected error message '%s', got '%s'", expectedError, err.Error())
+	}
+}
+
+// TestValidateBatchInputsEmptyQueries 测试空查询向量集的批量输入验证
+func TestValidateBatchInputsEmptyQueries(t *testing.T) {
+	capabilities := acceler.HardwareCapabilities{
+		HasAVX2:           true,
+		HasAVX512:         false,
+		HasGPU:            false,
+		CPUCores:          8,
+		Type:              "CPU",
+		MemorySize:        8 * 1024 * 1024 * 1024,
+		MaxBatchSize:      100,
+		PerformanceRating: 8.5,
+	}
+	stats := acceler.HardwareStats{
+		TotalOperations: 0,
+		SuccessfulOps:   0,
+		FailedOps:       0,
+		Throughput:      0.0,
+	}
+	base := acceler.NewBaseAccelerator(0, "test", capabilities, stats)
+	base.SetInitialized(true)
+	base.SetAvailable(true)
+
+	queries := [][]float64{} // Empty queries
+	vectors := [][]float64{
+		{1.0, 2.0, 3.0},
+		{4.0, 5.0, 6.0},
+	}
+
+	err := base.ValidateBatchInputs(queries, vectors)
+	if err == nil {
+		t.Error("Expected validation to fail with empty queries")
+	}
+	if err.Error() != "查询向量集为空" {
+		t.Errorf("Expected error message '查询向量集为空', got '%s'", err.Error())
 	}
 }

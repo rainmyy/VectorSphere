@@ -92,7 +92,7 @@ func (f *FPGAAccelerator) GetType() string {
 func (f *FPGAAccelerator) IsAvailable() bool {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
-	return f.available
+	return f.Available
 }
 
 // Initialize 初始化FPGA
@@ -100,11 +100,11 @@ func (f *FPGAAccelerator) Initialize() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if !f.available {
+	if !f.Available {
 		return fmt.Errorf("FPGA设备 %d 不可用", f.deviceID)
 	}
 
-	if f.initialized {
+	if f.Initialized {
 		return nil
 	}
 
@@ -143,7 +143,7 @@ func (f *FPGAAccelerator) Initialize() error {
 	}
 
 	f.deviceHandle = unsafe.Pointer(device)
-	f.initialized = true
+	f.Initialized = true
 	f.updateCapabilities()
 
 	return nil
@@ -154,7 +154,7 @@ func (f *FPGAAccelerator) Shutdown() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if !f.initialized {
+	if !f.Initialized {
 		return nil
 	}
 
@@ -165,7 +165,7 @@ func (f *FPGAAccelerator) Shutdown() error {
 		f.deviceHandle = nil
 	}
 
-	f.initialized = false
+	f.Initialized = false
 	return nil
 }
 
@@ -184,7 +184,7 @@ func (f *FPGAAccelerator) ComputeDistance(query []float64, vectors [][]float64) 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if !f.initialized {
+	if !f.Initialized {
 		return nil, fmt.Errorf("FPGA未初始化")
 	}
 
@@ -239,7 +239,7 @@ func (f *FPGAAccelerator) BatchComputeDistance(queries [][]float64, vectors [][]
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if !f.initialized {
+	if !f.Initialized {
 		return nil, fmt.Errorf("FPGA未初始化")
 	}
 
@@ -353,7 +353,7 @@ func (f *FPGAAccelerator) BatchCosineSimilarity(queries [][]float64, database []
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if !f.initialized {
+	if !f.Initialized {
 		return nil, fmt.Errorf("FPGA未初始化")
 	}
 
@@ -419,7 +419,7 @@ func (f *FPGAAccelerator) AccelerateSearch(query []float64, database [][]float64
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if !f.initialized {
+	if !f.Initialized {
 		return nil, fmt.Errorf("FPGA未初始化")
 	}
 
@@ -666,7 +666,7 @@ func (f *FPGAAccelerator) OptimizeMemoryLayout(vectors [][]float64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if !f.initialized {
+	if !f.Initialized {
 		return fmt.Errorf("FPGA未初始化")
 	}
 
@@ -1170,14 +1170,14 @@ func (f *FPGAAccelerator) AutoTune(workload WorkloadProfile) error {
 func (f *FPGAAccelerator) detectFPGA() {
 	deviceCount := int(C.fpga_get_device_count())
 	if deviceCount > f.deviceID {
-		f.available = true
+		f.Available = true
 		f.updateCapabilities()
 	}
 }
 
 // updateCapabilities 更新能力信息
 func (f *FPGAAccelerator) updateCapabilities() {
-	if !f.available {
+	if !f.Available {
 		return
 	}
 
@@ -1233,7 +1233,7 @@ func (f *FPGAAccelerator) updateStats(duration time.Duration, operations int, su
 
 // updateRealFPGAStats 获取FPGA真实统计数据
 func (f *FPGAAccelerator) updateRealFPGAStats() {
-	if !f.initialized || f.deviceHandle == nil {
+	if !f.Initialized || f.deviceHandle == nil {
 		// 如果FPGA未初始化，使用模拟数据
 		f.stats.MemoryUtilization = 0.7 // 假设70%内存利用率
 		f.stats.Temperature = 45.0      // 假设45°C
@@ -1332,8 +1332,8 @@ func (f *FPGAAccelerator) GetDetailedStats() map[string]interface{} {
 	stats := map[string]interface{}{
 		"basic_stats":      f.stats,
 		"device_id":        f.deviceID,
-		"initialized":      f.initialized,
-		"available":        f.available,
+		"initialized":      f.Initialized,
+		"available":        f.Available,
 		"capabilities":     f.capabilities,
 		"uptime":           time.Since(f.startTime),
 		"bitstream":        f.config.Bitstream,
@@ -1342,7 +1342,7 @@ func (f *FPGAAccelerator) GetDetailedStats() map[string]interface{} {
 	}
 
 	// 如果FPGA已初始化，获取实时性能计数器
-	if f.initialized && f.deviceHandle != nil {
+	if f.Initialized && f.deviceHandle != nil {
 		counters := make([]C.ulong, 8) // 8个性能计数器
 		device := (*C.fpga_device_t)(f.deviceHandle)
 		result := C.fpga_get_performance_counters(device, &counters[0], 8)
@@ -1382,7 +1382,7 @@ func (f *FPGAAccelerator) ResetStats() {
 	f.lastStatsTime = time.Now()
 
 	// 调用C函数重置硬件统计
-	if f.initialized && f.deviceHandle != nil {
+	if f.Initialized && f.deviceHandle != nil {
 		device := (*C.fpga_device_t)(f.deviceHandle)
 		C.fpga_reset_stats(device)
 	}
@@ -1393,7 +1393,7 @@ func (f *FPGAAccelerator) LoadBitstream(path string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if !f.initialized {
+	if !f.Initialized {
 		return fmt.Errorf("FPGA未初始化")
 	}
 
@@ -1416,7 +1416,7 @@ func (f *FPGAAccelerator) Reconfigure(bitstreamPath string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if !f.initialized {
+	if !f.Initialized {
 		return fmt.Errorf("FPGA未初始化")
 	}
 
@@ -1438,7 +1438,7 @@ func (f *FPGAAccelerator) GetDeviceInfo() (map[string]interface{}, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
-	if !f.available {
+	if !f.Available {
 		return nil, fmt.Errorf("FPGA设备不可用")
 	}
 
@@ -1461,8 +1461,8 @@ func (f *FPGAAccelerator) GetDeviceInfo() (map[string]interface{}, error) {
 		"power":         f.stats.PowerConsumption,
 		"utilization":   f.stats.MemoryUtilization,
 		"bitstream":     f.bitstream,
-		"initialized":   f.initialized,
-		"available":     f.available,
+		"initialized":   f.Initialized,
+		"available":     f.Available,
 	}, nil
 }
 

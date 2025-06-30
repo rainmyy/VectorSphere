@@ -11,8 +11,8 @@ import (
 // Logger 统一日志记录器
 type Logger struct {
 	mu     sync.RWMutex
-	level  LogLevel
-	prefix string
+	Level  LogLevel
+	Prefix string
 }
 
 // LogLevel 日志级别
@@ -28,15 +28,15 @@ const (
 
 // GlobalLogger 全局日志记录器
 var GlobalLogger = &Logger{
-	level:  LogLevelInfo,
-	prefix: "[VectorSphere]",
+	Level:  LogLevelInfo,
+	Prefix: "[VectorSphere]",
 }
 
 // SetLogLevel 设置日志级别
 func (l *Logger) SetLogLevel(level LogLevel) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.level = level
+	l.Level = level
 }
 
 // Debug 记录调试信息
@@ -69,7 +69,7 @@ func (l *Logger) log(level LogLevel, format string, args ...interface{}) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 
-	if level < l.level {
+	if level < l.Level {
 		return
 	}
 
@@ -80,7 +80,7 @@ func (l *Logger) log(level LogLevel, format string, args ...interface{}) {
 	message := fmt.Sprintf(format, args...)
 	logMessage := fmt.Sprintf("%s [%s] %s:%d - %s", timestamp, levelStr, file, line, message)
 
-	log.Println(l.prefix, logMessage)
+	log.Println(l.Prefix, logMessage)
 }
 
 // getLevelString 获取日志级别字符串
@@ -120,8 +120,8 @@ func (eh *ErrorHandler) ResetErrorCount(operation string) {
 // PerformanceMonitor 性能监控器
 type PerformanceMonitor struct {
 	mu        sync.RWMutex
-	metrics   map[string]*OperationMetrics
-	startTime time.Time
+	Metrics   map[string]*OperationMetrics
+	StartTime time.Time
 }
 
 // OperationMetrics 操作指标
@@ -137,30 +137,30 @@ type OperationMetrics struct {
 
 // GlobalPerformanceMonitor 全局性能监控器
 var GlobalPerformanceMonitor = &PerformanceMonitor{
-	metrics:   make(map[string]*OperationMetrics),
-	startTime: time.Now(),
+	Metrics:   make(map[string]*OperationMetrics),
+	StartTime: time.Now(),
 }
 
 // StartOperation 开始操作监控
 func (pm *PerformanceMonitor) StartOperation(operation string) *OperationTracker {
 	return &OperationTracker{
-		operation: operation,
-		startTime: time.Now(),
-		monitor:   pm,
+		Operation: operation,
+		StartTime: time.Now(),
+		Monitor:   pm,
 	}
 }
 
 // OperationTracker 操作跟踪器
 type OperationTracker struct {
-	operation string
-	startTime time.Time
-	monitor   *PerformanceMonitor
+	Operation string
+	StartTime time.Time
+	Monitor   *PerformanceMonitor
 }
 
 // End 结束操作监控
 func (ot *OperationTracker) End(success bool) {
-	duration := time.Since(ot.startTime)
-	ot.monitor.recordOperation(ot.operation, duration, success)
+	duration := time.Since(ot.StartTime)
+	ot.Monitor.recordOperation(ot.Operation, duration, success)
 }
 
 // recordOperation 记录操作
@@ -168,13 +168,13 @@ func (pm *PerformanceMonitor) recordOperation(operation string, duration time.Du
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	metrics, exists := pm.metrics[operation]
+	metrics, exists := pm.Metrics[operation]
 	if !exists {
 		metrics = &OperationMetrics{
 			MinDuration: duration,
 			MaxDuration: duration,
 		}
-		pm.metrics[operation] = metrics
+		pm.Metrics[operation] = metrics
 	}
 
 	metrics.TotalCalls++
@@ -200,7 +200,7 @@ func (pm *PerformanceMonitor) GetMetrics(operation string) *OperationMetrics {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
-	metrics, exists := pm.metrics[operation]
+	metrics, exists := pm.Metrics[operation]
 	if !exists {
 		return nil
 	}
@@ -241,7 +241,7 @@ func (pm *PerformanceMonitor) GetAllMetrics() map[string]*OperationMetrics {
 	defer pm.mu.RUnlock()
 
 	result := make(map[string]*OperationMetrics)
-	for operation, metrics := range pm.metrics {
+	for operation, metrics := range pm.Metrics {
 		result[operation] = &OperationMetrics{
 			TotalCalls:    metrics.TotalCalls,
 			SuccessCalls:  metrics.SuccessCalls,
@@ -259,8 +259,8 @@ func (pm *PerformanceMonitor) GetAllMetrics() map[string]*OperationMetrics {
 func (pm *PerformanceMonitor) ResetMetrics() {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
-	pm.metrics = make(map[string]*OperationMetrics)
-	pm.startTime = time.Now()
+	pm.Metrics = make(map[string]*OperationMetrics)
+	pm.StartTime = time.Now()
 }
 
 // ValidateConfig 验证配置
