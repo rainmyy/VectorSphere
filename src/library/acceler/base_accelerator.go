@@ -9,11 +9,11 @@ import (
 // BaseAccelerator 基础加速器结构，包含所有加速器的通用字段和方法
 type BaseAccelerator struct {
 	deviceID        int
-	initialized     bool
-	available       bool
+	Initialized     bool
+	Available       bool
 	mu              sync.RWMutex
 	indexType       string
-	dimension       int
+	Dimension       int
 	strategy        *ComputeStrategySelector
 	currentStrategy ComputeStrategy
 	dataSize        int
@@ -36,8 +36,8 @@ func NewBaseAccelerator(deviceID int, indexType string, capabilities HardwareCap
 	return &BaseAccelerator{
 		deviceID:      deviceID,
 		indexType:     indexType,
-		initialized:   false,
-		available:     true,
+		Initialized:   false,
+		Available:     true,
 		strategy:      NewComputeStrategySelector(),
 		lastStatsTime: time.Now(),
 		startTime:     time.Now(),
@@ -50,14 +50,14 @@ func NewBaseAccelerator(deviceID int, indexType string, capabilities HardwareCap
 func (b *BaseAccelerator) IsAvailable() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.available
+	return b.Available
 }
 
 // IsInitialized 检查加速器是否已初始化
 func (b *BaseAccelerator) IsInitialized() bool {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.initialized
+	return b.Initialized
 }
 
 // SetHardwareManager 设置硬件管理器
@@ -146,14 +146,14 @@ func (b *BaseAccelerator) UpdatePerformanceMetrics(latency time.Duration, throug
 func (b *BaseAccelerator) SetAvailable(available bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.available = available
+	b.Available = available
 }
 
 // SetInitialized 设置初始化状态
 func (b *BaseAccelerator) SetInitialized(initialized bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.initialized = initialized
+	b.Initialized = initialized
 }
 
 // ValidateInputs 验证输入参数
@@ -253,12 +253,12 @@ func (b *BaseAccelerator) GetIndexType() string {
 func (b *BaseAccelerator) GetDimension() int {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	return b.dimension
+	return b.Dimension
 }
 
 // SetDimension 设置向量维度
 func (b *BaseAccelerator) SetDimension(dimension int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.dimension = dimension
+	b.Dimension = dimension
 }

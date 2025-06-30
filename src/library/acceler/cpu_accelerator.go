@@ -46,11 +46,11 @@ func (c *CPUAccelerator) Shutdown() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if !c.initialized {
+	if !c.Initialized {
 		return nil
 	}
 
-	c.initialized = false
+	c.Initialized = false
 	return nil
 }
 func getGPUDeviceCount() int {
@@ -64,7 +64,7 @@ func (c *CPUAccelerator) Initialize() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.initialized {
+	if c.Initialized {
 		return nil
 	}
 
@@ -89,8 +89,8 @@ func (c *CPUAccelerator) Initialize() error {
 	}
 
 	logger.Info("CPU加速器初始化完成，使用策略: %v", c.currentStrategy)
-	c.initialized = true
-	c.available = true
+	c.Initialized = true
+	c.Available = true
 	return nil
 }
 
@@ -98,7 +98,7 @@ func (c *CPUAccelerator) BatchCosineSimilarity(queries [][]float64, database [][
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if !c.initialized {
+	if !c.Initialized {
 		return nil, fmt.Errorf("CPU加速器未初始化")
 	}
 
@@ -167,7 +167,7 @@ func (c *CPUAccelerator) ComputeDistance(query []float64, targets [][]float64) (
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if !c.initialized {
+	if !c.Initialized {
 		return nil, fmt.Errorf("CPU accelerator not initialized")
 	}
 
@@ -198,7 +198,7 @@ func (c *CPUAccelerator) BatchSearch(queries [][]float64, database [][]float64, 
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if !c.initialized {
+	if !c.Initialized {
 		return nil, fmt.Errorf("CPU加速器未初始化")
 	}
 
@@ -347,11 +347,11 @@ func (c *CPUAccelerator) Cleanup() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if !c.initialized {
+	if !c.Initialized {
 		return nil
 	}
 
-	c.initialized = false
+	c.Initialized = false
 	logger.Info("CPU加速器资源已清理")
 	return nil
 }
@@ -410,7 +410,7 @@ func (c *CPUAccelerator) GetPerformanceInfo() map[string]interface{} {
 		"cpu_cores":      caps.CPUCores,
 		"avx2_support":   caps.HasAVX2,
 		"avx512_support": caps.HasAVX512,
-		"initialized":    c.initialized,
+		"initialized":    c.Initialized,
 	}
 
 	// 添加内存信息
@@ -425,7 +425,7 @@ func (c *CPUAccelerator) GetPerformanceInfo() map[string]interface{} {
 
 // RunBenchmark 运行基准测试
 func (c *CPUAccelerator) RunBenchmark(vectorDim, numVectors int) map[string]interface{} {
-	if !c.initialized {
+	if !c.Initialized {
 		return map[string]interface{}{"error": "CPU加速器未初始化"}
 	}
 
@@ -488,7 +488,7 @@ func (c *CPUAccelerator) AccelerateSearch(query []float64, database [][]float64,
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if !c.initialized {
+	if !c.Initialized {
 		return nil, fmt.Errorf("FPGA accelerator not initialized")
 	}
 	return AccelerateSearch(query, database, options)
@@ -499,7 +499,7 @@ func (c *CPUAccelerator) Start() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.initialized {
+	if c.Initialized {
 		return nil // 已经启动
 	}
 
@@ -511,11 +511,11 @@ func (c *CPUAccelerator) Stop() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if !c.initialized {
+	if !c.Initialized {
 		return nil // 已经停止
 	}
 
-	c.initialized = false
+	c.Initialized = false
 	return nil
 }
 
@@ -544,7 +544,7 @@ func (c *CPUAccelerator) PrefetchData(vectors [][]float64) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if !c.initialized {
+	if !c.Initialized {
 		return fmt.Errorf("CPU accelerator not initialized")
 	}
 
@@ -652,7 +652,7 @@ func (c *CPUAccelerator) AutoTune(workload WorkloadProfile) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if !c.initialized {
+	if !c.Initialized {
 		return fmt.Errorf("CPU accelerator not initialized")
 	}
 
@@ -669,7 +669,7 @@ func (c *CPUAccelerator) BatchComputeDistance(queries [][]float64, targets [][]f
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if !c.initialized {
+	if !c.Initialized {
 		return nil, fmt.Errorf("CPU accelerator not initialized")
 	}
 

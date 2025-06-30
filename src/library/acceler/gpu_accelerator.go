@@ -91,7 +91,7 @@ func (g *GPUAccelerator) GetType() string {
 func (g *GPUAccelerator) IsAvailable() bool {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	return g.available
+	return g.Available
 }
 
 // Initialize 初始化GPU加速器
@@ -99,7 +99,7 @@ func (g *GPUAccelerator) Initialize() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	if g.initialized {
+	if g.Initialized {
 		return nil
 	}
 
@@ -128,8 +128,8 @@ func (g *GPUAccelerator) Initialize() error {
 		return fmt.Errorf("GPU初始化验证失败: %v", err)
 	}
 
-	g.initialized = true
-	g.available = true
+	g.Initialized = true
+	g.Available = true
 	g.stats.LastUsed = time.Now()
 
 	logger.Info("GPU加速器初始化成功，设备ID: %d", g.deviceID)
@@ -247,10 +247,10 @@ func (g *GPUAccelerator) initFaissWrapper() error {
 	if g.GpuWrapper == nil {
 		return fmt.Errorf("无法创建FAISS GPU包装器")
 	}
-	g.dimension = 512 // 默认维度，可以后续更新
+	g.Dimension = 512 // 默认维度，可以后续更新
 	indexTypeC := C.CString(g.indexType)
 	defer C.free(unsafe.Pointer(indexTypeC))
-	if C.faiss_gpu_wrapper_init((*C.FaissGpuWrapper)(g.GpuWrapper), C.int(g.dimension), indexTypeC) != 0 {
+	if C.faiss_gpu_wrapper_init((*C.FaissGpuWrapper)(g.GpuWrapper), C.int(g.Dimension), indexTypeC) != 0 {
 		return fmt.Errorf("FAISS GPU包装器初始化失败")
 	}
 	return nil
@@ -392,7 +392,7 @@ func (g *GPUAccelerator) ComputeDistance(query []float64, vectors [][]float64) (
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
-	if !g.initialized {
+	if !g.Initialized {
 		return nil, fmt.Errorf("GPU加速器未初始化")
 	}
 
@@ -445,7 +445,7 @@ func (g *GPUAccelerator) BatchComputeDistance(queries [][]float64, vectors [][]f
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
-	if !g.initialized {
+	if !g.Initialized {
 		return nil, fmt.Errorf("GPU加速器未初始化")
 	}
 
@@ -477,7 +477,7 @@ func (g *GPUAccelerator) BatchCosineSimilarity(queries [][]float64, database [][
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
-	if !g.initialized {
+	if !g.Initialized {
 		return nil, fmt.Errorf("GPU加速器未初始化")
 	}
 
@@ -527,7 +527,7 @@ func (g *GPUAccelerator) BatchSearch(queries [][]float64, database [][]float64, 
 	defer g.mu.RUnlock()
 
 	// 基本检查
-	if !g.initialized {
+	if !g.Initialized {
 		return nil, fmt.Errorf("GPU加速器未初始化")
 	}
 
@@ -696,7 +696,7 @@ func (g *GPUAccelerator) batchSearchCPUFallback(queries [][]float64, database []
 
 // AccelerateSearch 加速搜索
 func (g *GPUAccelerator) AccelerateSearch(query []float64, database [][]float64, options entity.SearchOptions) ([]AccelResult, error) {
-	if !g.initialized {
+	if !g.Initialized {
 		return nil, fmt.Errorf("GPU加速器未初始化")
 	}
 
@@ -790,7 +790,7 @@ func (g *GPUAccelerator) AutoTune(workload WorkloadProfile) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	if !g.initialized {
+	if !g.Initialized {
 		return fmt.Errorf("GPU加速器未初始化")
 	}
 
@@ -814,7 +814,7 @@ func (g *GPUAccelerator) AutoTune(workload WorkloadProfile) error {
 
 	// 根据向量维度调整
 	if workload.VectorDimension > 0 {
-		g.dimension = workload.VectorDimension
+		g.Dimension = workload.VectorDimension
 		if workload.VectorDimension > 1024 {
 			g.BatchSize = g.BatchSize / 2 // 高维向量减少批处理大小
 		}
@@ -836,7 +836,7 @@ func (g *GPUAccelerator) Shutdown() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	if !g.initialized {
+	if !g.Initialized {
 		return nil
 	}
 
@@ -855,8 +855,8 @@ func (g *GPUAccelerator) Shutdown() error {
 	// 重置CUDA设备
 	C.cudaDeviceReset()
 
-	g.initialized = false
-	g.available = false
+	g.Initialized = false
+	g.Available = false
 
 	logger.Info("GPU加速器已关闭")
 	return nil

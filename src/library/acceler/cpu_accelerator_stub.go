@@ -58,11 +58,11 @@ func (c *CPUAccelerator) Cleanup() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if !c.initialized {
+	if !c.Initialized {
 		return nil
 	}
 
-	c.initialized = false
+	c.Initialized = false
 	logger.Info("CPU加速器Stub资源已清理")
 	return nil
 }
@@ -71,7 +71,7 @@ func (c *CPUAccelerator) Cleanup() error {
 func (c *CPUAccelerator) IsAvailable() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return c.available
+	return c.Available
 }
 
 // GetType 获取加速器类型
@@ -94,8 +94,8 @@ func (c *CPUAccelerator) Initialize() error {
 	logger.Info("初始化CPU加速器Stub")
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.initialized = true
-	c.available = true
+	c.Initialized = true
+	c.Available = true
 	return nil
 }
 
@@ -104,12 +104,12 @@ func (c *CPUAccelerator) Shutdown() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if !c.initialized {
+	if !c.Initialized {
 		return nil
 	}
 
-	c.initialized = false
-	c.available = false
+	c.Initialized = false
+	c.Available = false
 	logger.Info("CPU加速器Stub已关闭")
 	return nil
 }
@@ -119,7 +119,7 @@ func (c *CPUAccelerator) ComputeDistance(query []float64, targets [][]float64) (
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if !c.initialized {
+	if !c.Initialized {
 		return nil, fmt.Errorf("CPU加速器未初始化")
 	}
 
@@ -144,7 +144,7 @@ func (c *CPUAccelerator) BatchComputeDistance(queries [][]float64, targets [][]f
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if !c.initialized {
+	if !c.Initialized {
 		return nil, fmt.Errorf("CPU加速器未初始化")
 	}
 
@@ -169,7 +169,7 @@ func (c *CPUAccelerator) BatchCosineSimilarity(queries [][]float64, targets [][]
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if !c.initialized {
+	if !c.Initialized {
 		return nil, fmt.Errorf("CPU加速器未初始化")
 	}
 
@@ -211,7 +211,7 @@ func (c *CPUAccelerator) BatchSearch(queries [][]float64, database [][]float64, 
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if !c.initialized {
+	if !c.Initialized {
 		return nil, fmt.Errorf("CPU加速器未初始化")
 	}
 
@@ -287,7 +287,7 @@ func (c *CPUAccelerator) AccelerateSearch(query []float64, database [][]float64,
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if !c.initialized {
+	if !c.Initialized {
 		return nil, fmt.Errorf("CPU加速器未初始化")
 	}
 
@@ -410,7 +410,7 @@ func (c *CPUAccelerator) AutoTune(workload WorkloadProfile) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if !c.initialized {
+	if !c.Initialized {
 		return fmt.Errorf("CPU加速器未初始化")
 	}
 
@@ -421,7 +421,7 @@ func (c *CPUAccelerator) AutoTune(workload WorkloadProfile) error {
 	if workload.VectorDimension > 0 {
 		// 调整批处理大小
 		c.dataSize = min(workload.VectorDimension/10, 1000)
-		c.dimension = workload.VectorDimension
+		c.Dimension = workload.VectorDimension
 	}
 
 	logger.Info("CPU加速器自动调优完成")

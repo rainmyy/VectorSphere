@@ -36,7 +36,7 @@ func (p *PMemAccelerator) GetType() string {
 
 // IsAvailable 检查PMem是否可用
 func (p *PMemAccelerator) IsAvailable() bool {
-	return p.available
+	return p.Available
 }
 
 // Initialize 初始化PMem加速器
@@ -44,7 +44,7 @@ func (p *PMemAccelerator) Initialize() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.initialized {
+	if p.Initialized {
 		return nil
 	}
 
@@ -53,7 +53,7 @@ func (p *PMemAccelerator) Initialize() error {
 		p.Namespaces[ns.Name] = &ns
 	}
 
-	p.initialized = true
+	p.Initialized = true
 	p.stats.LastUsed = time.Now()
 
 	return nil
@@ -64,7 +64,7 @@ func (p *PMemAccelerator) Shutdown() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if !p.initialized {
+	if !p.Initialized {
 		return nil
 	}
 
@@ -74,7 +74,7 @@ func (p *PMemAccelerator) Shutdown() error {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	p.initialized = false
+	p.Initialized = false
 	return nil
 }
 
@@ -85,7 +85,7 @@ func (p *PMemAccelerator) ComputeDistance(query []float64, targets [][]float64) 
 		p.updateStats(time.Since(start), nil)
 	}()
 
-	if !p.initialized {
+	if !p.Initialized {
 		return nil, fmt.Errorf("PMem accelerator not initialized")
 	}
 
@@ -120,7 +120,7 @@ func (p *PMemAccelerator) BatchComputeDistance(queries, targets [][]float64) ([]
 		p.updateStats(time.Since(start), nil)
 	}()
 
-	if !p.initialized {
+	if !p.Initialized {
 		return nil, fmt.Errorf("PMem accelerator not initialized")
 	}
 
@@ -147,7 +147,7 @@ func (p *PMemAccelerator) AccelerateSearch(query []float64, database [][]float64
 		p.updateStats(time.Since(start), nil)
 	}()
 
-	if !p.initialized {
+	if !p.Initialized {
 		return nil, fmt.Errorf("FPGA accelerator not initialized")
 	}
 	return AccelerateSearch(query, database, options)
@@ -274,7 +274,7 @@ func (p *PMemAccelerator) StoreVectors(key string, vectors [][]float64) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if !p.initialized {
+	if !p.Initialized {
 		return fmt.Errorf("PMem accelerator not initialized")
 	}
 
@@ -299,7 +299,7 @@ func (p *PMemAccelerator) LoadVectors(key string, dimension int) ([][]float64, e
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	if !p.initialized {
+	if !p.Initialized {
 		return nil, fmt.Errorf("PMem accelerator not initialized")
 	}
 
@@ -349,7 +349,7 @@ func (p *PMemAccelerator) BatchSearch(queries [][]float64, database [][]float64,
 		p.updateStats(time.Since(start), nil)
 	}()
 
-	if !p.initialized {
+	if !p.Initialized {
 		return nil, fmt.Errorf("PMem accelerator not initialized")
 	}
 

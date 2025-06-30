@@ -36,7 +36,7 @@ func (g *GPUAccelerator) GetType() string {
 func (g *GPUAccelerator) IsAvailable() bool {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
-	return g.available
+	return g.Available
 }
 
 // Initialize 初始化GPU加速器（模拟）
@@ -44,7 +44,7 @@ func (g *GPUAccelerator) Initialize() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	if g.initialized {
+	if g.Initialized {
 		return nil
 	}
 
@@ -55,9 +55,9 @@ func (g *GPUAccelerator) Initialize() error {
 	logger.Info("模拟GPU加速器初始化，设备ID: %d", g.deviceID)
 
 	// 设置模拟参数
-	g.dimension = 512
-	g.initialized = true
-	g.available = true
+	g.Dimension = 512
+	g.Initialized = true
+	g.Available = true
 	g.stats.LastUsed = time.Now()
 
 	// 模拟性能指标
@@ -102,7 +102,7 @@ func (g *GPUAccelerator) SetMemoryFraction(fraction float32) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	if !g.initialized {
+	if !g.Initialized {
 		return fmt.Errorf("GPU加速器未初始化")
 	}
 
@@ -116,7 +116,7 @@ func (g *GPUAccelerator) ComputeDistance(query []float64, vectors [][]float64) (
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
-	if !g.initialized {
+	if !g.Initialized {
 		return nil, fmt.Errorf("GPU加速器未初始化")
 	}
 
@@ -155,7 +155,7 @@ func (g *GPUAccelerator) BatchComputeDistance(queries [][]float64, vectors [][]f
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
-	if !g.initialized {
+	if !g.Initialized {
 		return nil, fmt.Errorf("GPU加速器未初始化")
 	}
 
@@ -188,7 +188,7 @@ func (g *GPUAccelerator) BatchCosineSimilarity(queries [][]float64, database [][
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
-	if !g.initialized {
+	if !g.Initialized {
 		return nil, fmt.Errorf("GPU加速器未初始化")
 	}
 
@@ -241,7 +241,7 @@ func (g *GPUAccelerator) BatchSearch(queries [][]float64, database [][]float64, 
 	defer g.mu.RUnlock()
 
 	// 基本检查
-	if !g.initialized {
+	if !g.Initialized {
 		return nil, fmt.Errorf("GPU加速器未初始化")
 	}
 
@@ -358,7 +358,7 @@ func (g *GPUAccelerator) batchSearchCPUFallback(queries [][]float64, database []
 
 // AccelerateSearch 模拟加速搜索
 func (g *GPUAccelerator) AccelerateSearch(query []float64, database [][]float64, options entity.SearchOptions) ([]AccelResult, error) {
-	if !g.initialized {
+	if !g.Initialized {
 		return nil, fmt.Errorf("GPU加速器未初始化")
 	}
 
@@ -448,7 +448,7 @@ func (g *GPUAccelerator) AutoTune(workload WorkloadProfile) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	if !g.initialized {
+	if !g.Initialized {
 		return fmt.Errorf("GPU加速器未初始化")
 	}
 
@@ -472,7 +472,7 @@ func (g *GPUAccelerator) AutoTune(workload WorkloadProfile) error {
 
 	// 根据向量维度调整
 	if workload.VectorDimension > 0 {
-		g.dimension = workload.VectorDimension
+		g.Dimension = workload.VectorDimension
 		if workload.VectorDimension > 1024 {
 			g.BatchSize = g.BatchSize / 2 // 高维向量减少批处理大小
 		}
@@ -494,15 +494,15 @@ func (g *GPUAccelerator) Shutdown() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	if !g.initialized {
+	if !g.Initialized {
 		return nil
 	}
 
 	// 模拟清理过程
 	time.Sleep(50 * time.Millisecond)
 
-	g.initialized = false
-	g.available = false
+	g.Initialized = false
+	g.Available = false
 	g.MemoryUsed = 0
 
 	logger.Info("模拟GPU加速器已关闭")

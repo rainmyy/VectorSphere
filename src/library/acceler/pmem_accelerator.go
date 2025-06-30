@@ -87,7 +87,7 @@ func (p *PMemAccelerator) GetType() string {
 func (p *PMemAccelerator) IsAvailable() bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	return p.available
+	return p.Available
 }
 
 // Initialize 初始化PMem
@@ -95,11 +95,11 @@ func (p *PMemAccelerator) Initialize() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if !p.available {
+	if !p.Available {
 		return fmt.Errorf("PMem设备不可用")
 	}
 
-	if p.initialized {
+	if p.Initialized {
 		return nil
 	}
 
@@ -131,7 +131,7 @@ func (p *PMemAccelerator) Initialize() error {
 		p.deviceHandles[i] = unsafe.Pointer(device)
 	}
 
-	p.initialized = true
+	p.Initialized = true
 	p.updateCapabilities()
 
 	return nil
@@ -142,7 +142,7 @@ func (p *PMemAccelerator) Shutdown() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if !p.initialized {
+	if !p.Initialized {
 		return nil
 	}
 
@@ -157,7 +157,7 @@ func (p *PMemAccelerator) Shutdown() error {
 	}
 
 	p.deviceHandles = nil
-	p.initialized = false
+	p.Initialized = false
 
 	return nil
 }
@@ -177,7 +177,7 @@ func (p *PMemAccelerator) ComputeDistance(query []float64, vectors [][]float64) 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if !p.initialized {
+	if !p.Initialized {
 		return nil, fmt.Errorf("PMem未初始化")
 	}
 
@@ -242,7 +242,7 @@ func (p *PMemAccelerator) BatchComputeDistance(queries [][]float64, vectors [][]
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if !p.initialized {
+	if !p.Initialized {
 		return nil, fmt.Errorf("PMem未初始化")
 	}
 
@@ -346,7 +346,7 @@ func (p *PMemAccelerator) OptimizeMemoryLayout(vectors [][]float64) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if !p.initialized || len(p.deviceHandles) == 0 {
+	if !p.Initialized || len(p.deviceHandles) == 0 {
 		return fmt.Errorf("PMem未初始化")
 	}
 
@@ -462,14 +462,14 @@ func (p *PMemAccelerator) AutoTune(workload WorkloadProfile) error {
 // detectPMem 检测PMem可用性
 func (p *PMemAccelerator) detectPMem() {
 	if int(C.pmem_is_available()) == 1 {
-		p.available = true
+		p.Available = true
 		p.updateCapabilities()
 	}
 }
 
 // updateCapabilities 更新能力信息
 func (p *PMemAccelerator) updateCapabilities() {
-	if !p.available {
+	if !p.Available {
 		return
 	}
 
@@ -577,7 +577,7 @@ func (p *PMemAccelerator) FlushCache() error {
 	p.VectorCache = make(map[string][]float64)
 
 	// 刷新PMem数据
-	if p.initialized {
+	if p.Initialized {
 		for _, handle := range p.deviceHandles {
 			if handle != nil {
 				device := (*C.pmem_device_t)(handle)
