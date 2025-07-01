@@ -264,7 +264,7 @@ func (al *AppLauncher) Run() error {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	logger.Info("Application is running. Press Ctrl+C to stop.")
+	println("Application is running. Press Ctrl+C to stop.")
 
 	// 阻塞等待信号
 	sig := <-sigChan

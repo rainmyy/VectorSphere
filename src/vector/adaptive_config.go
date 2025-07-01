@@ -161,7 +161,7 @@ func (db *VectorDB) LoadConfigFromFile(configPath string) error {
 	}
 
 	// 读取文件内容
-	data, err := ioutil.ReadFile(configPath)
+	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("读取配置文件失败: %v", err)
 	}

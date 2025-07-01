@@ -31,24 +31,23 @@ const (
 
 // DistributedConfig 分布式配置
 type DistributedConfig struct {
-	ServiceName           string                     `yaml:"serviceName"`
-	NodeType              NodeType                   `yaml:"nodeType"`
-	TimeOut               int                        `yaml:"timeOut"`
-	DefaultPort           int                        `yaml:"defaultPort"`
-	Heartbeat             int                        `yaml:"heartbeat"`
-	Etcd                  EtcdConfig                 `yaml:"etcd"`
-	SchedulerWorkerCount  int                        `yaml:"schedulerWorkerCount"`
-	HttpPort              int                        `yaml:"httpPort"`
-	TaskTimeout           int                        `yaml:"taskTimeout"`
-	HealthCheckInterval   int                        `yaml:"healthCheckInterval"`
-	Endpoints             map[string]entity.EndPoint `yaml:"endpoints"`
-	DataDir               string                     `yaml:"dataDir"`
+	ServiceName           string     `yaml:"serviceName"`
+	NodeType              NodeType   `yaml:"nodeType"`
+	TimeOut               int        `yaml:"timeOut"`
+	DefaultPort           int        `yaml:"defaultPort"`
+	Heartbeat             int        `yaml:"heartbeat"`
+	Etcd                  EtcdConfig `yaml:"etcd"`
+	SchedulerWorkerCount  int        `yaml:"schedulerWorkerCount"`
+	HttpPort              int        `yaml:"httpPort"`
+	TaskTimeout           int        `yaml:"taskTimeout"`
+	HealthCheckInterval   int        `yaml:"healthCheckInterval"`
+	DataDir               string     `yaml:"dataDir"`
 	LoadBalancerConfig    *enhanced.EnhancedLoadBalancer
 	EnhancedConfigManager *enhanced.EnhancedConfigManager
 }
 
 type EtcdConfig struct {
-	Endpoints []string `yaml:"endpoints"`
+	Endpoints []entity.EndPoint `yaml:"endpoints"`
 }
 
 // DistributedManager 分布式管理器
@@ -89,7 +88,7 @@ func NewDistributedManager(config *DistributedConfig) (*DistributedManager, erro
 	localIP, err := common.GetLocalHost()
 
 	if err != nil {
-		defer cancel()
+		cancel()
 		return nil, fmt.Errorf("获取本地IP失败: %v", err)
 	}
 
@@ -184,9 +183,12 @@ func (dm *DistributedManager) Stop() error {
 // initEtcdClient 初始化etcd客户端
 func (dm *DistributedManager) initEtcdClient() error {
 	logger.Info("Initializing etcd client...")
-
+	var endPoints []string
+	for _, endPoint := range dm.config.Etcd.Endpoints {
+		endPoints = append(endPoints, endPoint.Ip+":"+strconv.Itoa(endPoint.Port))
+	}
 	client, err := clientv3.New(clientv3.Config{
-		Endpoints:   dm.config.Etcd.Endpoints,
+		Endpoints:   endPoints,
 		DialTimeout: time.Duration(dm.config.TimeOut) * time.Second,
 		// 添加自动重连选项
 		DialOptions: []grpc.DialOption{
@@ -350,7 +352,7 @@ func (dm *DistributedManager) startMasterService(communicationSvc *Communication
 
 	// 转换endpoints
 	var endpoints []entity.EndPoint
-	for _, ep := range dm.config.Endpoints {
+	for _, ep := range dm.config.Etcd.Endpoints {
 		endpoints = append(endpoints, ep)
 	}
 
@@ -385,7 +387,7 @@ func (dm *DistributedManager) startSlaveService(communicationSvc *CommunicationS
 
 	// 转换endpoints
 	var endpoints []entity.EndPoint
-	for _, ep := range dm.config.Endpoints {
+	for _, ep := range dm.config.Etcd.Endpoints {
 		endpoints = append(endpoints, ep)
 	}
 

@@ -15,59 +15,21 @@ import (
 )
 
 func main() {
-	// 解析命令行参数
-	configPath := flag.String("config", "config.yaml", "配置文件路径")
-	nodeType := flag.String("mode", "master", "节点类型 (master/slave)")
-	port := flag.Int("port", 8080, "服务端口")
-	httpPort := flag.Int("http-port", 8081, "HTTP服务端口")
-	etcdEndpoints := flag.String("etcd", "localhost:2379", "etcd端点，多个端点用逗号分隔")
-	serviceName := flag.String("service", "VectorSphere", "服务名称")
-	flag.Parse()
+	configPath := flag.String("config", "D:\\code\\VectorSphere\\conf\\system\\config.yaml", "配置文件路径")
+	err := distributed.CreateAndRunApp(*configPath)
+	if err != nil {
+		println(err.Error())
+	}
+}
 
+func main_1() {
+	// 解析命令行参数
+	configPath := flag.String("config", "D:\\code\\VectorSphere\\conf\\system\\config.yaml", "配置文件路径")
 	// 加载配置
 	config, err := bootstrap.LoadConfig(*configPath)
 	if err != nil {
-		logger.Info("Failed to load config from file, using default and command line parameters")
-		// 使用默认配置
-		config = &bootstrap.AppConfig{
-			ServiceName:           *serviceName,
-			NodeID:                fmt.Sprintf("%s-%d", *nodeType, *port),
-			NodeType:              *nodeType,
-			Version:               "1.0.0",
-			Region:                "default",
-			Zone:                  "default",
-			Tags:                  []string{"production"},
-			Port:                  *port,
-			HttpPort:              *httpPort,
-			EtcdEndpoints:         parseEtcdEndpoints(*etcdEndpoints),
-			EtcdTimeout:           5,
-			ServiceTTL:            60,
-			HeartbeatInterval:     time.Second * 30,
-			HealthCheckInterval:   time.Second * 60,
-			HealthCheckEndpoint:   "/health",
-			LoadBalancerAlgorithm: "round_robin",
-			MaxRetries:            3,
-			RetryTimeout:          time.Second * 10,
-			ConfigNamespace:       "vector_sphere",
-			ConfigEnv:             "production",
-		}
-	} else {
-		// 命令行参数覆盖配置文件
-		if *nodeType != "" {
-			config.NodeType = *nodeType
-		}
-		if *port != 0 {
-			config.Port = *port
-		}
-		if *httpPort != 0 {
-			config.HttpPort = *httpPort
-		}
-		if *etcdEndpoints != "" {
-			config.EtcdEndpoints = parseEtcdEndpoints(*etcdEndpoints)
-		}
-		if *serviceName != "" {
-			config.ServiceName = *serviceName
-		}
+		logger.Info("Failed to load config from file, error:%v", err)
+		os.Exit(-1)
 	}
 
 	// 创建上下文
@@ -113,14 +75,13 @@ func main() {
 		TimeOut:     config.EtcdTimeout,
 		DefaultPort: config.Port,
 		Heartbeat:   int(config.HeartbeatInterval.Seconds()),
-		Etcd: distributed.EtcdConfig{
-			Endpoints: config.EtcdEndpoints,
-		},
+		//Etcd: distributed.EtcdConfig{
+		//	Endpoints: config.EtcdEndpoints,
+		//},
 		SchedulerWorkerCount:  10,
 		HttpPort:              config.HttpPort,
 		TaskTimeout:           30000000,
 		HealthCheckInterval:   int(config.HealthCheckInterval.Seconds()),
-		Endpoints:             endpoints,
 		DataDir:               "data",
 		LoadBalancerConfig:    loadBalancer,
 		EnhancedConfigManager: configManager,

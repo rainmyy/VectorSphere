@@ -5,8 +5,12 @@ import (
 	"VectorSphere/src/enhanced"
 	"VectorSphere/src/library/logger"
 	"context"
+	"encoding/json"
 	"fmt"
+	"gopkg.in/yaml.v3"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -245,10 +249,7 @@ func InitConfigManager(client *clientv3.Client, config *AppConfig) (*enhanced.En
 	return configManager, nil
 }
 
-// LoadConfig 加载配置
-func LoadConfig(configPath string) (*AppConfig, error) {
-	// 这里应该实现从配置文件加载配置的逻辑
-	// 为了示例，这里返回一个默认配置
+func getDefaultConfig() *AppConfig {
 	return &AppConfig{
 		ServiceName:           "vector_sphere",
 		NodeID:                "node1",
@@ -270,7 +271,46 @@ func LoadConfig(configPath string) (*AppConfig, error) {
 		RetryTimeout:          time.Second * 10,
 		ConfigNamespace:       "vector_sphere",
 		ConfigEnv:             "production",
-	}, nil
+	}
+}
+
+// LoadConfig 加载配置
+func LoadConfig(configPath string) (*AppConfig, error) {
+	// 这里应该实现从配置文件加载配置的逻辑
+	if configPath == "" {
+		return nil, fmt.Errorf("配置文件路径为空")
+	}
+
+	// 检查文件是否存在
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("配置文件不存在: %s", configPath)
+	}
+
+	// 读取文件内容
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("读取配置文件失败: %v", err)
+	}
+
+	// 根据文件扩展名选择解析方式
+	ext := filepath.Ext(configPath)
+	var config AppConfig
+
+	switch ext {
+	case ".json":
+		if err := json.Unmarshal(data, &config); err != nil {
+			return nil, fmt.Errorf("解析JSON配置文件失败: %v", err)
+		}
+	case ".yaml", ".yml":
+		if err := yaml.Unmarshal(data, &config); err != nil {
+			return nil, fmt.Errorf("解析YAML配置文件失败: %v", err)
+		}
+	default:
+		return getDefaultConfig(), nil
+	}
+
+	logger.Info("成功加载配置文件: %s", configPath)
+	return &config, nil
 }
 
 // getLocalIP 获取本地IP地址

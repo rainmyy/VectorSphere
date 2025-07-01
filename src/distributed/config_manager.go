@@ -119,10 +119,24 @@ func (cm *ConfigManager) applyEnvOverrides(config *DistributedConfig) {
 	// etcd端点
 	if etcdEndpoints := os.Getenv("VECTOR_SPHERE_ETCD_ENDPOINTS"); etcdEndpoints != "" {
 		endpoints := strings.Split(etcdEndpoints, ",")
-		for i, ep := range endpoints {
-			endpoints[i] = strings.TrimSpace(ep)
+		var endPointList []entity.EndPoint
+		for _, ep := range endpoints {
+			ep = strings.TrimSpace(ep)
+			endPointInfo := strings.Split(ep, ":")
+			if len(endPointInfo) != 2 {
+				continue
+			}
+			port, err := strconv.Atoi(endPointInfo[1])
+			if err != nil {
+				fmt.Println("转换失败:", err)
+				return
+			}
+			
+			endPoint := entity.EndPoint{Ip: endPointInfo[0], Port: port}
+			endPointList = append(endPointList, endPoint)
 		}
-		config.Etcd.Endpoints = endpoints
+
+		config.Etcd.Endpoints = endPointList
 		logger.Info("Override etcd endpoints from env: %v", endpoints)
 	}
 
@@ -205,8 +219,8 @@ func (cm *ConfigManager) setDefaults(config *DistributedConfig) {
 	}
 
 	// 设置默认endpoints（如果为空）
-	if config.Endpoints == nil {
-		config.Endpoints = make(map[string]entity.EndPoint)
+	if config.Etcd.Endpoints == nil {
+		config.Etcd.Endpoints = make([]entity.EndPoint, 1)
 	}
 
 	logger.Info("Applied default configuration values")
@@ -268,9 +282,8 @@ func CreateDefaultConfig(configPath string) error {
 		HealthCheckInterval:  30,
 		DataDir:              "./data",
 		Etcd: EtcdConfig{
-			Endpoints: []string{"localhost:2379"},
+			Endpoints: []entity.EndPoint{{Ip: "127.0.0.1", Port: 2379}},
 		},
-		Endpoints: make(map[string]entity.EndPoint),
 	}
 
 	// 确保目录存在
