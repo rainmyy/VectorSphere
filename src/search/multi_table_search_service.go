@@ -338,72 +338,72 @@ func (mts *MultiTableSearchService) DeleteDocument(tableName string, docId strin
 }
 
 // Search 在指定表中执行搜索
-func (mts *MultiTableSearchService) searchBa(tableName string, query *messages2.TermQuery, vectorizedType int, k int, probe int, onFlag uint64, offFlag uint64, orFlags []uint64, useANN bool) ([]string, error) {
-	table, err := mts.GetTable(tableName)
-	if err != nil {
-		return nil, err
-	}
-
-	var candidateIDs []entity.Result
-	// 使用向量搜索获取候选文件 ID
-	if table.VectorDB != nil && (useANN || table.VectorDB.GetDataSize() > 1000) { // 根据useANN或数据量决定是否使用ANN
-		// 使用 HybridSearch 或 FindNearestWithScores
-		// 假设 HybridSearch 接受与 FileSystemSearch 类似的参数并返回 []string
-		// 如果 HybridSearch 不存在或接口不同，可能需要调整或使用 FindNearestWithScores
-		// 注意：HybridSearch 和 FindNearestWithScores 返回的可能是带分数的结构体，需要提取 ID
-		// 这里简化处理，假设返回 []string
-		// TODO: Adjust based on actual VectorDB search method signatures and return types
-		// For now, let's assume a method that returns doc IDs based on vector search
-		// Example using FindNearestWithScores (assuming it returns []entity.SearchResult or similar)
-		// results, err := table.VectorDB.FindNearestWithScores(query.Keyword.ToString(), k, probe)
-		// if err == nil { for _, res := range results { candidateIDs = append(candidateIDs, res.ID) } }
-
-		// Using FileSystemSearch as a placeholder based on previous context
-		candidateIDs, err = table.VectorDB.FileSystemSearch(query.Keyword.ToString(), vectorizedType, k, probe)
-		if err != nil {
-			return nil, fmt.Errorf("vector search failed in table '%s': %w", tableName, err)
-		}
-
-	} else if table.VectorDB != nil { // 如果不使用ANN或数据量不大，可以使用FindNearestWithScores
-		// TODO: Use FindNearestWithScores and process results to get IDs
-		// Example:
-		// results, err := table.VectorDB.FindNearestWithScores(query.Keyword.ToString(), k, probe)
-		// if err == nil { for _, res := range results { candidateIDs = append(candidateIDs, res.ID) } }
-
-		// Using FileSystemSearch as a placeholder
-		candidateIDs, err = table.VectorDB.FileSystemSearch(query.Keyword.ToString(), vectorizedType, k, probe)
-		if err != nil {
-			return nil, fmt.Errorf("vector search failed in table '%s': %w", tableName, err)
-		}
-	}
-
-	// 开启事务 (使用 MultiTableSearchService 的 TxMgr)
-	tx := mts.TxMgr.Begin(tree.Serializable)
-	defer mts.TxMgr.Commit(tx)
-
-	// 使用倒排索引进行表达式查询
-	indexResults, err := table.InvertedIndex.Search(tx, query, onFlag, offFlag, orFlags, query.Keyword.ToString(), k, useANN)
-	if err != nil {
-		return nil, fmt.Errorf("inverted index search failed in table '%s': %w", tableName, err)
-	}
-
-	// 合并结果：取倒排索引结果和向量搜索候选 ID 的交集
-	finalResults := make([]string, 0)
-	indexResultSet := make(map[string]struct{})
-	for _, id := range indexResults {
-		indexResultSet[id] = struct{}{}
-	}
-
-	for _, id := range candidateIDs {
-		if _, ok := indexResultSet[id.Id]; ok {
-			finalResults = append(finalResults, id.Id)
-		}
-	}
-
-	// TODO: Implement more sophisticated result merging and scoring based on both indexResults and candidateIDs (with scores)
-
-	return finalResults, nil
-}
+//func (mts *MultiTableSearchService) searchBa(tableName string, query *messages2.TermQuery, vectorizedType int, k int, probe int, onFlag uint64, offFlag uint64, orFlags []uint64, useANN bool) ([]string, error) {
+//	table, err := mts.GetTable(tableName)
+//	if err != nil {
+//		return nil, err
+//	}
+//
+//	var candidateIDs []entity.Result
+//	// 使用向量搜索获取候选文件 ID
+//	if table.VectorDB != nil && (useANN || table.VectorDB.GetDataSize() > 1000) { // 根据useANN或数据量决定是否使用ANN
+//		// 使用 HybridSearch 或 FindNearestWithScores
+//		// 假设 HybridSearch 接受与 FileSystemSearch 类似的参数并返回 []string
+//		// 如果 HybridSearch 不存在或接口不同，可能需要调整或使用 FindNearestWithScores
+//		// 注意：HybridSearch 和 FindNearestWithScores 返回的可能是带分数的结构体，需要提取 ID
+//		// 这里简化处理，假设返回 []string
+//		// TODO: Adjust based on actual VectorDB search method signatures and return types
+//		// For now, let's assume a method that returns doc IDs based on vector search
+//		// Example using FindNearestWithScores (assuming it returns []entity.SearchResult or similar)
+//		// results, err := table.VectorDB.FindNearestWithScores(query.Keyword.ToString(), k, probe)
+//		// if err == nil { for _, res := range results { candidateIDs = append(candidateIDs, res.ID) } }
+//
+//		// Using FileSystemSearch as a placeholder based on previous context
+//		candidateIDs, err = table.VectorDB.FileSystemSearch(query.Keyword.ToString(), vectorizedType, k, probe)
+//		if err != nil {
+//			return nil, fmt.Errorf("vector search failed in table '%s': %w", tableName, err)
+//		}
+//
+//	} else if table.VectorDB != nil { // 如果不使用ANN或数据量不大，可以使用FindNearestWithScores
+//		// TODO: Use FindNearestWithScores and process results to get IDs
+//		// Example:
+//		// results, err := table.VectorDB.FindNearestWithScores(query.Keyword.ToString(), k, probe)
+//		// if err == nil { for _, res := range results { candidateIDs = append(candidateIDs, res.ID) } }
+//
+//		// Using FileSystemSearch as a placeholder
+//		candidateIDs, err = table.VectorDB.FileSystemSearch(query.Keyword.ToString(), vectorizedType, k, probe)
+//		if err != nil {
+//			return nil, fmt.Errorf("vector search failed in table '%s': %w", tableName, err)
+//		}
+//	}
+//
+//	// 开启事务 (使用 MultiTableSearchService 的 TxMgr)
+//	tx := mts.TxMgr.Begin(tree.Serializable)
+//	defer mts.TxMgr.Commit(tx)
+//
+//	// 使用倒排索引进行表达式查询
+//	indexResults, err := table.InvertedIndex.Search(tx, query, onFlag, offFlag, orFlags, query.Keyword.ToString(), k, useANN)
+//	if err != nil {
+//		return nil, fmt.Errorf("inverted index search failed in table '%s': %w", tableName, err)
+//	}
+//
+//	// 合并结果：取倒排索引结果和向量搜索候选 ID 的交集
+//	finalResults := make([]string, 0)
+//	indexResultSet := make(map[string]struct{})
+//	for _, id := range indexResults {
+//		indexResultSet[id] = struct{}{}
+//	}
+//
+//	for _, id := range candidateIDs {
+//		if _, ok := indexResultSet[id.Id]; ok {
+//			finalResults = append(finalResults, id.Id)
+//		}
+//	}
+//
+//	// TODO: Implement more sophisticated result merging and scoring based on both indexResults and candidateIDs (with scores)
+//
+//	return finalResults, nil
+//}
 
 // Search 在指定表中执行搜索 - 优化版本
 func (mts *MultiTableSearchService) Search(tableName string, query *messages2.TermQuery, vectorizedType int, k int, probe int, onFlag uint64, offFlag uint64, orFlags []uint64, useANN bool) ([]string, error) {

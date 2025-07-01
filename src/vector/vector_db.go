@@ -631,6 +631,22 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options entity.Searc
 					tracker.AddTag("accelerator", "fpga_explicit")
 				}
 			}
+		} else if options.UseRDMA {
+			if rdma, exists := db.hardwareManager.GetAccelerator(acceler.AcceleratorRDMA); exists && rdma.IsAvailable() {
+				accelerator = rdma
+				logger.Debug("根据用户指定使用FPGA加速器")
+				if tracker != nil {
+					tracker.AddTag("accelerator", "rdma_explicit")
+				}
+			}
+		} else if options.UsePMem {
+			if pmem, exists := db.hardwareManager.GetAccelerator(acceler.AcceleratorPMem); exists && pmem.IsAvailable() {
+				accelerator = pmem
+				logger.Debug("根据用户指定使用FPGA加速器")
+				if tracker != nil {
+					tracker.AddTag("accelerator", "rdma_explicit")
+				}
+			}
 		} else {
 			// 自动选择最佳加速器
 			bestAcc := db.hardwareManager.GetOptimalAccelerator(workload)
@@ -3290,7 +3306,7 @@ func (db *VectorDB) GetVectorForText(text string, vectorizedType int) ([]float64
 		// 假设 LoadWordEmbeddings 在 NewVectorDB 或其他初始化阶段被调用并存储了 embeddings
 		// 或者在这里按需加载，但这效率较低。更好的方式是 VectorDB 持有 embeddings。
 		// For now, let's assume a path or that embeddings are globally available/configured.
-		embeddings, err := LoadWordEmbeddings("path/to/pretrained_embeddings.txt") // Placeholder path
+		embeddings, err := LoadWordEmbeddings("../data/dict/embeddings_dictionary.txt") // Placeholder path
 		if err != nil {
 			return nil, fmt.Errorf("failed to load word embeddings for GetVectorForText: %w", err)
 		}
@@ -5171,7 +5187,7 @@ func (db *VectorDB) multiIndexSearch(query []float64, k int, nprobe int) ([]enti
 			continue
 		}
 
-		// 假设二级索引是 KDTree，并且有 FindNearest 方法
+		// 二级索引是 KDTree，并且有 FindNearest 方法
 		kdTree, ok := db.multiIndex.SubIndices[clusterIdx].(*tree.KDTree) // 类型断言
 		if !ok || kdTree == nil {
 			logger.Warning("Sub-index for cluster %d is not a KDTree or is nil. Performing brute-force.", clusterIdx)

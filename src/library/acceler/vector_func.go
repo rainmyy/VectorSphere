@@ -583,6 +583,7 @@ func OptimizedCompressByPQ(vec []float64, loadedCodebook [][]entity.Point, numSu
 			// 使用 SIMD 加速距离计算（如果支持）
 			if useAVX2 && subVectorDim%8 == 0 {
 				// 使用 AVX2 指令集加速距离计算
+				// TODO 替换为GPU、FPGA、RDMA等硬件加速能力
 				nearest, dist, _ := FindNearestCentroidAVX2(subVecData, currentSubspaceCodebook)
 				if nearest >= 0 && dist < minDistSq {
 					minDistSq = dist
