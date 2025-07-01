@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"gopkg.in/yaml.v2"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -1570,75 +1569,26 @@ func (db *VectorDB) configureDashboard(config *DashboardConfig) error {
 		return fmt.Errorf("dashboard config cannot be nil")
 	}
 
-	// 验证基本配置
-	if config.Port <= 0 || config.Port > 65535 {
-		return fmt.Errorf("invalid dashboard port: %d", config.Port)
-	}
-
-	if config.Host == "" {
-		config.Host = "localhost"
-	}
-
-	if config.Path == "" {
-		config.Path = "/dashboard"
-	}
-
-	// 验证认证配置
-	if config.Authentication.Enable {
-		if len(config.Authentication.Users) == 0 {
-			return fmt.Errorf("authentication enabled but no users configured")
-		}
-		for _, user := range config.Authentication.Users {
-			if user.Username == "" || user.Password == "" {
-				return fmt.Errorf("user credentials cannot be empty")
-			}
-		}
-	}
-
-	// 验证图表配置
-	for i, chart := range config.Charts {
-		if chart.ID == "" {
-			return fmt.Errorf("chart %d: ID cannot be empty", i)
-		}
-		if chart.Title == "" {
-			return fmt.Errorf("chart %d: title cannot be empty", i)
-		}
-		if chart.Type == "" {
-			return fmt.Errorf("chart %d: type cannot be empty", i)
-		}
-		if chart.Query == "" {
-			return fmt.Errorf("chart %d: query cannot be empty", i)
-		}
-	}
-
-	// 设置默认值
-	if config.RefreshInterval == 0 {
-		config.RefreshInterval = 30 * time.Second
-	}
-
-	if config.Theme == "" {
-		config.Theme = "light"
-	}
-
-	logger.Info("Dashboard configuration applied successfully")
-
 	if !config.Enable {
 		logger.Info("仪表板已禁用")
 		return nil
 	}
 
-	// 验证仪表板配置
-	if config.Host == "" {
-		config.Host = "localhost"
-	}
+	// 验证基本配置
 	if config.Port <= 0 || config.Port > 65535 {
 		return fmt.Errorf("仪表板端口必须在1-65535之间")
 	}
+
+	if config.Host == "" {
+		config.Host = "localhost"
+	}
+
 	if config.Path == "" {
 		config.Path = "/dashboard"
 	}
+
 	if config.Theme == "" {
-		config.Theme = "default"
+		config.Theme = "light"
 	}
 
 	logger.Info(fmt.Sprintf("配置仪表板，地址: %s:%d%s, 主题: %s",
@@ -1653,19 +1603,13 @@ func (db *VectorDB) configureDashboard(config *DashboardConfig) error {
 			config.Authentication.Type = "basic"
 		}
 
-		// 验证认证凭据
-		switch config.Authentication.Type {
-		case "basic":
-			if config.Authentication.Username == "" || config.Authentication.Password == "" {
-				return fmt.Errorf("基础认证需要用户名和密码")
-			}
-		case "token":
-			if config.Authentication.Token == "" {
-				return fmt.Errorf("令牌认证需要有效的令牌")
-			}
-		case "oauth":
-			if config.Authentication.ClientID == "" || config.Authentication.ClientSecret == "" {
-				return fmt.Errorf("OAuth认证需要客户端ID和密钥")
+		// 验证用户凭据
+		if len(config.Authentication.Users) == 0 {
+			return fmt.Errorf("authentication enabled but no users configured")
+		}
+		for _, user := range config.Authentication.Users {
+			if user.Username == "" || user.Password == "" {
+				return fmt.Errorf("user credentials cannot be empty")
 			}
 		}
 
@@ -1684,10 +1628,13 @@ func (db *VectorDB) configureDashboard(config *DashboardConfig) error {
 			return fmt.Errorf("图表 %d 的ID不能为空", i)
 		}
 		if chart.Title == "" {
-			chart.Title = chart.ID
+			return fmt.Errorf("图表 %d 的标题不能为空", i)
 		}
 		if chart.Type == "" {
-			chart.Type = "line"
+			return fmt.Errorf("图表 %d 的类型不能为空", i)
+		}
+		if chart.Query == "" {
+			return fmt.Errorf("图表 %d 的查询不能为空", i)
 		}
 		if chart.RefreshInterval <= 0 {
 			chart.RefreshInterval = 30 * time.Second
@@ -1696,22 +1643,20 @@ func (db *VectorDB) configureDashboard(config *DashboardConfig) error {
 
 	// 配置仪表板更新间隔
 	if config.RefreshInterval <= 0 {
-		config.RefreshInterval = 5 * time.Second
+		config.RefreshInterval = 30 * time.Second
 	}
 
 	// 配置仪表板数据保留期
-	if config.DataRetention <= 0 {
-		config.DataRetention = 7 * 24 * time.Hour // 默认保留7天
-	}
+	// 数据保留期配置已移除
 
 	// 配置仪表板静态资源路径
-	if config.StaticPath == "" {
-		config.StaticPath = "./static"
+	if config.Path == "" {
+		config.Path = "./static"
 	}
 
 	// 验证静态资源路径是否存在
-	if _, err := os.Stat(config.StaticPath); os.IsNotExist(err) {
-		logger.Warning(fmt.Sprintf("仪表板静态资源路径不存在: %s", config.StaticPath))
+	if _, err := os.Stat(config.Path); os.IsNotExist(err) {
+		logger.Warning(fmt.Sprintf("仪表板静态资源路径不存在: %s", config.Path))
 	}
 
 	logger.Info("仪表板配置完成")
@@ -1850,27 +1795,27 @@ func (db *VectorDB) configureAutoScalingMonitoring(config *AutoScalingConfig) er
 	}
 
 	// 验证指标配置
-	if config.Metrics.CPU.Enable {
-		if config.Metrics.CPU.TargetUtilization <= 0 || config.Metrics.CPU.TargetUtilization > 100 {
-			return fmt.Errorf("invalid CPU target utilization: %f, must be between 0 and 100", config.Metrics.CPU.TargetUtilization)
+	if config.Metrics.CPUUtilization.Enable {
+		if config.Metrics.CPUUtilization.ScaleUpThreshold <= 0 || config.Metrics.CPUUtilization.ScaleUpThreshold > 1 {
+			return fmt.Errorf("invalid CPU scale up threshold: %f, must be between 0 and 1", config.Metrics.CPUUtilization.ScaleUpThreshold)
 		}
-		if config.Metrics.CPU.AggregationWindow <= 0 {
-			config.Metrics.CPU.AggregationWindow = 60 * time.Second
+		if config.Metrics.CPUUtilization.AggregationWindow <= 0 {
+			config.Metrics.CPUUtilization.AggregationWindow = 60 * time.Second
 		}
 	}
 
-	if config.Metrics.Memory.Enable {
-		if config.Metrics.Memory.TargetUtilization <= 0 || config.Metrics.Memory.TargetUtilization > 100 {
-			return fmt.Errorf("invalid memory target utilization: %f, must be between 0 and 100", config.Metrics.Memory.TargetUtilization)
+	if config.Metrics.MemoryUtilization.Enable {
+		if config.Metrics.MemoryUtilization.ScaleUpThreshold <= 0 || config.Metrics.MemoryUtilization.ScaleUpThreshold > 1 {
+			return fmt.Errorf("invalid memory scale up threshold: %f, must be between 0 and 1", config.Metrics.MemoryUtilization.ScaleUpThreshold)
 		}
-		if config.Metrics.Memory.AggregationWindow <= 0 {
-			config.Metrics.Memory.AggregationWindow = 60 * time.Second
+		if config.Metrics.MemoryUtilization.AggregationWindow <= 0 {
+			config.Metrics.MemoryUtilization.AggregationWindow = 60 * time.Second
 		}
 	}
 
 	if config.Metrics.QPS.Enable {
-		if config.Metrics.QPS.TargetValue <= 0 {
-			return fmt.Errorf("invalid QPS target value: %f, must be greater than 0", config.Metrics.QPS.TargetValue)
+		if config.Metrics.QPS.ScaleUpThreshold <= 0 {
+			return fmt.Errorf("invalid QPS scale up threshold: %f, must be greater than 0", config.Metrics.QPS.ScaleUpThreshold)
 		}
 		if config.Metrics.QPS.AggregationWindow <= 0 {
 			config.Metrics.QPS.AggregationWindow = 60 * time.Second
@@ -1878,8 +1823,8 @@ func (db *VectorDB) configureAutoScalingMonitoring(config *AutoScalingConfig) er
 	}
 
 	if config.Metrics.QueueLength.Enable {
-		if config.Metrics.QueueLength.TargetValue <= 0 {
-			return fmt.Errorf("invalid queue length target value: %f, must be greater than 0", config.Metrics.QueueLength.TargetValue)
+		if config.Metrics.QueueLength.ScaleUpThreshold <= 0 {
+			return fmt.Errorf("invalid queue length scale up threshold: %f, must be greater than 0", config.Metrics.QueueLength.ScaleUpThreshold)
 		}
 		if config.Metrics.QueueLength.AggregationWindow <= 0 {
 			config.Metrics.QueueLength.AggregationWindow = 60 * time.Second
@@ -1887,18 +1832,18 @@ func (db *VectorDB) configureAutoScalingMonitoring(config *AutoScalingConfig) er
 	}
 
 	// 验证自定义指标
-	for i, metric := range config.Metrics.Custom {
+	for i, metric := range config.Metrics.CustomMetrics {
 		if metric.Name == "" {
 			return fmt.Errorf("custom metric %d: name cannot be empty", i)
 		}
 		if metric.Query == "" {
 			return fmt.Errorf("custom metric %d: query cannot be empty", i)
 		}
-		if metric.TargetValue <= 0 {
+		if metric.ScaleUpThreshold <= 0 {
 			return fmt.Errorf("custom metric %d: target value must be greater than 0", i)
 		}
 		if metric.AggregationWindow <= 0 {
-			metric.AggregationWindow = 60 * time.Second
+			config.Metrics.CustomMetrics[i].AggregationWindow = 60 * time.Second
 		}
 	}
 
@@ -1934,239 +1879,12 @@ func (db *VectorDB) configureAutoScalingMonitoring(config *AutoScalingConfig) er
 		}
 	}
 
-	// 验证扩缩容条件
-	for i, condition := range config.Conditions {
-		if condition.Metric == "" {
-			return fmt.Errorf("scaling condition %d: metric cannot be empty", i)
-		}
-		if condition.Operator == "" {
-			return fmt.Errorf("scaling condition %d: operator cannot be empty", i)
-		}
-		if condition.Threshold <= 0 {
-			return fmt.Errorf("scaling condition %d: threshold must be greater than 0", i)
-		}
-		if condition.Duration <= 0 {
-			condition.Duration = 60 * time.Second
-		}
-	}
-
 	// 设置监控间隔默认值
 	if config.MonitoringInterval <= 0 {
 		config.MonitoringInterval = 30 * time.Second
 	}
 
 	logger.Info("自动扩缩容监控配置应用成功")
-
-	if !config.Enable {
-		logger.Info("自动扩缩容监控已禁用")
-		return nil
-	}
-
-	// 验证扩缩容策略
-	if config.Strategy == "" {
-		config.Strategy = "reactive" // 默认响应式策略
-	}
-	validStrategies := []string{"reactive", "predictive", "hybrid"}
-	validStrategy := false
-	for _, strategy := range validStrategies {
-		if config.Strategy == strategy {
-			validStrategy = true
-			break
-		}
-	}
-	if !validStrategy {
-		return fmt.Errorf("无效的扩缩容策略: %s，支持的策略: %v", config.Strategy, validStrategies)
-	}
-
-	logger.Info(fmt.Sprintf("配置自动扩缩容监控，策略: %s", config.Strategy))
-
-	// 验证扩缩容限制
-	if config.Limits.MinComputeNodes <= 0 {
-		config.Limits.MinComputeNodes = 1
-	}
-	if config.Limits.MaxComputeNodes <= config.Limits.MinComputeNodes {
-		config.Limits.MaxComputeNodes = config.Limits.MinComputeNodes * 10 // 默认最大节点数为最小节点数的10倍
-	}
-	if config.Limits.MaxScaleUpRate <= 0 {
-		config.Limits.MaxScaleUpRate = 0.5 // 默认每次最多扩容50%
-	}
-	if config.Limits.MaxScaleDownRate <= 0 {
-		config.Limits.MaxScaleDownRate = 0.2 // 默认每次最多缩容20%
-	}
-
-	logger.Info(fmt.Sprintf("扩缩容限制 - 最小计算节点: %d, 最大计算节点: %d, 最大扩容率: %.2f, 最大缩容率: %.2f",
-		config.Limits.MinComputeNodes, config.Limits.MaxComputeNodes, config.Limits.MaxScaleUpRate, config.Limits.MaxScaleDownRate))
-
-	// 配置冷却期
-	if config.Cooldown.ScaleUpCooldown <= 0 {
-		config.Cooldown.ScaleUpCooldown = 5 * time.Minute
-	}
-	if config.Cooldown.ScaleDownCooldown <= 0 {
-		config.Cooldown.ScaleDownCooldown = 10 * time.Minute
-	}
-
-	logger.Info(fmt.Sprintf("冷却期配置 - 扩容冷却: %v, 缩容冷却: %v",
-		config.Cooldown.ScaleUpCooldown, config.Cooldown.ScaleDownCooldown))
-
-	// 配置扩缩容指标
-	if config.Metrics.CPUUtilization.Enable {
-		logger.Info("启用CPU利用率扩缩容监控")
-
-		// 验证CPU指标配置
-		if config.Metrics.CPUUtilization.ScaleUpThreshold <= 0 || config.Metrics.CPUUtilization.ScaleUpThreshold > 1 {
-			config.Metrics.CPUUtilization.ScaleUpThreshold = 0.8 // 默认80%
-		}
-		if config.Metrics.CPUUtilization.ScaleDownThreshold <= 0 || config.Metrics.CPUUtilization.ScaleDownThreshold >= config.Metrics.CPUUtilization.ScaleUpThreshold {
-			config.Metrics.CPUUtilization.ScaleDownThreshold = 0.3 // 默认30%
-		}
-		if config.Metrics.CPUUtilization.AggregationWindow <= 0 {
-			config.Metrics.CPUUtilization.AggregationWindow = 5 * time.Minute
-		}
-
-		logger.Info(fmt.Sprintf("CPU指标 - 扩容阈值: %.2f, 缩容阈值: %.2f, 聚合窗口: %v",
-			config.Metrics.CPUUtilization.ScaleUpThreshold, config.Metrics.CPUUtilization.ScaleDownThreshold, config.Metrics.CPUUtilization.AggregationWindow))
-	}
-
-	if config.Metrics.MemoryUtilization.Enable {
-		logger.Info("启用内存利用率扩缩容监控")
-
-		// 验证内存指标配置
-		if config.Metrics.MemoryUtilization.ScaleUpThreshold <= 0 || config.Metrics.MemoryUtilization.ScaleUpThreshold > 1 {
-			config.Metrics.MemoryUtilization.ScaleUpThreshold = 0.85 // 默认85%
-		}
-		if config.Metrics.MemoryUtilization.ScaleDownThreshold <= 0 || config.Metrics.MemoryUtilization.ScaleDownThreshold >= config.Metrics.MemoryUtilization.ScaleUpThreshold {
-			config.Metrics.MemoryUtilization.ScaleDownThreshold = 0.4 // 默认40%
-		}
-		if config.Metrics.MemoryUtilization.AggregationWindow <= 0 {
-			config.Metrics.MemoryUtilization.AggregationWindow = 5 * time.Minute
-		}
-
-		logger.Info(fmt.Sprintf("内存指标 - 扩容阈值: %.2f, 缩容阈值: %.2f, 聚合窗口: %v",
-			config.Metrics.MemoryUtilization.ScaleUpThreshold, config.Metrics.MemoryUtilization.ScaleDownThreshold, config.Metrics.MemoryUtilization.AggregationWindow))
-	}
-
-	if config.Metrics.QueryLatency.Enable {
-		logger.Info("启用查询延迟扩缩容监控")
-
-		// 验证延迟指标配置
-		if config.Metrics.QueryLatency.ScaleUpThreshold <= 0 {
-			config.Metrics.QueryLatency.ScaleUpThreshold = 100 * time.Millisecond // 默认100ms
-		}
-		if config.Metrics.QueryLatency.ScaleDownThreshold <= 0 || config.Metrics.QueryLatency.ScaleDownThreshold >= config.Metrics.QueryLatency.ScaleUpThreshold {
-			config.Metrics.QueryLatency.ScaleDownThreshold = 50 * time.Millisecond // 默认50ms
-		}
-		if config.Metrics.QueryLatency.AggregationWindow <= 0 {
-			config.Metrics.QueryLatency.AggregationWindow = 3 * time.Minute
-		}
-
-		logger.Info(fmt.Sprintf("延迟指标 - 扩容阈值: %v, 缩容阈值: %v, 聚合窗口: %v",
-			config.Metrics.QueryLatency.ScaleUpThreshold, config.Metrics.QueryLatency.ScaleDownThreshold, config.Metrics.QueryLatency.AggregationWindow))
-	}
-
-	if config.Metrics.QPS.Enable {
-		logger.Info("启用QPS扩缩容监控")
-
-		// 验证QPS指标配置
-		if config.Metrics.QPS.ScaleUpThreshold <= 0 {
-			config.Metrics.QPS.ScaleUpThreshold = 1000 // 默认1000 QPS
-		}
-		if config.Metrics.QPS.ScaleDownThreshold <= 0 || config.Metrics.QPS.ScaleDownThreshold >= config.Metrics.QPS.ScaleUpThreshold {
-			config.Metrics.QPS.ScaleDownThreshold = 200 // 默认200 QPS
-		}
-		if config.Metrics.QPS.AggregationWindow <= 0 {
-			config.Metrics.QPS.AggregationWindow = 2 * time.Minute
-		}
-
-		logger.Info(fmt.Sprintf("QPS指标 - 扩容阈值: %.0f, 缩容阈值: %.0f, 聚合窗口: %v",
-			config.Metrics.QPS.ScaleUpThreshold, config.Metrics.QPS.ScaleDownThreshold, config.Metrics.QPS.AggregationWindow))
-	}
-
-	// 配置队列深度监控
-	if config.Metrics.QueueLength.Enable {
-		logger.Info("启用队列深度扩缩容监控")
-
-		if config.Metrics.QueueLength.ScaleUpThreshold <= 0 {
-			config.Metrics.QueueLength.ScaleUpThreshold = 100 // 默认队列深度100
-		}
-		if config.Metrics.QueueLength.ScaleDownThreshold <= 0 || config.Metrics.QueueLength.ScaleDownThreshold >= config.Metrics.QueueLength.ScaleUpThreshold {
-			config.Metrics.QueueLength.ScaleDownThreshold = 10 // 默认队列深度10
-		}
-		if config.Metrics.QueueLength.AggregationWindow <= 0 {
-			config.Metrics.QueueLength.AggregationWindow = 1 * time.Minute
-		}
-	}
-
-	// 配置自定义指标
-	for i, metric := range config.Metrics.CustomMetrics {
-		if metric.Name == "" {
-			return fmt.Errorf("自定义指标 %d 的名称不能为空", i)
-		}
-		if metric.Query == "" {
-			return fmt.Errorf("自定义指标 %s 的查询语句不能为空", metric.Name)
-		}
-		if metric.AggregationWindow <= 0 {
-			config.Metrics.CustomMetrics[i].AggregationWindow = 5 * time.Minute
-		}
-
-		logger.Info(fmt.Sprintf("配置自定义指标: %s (查询: %s)", metric.Name, metric.Query))
-	}
-
-	// 配置预测模型
-	if config.Prediction.Enable {
-		logger.Info(fmt.Sprintf("启用扩缩容预测，算法: %s", config.Prediction.Algorithm))
-
-		// 验证预测配置
-		if config.Prediction.Algorithm == "" {
-			config.Prediction.Algorithm = "linear_regression" // 默认线性回归
-		}
-		validAlgorithms := []string{"linear_regression", "arima", "lstm", "prophet"}
-		validAlgorithm := false
-		for _, algo := range validAlgorithms {
-			if config.Prediction.Algorithm == algo {
-				validAlgorithm = true
-				break
-			}
-		}
-		if !validAlgorithm {
-			return fmt.Errorf("无效的预测算法: %s，支持的算法: %v", config.Prediction.Algorithm, validAlgorithms)
-		}
-
-		if config.Prediction.WindowSize <= 0 {
-			config.Prediction.WindowSize = 60 // 默认60个数据点
-		}
-		if config.Prediction.PredictionHorizon <= 0 {
-			config.Prediction.PredictionHorizon = 10 * time.Minute // 默认预测10分钟
-		}
-		if config.Prediction.UpdateInterval <= 0 {
-			config.Prediction.UpdateInterval = 5 * time.Minute // 默认5分钟更新一次模型
-		}
-
-		logger.Info(fmt.Sprintf("预测配置 - 窗口大小: %d, 预测时长: %v, 更新间隔: %v",
-			config.Prediction.WindowSize, config.Prediction.PredictionHorizon, config.Prediction.UpdateInterval))
-	}
-
-	// 配置扩缩容条件
-	for i, condition := range config.Conditions {
-		if condition.Metric == "" {
-			return fmt.Errorf("扩缩容条件 %d 的指标不能为空", i)
-		}
-		if condition.Operator == "" {
-			return fmt.Errorf("扩缩容条件 %s 的操作符不能为空", condition.Metric)
-		}
-		if condition.Duration <= 0 {
-			config.Conditions[i].Duration = 5 * time.Minute
-		}
-
-		logger.Info(fmt.Sprintf("配置扩缩容条件: %s %s %.2f (持续时间: %v)", condition.Metric, condition.Operator, condition.Threshold, condition.Duration))
-	}
-
-	// 配置监控间隔
-	if config.MonitoringInterval <= 0 {
-		config.MonitoringInterval = 30 * time.Second
-	}
-
-	logger.Info(fmt.Sprintf("监控间隔: %v", config.MonitoringInterval))
-	logger.Info("自动扩缩容监控配置完成")
 	return nil
 }
 
@@ -2398,17 +2116,6 @@ func (dcm *DistributedConfigManager) validateConfig(config *DistributedConfig) e
 		return fmt.Errorf("配置不能为空")
 	}
 
-	// 验证基本配置
-	//if config.ClusterID == "" {
-	//	return fmt.Errorf("集群ID不能为空")
-	//}
-	//if config.NodeID == "" {
-	//	return fmt.Errorf("节点ID不能为空")
-	//}
-	//if config.Version == "" {
-	//	config.Version = "1.0.0" // 设置默认版本
-	//}
-
 	// 验证索引配置
 	if err := dcm.validateIndexConfig(&config.IndexConfig); err != nil {
 		return fmt.Errorf("索引配置验证失败: %v", err)
@@ -2446,7 +2153,7 @@ func (dcm *DistributedConfigManager) validateMonitoringConfig(config *Monitoring
 	// 验证指标收集配置
 	if config.Metrics.Enable {
 		if config.Metrics.Interval <= 0 {
-			config.Metrics.Interval = 30 * time.Second
+			config.Metrics.Interval = int(30 * time.Second.Seconds())
 		}
 		if config.Metrics.RetentionPeriod <= 0 {
 			config.Metrics.RetentionPeriod = 7 * 24 * time.Hour // 默认7天

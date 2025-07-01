@@ -452,13 +452,14 @@ type InhibitionRule struct {
 
 // AutoScalingConfig 自动扩缩容配置
 type AutoScalingConfig struct {
-	Enable     bool                 `json:"enable" yaml:"enable"`
-	Strategy   string               `json:"strategy" yaml:"strategy"` // "reactive", "predictive", "hybrid"
-	Metrics    ScalingMetricsConfig `json:"metrics" yaml:"metrics"`
-	Policies   []ScalingPolicy      `json:"policies" yaml:"policies"`
-	Limits     ScalingLimitsConfig  `json:"limits" yaml:"limits"`
-	Cooldown   CooldownConfig       `json:"cooldown" yaml:"cooldown"`
-	Prediction PredictionConfig     `json:"prediction" yaml:"prediction"`
+	Enable             bool                 `json:"enable" yaml:"enable"`
+	MonitoringInterval time.Duration        `json:"monitoringInterval"`
+	Strategy           string               `json:"strategy" yaml:"strategy"` // "reactive", "predictive", "hybrid"
+	Metrics            ScalingMetricsConfig `json:"metrics" yaml:"metrics"`
+	Policies           []ScalingPolicy      `json:"policies" yaml:"policies"`
+	Limits             ScalingLimitsConfig  `json:"limits" yaml:"limits"`
+	Cooldown           CooldownConfig       `json:"cooldown" yaml:"cooldown"`
+	Prediction         PredictionConfig     `json:"prediction" yaml:"prediction"`
 }
 
 // ScalingMetricsConfig 扩缩容指标配置
@@ -557,6 +558,8 @@ type CooldownConfig struct {
 // PredictionConfig 预测配置
 type PredictionConfig struct {
 	Enable            bool          `json:"enable" yaml:"enable"`
+	WindowSize        int           `json:"window_size" yaml:"window_size"`
+	PredictionHorizon time.Duration `json:"prediction_horizon"`
 	Algorithm         string        `json:"algorithm" yaml:"algorithm"` // "linear", "arima", "lstm", "prophet"
 	LookAheadWindow   time.Duration `json:"look_ahead_window" yaml:"look_ahead_window"`
 	TrainingWindow    time.Duration `json:"training_window" yaml:"training_window"`
