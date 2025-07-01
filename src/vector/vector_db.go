@@ -2305,7 +2305,7 @@ func (db *VectorDB) GetSelectStrategy() acceler.ComputeStrategy {
 	if db.hardwareManager != nil {
 		// 设置硬件管理器到策略选择器
 		db.strategyComputeSelector.SetHardwareManager(db.hardwareManager)
-		
+
 		// 根据当前数据库大小和向量维度选择策略
 		dataSize := len(db.vectors)
 		vectorDim := db.vectorDim
@@ -2316,7 +2316,7 @@ func (db *VectorDB) GetSelectStrategy() acceler.ComputeStrategy {
 				break
 			}
 		}
-		
+
 		return db.strategyComputeSelector.SelectOptimalStrategy(dataSize, vectorDim)
 	}
 
@@ -3290,7 +3290,7 @@ func (db *VectorDB) GetVectorForText(text string, vectorizedType int) ([]float64
 		// 假设 LoadWordEmbeddings 在 NewVectorDB 或其他初始化阶段被调用并存储了 embeddings
 		// 或者在这里按需加载，但这效率较低。更好的方式是 VectorDB 持有 embeddings。
 		// For now, let's assume a path or that embeddings are globally available/configured.
-		embeddings, err := LoadWordEmbeddings("path/to/pretrained_embeddings.txt") // Placeholder path
+		embeddings, err := LoadWordEmbeddings("../data/dict/embeddings_dictionary.txt") // Placeholder path
 		if err != nil {
 			return nil, fmt.Errorf("failed to load word embeddings for GetVectorForText: %w", err)
 		}
