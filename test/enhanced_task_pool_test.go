@@ -1,6 +1,7 @@
-package scheduler
+package test
 
 import (
+	"VectorSphere/src/scheduler"
 	"context"
 	"fmt"
 	"sync/atomic"
@@ -46,7 +47,7 @@ func (t *testTask) Params() map[string]interface{} {
 	return map[string]interface{}{"executions": t.executions, "failures": t.failures}
 }
 func (t *testTask) Timeout() time.Duration { return 5 * time.Second }
-func (t *testTask) Clone() ScheduledTask {
+func (t *testTask) Clone() scheduler.ScheduledTask {
 	return &testTask{
 		name:       t.name,
 		cronSpec:   t.cronSpec,
@@ -61,7 +62,7 @@ func (t *testTask) SetTarget(target string) { t.taskTarget = target }
 // TestEnhancedTaskPoolBasic 测试增强版任务池的基本功能
 func TestEnhancedTaskPoolBasic(t *testing.T) {
 	// 创建任务池配置
-	config := &EnhancedTaskConfig{
+	config := &scheduler.EnhancedTaskConfig{
 		MaxConcurrentTasks: 5,
 		DefaultRetryLimit:  2,
 		RetryBackoff:       100 * time.Millisecond,
@@ -73,7 +74,7 @@ func TestEnhancedTaskPoolBasic(t *testing.T) {
 	}
 
 	// 创建任务池
-	pool := NewEnhancedTaskPoolManager(config)
+	pool := scheduler.NewEnhancedTaskPoolManager(config)
 
 	// 创建测试任务
 	task1 := newTestTask("task1", "* * * * * *", false) // 每秒执行一次，不会失败
@@ -134,7 +135,7 @@ func TestEnhancedTaskPoolBasic(t *testing.T) {
 // TestTaskDependencies 测试任务依赖关系
 func TestTaskDependencies(t *testing.T) {
 	// 创建任务池配置
-	config := &EnhancedTaskConfig{
+	config := &scheduler.EnhancedTaskConfig{
 		MaxConcurrentTasks: 5,
 		DefaultRetryLimit:  1,
 		RetryBackoff:       100 * time.Millisecond,
@@ -146,7 +147,7 @@ func TestTaskDependencies(t *testing.T) {
 	}
 
 	// 创建任务池
-	pool := NewEnhancedTaskPoolManager(config)
+	pool := scheduler.NewEnhancedTaskPoolManager(config)
 
 	// 创建测试任务
 	task1 := newTestTask("parent", "", false)
@@ -177,7 +178,7 @@ func TestTaskDependencies(t *testing.T) {
 	}
 
 	// 提交子任务，由于依赖关系，它应该不会立即执行
-	err = pool.Submit(task2, PriorityNormal)
+	err = pool.Submit(task2, scheduler.PriorityNormal)
 	if err != nil {
 		t.Fatalf("提交子任务失败: %v", err)
 	}
@@ -191,7 +192,7 @@ func TestTaskDependencies(t *testing.T) {
 	}
 
 	// 提交父任务
-	err = pool.Submit(task1, PriorityNormal)
+	err = pool.Submit(task1, scheduler.PriorityNormal)
 	if err != nil {
 		t.Fatalf("提交父任务失败: %v", err)
 	}
@@ -211,14 +212,14 @@ func TestTaskDependencies(t *testing.T) {
 // TestTaskPriority 测试任务优先级
 func TestTaskPriority(t *testing.T) {
 	// 创建一个有限制的任务池，只允许一个任务同时执行
-	config := &EnhancedTaskConfig{
+	config := &scheduler.EnhancedTaskConfig{
 		MaxConcurrentTasks: 1, // 限制为1个并发任务
 		TaskQueueSize:      10,
 		ShutdownTimeout:    1 * time.Second,
 	}
 
 	// 创建任务池
-	pool := NewEnhancedTaskPoolManager(config)
+	pool := scheduler.NewEnhancedTaskPoolManager(config)
 
 	// 创建测试任务
 	lowTask := newTestTask("low", "", false)
@@ -250,7 +251,7 @@ func TestTaskPriority(t *testing.T) {
 	}
 
 	// 提交一个阻塞任务
-	err = pool.Submit(blockTask, PriorityNormal)
+	err = pool.Submit(blockTask, scheduler.PriorityNormal)
 	if err != nil {
 		t.Fatalf("提交阻塞任务失败: %v", err)
 	}
@@ -259,13 +260,13 @@ func TestTaskPriority(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// 提交低优先级任务
-	err = pool.Submit(lowTask, PriorityLow)
+	err = pool.Submit(lowTask, scheduler.PriorityLow)
 	if err != nil {
 		t.Fatalf("提交低优先级任务失败: %v", err)
 	}
 
 	// 提交高优先级任务
-	err = pool.Submit(highTask, PriorityHigh)
+	err = pool.Submit(highTask, scheduler.PriorityHigh)
 	if err != nil {
 		t.Fatalf("提交高优先级任务失败: %v", err)
 	}
@@ -288,7 +289,7 @@ func TestTaskPriority(t *testing.T) {
 // TestTaskRetry 测试任务重试机制
 func TestTaskRetry(t *testing.T) {
 	// 创建任务池配置
-	config := &EnhancedTaskConfig{
+	config := &scheduler.EnhancedTaskConfig{
 		MaxConcurrentTasks: 5,
 		DefaultRetryLimit:  3, // 最多重试3次
 		RetryBackoff:       100 * time.Millisecond,
@@ -298,7 +299,7 @@ func TestTaskRetry(t *testing.T) {
 	}
 
 	// 创建任务池
-	pool := NewEnhancedTaskPoolManager(config)
+	pool := scheduler.NewEnhancedTaskPoolManager(config)
 
 	// 创建一个总是失败的测试任务
 	failingTask := newTestTask("failing", "", true)
@@ -322,7 +323,7 @@ func TestTaskRetry(t *testing.T) {
 	}
 
 	// 提交任务
-	err = pool.Submit(failingTask, PriorityNormal)
+	err = pool.Submit(failingTask, scheduler.PriorityNormal)
 	if err != nil {
 		t.Fatalf("提交任务失败: %v", err)
 	}
@@ -352,14 +353,14 @@ func TestTaskRetry(t *testing.T) {
 // TestTaskCancellation 测试任务取消功能
 func TestTaskCancellation(t *testing.T) {
 	// 创建任务池配置
-	config := &EnhancedTaskConfig{
+	config := &scheduler.EnhancedTaskConfig{
 		MaxConcurrentTasks: 5,
 		TaskQueueSize:      10,
 		ShutdownTimeout:    1 * time.Second,
 	}
 
 	// 创建任务池
-	pool := NewEnhancedTaskPoolManager(config)
+	pool := scheduler.NewEnhancedTaskPoolManager(config)
 
 	// 创建一个长时间运行的任务
 	longRunningTask := &testTask{
@@ -386,7 +387,7 @@ func TestTaskCancellation(t *testing.T) {
 	}
 
 	// 提交任务
-	err = pool.Submit(longRunningTask, PriorityNormal)
+	err = pool.Submit(longRunningTask, scheduler.PriorityNormal)
 	if err != nil {
 		t.Fatalf("提交任务失败: %v", err)
 	}
@@ -396,8 +397,8 @@ func TestTaskCancellation(t *testing.T) {
 
 	// 获取任务ID并取消任务
 	taskID := "" // 在实际实现中，需要从任务状态中获取ID
-	for id, info := range pool.taskStatus {
-		if info.TaskName == "longRunning" && info.Status == TaskStatusRunning {
+	for id, info := range pool.TaskStatus {
+		if info.TaskName == "longRunning" && info.Status == scheduler.TaskStatusRunning {
 			taskID = id
 			break
 		}
@@ -413,7 +414,7 @@ func TestTaskCancellation(t *testing.T) {
 		info, exists := pool.GetTaskStatus(taskID)
 		if !exists {
 			t.Errorf("应该能够获取任务状态，但获取失败")
-		} else if info.Status != TaskStatusCancelled {
+		} else if info.Status != scheduler.TaskStatusCancelled {
 			t.Errorf("任务状态应该是已取消，但实际是 %s", info.Status)
 		}
 	} else {
@@ -427,7 +428,7 @@ func TestTaskCancellation(t *testing.T) {
 // BenchmarkTaskSubmission 基准测试：任务提交性能
 func BenchmarkTaskSubmission(b *testing.B) {
 	// 创建任务池配置
-	config := &EnhancedTaskConfig{
+	config := &scheduler.EnhancedTaskConfig{
 		MaxConcurrentTasks: 10,
 		TaskQueueSize:      1000,
 		EnableMetrics:      false, // 禁用指标以提高性能
@@ -436,7 +437,7 @@ func BenchmarkTaskSubmission(b *testing.B) {
 	}
 
 	// 创建任务池
-	pool := NewEnhancedTaskPoolManager(config)
+	pool := scheduler.NewEnhancedTaskPoolManager(config)
 
 	// 创建一个简单的测试任务
 	task := newTestTask("benchmark", "", false)
@@ -455,7 +456,7 @@ func BenchmarkTaskSubmission(b *testing.B) {
 
 	// 执行基准测试
 	for i := 0; i < b.N; i++ {
-		pool.Submit(task, PriorityNormal)
+		pool.Submit(task, scheduler.PriorityNormal)
 	}
 
 	// 停止计时器
@@ -468,7 +469,7 @@ func BenchmarkTaskSubmission(b *testing.B) {
 // BenchmarkConcurrentTaskExecution 基准测试：并发任务执行性能
 func BenchmarkConcurrentTaskExecution(b *testing.B) {
 	// 创建任务池配置，使用较大的并发数
-	config := &EnhancedTaskConfig{
+	config := &scheduler.EnhancedTaskConfig{
 		MaxConcurrentTasks: 50,
 		TaskQueueSize:      1000,
 		EnableMetrics:      false,
@@ -477,7 +478,7 @@ func BenchmarkConcurrentTaskExecution(b *testing.B) {
 	}
 
 	// 创建任务池
-	pool := NewEnhancedTaskPoolManager(config)
+	pool := scheduler.NewEnhancedTaskPoolManager(config)
 
 	// 创建测试任务
 	tasks := make([]*testTask, 100)
@@ -499,7 +500,7 @@ func BenchmarkConcurrentTaskExecution(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		i := 0
 		for pb.Next() {
-			pool.Submit(tasks[i%100], PriorityNormal)
+			pool.Submit(tasks[i%100], scheduler.PriorityNormal)
 			i++
 		}
 	})
@@ -514,13 +515,13 @@ func BenchmarkConcurrentTaskExecution(b *testing.B) {
 // 运行测试示例
 func ExampleEnhancedTaskPool() {
 	// 创建任务池配置
-	config := DefaultTaskConfig()
+	config := scheduler.DefaultTaskConfig()
 
 	// 创建任务池
-	pool := NewEnhancedTaskPoolManager(config)
+	pool := scheduler.NewEnhancedTaskPoolManager(config)
 
 	// 创建任务
-	task1 := NewEnhancedSampleTask(
+	task1 := scheduler.NewEnhancedSampleTask(
 		"ExampleTask",
 		"示例任务",
 		"*/5 * * * * *", // 每5秒执行一次

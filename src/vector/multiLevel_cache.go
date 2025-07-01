@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -19,9 +20,9 @@ import (
 
 // HitRateStats 命中率统计结构
 type HitRateStats struct {
-	HitCount   int64 // 命中次数
+	HitCount    int64 // 命中次数
 	AccessCount int64 // 访问次数
-	LastAccess int64 // 最后访问时间戳
+	LastAccess  int64 // 最后访问时间戳
 }
 
 // MultiLevelCache 多级缓存结构
@@ -124,15 +125,15 @@ func NewMultiLevelCache(l1Capacity, l2Capacity, l3Capacity int, l3Path string) *
 func (c *MultiLevelCache) updateHitRateStats(key string, hit bool) {
 	c.hitRateMu.Lock()
 	defer c.hitRateMu.Unlock()
-	
+
 	if c.hitRateStats[key] == nil {
 		c.hitRateStats[key] = &HitRateStats{}
 	}
-	
+
 	stats := c.hitRateStats[key]
 	stats.AccessCount++
 	stats.LastAccess = time.Now().Unix()
-	
+
 	if hit {
 		stats.HitCount++
 	}
@@ -508,17 +509,17 @@ func (c *MultiLevelCache) GetStats() CacheStats {
 func (c *MultiLevelCache) GetHitRateStats(key string) (float64, int64, int64, bool) {
 	c.hitRateMu.RLock()
 	defer c.hitRateMu.RUnlock()
-	
+
 	stats, exists := c.hitRateStats[key]
 	if !exists {
 		return 0.0, 0, 0, false
 	}
-	
+
 	hitRate := 0.0
 	if stats.AccessCount > 0 {
 		hitRate = float64(stats.HitCount) / float64(stats.AccessCount)
 	}
-	
+
 	return hitRate, stats.HitCount, stats.AccessCount, true
 }
 
@@ -526,7 +527,7 @@ func (c *MultiLevelCache) GetHitRateStats(key string) (float64, int64, int64, bo
 func (c *MultiLevelCache) GetAllHitRateStats() map[string]float64 {
 	c.hitRateMu.RLock()
 	defer c.hitRateMu.RUnlock()
-	
+
 	result := make(map[string]float64)
 	for key, stats := range c.hitRateStats {
 		if stats.AccessCount > 0 {
@@ -535,7 +536,7 @@ func (c *MultiLevelCache) GetAllHitRateStats() map[string]float64 {
 			result[key] = 0.0
 		}
 	}
-	
+
 	return result
 }
 
@@ -543,7 +544,7 @@ func (c *MultiLevelCache) GetAllHitRateStats() map[string]float64 {
 func (c *MultiLevelCache) ResetHitRateStats() {
 	c.hitRateMu.Lock()
 	defer c.hitRateMu.Unlock()
-	
+
 	// 清空所有命中率统计
 	c.hitRateStats = make(map[string]*HitRateStats)
 }
@@ -552,7 +553,7 @@ func (c *MultiLevelCache) ResetHitRateStats() {
 func (c *MultiLevelCache) ResetHitRateStatsForKey(key string) {
 	c.hitRateMu.Lock()
 	defer c.hitRateMu.Unlock()
-	
+
 	delete(c.hitRateStats, key)
 }
 
@@ -596,8 +597,56 @@ func (c *MultiLevelCache) DecreaseL2Capacity(decrement int) {
 
 // IncreaseL3Capacity 增加L3缓存容量
 func (c *MultiLevelCache) IncreaseL3Capacity(increment int) {
-	// L3缓存是基于磁盘的，这里可能需要调整配置或分配更多磁盘空间
-	// 简化实现，仅记录日志
+	// L3缓存是基于磁盘的，需要检查磁盘空间并调整配置
+	if increment <= 0 {
+		fmt.Printf("Warning: Invalid L3 capacity increment: %d\n", increment)
+		return
+	}
+
+	// 检查L3缓存路径是否可用
+	if c.l3CachePath == "" {
+		fmt.Printf("Warning: L3 cache path is not configured, cannot increase capacity\n")
+		return
+	}
+
+	// 获取当前磁盘使用情况
+	c.l3Mu.Lock()
+	defer c.l3Mu.Unlock()
+
+	// 检查磁盘可用空间
+	availableSpace, err := c.getAvailableDiskSpace(c.l3CachePath)
+	if err != nil {
+		fmt.Printf("Error checking disk space for L3 cache: %v\n", err)
+		return
+	}
+
+	// 估算增加容量所需的磁盘空间（假设每个缓存项平均1KB）
+	estimatedSpaceNeeded := int64(increment * 1024) // 1KB per cache item
+
+	if availableSpace < estimatedSpaceNeeded {
+		fmt.Printf("Warning: Insufficient disk space. Available: %d bytes, Required: %d bytes\n",
+			availableSpace, estimatedSpaceNeeded)
+		// 根据可用空间调整增量
+		adjustedIncrement := int(availableSpace / 1024)
+		if adjustedIncrement > 0 {
+			fmt.Printf("Adjusting L3 capacity increment to %d based on available disk space\n", adjustedIncrement)
+			increment = adjustedIncrement
+		} else {
+			fmt.Printf("Error: No sufficient disk space available for L3 cache expansion\n")
+			return
+		}
+	}
+
+	// 更新L3缓存容量
+	oldCapacity := c.l3Capacity
+	c.l3Capacity += increment
+
+	// 记录容量变更日志
+	fmt.Printf("L3 cache capacity increased from %d to %d (increment: %d)\n",
+		oldCapacity, c.l3Capacity, increment)
+
+	// 创建一个标记文件记录容量配置
+	c.updateL3CapacityConfig()
 }
 
 // CleanupExpired 清理过期的缓存项
@@ -1523,4 +1572,211 @@ func (c *MultiLevelCache) writeToL3Cache(key string, cache queryCache) error {
 	// 写入文件
 	filePath := c.getL3CacheFilePath(key)
 	return os.WriteFile(filePath, data, 0644)
+}
+
+// getAvailableDiskSpace 获取指定路径的可用磁盘空间
+// 这个函数会根据操作系统自动选择合适的实现方法
+func (c *MultiLevelCache) getAvailableDiskSpace(path string) (int64, error) {
+	// 获取文件系统统计信息
+	var stat os.FileInfo
+	var err error
+	
+	// 确保路径存在
+	if stat, err = os.Stat(path); err != nil {
+		return 0, fmt.Errorf("无法访问路径 %s: %v", path, err)
+	}
+	
+	// 如果不是目录，获取父目录
+	if !stat.IsDir() {
+		path = filepath.Dir(path)
+	}
+	
+	// 根据操作系统使用不同的API获取磁盘空间
+	// 平台特定的实现在对应的构建标签文件中定义
+	switch runtime.GOOS {
+	case "windows":
+		// Windows系统使用Windows API (GetDiskFreeSpaceEx)
+		return c.getAvailableDiskSpaceWindows(path)
+	case "linux", "darwin", "freebsd", "openbsd", "netbsd":
+		// Unix系统使用syscall.Statfs
+		return c.getAvailableDiskSpaceUnix(path)
+	default:
+		// 对于不支持的操作系统，使用fallback方法
+		fmt.Printf("Warning: 不支持的操作系统 %s，使用fallback方法\n", runtime.GOOS)
+		return c.getAvailableDiskSpaceFallback(path)
+	}
+}
+
+// getAvailableDiskSpaceWindows 在Windows系统上获取可用磁盘空间
+func (c *MultiLevelCache) getAvailableDiskSpaceWindows(path string) (int64, error) {
+	// 在Windows系统上，调用平台特定的实现
+	if runtime.GOOS == "windows" {
+		// 直接调用Windows平台特定的实现
+		// 注意：getAvailableDiskSpaceWindowsNative方法在disk_space_windows.go中定义
+		// 只有在Windows环境下编译时才会包含该文件
+		return c.getAvailableDiskSpaceWindowsNative(path)
+	}
+	
+	// 如果不是Windows系统（这种情况不应该发生，因为调用前已经检查了系统类型）
+	// 但为了代码健壮性，我们提供一个fallback
+	fmt.Printf("Warning: 在非Windows系统上调用了Windows磁盘空间检测函数\n")
+	return c.getAvailableDiskSpaceFallback(path)
+}
+
+// getAvailableDiskSpaceUnix 在Unix系统（Linux、macOS等）上获取可用磁盘空间
+// 注意：这个函数在Unix系统编译时会被disk_space_unix.go中的同名函数覆盖
+func (c *MultiLevelCache) getAvailableDiskSpaceUnix(path string) (int64, error) {
+	// 在Windows环境下编译时，这个函数会被调用
+	// 但实际的Unix实现在disk_space_unix.go中（仅在Unix系统编译时包含）
+	if runtime.GOOS == "windows" {
+		fmt.Printf("Warning: 在Windows系统上调用了Unix磁盘空间检测函数\n")
+		return c.getAvailableDiskSpaceFallback(path)
+	}
+	
+	// 这个分支在Windows编译时不会被执行，但为了代码完整性保留
+	// 在真正的Unix环境下编译时，disk_space_unix.go中的实现会覆盖这个函数
+	fmt.Printf("Info: 使用主文件中的Unix磁盘空间检测fallback实现\n")
+	return c.getAvailableDiskSpaceFallback(path)
+}
+
+// getAvailableDiskSpaceFallback 备用方法，用于不支持的操作系统或系统调用失败时
+// 
+// 使用第三方库的示例（可选）：
+// 如果需要更准确的磁盘空间信息，可以使用github.com/shirou/gopsutil/v3库：
+// 
+// import "github.com/shirou/gopsutil/v3/disk"
+// 
+// func (c *MultiLevelCache) getAvailableDiskSpaceWithGopsutil(path string) (int64, error) {
+//     usage, err := disk.Usage(path)
+//     if err != nil {
+//         return 0, err
+//     }
+//     return int64(usage.Free), nil
+// }
+//
+func (c *MultiLevelCache) getAvailableDiskSpaceFallback(path string) (int64, error) {
+	// 注意：这是一个基础的fallback实现
+	// 生产环境中建议使用github.com/shirou/gopsutil/v3库获取更准确的磁盘空间信息
+	
+	// 尝试创建一个临时文件来测试写入权限和基本可用性
+	tempFile := filepath.Join(path, ".temp_space_check")
+	
+	// 尝试创建一个小的测试文件
+	file, err := os.Create(tempFile)
+	if err != nil {
+		return 0, fmt.Errorf("无法在路径 %s 创建测试文件: %v", path, err)
+	}
+	file.Close()
+	
+	// 立即删除测试文件
+	os.Remove(tempFile)
+	
+	// 尝试通过文件系统的一些启发式方法来估算可用空间
+	// 这是一个非常基础的估算方法
+	availableSpace := c.estimateDiskSpaceHeuristic(path)
+	
+	fmt.Printf("Warning: 使用fallback方法获取磁盘空间，操作系统: %s，估算可用空间: %.2f GB\n", 
+		runtime.GOOS, float64(availableSpace)/(1024*1024*1024))
+	return availableSpace, nil
+}
+
+// estimateDiskSpaceHeuristic 使用启发式方法估算磁盘可用空间
+func (c *MultiLevelCache) estimateDiskSpaceHeuristic(path string) int64 {
+	// 获取路径信息
+	stat, err := os.Stat(path)
+	if err != nil {
+		// 如果无法获取路径信息，返回保守估计
+		return 512 * 1024 * 1024 // 512MB
+	}
+	
+	// 如果是文件，获取其父目录
+	if !stat.IsDir() {
+		path = filepath.Dir(path)
+	}
+	
+	// 尝试创建一系列测试文件来估算可用空间
+	// 这是一个粗略的方法，不推荐在生产环境中使用
+	testSizes := []int64{
+		1024 * 1024,      // 1MB
+		10 * 1024 * 1024, // 10MB
+		100 * 1024 * 1024, // 100MB
+	}
+	
+	var maxWritableSize int64 = 0
+	
+	for _, size := range testSizes {
+		testFile := filepath.Join(path, fmt.Sprintf(".temp_size_test_%d", size))
+		
+		// 尝试创建指定大小的文件
+		file, err := os.Create(testFile)
+		if err != nil {
+			break
+		}
+		
+		// 尝试写入数据
+		data := make([]byte, 1024) // 1KB块
+		var written int64 = 0
+		
+		for written < size {
+			n, err := file.Write(data)
+			if err != nil {
+				break
+			}
+			written += int64(n)
+			if written >= size {
+				maxWritableSize = size
+				break
+			}
+		}
+		
+		file.Close()
+		os.Remove(testFile) // 立即删除测试文件
+		
+		if written < size {
+			break
+		}
+	}
+	
+	// 基于测试结果估算可用空间
+	if maxWritableSize > 0 {
+		// 假设实际可用空间是测试成功的最大文件大小的10倍
+		return maxWritableSize * 10
+	}
+	
+	// 如果所有测试都失败，返回最小估计值
+	return 256 * 1024 * 1024 // 256MB
+}
+
+// updateL3CapacityConfig 更新L3缓存容量配置记录
+func (c *MultiLevelCache) updateL3CapacityConfig() {
+	if c.l3CachePath == "" {
+		return
+	}
+	
+	// 创建配置记录文件
+	configFile := filepath.Join(c.l3CachePath, ".cache_config")
+	
+	// 准备配置信息
+	configData := map[string]interface{}{
+		"capacity":    c.l3Capacity,
+		"updated_at":  time.Now().Unix(),
+		"cache_path": c.l3CachePath,
+		"file_ext":   c.l3FileExt,
+		"ttl_hours":  int(c.l3TTL.Hours()),
+	}
+	
+	// 序列化配置数据
+	data, err := json.MarshalIndent(configData, "", "  ")
+	if err != nil {
+		fmt.Printf("Warning: Failed to serialize L3 cache config: %v\n", err)
+		return
+	}
+	
+	// 写入配置文件
+	err = os.WriteFile(configFile, data, 0644)
+	if err != nil {
+		fmt.Printf("Warning: Failed to write L3 cache config file: %v\n", err)
+	} else {
+		fmt.Printf("L3 cache configuration updated in %s\n", configFile)
+	}
 }

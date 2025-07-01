@@ -87,7 +87,7 @@ type EnhancedTaskPoolManager struct {
 
 	// 状态管理
 	executionHistory []TaskExecutionInfo          // 任务执行历史
-	taskStatus       map[string]TaskExecutionInfo // 任务状态映射
+	TaskStatus       map[string]TaskExecutionInfo // 任务状态映射
 	taskDependencies map[string][]string          // 任务依赖关系
 
 	// 同步和控制
@@ -145,7 +145,7 @@ func NewEnhancedTaskPoolManager(config *EnhancedTaskConfig) *EnhancedTaskPoolMan
 		stopCh:           make(chan struct{}),
 		ctx:              ctx,
 		cancel:           cancel,
-		taskStatus:       make(map[string]TaskExecutionInfo),
+		TaskStatus:       make(map[string]TaskExecutionInfo),
 		taskDependencies: make(map[string][]string),
 		metrics:          &TaskPoolMetrics{},
 		executionHistory: make([]TaskExecutionInfo, 0, config.HistorySize),
@@ -574,7 +574,7 @@ func (pm *EnhancedTaskPoolManager) recordTaskExecution(wrapper taskWrapper, stat
 
 	// 获取开始时间
 	startTime := endTime
-	if info, exists := pm.taskStatus[wrapper.taskID]; exists {
+	if info, exists := pm.TaskStatus[wrapper.taskID]; exists {
 		startTime = info.StartTime
 	}
 
@@ -594,7 +594,7 @@ func (pm *EnhancedTaskPoolManager) recordTaskExecution(wrapper taskWrapper, stat
 	}
 
 	// 更新任务状态
-	pm.taskStatus[wrapper.taskID] = execInfo
+	pm.TaskStatus[wrapper.taskID] = execInfo
 
 	// 添加到历史记录
 	if pm.config.EnableTaskHistory {
@@ -618,7 +618,7 @@ func (pm *EnhancedTaskPoolManager) updateTaskStatus(taskID string, info TaskExec
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
-	pm.taskStatus[taskID] = info
+	pm.TaskStatus[taskID] = info
 }
 
 // updateMetrics 更新任务池指标
@@ -731,7 +731,7 @@ func (pm *EnhancedTaskPoolManager) GetTaskStatus(taskID string) (TaskExecutionIn
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
-	info, exists := pm.taskStatus[taskID]
+	info, exists := pm.TaskStatus[taskID]
 	return info, exists
 }
 
@@ -798,7 +798,7 @@ func (pm *EnhancedTaskPoolManager) CancelTask(taskID string) bool {
 	defer pm.mu.Unlock()
 
 	// 查找任务状态
-	info, exists := pm.taskStatus[taskID]
+	info, exists := pm.TaskStatus[taskID]
 	if !exists || info.Status != TaskStatusRunning {
 		return false
 	}
@@ -813,7 +813,7 @@ func (pm *EnhancedTaskPoolManager) CancelTask(taskID string) bool {
 			info.Status = TaskStatusCancelled
 			info.EndTime = time.Now()
 			info.Duration = info.EndTime.Sub(info.StartTime)
-			pm.taskStatus[taskID] = info
+			pm.TaskStatus[taskID] = info
 
 			// 添加到历史记录
 			if pm.config.EnableTaskHistory {
