@@ -631,6 +631,22 @@ func (db *VectorDB) OptimizedSearch(query []float64, k int, options entity.Searc
 					tracker.AddTag("accelerator", "fpga_explicit")
 				}
 			}
+		} else if options.UseRDMA {
+			if rdma, exists := db.hardwareManager.GetAccelerator(acceler.AcceleratorRDMA); exists && rdma.IsAvailable() {
+				accelerator = rdma
+				logger.Debug("根据用户指定使用FPGA加速器")
+				if tracker != nil {
+					tracker.AddTag("accelerator", "rdma_explicit")
+				}
+			}
+		} else if options.UsePMem {
+			if pmem, exists := db.hardwareManager.GetAccelerator(acceler.AcceleratorPMem); exists && pmem.IsAvailable() {
+				accelerator = pmem
+				logger.Debug("根据用户指定使用FPGA加速器")
+				if tracker != nil {
+					tracker.AddTag("accelerator", "rdma_explicit")
+				}
+			}
 		} else {
 			// 自动选择最佳加速器
 			bestAcc := db.hardwareManager.GetOptimalAccelerator(workload)
@@ -5171,7 +5187,7 @@ func (db *VectorDB) multiIndexSearch(query []float64, k int, nprobe int) ([]enti
 			continue
 		}
 
-		// 假设二级索引是 KDTree，并且有 FindNearest 方法
+		// 二级索引是 KDTree，并且有 FindNearest 方法
 		kdTree, ok := db.multiIndex.SubIndices[clusterIdx].(*tree.KDTree) // 类型断言
 		if !ok || kdTree == nil {
 			logger.Warning("Sub-index for cluster %d is not a KDTree or is nil. Performing brute-force.", clusterIdx)
