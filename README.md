@@ -302,3 +302,16 @@ make help
 1. 策略可配置 ：通过配置文件选择负载均衡策略
 2. 参数可调 ：健康检查、熔断器等参数可配置
 3. 动态切换 ：运行时动态切换负载均衡策略
+
+## Example
+向量数据缓存示例
+```go
+// 清理命中率低于50%的缓存项
+cache.CleanupLowHitRate(0.5)
+
+// 获取特定键的命中率
+hitRate, hitCount, accessCount, exists := cache.GetHitRateStats("key1")
+
+// 获取所有缓存项的命中率
+allStats := cache.GetAllHitRateStats()
+```

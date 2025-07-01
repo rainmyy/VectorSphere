@@ -2305,7 +2305,7 @@ func (db *VectorDB) GetSelectStrategy() acceler.ComputeStrategy {
 	if db.hardwareManager != nil {
 		// 设置硬件管理器到策略选择器
 		db.strategyComputeSelector.SetHardwareManager(db.hardwareManager)
-		
+
 		// 根据当前数据库大小和向量维度选择策略
 		dataSize := len(db.vectors)
 		vectorDim := db.vectorDim
@@ -2316,7 +2316,7 @@ func (db *VectorDB) GetSelectStrategy() acceler.ComputeStrategy {
 				break
 			}
 		}
-		
+
 		return db.strategyComputeSelector.SelectOptimalStrategy(dataSize, vectorDim)
 	}
 
@@ -5463,13 +5463,6 @@ func (db *VectorDB) FileSystemSearch(query string, vectorizedType int, k int, np
 	}
 
 	return results, nil
-}
-
-// 改进的查询缓存结构
-type enhancedQueryCache struct {
-	results    []string  // 结果ID列表
-	timestamp  time.Time // 缓存创建时间
-	vectorHash uint64    // 查询向量的哈希值
 }
 
 // ParallelFindNearest 优化的并行查询实现

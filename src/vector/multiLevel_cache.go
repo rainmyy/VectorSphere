@@ -17,6 +17,13 @@ import (
 	"time"
 )
 
+// HitRateStats 命中率统计结构
+type HitRateStats struct {
+	HitCount   int64 // 命中次数
+	AccessCount int64 // 访问次数
+	LastAccess int64 // 最后访问时间戳
+}
+
 // MultiLevelCache 多级缓存结构
 type MultiLevelCache struct {
 	// L1: 内存缓存 - 最快，容量小
@@ -40,6 +47,10 @@ type MultiLevelCache struct {
 	// 缓存统计
 	stats   CacheStats
 	statsMu sync.RWMutex
+
+	// 命中率跟踪
+	hitRateStats map[string]*HitRateStats // 每个缓存项的命中率统计
+	hitRateMu    sync.RWMutex             // 命中率统计的读写锁
 }
 
 // CacheDataType 缓存数据类型枚举
@@ -87,14 +98,15 @@ func NewMultiLevelCache(l1Capacity, l2Capacity, l3Capacity int, l3Path string) *
 	}
 
 	cache := &MultiLevelCache{
-		l1Cache:     make(map[string]queryCache, l1Capacity),
-		l1Capacity:  l1Capacity,
-		l2Capacity:  l2Capacity,
-		l3CachePath: l3Path,
-		l3Capacity:  l3Capacity,
-		l3FileExt:   ".cache",
-		l3TTL:       24 * time.Hour, // 默认L3缓存过期时间为24小时
-		stats:       CacheStats{},
+		l1Cache:      make(map[string]queryCache, l1Capacity),
+		l1Capacity:   l1Capacity,
+		l2Capacity:   l2Capacity,
+		l3CachePath:  l3Path,
+		l3Capacity:   l3Capacity,
+		l3FileExt:    ".cache",
+		l3TTL:        24 * time.Hour, // 默认L3缓存过期时间为24小时
+		stats:        CacheStats{},
+		hitRateStats: make(map[string]*HitRateStats),
 	}
 
 	// 初始化共享内存
@@ -106,6 +118,24 @@ func NewMultiLevelCache(l1Capacity, l2Capacity, l3Capacity int, l3Path string) *
 	cache.l2SharedMem = sharedMem
 
 	return cache
+}
+
+// updateHitRateStats 更新命中率统计
+func (c *MultiLevelCache) updateHitRateStats(key string, hit bool) {
+	c.hitRateMu.Lock()
+	defer c.hitRateMu.Unlock()
+	
+	if c.hitRateStats[key] == nil {
+		c.hitRateStats[key] = &HitRateStats{}
+	}
+	
+	stats := c.hitRateStats[key]
+	stats.AccessCount++
+	stats.LastAccess = time.Now().Unix()
+	
+	if hit {
+		stats.HitCount++
+	}
 }
 
 // Get 从多级缓存获取结果
@@ -122,6 +152,8 @@ func (c *MultiLevelCache) Get(key string) (interface{}, bool) {
 		c.statsMu.Lock()
 		c.stats.L1Hits++
 		c.statsMu.Unlock()
+		// 更新命中率统计
+		c.updateHitRateStats(key, true)
 		return cache.Results, true
 	}
 	c.l1Mu.RUnlock()
@@ -214,6 +246,8 @@ func (c *MultiLevelCache) Get(key string) (interface{}, bool) {
 			c.statsMu.Lock()
 			c.stats.L2Hits++
 			c.statsMu.Unlock()
+			// 更新命中率统计
+			c.updateHitRateStats(key, true)
 			return cache.Results, true
 		}
 	} else if c.l2FallbackCache != nil {
@@ -240,6 +274,8 @@ func (c *MultiLevelCache) Get(key string) (interface{}, bool) {
 			c.statsMu.Lock()
 			c.stats.L2Hits++
 			c.statsMu.Unlock()
+			// 更新命中率统计
+			c.updateHitRateStats(key, true)
 			return cache.Results, true
 		}
 	}
@@ -323,9 +359,13 @@ func (c *MultiLevelCache) Get(key string) (interface{}, bool) {
 		c.statsMu.Lock()
 		c.stats.L3Hits++
 		c.statsMu.Unlock()
+		// 更新命中率统计
+		c.updateHitRateStats(key, true)
 		return cache.Results, true
 	}
 
+	// 所有缓存层都未命中，记录未命中
+	c.updateHitRateStats(key, false)
 	return nil, false
 }
 
@@ -464,6 +504,58 @@ func (c *MultiLevelCache) GetStats() CacheStats {
 	return c.stats
 }
 
+// GetHitRateStats 获取指定键的命中率统计信息
+func (c *MultiLevelCache) GetHitRateStats(key string) (float64, int64, int64, bool) {
+	c.hitRateMu.RLock()
+	defer c.hitRateMu.RUnlock()
+	
+	stats, exists := c.hitRateStats[key]
+	if !exists {
+		return 0.0, 0, 0, false
+	}
+	
+	hitRate := 0.0
+	if stats.AccessCount > 0 {
+		hitRate = float64(stats.HitCount) / float64(stats.AccessCount)
+	}
+	
+	return hitRate, stats.HitCount, stats.AccessCount, true
+}
+
+// GetAllHitRateStats 获取所有缓存项的命中率统计信息
+func (c *MultiLevelCache) GetAllHitRateStats() map[string]float64 {
+	c.hitRateMu.RLock()
+	defer c.hitRateMu.RUnlock()
+	
+	result := make(map[string]float64)
+	for key, stats := range c.hitRateStats {
+		if stats.AccessCount > 0 {
+			result[key] = float64(stats.HitCount) / float64(stats.AccessCount)
+		} else {
+			result[key] = 0.0
+		}
+	}
+	
+	return result
+}
+
+// ResetHitRateStats 重置所有命中率统计信息
+func (c *MultiLevelCache) ResetHitRateStats() {
+	c.hitRateMu.Lock()
+	defer c.hitRateMu.Unlock()
+	
+	// 清空所有命中率统计
+	c.hitRateStats = make(map[string]*HitRateStats)
+}
+
+// ResetHitRateStatsForKey 重置指定键的命中率统计信息
+func (c *MultiLevelCache) ResetHitRateStatsForKey(key string) {
+	c.hitRateMu.Lock()
+	defer c.hitRateMu.Unlock()
+	
+	delete(c.hitRateStats, key)
+}
+
 // IncreaseL1Capacity 增加L1缓存容量
 func (c *MultiLevelCache) IncreaseL1Capacity(increment int) {
 	c.l1Mu.Lock()
@@ -592,13 +684,71 @@ func (c *MultiLevelCache) CleanupExpired(expiryTime time.Time) {
 			}
 		}()
 	}
+
+	// 清理过期的命中率统计信息
+	c.hitRateMu.Lock()
+	for key, stats := range c.hitRateStats {
+		// 如果最后访问时间早于过期时间，删除统计信息
+		if stats.LastAccess > timestamp {
+			delete(c.hitRateStats, key)
+		}
+	}
+	c.hitRateMu.Unlock()
 }
 
 // CleanupLowHitRate 清理低命中率的缓存项
 func (c *MultiLevelCache) CleanupLowHitRate(minHitRate float64) {
-	// 这里需要实现根据命中率清理缓存的逻辑
-	// 由于当前实现没有跟踪每个缓存项的命中率，这里只是一个占位实现
-	// 实际实现可能需要额外的数据结构来跟踪每个缓存项的访问次数
+	c.hitRateMu.Lock()
+	defer c.hitRateMu.Unlock()
+
+	// 收集需要删除的低命中率缓存项
+	var keysToDelete []string
+	currentTime := time.Now().Unix()
+
+	for key, stats := range c.hitRateStats {
+		// 跳过访问次数太少的项（至少需要10次访问才有统计意义）
+		if stats.AccessCount < 10 {
+			continue
+		}
+
+		// 计算命中率
+		hitRate := float64(stats.HitCount) / float64(stats.AccessCount)
+
+		// 如果命中率低于阈值，或者长时间未访问（超过1小时），标记为删除
+		if hitRate < minHitRate || (currentTime-stats.LastAccess) > 3600 {
+			keysToDelete = append(keysToDelete, key)
+		}
+	}
+
+	// 从各级缓存中删除低命中率的项
+	for _, key := range keysToDelete {
+		// 从L1缓存删除
+		c.l1Mu.Lock()
+		delete(c.l1Cache, key)
+		c.l1Mu.Unlock()
+
+		// 从L2缓存删除
+		c.l2Mu.Lock()
+		if c.l2SharedMem != nil {
+			c.l2SharedMem.Delete(key)
+		} else if c.l2FallbackCache != nil {
+			delete(c.l2FallbackCache, key)
+		}
+		c.l2Mu.Unlock()
+
+		// 从L3缓存删除
+		c.l3Mu.Lock()
+		c.deleteFromL3Cache(key)
+		c.l3Mu.Unlock()
+
+		// 删除命中率统计
+		delete(c.hitRateStats, key)
+	}
+
+	// 记录清理信息
+	if len(keysToDelete) > 0 {
+		fmt.Printf("Cleaned up %d low hit rate cache items (min hit rate: %.2f)\n", len(keysToDelete), minHitRate)
+	}
 }
 
 // EnforceCapacityLimits 强制执行容量限制
@@ -1286,7 +1436,27 @@ func (c *MultiLevelCache) detectDataType(data interface{}) CacheDataType {
 	}
 }
 
-// 从L3磁盘缓存读取数据
+// deleteFromL3Cache 从L3磁盘缓存删除指定键的缓存文件
+func (c *MultiLevelCache) deleteFromL3Cache(key string) {
+	if c.l3CachePath == "" {
+		return
+	}
+
+	filePath := c.getL3CacheFilePath(key)
+
+	// 检查文件是否存在
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return
+	}
+
+	// 删除文件
+	err := os.Remove(filePath)
+	if err != nil {
+		fmt.Printf("Error deleting L3 cache file %s: %v\n", filePath, err)
+	}
+}
+
+// 读取数据从L3磁盘缓存
 func (c *MultiLevelCache) readFromL3Cache(key string) (queryCache, bool) {
 	if c.l3CachePath == "" {
 		return queryCache{}, false

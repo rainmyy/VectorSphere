@@ -14,6 +14,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/huichen/sego v0.0.0-20210824061530-c87651ea5c76
 	github.com/klauspost/cpuid v1.3.1
+	github.com/klauspost/cpuid/v2 v2.2.11
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/leemcloughlin/gofarmhash v0.0.0-20160919192320-0a055c5b87a8
 	github.com/lib/pq v1.10.9

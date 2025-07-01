@@ -6,7 +6,7 @@ import (
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/logger"
 	"fmt"
-	"github.com/klauspost/cpuid"
+	"github.com/klauspost/cpuid/v2"
 	"math"
 	"runtime"
 	"sort"
@@ -18,12 +18,12 @@ import (
 func (hd *HardwareDetector) GetHardwareCapabilities() HardwareCapabilities {
 	hd.once.Do(func() {
 		hd.capabilities = HardwareCapabilities{
-			HasAVX2:    cpuid.CPU.AVX2(),
-			HasAVX512:  cpuid.CPU.AVX512F() && cpuid.CPU.AVX512DQ(),
-			HasGPU:     detectGPUSupport(),
-			CPUCores:   runtime.NumCPU(),
-			GPUDevices: getGPUDeviceCount(),
-		}
+		HasAVX2:    cpuid.CPU.Supports(cpuid.AVX2),
+		HasAVX512:  cpuid.CPU.Supports(cpuid.AVX512F) && cpuid.CPU.Supports(cpuid.AVX512DQ),
+		HasGPU:     detectGPUSupport(),
+		CPUCores:   runtime.NumCPU(),
+		GPUDevices: getGPUDeviceCount(),
+	}
 	})
 	return hd.capabilities
 }
@@ -32,7 +32,20 @@ func NewCPUAccelerator(deviceID int, indexType string) *CPUAccelerator {
 	capabilities := HardwareCapabilities{
 		Type: AcceleratorCPU,
 	}
-	baseAccel := NewBaseAccelerator(deviceID, indexType, capabilities, HardwareStats{})
+	// 初始化统计信息
+	stats := HardwareStats{
+		TotalOperations:   0,
+		SuccessfulOps:     0,
+		FailedOps:         0,
+		AverageLatency:    0,
+		Throughput:        0.0,
+		MemoryUtilization: 0.0,
+		Temperature:       0.0,
+		PowerConsumption:  0.0,
+		ErrorRate:         0.0,
+		LastUsed:          time.Now(),
+	}
+	baseAccel := NewBaseAccelerator(deviceID, indexType, capabilities, stats)
 	return &CPUAccelerator{
 		BaseAccelerator: baseAccel,
 	}
@@ -164,14 +177,17 @@ func (c *CPUAccelerator) BatchCosineSimilarity(queries [][]float64, database [][
 
 // ComputeDistance 计算距离（UnifiedAccelerator接口方法）
 func (c *CPUAccelerator) ComputeDistance(query []float64, targets [][]float64) ([]float64, error) {
+	start := time.Now()
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	if !c.Initialized {
+		c.UpdateStats(time.Since(start), 1, false)
 		return nil, fmt.Errorf("CPU accelerator not initialized")
 	}
 
 	if len(query) == 0 || len(targets) == 0 {
+		c.UpdateStats(time.Since(start), 1, false)
 		return nil, fmt.Errorf("empty query or targets")
 	}
 
@@ -179,6 +195,7 @@ func (c *CPUAccelerator) ComputeDistance(query []float64, targets [][]float64) (
 	distances := make([]float64, len(targets))
 	for i, target := range targets {
 		if len(target) != len(query) {
+			c.UpdateStats(time.Since(start), 1, false)
 			return nil, fmt.Errorf("dimension mismatch: query %d, target %d", len(query), len(target))
 		}
 
@@ -191,6 +208,7 @@ func (c *CPUAccelerator) ComputeDistance(query []float64, targets [][]float64) (
 		distances[i] = math.Sqrt(dist)
 	}
 
+	c.UpdateStats(time.Since(start), 1, true)
 	return distances, nil
 }
 
@@ -589,18 +607,8 @@ func (c *CPUAccelerator) GetStats() HardwareStats {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return HardwareStats{
-		TotalOperations:   100, // 模拟值
-		SuccessfulOps:     95,
-		FailedOps:         5,
-		AverageLatency:    time.Microsecond * 50,
-		Throughput:        1000.0,
-		MemoryUtilization: 0.6,
-		Temperature:       45.0,
-		PowerConsumption:  65.0,
-		ErrorRate:         0.05,
-		LastUsed:          time.Now(),
-	}
+	// 返回BaseAccelerator的实际统计信息
+	return c.BaseAccelerator.GetStats()
 }
 
 // GetPerformanceMetrics 获取性能指标（UnifiedAccelerator接口方法）

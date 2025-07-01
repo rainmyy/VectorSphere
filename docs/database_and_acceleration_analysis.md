@@ -59,8 +59,8 @@ graph TD
 
     subgraph 硬件加速模块
         G --> H[HardwareManager]
-        H --> I[CPU (AVX)]
-        H --> J[GPU (CUDA)]
+        H --> I[CPUAVX]
+        H --> J[GPUCUDA]
         H --> K[FPGA]
         H --> L[其他硬件]
         H --> M[HealthMonitor]
@@ -68,7 +68,7 @@ graph TD
     end
 
     F --> O[内存]
-    F --> P[持久化存储 (SSD/PMem)]
+    F --> P[持久化存储SSD/PMem]
 ```
 
 ## 4. 逻辑流程图

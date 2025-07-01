@@ -19,6 +19,7 @@ type MonitoringConfig struct {
 // MetricsConfig 指标配置
 type MetricsConfig struct {
 	Enable             bool                     `json:"enable" yaml:"enable"`
+	Interval           int                      `json:"interval"`
 	CollectionInterval time.Duration            `json:"collection_interval" yaml:"collection_interval"`
 	RetentionPeriod    time.Duration            `json:"retention_period" yaml:"retention_period"`
 	Exporter           MetricsExporterConfig    `json:"exporter" yaml:"exporter"`
@@ -328,6 +329,7 @@ type AlertingConfig struct {
 
 // AlertRule 告警规则
 type AlertRule struct {
+	Expression    string            `json:"expression" yaml:"expression"`
 	Name          string            `json:"name" yaml:"name"`
 	Description   string            `json:"description" yaml:"description"`
 	Metric        string            `json:"metric" yaml:"metric"`

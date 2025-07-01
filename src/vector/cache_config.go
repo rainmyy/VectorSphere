@@ -396,14 +396,20 @@ type MetadataVersioningConfig struct {
 
 // GlobalCacheConfig 全局缓存配置
 type GlobalCacheConfig struct {
-	MemoryLimit     int64                 `json:"memory_limit" yaml:"memory_limit"` // bytes
-	MemoryThreshold float64               `json:"memory_threshold" yaml:"memory_threshold"`
-	GCStrategy      string                `json:"gc_strategy" yaml:"gc_strategy"` // "aggressive", "conservative", "adaptive"
-	GCInterval      time.Duration         `json:"gc_interval" yaml:"gc_interval"`
-	Statistics      CacheStatisticsConfig `json:"statistics" yaml:"statistics"`
-	Warmup          CacheWarmupConfig     `json:"warmup" yaml:"warmup"`
-	Backup          CacheBackupConfig     `json:"backup" yaml:"backup"`
-	Security        CacheSecurityConfig   `json:"security" yaml:"security"`
+	Enable              bool                  `json:"enable" yaml:"enable"`
+	MaxMemoryUsage      int64                 `json:"max_memory_usage" yaml:"max_memory_usage"` // bytes
+	MemoryLimit         int64                 `json:"memory_limit" yaml:"memory_limit"`         // bytes
+	MemoryThreshold     float64               `json:"memory_threshold" yaml:"memory_threshold"`
+	DefaultTTL          time.Duration         `json:"default_ttl" yaml:"default_ttl"`
+	CleanupInterval     time.Duration         `json:"cleanup_interval" yaml:"cleanup_interval"`
+	LowHitRateCleanup   bool                  `json:"low_hit_rate_cleanup" yaml:"low_hit_rate_cleanup"`
+	HitRateThreshold    float64               `json:"hit_rate_threshold" yaml:"hit_rate_threshold"`
+	GCStrategy          string                `json:"gc_strategy" yaml:"gc_strategy"` // "aggressive", "conservative", "adaptive"
+	GCInterval          time.Duration         `json:"gc_interval" yaml:"gc_interval"`
+	Statistics          CacheStatisticsConfig `json:"statistics" yaml:"statistics"`
+	Warmup              CacheWarmupConfig     `json:"warmup" yaml:"warmup"`
+	Backup              CacheBackupConfig     `json:"backup" yaml:"backup"`
+	Security            CacheSecurityConfig   `json:"security" yaml:"security"`
 }
 
 // CacheStatisticsConfig 缓存统计配置

@@ -983,16 +983,16 @@ func (db *VectorDB) SelectCandidateClusters(query []float64, nprobe int) []int {
 		}
 		// 次要排序因素：可以考虑聚类密度（倾向于密度大的），或查询频率（倾向于常被查询的）
 		// 示例：如果距离相同，优先选择密度更大的聚类
-		// if distances[i].Density != distances[j].Density {
-		// 	 return distances[i].Density > distances[j].Density
-		// }
+		if distances[i].Density != distances[j].Density {
+			return distances[i].Density > distances[j].Density
+		}
 		// 示例：如果距离和密度都相同，优先选择规模适中的聚类（避免过小或过大，除非有特定策略）
-		// idealSize := db.ivfConfig.MaxClusterSize / 2
-		// diffI := math.Abs(float64(distances[i].Size - idealSize))
-		// diffJ := math.Abs(float64(distances[j].Size - idealSize))
-		// if diffI != diffJ {
-		// 	 return diffI < diffJ
-		// }
+		idealSize := db.ivfConfig.MaxClusterSize / 2
+		diffI := math.Abs(float64(distances[i].Size - idealSize))
+		diffJ := math.Abs(float64(distances[j].Size - idealSize))
+		if diffI != diffJ {
+			return diffI < diffJ
+		}
 		return distances[i].ID < distances[j].ID // 最终通过ID保证排序稳定性
 	})
 
@@ -1002,14 +1002,16 @@ func (db *VectorDB) SelectCandidateClusters(query []float64, nprobe int) []int {
 		// 更新被选中聚类的访问统计（如果需要）
 		if distances[i].ID < len(db.ivfIndex.Clusters) {
 			// 加锁操作，因为可能会有并发写
-			// db.ivfIndex.mu.Lock() // 这可能导致死锁，因为外层已经有RLock
+			locked := db.ivfIndex.mu.TryRLock() // 这可能导致死锁，因为外层已经有RLock
 			// 考虑将更新操作移到其他地方，或者使用更细粒度的锁
-			// db.ivfIndex.Clusters[distances[i].ID].LastAccessed = time.Now()
-			// db.ivfIndex.Clusters[distances[i].ID].AccessCount++
-			// db.ivfIndex.mu.Unlock()
+			db.ivfIndex.Clusters[distances[i].ID].LastAccessed = time.Now()
+			db.ivfIndex.Clusters[distances[i].ID].AccessCount++
+			if locked {
+				db.ivfIndex.mu.Unlock()
+			}
 		}
 		if distances[i].ID < len(db.ivfIndex.ClusterMetrics) {
-			// db.ivfIndex.ClusterMetrics[distances[i].ID].QueryFrequency++ // 同上，注意并发安全
+			db.ivfIndex.ClusterMetrics[distances[i].ID].QueryFrequency++ // 同上，注意并发安全
 		}
 	}
 

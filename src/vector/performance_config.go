@@ -250,6 +250,7 @@ type AlertThreshold struct {
 type ConcurrencyControlConfig struct {
 	MaxConcurrentQueries int                     `json:"max_concurrent_queries" yaml:"max_concurrent_queries"`
 	QueryQueueSize       int                     `json:"query_queue_size" yaml:"query_queue_size"`
+	MaxConcurrentInserts int                     `json:"max_concurrent_inserts" yaml:"max_concurrent_inserts"`
 	ThreadPoolConfig     ThreadPoolConfig        `json:"thread_pool_config" yaml:"thread_pool_config"`
 	RateLimiting         RateLimitingConfig      `json:"rate_limiting" yaml:"rate_limiting"`
 	ResourceIsolation    ResourceIsolationConfig `json:"resource_isolation" yaml:"resource_isolation"`
@@ -353,6 +354,8 @@ type SchedulingPolicyConfig struct {
 
 // MemoryManagementConfig 内存管理配置
 type MemoryManagementConfig struct {
+	GCThreshold       int                     `json:"gc_threshold" yaml:"gc_threshold"`
+	MaxMemoryUsage    int                     `json:"max_memory_usage" yaml:"max_memory_usage"`
 	MemoryPool        MemoryPoolConfig        `json:"memory_pool" yaml:"memory_pool"`
 	GarbageCollection GarbageCollectionConfig `json:"garbage_collection" yaml:"garbage_collection"`
 	MemoryMapping     MemoryMappingConfig     `json:"memory_mapping" yaml:"memory_mapping"`
@@ -399,6 +402,7 @@ type SwapManagementConfig struct {
 // BatchProcessingConfig 批处理配置
 type BatchProcessingConfig struct {
 	Enable           bool                   `json:"enable" yaml:"enable"`
+	MaxBatchDelay    int                    `json:"max_batch_delay" yaml:"max_batch_delay"`
 	BatchSize        int                    `json:"batch_size" yaml:"batch_size"`
 	BatchTimeout     time.Duration          `json:"batch_timeout" yaml:"batch_timeout"`
 	AdaptiveBatching AdaptiveBatchingConfig `json:"adaptive_batching" yaml:"adaptive_batching"`
@@ -426,10 +430,12 @@ type PipeliningConfig struct {
 
 // PrefetchingConfig 预取配置
 type PrefetchingConfig struct {
-	Enable           bool                   `json:"enable" yaml:"enable"`
-	DataPrefetching  DataPrefetchingConfig  `json:"data_prefetching" yaml:"data_prefetching"`
-	IndexPrefetching IndexPrefetchingConfig `json:"index_prefetching" yaml:"index_prefetching"`
-	QueryPrefetching QueryPrefetchingConfig `json:"query_prefetching" yaml:"query_prefetching"`
+	Enable            bool                   `json:"enable" yaml:"enable"`
+	PrefetchSize      int                    `json:"prefetch_size" yaml:"prefetch_size"`
+	PrefetchThreshold int                    `json:"prefetch_threshold"`
+	DataPrefetching   DataPrefetchingConfig  `json:"data_prefetching" yaml:"data_prefetching"`
+	IndexPrefetching  IndexPrefetchingConfig `json:"index_prefetching" yaml:"index_prefetching"`
+	QueryPrefetching  QueryPrefetchingConfig `json:"query_prefetching" yaml:"query_prefetching"`
 }
 
 // DataPrefetchingConfig 数据预取配置
