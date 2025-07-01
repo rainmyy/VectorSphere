@@ -294,7 +294,7 @@ func ProcessDocumentCollection(config DocumentProcessingConfig) error {
 
 	// 启用PQ压缩以减少内存使用
 	if config.UsePQCompression {
-		err := vectorDB.EnablePQCompression(config.DBPath, config.PQSubvectors, config.PQCentroids)
+		err := vectorDB.EnablePQCompression(config.CodebookPath, config.PQSubvectors, config.PQCentroids)
 		if err != nil {
 			return err
 		}
