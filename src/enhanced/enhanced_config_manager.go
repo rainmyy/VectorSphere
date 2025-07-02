@@ -106,7 +106,6 @@ type EnhancedConfigManager struct {
 	auditEnabled    bool
 
 	configPath    string
-	config        *EnhancedConfig
 	lastModTime   time.Time
 	mutex         sync.RWMutex
 	watchersMutex sync.RWMutex
