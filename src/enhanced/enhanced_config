@@ -39,110 +39,9 @@ type EnhancedConfig struct {
 	Monitoring MonitoringConfig `json:"monitoring"`
 }
 
-// SimpleLoadBalancerConfig 简化的负载均衡器配置
-type SimpleLoadBalancerConfig struct {
-	Algorithm             string `json:"algorithm"`               // "round_robin", "weighted_round_robin", "least_connections", "ip_hash"
-	HealthCheckInterval   int    `json:"health_check_interval"`   // 秒
-	MaxRetries            int    `json:"max_retries"`
-	RetryDelay            int    `json:"retry_delay"`              // 毫秒
-	EnableStickySessions  bool   `json:"enable_sticky_sessions"`
-	SessionTimeout        int    `json:"session_timeout"`         // 分钟
-	EnableMetrics         bool   `json:"enable_metrics"`
-	MaxConnections        int    `json:"max_connections"`
-	ConnectionTimeout     int    `json:"connection_timeout"`      // 秒
-}
-
-// SimpleSecurityConfig 简化的安全配置
-type SimpleSecurityConfig struct {
-	JWTSecret           string   `json:"jwt_secret"`
-	TokenExpiration     int      `json:"token_expiration"`      // 小时
-	EnableRateLimit     bool     `json:"enable_rate_limit"`
-	RateLimitPerSecond  int      `json:"rate_limit_per_second"`
-	EnableIPWhitelist   bool     `json:"enable_ip_whitelist"`
-	IPWhitelist         []string `json:"ip_whitelist"`
-	EnableEncryption    bool     `json:"enable_encryption"`
-	EncryptionKey       string   `json:"encryption_key"`
-	EnableAuditLog      bool     `json:"enable_audit_log"`
-	AuditLogPath        string   `json:"audit_log_path"`
-	MaxLoginAttempts    int      `json:"max_login_attempts"`
-	LockoutDuration     int      `json:"lockout_duration"`       // 分钟
-}
-
-// SimpleCircuitBreakerConfig 简化的熔断器配置
-type SimpleCircuitBreakerConfig struct {
-	FailureThreshold    int  `json:"failure_threshold"`
-	RecoveryTimeout     int  `json:"recovery_timeout"`      // 秒
-	MaxRequests         int  `json:"max_requests"`
-	Interval            int  `json:"interval"`              // 秒
-	Timeout             int  `json:"timeout"`               // 秒
-	EnableMetrics       bool `json:"enable_metrics"`
-	EnableNotification  bool `json:"enable_notification"`
-	NotificationURL     string `json:"notification_url"`
-	HalfOpenMaxRequests int  `json:"half_open_max_requests"`
-}
-
-// SimpleHealthCheckConfig 简化的健康检查配置
-type SimpleHealthCheckConfig struct {
-	Interval            int    `json:"interval"`              // 秒
-	Timeout             int    `json:"timeout"`               // 秒
-	RetryCount          int    `json:"retry_count"`
-	RetryDelay          int    `json:"retry_delay"`           // 毫秒
-	EnableDeepCheck     bool   `json:"enable_deep_check"`
-	EnableMetrics       bool   `json:"enable_metrics"`
-	EnableNotification  bool   `json:"enable_notification"`
-	UnhealthyThreshold  int    `json:"unhealthy_threshold"`
-	HealthyThreshold    int    `json:"healthy_threshold"`
-	HealthCheckPath     string `json:"health_check_path"`
-	ExpectedStatusCode  int    `json:"expected_status_code"`
-}
-
-// MonitoringConfig 监控配置
-type MonitoringConfig struct {
-	EnableMetrics     bool   `json:"enable_metrics"`
-	MetricsPort       int    `json:"metrics_port"`
-	MetricsPath       string `json:"metrics_path"`
-	EnableTracing     bool   `json:"enable_tracing"`
-	TracingEndpoint   string `json:"tracing_endpoint"`
-	EnableProfiling   bool   `json:"enable_profiling"`
-	ProfilingPort     int    `json:"profiling_port"`
-	CollectionInterval int   `json:"collection_interval"` // 秒
-}
-
-// EnhancedConfigManager 增强型配置管理器
-type EnhancedConfigManager struct {
-	configPath   string
-	config       *EnhancedConfig
-	lastModTime  time.Time
-	mutex        sync.RWMutex
-	watchers     []func(*EnhancedConfig)
-	watchersMutex sync.RWMutex
-}
-
-// NewEnhancedConfigManager 创建增强型配置管理器
-func NewEnhancedConfigManager(configPath string) (*EnhancedConfigManager, error) {
-	manager := &EnhancedConfigManager{
-		configPath: configPath,
-		watchers:   make([]func(*EnhancedConfig), 0),
-	}
-
-	// 加载配置
-	if err := manager.loadConfig(); err != nil {
-		return nil, err
-	}
-
-	return manager, nil
-}
-
 // LoadConfig 加载配置
 func (ecm *EnhancedConfigManager) LoadConfig() (*EnhancedConfig, error) {
 	return ecm.config, nil
-}
-
-// GetConfig 获取配置
-func (ecm *EnhancedConfigManager) GetConfig() *EnhancedConfig {
-	ecm.mutex.RLock()
-	defer ecm.mutex.RUnlock()
-	return ecm.config
 }
 
 // ReloadConfig 重新加载配置
@@ -215,10 +114,10 @@ func (ecm *EnhancedConfigManager) HasConfigChanged() bool {
 }
 
 // AddWatcher 添加配置变更观察者
-func (ecm *EnhancedConfigManager) AddWatcher(watcher func(*EnhancedConfig)) {
+func (ecm *EnhancedConfigManager) AddWatcher(watcher *ConfigWatcher) {
 	ecm.watchersMutex.Lock()
 	defer ecm.watchersMutex.Unlock()
-	ecm.watchers = append(ecm.watchers, watcher)
+	ecm.watchers[watcher.Namespace] = watcher
 }
 
 // GetConfigSummary 获取配置摘要
@@ -227,15 +126,15 @@ func (ecm *EnhancedConfigManager) GetConfigSummary() map[string]interface{} {
 	defer ecm.mutex.RUnlock()
 
 	return map[string]interface{}{
-		"service_name": ecm.config.ServiceName,
-		"version":      ecm.config.Version,
-		"environment":  ecm.config.Environment,
-		"gateway_port": ecm.config.Gateway.Port,
+		"service_name":            ecm.config.ServiceName,
+		"version":                 ecm.config.Version,
+		"environment":             ecm.config.Environment,
+		"gateway_port":            ecm.config.Gateway.Port,
 		"load_balancer_algorithm": ecm.config.LoadBalancer.Algorithm,
-		"security_enabled": ecm.config.Security.EnableRateLimit,
+		"security_enabled":        ecm.config.Security.EnableRateLimit,
 		"circuit_breaker_enabled": ecm.config.CircuitBreaker.EnableMetrics,
-		"health_check_interval": ecm.config.HealthCheck.Interval,
-		"last_modified": ecm.lastModTime,
+		"health_check_interval":   ecm.config.HealthCheck.Interval,
+		"last_modified":           ecm.lastModTime,
 	}
 }
 
@@ -298,29 +197,29 @@ func (ecm *EnhancedConfigManager) createDefaultConfig() error {
 			EnableLogging:     true,
 		},
 		LoadBalancer: LoadBalancerConfig{
-			Algorithm:             "round_robin",
-			HealthCheckInterval:   30,
-			MaxRetries:            3,
-			RetryDelay:            1000,
-			EnableStickySessions:  false,
-			SessionTimeout:        30,
-			EnableMetrics:         true,
-			MaxConnections:        1000,
-			ConnectionTimeout:     10,
+			Algorithm:            "round_robin",
+			HealthCheckInterval:  30,
+			MaxRetries:           3,
+			RetryDelay:           1000,
+			EnableStickySessions: false,
+			SessionTimeout:       30,
+			EnableMetrics:        true,
+			MaxConnections:       1000,
+			ConnectionTimeout:    10,
 		},
 		Security: SecurityConfig{
-			JWTSecret:           "your-secret-key-change-in-production",
-			TokenExpiration:     24,
-			EnableRateLimit:     true,
-			RateLimitPerSecond:  100,
-			EnableIPWhitelist:   false,
-			IPWhitelist:         []string{"127.0.0.1", "::1"},
-			EnableEncryption:    false,
-			EncryptionKey:       "",
-			EnableAuditLog:      true,
-			AuditLogPath:        "./logs/audit.log",
-			MaxLoginAttempts:    5,
-			LockoutDuration:     15,
+			JWTSecret:          "your-secret-key-change-in-production",
+			TokenExpiration:    24,
+			EnableRateLimit:    true,
+			RateLimitPerSecond: 100,
+			EnableIPWhitelist:  false,
+			IPWhitelist:        []string{"127.0.0.1", "::1"},
+			EnableEncryption:   false,
+			EncryptionKey:      "",
+			EnableAuditLog:     true,
+			AuditLogPath:       "./logs/audit.log",
+			MaxLoginAttempts:   5,
+			LockoutDuration:    15,
 		},
 		CircuitBreaker: CircuitBreakerConfig{
 			FailureThreshold:    5,
@@ -334,17 +233,17 @@ func (ecm *EnhancedConfigManager) createDefaultConfig() error {
 			HalfOpenMaxRequests: 10,
 		},
 		HealthCheck: HealthCheckConfig{
-			Interval:            30,
-			Timeout:             10,
-			RetryCount:          3,
-			RetryDelay:          1000,
-			EnableDeepCheck:     true,
-			EnableMetrics:       true,
-			EnableNotification:  false,
-			UnhealthyThreshold:  3,
-			HealthyThreshold:    2,
-			HealthCheckPath:     "/health",
-			ExpectedStatusCode:  200,
+			Interval:           30,
+			Timeout:            10,
+			RetryCount:         3,
+			RetryDelay:         1000,
+			EnableDeepCheck:    true,
+			EnableMetrics:      true,
+			EnableNotification: false,
+			UnhealthyThreshold: 3,
+			HealthyThreshold:   2,
+			HealthCheckPath:    "/health",
+			ExpectedStatusCode: 200,
 		},
 		Monitoring: MonitoringConfig{
 			EnableMetrics:      true,
@@ -379,29 +278,6 @@ func (ecm *EnhancedConfigManager) createDefaultConfig() error {
 	return nil
 }
 
-// notifyWatchers 通知观察者
-func (ecm *EnhancedConfigManager) notifyWatchers() {
-	ecm.watchersMutex.RLock()
-	watchers := make([]func(*EnhancedConfig), len(ecm.watchers))
-	copy(watchers, ecm.watchers)
-	ecm.watchersMutex.RUnlock()
-
-	ecm.mutex.RLock()
-	config := ecm.config
-	ecm.mutex.RUnlock()
-
-	for _, watcher := range watchers {
-		go func(w func(*EnhancedConfig)) {
-			defer func() {
-				if r := recover(); r != nil {
-					logger.Error("Config watcher panic: %v", r)
-				}
-			}()
-			w(config)
-		}(watcher)
-	}
-}
-
 // SaveConfig 保存配置
 func (ecm *EnhancedConfigManager) SaveConfig(config *EnhancedConfig) error {
 	// 验证配置
@@ -416,7 +292,7 @@ func (ecm *EnhancedConfigManager) SaveConfig(config *EnhancedConfig) error {
 	}
 
 	// 写入文件
-	if err := ioutil.WriteFile(ecm.configPath, data, 0644); err != nil {
+	if err := os.WriteFile(ecm.configPath, data, 0644); err != nil {
 		return fmt.Errorf("写入配置文件失败: %v", err)
 	}
 
@@ -431,25 +307,4 @@ func (ecm *EnhancedConfigManager) SaveConfig(config *EnhancedConfig) error {
 
 	logger.Info("Configuration saved successfully")
 	return nil
-}
-
-// 辅助函数
-
-// GetDefaultEnhancedConfigPath 获取默认配置路径
-func GetDefaultEnhancedConfigPath() string {
-	return "./config/enhanced_config.json"
-}
-
-// ValidateEnhancedConfigFile 验证配置文件
-func ValidateEnhancedConfigFile(configPath string) error {
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return fmt.Errorf("配置文件不存在: %s", configPath)
-	}
-	return nil
-}
-
-// CreateDefaultEnhancedConfig 创建默认配置文件
-func CreateDefaultEnhancedConfig(configPath string) error {
-	manager := &EnhancedConfigManager{configPath: configPath}
-	return manager.createDefaultConfig()
 }

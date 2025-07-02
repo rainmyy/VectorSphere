@@ -104,6 +104,12 @@ type EnhancedConfigManager struct {
 	hotReload       bool
 	backupEnabled   bool
 	auditEnabled    bool
+
+	configPath    string
+	config        *EnhancedConfig
+	lastModTime   time.Time
+	mutex         sync.RWMutex
+	watchersMutex sync.RWMutex
 }
 
 // EnhancedConfigManagerConfig 配置管理器配置
