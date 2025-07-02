@@ -56,16 +56,16 @@ func main_1() {
 	}
 
 	// 初始化负载均衡器
-	loadBalancer, err := bootstrap.InitLoadBalancer(etcdClient, serviceRegistry, config)
-	if err != nil {
-		logger.Fatal("Failed to initialize load balancer: %v", err)
-	}
+	//loadBalancer, err := bootstrap.InitLoadBalancer(etcdClient, serviceRegistry, config)
+	//if err != nil {
+	//	logger.Fatal("Failed to initialize load balancer: %v", err)
+	//}
 
 	// 初始化配置管理器
-	configManager, err := bootstrap.InitConfigManager(etcdClient, config)
-	if err != nil {
-		logger.Fatal("Failed to initialize config manager: %v", err)
-	}
+	//configManager, err := bootstrap.InitConfigManager(etcdClient, config)
+	//if err != nil {
+	//	logger.Fatal("Failed to initialize config manager: %v", err)
+	//}
 	endpoints := make(map[string]entity.EndPoint)
 	endpoints["127.0.0.1"] = entity.EndPoint{Ip: "127.0.0.1", Port: 2379}
 	// 创建分布式管理器配置
@@ -78,13 +78,13 @@ func main_1() {
 		//Etcd: distributed.EtcdConfig{
 		//	Endpoints: config.EtcdEndpoints,
 		//},
-		SchedulerWorkerCount:  10,
-		HttpPort:              config.HttpPort,
-		TaskTimeout:           30000000,
-		HealthCheckInterval:   int(config.HealthCheckInterval.Seconds()),
-		DataDir:               "data",
-		LoadBalancerConfig:    loadBalancer,
-		EnhancedConfigManager: configManager,
+		SchedulerWorkerCount: 10,
+		HttpPort:             config.HttpPort,
+		TaskTimeout:          30000000,
+		HealthCheckInterval:  int(config.HealthCheckInterval.Seconds()),
+		DataDir:              "data",
+		//LoadBalancerConfig:    loadBalancer,
+		//EnhancedConfigManager: configManager,
 	}
 
 	// 创建分布式管理器

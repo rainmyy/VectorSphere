@@ -169,8 +169,18 @@ func simulateNetworkLatency(interfaceName string) float64 {
 		logger.Warning("创建临时文件失败: %v", err)
 		return 50.0 // 返回默认值
 	}
-	defer os.Remove(tmpFile.Name())
-	defer tmpFile.Close()
+	defer func(name string) {
+		err := os.Remove(name)
+		if err != nil {
+			logger.Error(err.Error())
+		}
+	}(tmpFile.Name())
+	defer func(tmpFile *os.File) {
+		err := tmpFile.Close()
+		if err != nil {
+			logger.Error(err.Error())
+		}
+	}(tmpFile)
 
 	// 执行ping命令
 	var cmd string

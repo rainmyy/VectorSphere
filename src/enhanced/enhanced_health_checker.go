@@ -716,7 +716,12 @@ func (hc *EnhancedHealthChecker) performTCPCheck(ctx context.Context, check *Hea
 		result.Error = err.Error()
 		return result
 	}
-	defer conn.Close()
+	defer func(conn net.Conn) {
+		err = conn.Close()
+		if err != nil {
+			logger.Error(err.Error())
+		}
+	}(conn)
 
 	if latency > check.Thresholds.CriticalLatency {
 		result.Status = Critical
@@ -863,7 +868,7 @@ func (hc *EnhancedHealthChecker) performResourceCheck(ctx context.Context, check
 
 			// 检查网络延迟阈值
 			if latency, ok := networkStats["network_latency"]; ok {
-				latencyWarningThreshold := 100.0 // 100ms
+				latencyWarningThreshold := 100.0  // 100ms
 				latencyCriticalThreshold := 300.0 // 300ms
 
 				if threshold, ok := check.Config["latency_warning_threshold"].(float64); ok {
@@ -884,7 +889,7 @@ func (hc *EnhancedHealthChecker) performResourceCheck(ctx context.Context, check
 
 			// 检查网络包丢失率
 			if packetLoss, ok := networkStats["packet_loss_rate"]; ok {
-				packetLossWarningThreshold := 0.01 // 1%
+				packetLossWarningThreshold := 0.01  // 1%
 				packetLossCriticalThreshold := 0.05 // 5%
 
 				if threshold, ok := check.Config["packet_loss_warning_threshold"].(float64); ok {
@@ -1407,6 +1412,8 @@ func (hc *EnhancedHealthChecker) GetMetrics() map[string]interface{} {
 			unhealthyCount++
 		case Critical:
 			criticalCount++
+		default:
+			healthyCount++
 		}
 	}
 
@@ -1430,16 +1437,16 @@ func (hc *EnhancedHealthChecker) GetMetrics() map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"total_services":    len(hc.serviceHealth),
-		"healthy_services":  healthyCount,
-		"degraded_services": degradedCount,
+		"total_services":     len(hc.serviceHealth),
+		"healthy_services":   healthyCount,
+		"degraded_services":  degradedCount,
 		"unhealthy_services": unhealthyCount,
-		"critical_services": criticalCount,
-		"total_checks":      len(hc.checks),
-		"active_checks":     len(hc.checks),
-		"success_rate":      successRate,
-		"total_alerts":      0, // 暂时设为0，因为没有alertHistory字段
-		"last_update":       time.Now(),
+		"critical_services":  criticalCount,
+		"total_checks":       len(hc.checks),
+		"active_checks":      len(hc.checks),
+		"success_rate":       successRate,
+		"total_alerts":       0, // 暂时设为0，因为没有alertHistory字段
+		"last_update":        time.Now(),
 	}
 }
 

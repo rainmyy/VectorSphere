@@ -340,7 +340,10 @@ func (lm *LeaseManager) CreateLease(ctx context.Context, serviceKey string, ttl 
 	// 检查是否已存在租约
 	if existingLeaseID, exists := lm.leases[serviceKey]; exists {
 		logger.Warning("Service %s already has lease %d, revoking old lease", serviceKey, existingLeaseID)
-		lm.client.Revoke(ctx, existingLeaseID)
+		_, err := lm.client.Revoke(ctx, existingLeaseID)
+		if err != nil {
+			return 0, err
+		}
 		delete(lm.leases, serviceKey)
 		delete(lm.leaseStats, existingLeaseID)
 	}

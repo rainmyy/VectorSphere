@@ -283,7 +283,10 @@ func (lb *EnhancedLoadBalancer) Stop() error {
 
 	// 停止健康检查器
 	if lb.healthChecker != nil {
-		lb.healthChecker.Stop()
+		err := lb.healthChecker.Stop()
+		if err != nil {
+			return err
+		}
 	}
 
 	// 停止定时器
@@ -1111,7 +1114,10 @@ func (lb *EnhancedLoadBalancer) registerBackendHealthCheck(backend *Backend) {
 		}
 	})
 
-	lb.healthChecker.RegisterCheck(check)
+	err := lb.healthChecker.RegisterCheck(check)
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // updateBackendHealth 更新后端健康状态
@@ -1411,7 +1417,10 @@ func (chr *ConsistentHashRing) GetBackend(key string) *Backend {
 // hash 哈希函数
 func (chr *ConsistentHashRing) hash(key string) uint32 {
 	h := fnv.New32a()
-	h.Write([]byte(key))
+	write, err := h.Write([]byte(key))
+	if err != nil || write != len(key) {
+		return 0
+	}
 	return h.Sum32()
 }
 

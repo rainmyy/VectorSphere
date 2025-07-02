@@ -2,15 +2,33 @@ package enhanced
 
 import (
 	"VectorSphere/src/library/logger"
+	messages2 "VectorSphere/src/proto/messages"
+	"VectorSphere/src/proto/serverProto"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-
 	"strings"
 	"sync"
 	"time"
 )
+
+// DistributedManagerInterface 定义接口类型以避免循环依赖
+type DistributedManagerInterface interface {
+	IsMaster() bool
+}
+
+type CommunicationServiceInterface interface {
+	CreateTableOnSlaves(ctx context.Context, slaveAddrs []string, req *serverProto.CreateTableRequest) map[string]error
+	DeleteTableOnSlaves(ctx context.Context, slaveAddrs []string, req *serverProto.TableRequest) map[string]error
+	AddDocumentToSlaves(ctx context.Context, slaveAddrs []string, req *serverProto.AddDocumentRequest) map[string]error
+	DeleteDocumentFromSlaves(ctx context.Context, slaveAddrs []string, req *serverProto.DeleteDocumentRequest) map[string]error
+	SearchOnSlaves(ctx context.Context, slaveAddrs []string, req *serverProto.SearchRequest) map[string]*serverProto.SearchResult
+}
+
+type ServiceDiscoveryInterface interface {
+	GetHealthySlaveAddresses() []string
+}
 
 // APIGatewayConfig API网关配置
 type APIGatewayConfig struct {
@@ -35,6 +53,11 @@ type EnhancedAPIGateway struct {
 	securityManager *EnhancedSecurityManager
 	circuitBreaker  *EnhancedCircuitBreaker
 	healthChecker   *EnhancedHealthChecker
+
+	// 分布式组件（用于实际的请求转发）
+	distributedManager DistributedManagerInterface
+	communicationSvc   CommunicationServiceInterface
+	serviceDiscovery   ServiceDiscoveryInterface
 
 	// HTTP服务器
 	httpServer *http.Server
@@ -75,21 +98,27 @@ func NewEnhancedAPIGateway(
 	securityManager *EnhancedSecurityManager,
 	circuitBreaker *EnhancedCircuitBreaker,
 	healthChecker *EnhancedHealthChecker,
+	distributedManager DistributedManagerInterface,
+	communicationSvc CommunicationServiceInterface,
+	serviceDiscovery ServiceDiscoveryInterface,
 ) (*EnhancedAPIGateway, error) {
 	if config == nil {
 		return nil, fmt.Errorf("API网关配置不能为空")
 	}
 
 	gateway := &EnhancedAPIGateway{
-		config:          config,
-		loadBalancer:    loadBalancer,
-		securityManager: securityManager,
-		circuitBreaker:  circuitBreaker,
-		healthChecker:   healthChecker,
-		mux:             http.NewServeMux(),
-		middlewares:     make([]Middleware, 0),
-		metrics:         NewGatewayMetrics(),
-		isRunning:       false,
+		config:             config,
+		loadBalancer:       loadBalancer,
+		securityManager:    securityManager,
+		circuitBreaker:     circuitBreaker,
+		healthChecker:      healthChecker,
+		distributedManager: distributedManager,
+		communicationSvc:   communicationSvc,
+		serviceDiscovery:   serviceDiscovery,
+		mux:                http.NewServeMux(),
+		middlewares:        make([]Middleware, 0),
+		metrics:            NewGatewayMetrics(),
+		isRunning:          false,
 	}
 
 	// 注册默认中间件
@@ -389,7 +418,10 @@ func (gw *EnhancedAPIGateway) handleHealth(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // handleDeepHealth 深度健康检查
@@ -407,7 +439,10 @@ func (gw *EnhancedAPIGateway) handleDeepHealth(w http.ResponseWriter, r *http.Re
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // handleMetrics 指标接口
@@ -416,7 +451,10 @@ func (gw *EnhancedAPIGateway) handleMetrics(w http.ResponseWriter, r *http.Reque
 	defer gw.metrics.mutex.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(gw.metrics)
+	err := json.NewEncoder(w).Encode(gw.metrics)
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // handleDetailedMetrics 详细指标接口
@@ -429,27 +467,39 @@ func (gw *EnhancedAPIGateway) handleDetailedMetrics(w http.ResponseWriter, r *ht
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // handleAdminStatus 管理状态接口
 func (gw *EnhancedAPIGateway) handleAdminStatus(w http.ResponseWriter, r *http.Request) {
 	response := gw.GetStatus()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // handleAdminConfig 管理配置接口
 func (gw *EnhancedAPIGateway) handleAdminConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(gw.config)
+	err := json.NewEncoder(w).Encode(gw.config)
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // handleAdminServers 管理服务器接口
 func (gw *EnhancedAPIGateway) handleAdminServers(w http.ResponseWriter, r *http.Request) {
 	servers := gw.loadBalancer.GetServers()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(servers)
+	err := json.NewEncoder(w).Encode(servers)
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // handleTables 表管理接口
@@ -480,10 +530,94 @@ func (gw *EnhancedAPIGateway) handleDocuments(w http.ResponseWriter, r *http.Req
 	}
 }
 
-// handleSearch 搜索接口
+// handleSearch 搜索
 func (gw *EnhancedAPIGateway) handleSearch(w http.ResponseWriter, r *http.Request) {
-	// 代理到后端服务
-	gw.proxyToBackend(w, r)
+	// 解析请求
+	var req struct {
+		TableName      string               `json:"table_name"`
+		Query          *messages2.TermQuery `json:"query"`
+		K              int32                `json:"k"`
+		VectorizedType int32                `json:"vectorized_type"`
+		Probe          int32                `json:"probe"`
+		OnFlag         uint64               `json:"on_flag"`
+		OffFlag        uint64               `json:"off_flag"`
+		OrFlags        []uint64             `json:"or_flags"`
+		UseAnn         bool                 `json:"use_ann"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// 如果没有分布式组件，则使用简单代理
+	if gw.communicationSvc == nil || gw.serviceDiscovery == nil {
+		gw.proxyToBackend(w, r)
+		return
+	}
+
+	searchReq := &serverProto.SearchRequest{
+		TableName:      req.TableName,
+		Query:          req.Query,
+		K:              req.K,
+		VectorizedType: req.VectorizedType,
+		Probe:          req.Probe,
+		OnFlag:         req.OnFlag,
+		OffFlag:        req.OffFlag,
+		OrFlags:        req.OrFlags,
+		UseAnn:         req.UseAnn,
+	}
+
+	slaveAddrs := gw.serviceDiscovery.GetHealthySlaveAddresses()
+	if len(slaveAddrs) == 0 {
+		http.Error(w, "No healthy slaves available", http.StatusServiceUnavailable)
+		return
+	}
+
+	results := gw.communicationSvc.SearchOnSlaves(r.Context(), slaveAddrs, searchReq)
+
+	// 聚合搜索结果
+	allDocIds := make([]string, 0)
+	var errs []string
+
+	for addr, result := range results {
+		if result == nil {
+			errs = append(errs, fmt.Sprintf("%s: no response", addr))
+		} else {
+			allDocIds = append(allDocIds, result.DocIds...)
+		}
+	}
+
+	// 如果所有slaves都失败了
+	if len(allDocIds) == 0 && len(errs) > 0 {
+		http.Error(w, fmt.Sprintf("Search failed on all slaves: %v", errs), http.StatusInternalServerError)
+		return
+	}
+
+	// 去重并限制结果数量
+	uniqueDocIds := make(map[string]bool)
+	var finalDocIds []string
+	for _, docId := range allDocIds {
+		if !uniqueDocIds[docId] {
+			uniqueDocIds[docId] = true
+			finalDocIds = append(finalDocIds, docId)
+			if len(finalDocIds) >= int(req.K) {
+				break
+			}
+		}
+	}
+
+	response := map[string]interface{}{
+		"doc_ids": finalDocIds,
+		"total":   len(finalDocIds),
+		"errors":  errs,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // handleCount 计数接口
@@ -500,14 +634,20 @@ func (gw *EnhancedAPIGateway) handleClusterStatus(w http.ResponseWriter, r *http
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // handleClusterNodes 集群节点接口
 func (gw *EnhancedAPIGateway) handleClusterNodes(w http.ResponseWriter, r *http.Request) {
 	nodes := gw.loadBalancer.GetServers()
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(nodes)
+	err := json.NewEncoder(w).Encode(nodes)
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // handleLogin 登录接口
@@ -536,7 +676,10 @@ func (gw *EnhancedAPIGateway) handleLogin(w http.ResponseWriter, r *http.Request
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	err = json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // handleRefreshToken 刷新令牌接口
@@ -556,7 +699,10 @@ func (gw *EnhancedAPIGateway) handleRefreshToken(w http.ResponseWriter, r *http.
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // handleLogout 登出接口
@@ -572,7 +718,10 @@ func (gw *EnhancedAPIGateway) handleLogout(w http.ResponseWriter, r *http.Reques
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // handleProxy 通用代理处理
@@ -584,27 +733,131 @@ func (gw *EnhancedAPIGateway) handleProxy(w http.ResponseWriter, r *http.Request
 
 // handleCreateTable 创建表
 func (gw *EnhancedAPIGateway) handleCreateTable(w http.ResponseWriter, r *http.Request) {
+	// 检查是否为master
+	if gw.distributedManager != nil && !gw.distributedManager.IsMaster() {
+		http.Error(w, "Only master can create tables", http.StatusForbidden)
+		return
+	}
+
 	// 解析请求
-	var req map[string]interface{}
+	var req struct {
+		TableName          string `json:"table_name"`
+		VectorDBPath       string `json:"vector_db_path"`
+		NumClusters        int32  `json:"num_clusters"`
+		InvertedIndexOrder int32  `json:"inverted_index_order"`
+	}
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
 
-	// 代理到后端服务
-	gw.proxyToBackend(w, r)
+	// 如果没有分布式组件，则使用简单代理
+	if gw.communicationSvc == nil || gw.serviceDiscovery == nil {
+		gw.proxyToBackend(w, r)
+		return
+	}
+
+	// 创建protobuf请求
+	createReq := &serverProto.CreateTableRequest{
+		TableName:          req.TableName,
+		VectorDbPath:       req.VectorDBPath,
+		NumClusters:        req.NumClusters,
+		InvertedIndexOrder: req.InvertedIndexOrder,
+	}
+
+	// 获取所有slave地址
+	slaveAddrs := gw.serviceDiscovery.GetHealthySlaveAddresses()
+	if len(slaveAddrs) == 0 {
+		http.Error(w, "No healthy slaves available", http.StatusServiceUnavailable)
+		return
+	}
+
+	// 向所有slave发送创建表请求
+	results := gw.communicationSvc.CreateTableOnSlaves(r.Context(), slaveAddrs, createReq)
+
+	// 统计结果
+	successCount := 0
+	var errs []string
+	for addr, err := range results {
+		if err == nil {
+			successCount++
+		} else {
+			errs = append(errs, fmt.Sprintf("%s: %v", addr, err))
+		}
+	}
+
+	response := map[string]interface{}{
+		"success_count": successCount,
+		"total_slaves":  len(slaveAddrs),
+		"errors":        errs,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if successCount == len(slaveAddrs) {
+		w.WriteHeader(http.StatusOK)
+	} else {
+		w.WriteHeader(http.StatusPartialContent)
+	}
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // handleDeleteTable 删除表
 func (gw *EnhancedAPIGateway) handleDeleteTable(w http.ResponseWriter, r *http.Request) {
+	// 检查是否为master
+	if gw.distributedManager != nil && !gw.distributedManager.IsMaster() {
+		http.Error(w, "Only master can delete tables", http.StatusForbidden)
+		return
+	}
+
 	tableName := r.URL.Query().Get("table_name")
 	if tableName == "" {
 		http.Error(w, "table_name parameter required", http.StatusBadRequest)
 		return
 	}
 
-	// 代理到后端服务
-	gw.proxyToBackend(w, r)
+	// 如果没有分布式组件，则使用简单代理
+	if gw.communicationSvc == nil || gw.serviceDiscovery == nil {
+		gw.proxyToBackend(w, r)
+		return
+	}
+
+	deleteReq := &serverProto.TableRequest{
+		TableName: tableName,
+	}
+
+	slaveAddrs := gw.serviceDiscovery.GetHealthySlaveAddresses()
+	if len(slaveAddrs) == 0 {
+		http.Error(w, "No healthy slaves available", http.StatusServiceUnavailable)
+		return
+	}
+
+	results := gw.communicationSvc.DeleteTableOnSlaves(r.Context(), slaveAddrs, deleteReq)
+
+	successCount := 0
+	var errs []string
+	for addr, err := range results {
+		if err == nil {
+			successCount++
+		} else {
+			errs = append(errs, fmt.Sprintf("%s: %v", addr, err))
+		}
+	}
+
+	response := map[string]interface{}{
+		"success_count": successCount,
+		"total_slaves":  len(slaveAddrs),
+		"errors":        errs,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // handleListTables 列出表
@@ -615,14 +868,126 @@ func (gw *EnhancedAPIGateway) handleListTables(w http.ResponseWriter, r *http.Re
 
 // handleAddDocument 添加文档
 func (gw *EnhancedAPIGateway) handleAddDocument(w http.ResponseWriter, r *http.Request) {
-	// 代理到后端服务
-	gw.proxyToBackend(w, r)
+	// 检查是否为master
+	if gw.distributedManager != nil && !gw.distributedManager.IsMaster() {
+		http.Error(w, "Only master can add documents", http.StatusForbidden)
+		return
+	}
+
+	// 解析请求
+	var req struct {
+		TableName      string              `json:"table_name"`
+		Document       *messages2.Document `json:"document"`
+		VectorizedType int32               `json:"vectorized_type"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// 如果没有分布式组件，则使用简单代理
+	if gw.communicationSvc == nil || gw.serviceDiscovery == nil {
+		gw.proxyToBackend(w, r)
+		return
+	}
+
+	addReq := &serverProto.AddDocumentRequest{
+		TableName:      req.TableName,
+		Document:       req.Document,
+		VectorizedType: req.VectorizedType,
+	}
+
+	slaveAddrs := gw.serviceDiscovery.GetHealthySlaveAddresses()
+	if len(slaveAddrs) == 0 {
+		http.Error(w, "No healthy slaves available", http.StatusServiceUnavailable)
+		return
+	}
+
+	results := gw.communicationSvc.AddDocumentToSlaves(r.Context(), slaveAddrs, addReq)
+
+	successCount := 0
+	var errs []string
+	for addr, err := range results {
+		if err == nil {
+			successCount++
+		} else {
+			errs = append(errs, fmt.Sprintf("%s: %v", addr, err))
+		}
+	}
+
+	response := map[string]interface{}{
+		"success_count": successCount,
+		"total_slaves":  len(slaveAddrs),
+		"errors":        errs,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // handleDeleteDocument 删除文档
 func (gw *EnhancedAPIGateway) handleDeleteDocument(w http.ResponseWriter, r *http.Request) {
-	// 代理到后端服务
-	gw.proxyToBackend(w, r)
+	// 检查是否为master
+	if gw.distributedManager != nil && !gw.distributedManager.IsMaster() {
+		http.Error(w, "Only master can delete documents", http.StatusForbidden)
+		return
+	}
+
+	// 解析请求
+	var req struct {
+		TableName  string `json:"table_name"`
+		DocumentID string `json:"document_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// 如果没有分布式组件，则使用简单代理
+	if gw.communicationSvc == nil || gw.serviceDiscovery == nil {
+		gw.proxyToBackend(w, r)
+		return
+	}
+
+	deleteReq := &serverProto.DeleteDocumentRequest{
+		TableName: req.TableName,
+		DocId:     req.DocumentID,
+	}
+
+	slaveAddrs := gw.serviceDiscovery.GetHealthySlaveAddresses()
+	if len(slaveAddrs) == 0 {
+		http.Error(w, "No healthy slaves available", http.StatusServiceUnavailable)
+		return
+	}
+
+	results := gw.communicationSvc.DeleteDocumentFromSlaves(r.Context(), slaveAddrs, deleteReq)
+
+	successCount := 0
+	var errs []string
+	for addr, err := range results {
+		if err == nil {
+			successCount++
+		} else {
+			errs = append(errs, fmt.Sprintf("%s: %v", addr, err))
+		}
+	}
+
+	response := map[string]interface{}{
+		"success_count": successCount,
+		"total_slaves":  len(slaveAddrs),
+		"errors":        errs,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // handleGetDocument 获取文档
@@ -650,7 +1015,10 @@ func (gw *EnhancedAPIGateway) proxyToBackend(w http.ResponseWriter, r *http.Requ
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // 辅助函数

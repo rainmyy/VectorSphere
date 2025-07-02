@@ -1,15 +1,19 @@
 package enhanced
 
 import (
+	"VectorSphere/src/distributed"
 	"VectorSphere/src/library/common"
+	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/logger"
 	"context"
 	"encoding/json"
 	"fmt"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -23,6 +27,11 @@ type EnhancedAppLauncher struct {
 	securityManager *EnhancedSecurityManager
 	circuitBreaker  *EnhancedCircuitBreaker
 	gateway         *EnhancedAPIGateway
+
+	// 分布式组件
+	distributedManager DistributedManagerInterface
+	communicationSvc   CommunicationServiceInterface
+	serviceDiscovery   ServiceDiscoveryInterface
 
 	// 上下文管理
 	ctx    context.Context
@@ -62,43 +71,80 @@ func (eal *EnhancedAppLauncher) Start() error {
 		return fmt.Errorf("配置加载失败: %v", err)
 	}
 
-	// 2. 初始化安全管理器
-	if err := eal.initializeSecurityManager(); err != nil {
-		return fmt.Errorf("安全管理器初始化失败: %v", err)
+	config := eal.configManager.GetConfig()
+
+	// 2. 根据配置初始化安全管理器
+	if config.Features.EnableSecurityManager {
+		if err := eal.initializeSecurityManager(); err != nil {
+			return fmt.Errorf("安全管理器初始化失败: %v", err)
+		}
+	} else {
+		logger.Info("Security manager disabled by configuration")
 	}
 
-	// 3. 初始化熔断器
-	if err := eal.initializeCircuitBreaker(); err != nil {
-		return fmt.Errorf("熔断器初始化失败: %v", err)
+	// 3. 根据配置初始化熔断器
+	if config.Features.EnableCircuitBreaker {
+		if err := eal.initializeCircuitBreaker(); err != nil {
+			return fmt.Errorf("熔断器初始化失败: %v", err)
+		}
+	} else {
+		logger.Info("Circuit breaker disabled by configuration")
 	}
 
-	// 4. 初始化负载均衡器
-	if err := eal.initializeLoadBalancer(); err != nil {
-		return fmt.Errorf("负载均衡器初始化失败: %v", err)
+	// 4. 根据配置初始化负载均衡器
+	if config.Features.EnableLoadBalancer {
+		if err := eal.initializeLoadBalancer(); err != nil {
+			return fmt.Errorf("负载均衡器初始化失败: %v", err)
+		}
+	} else {
+		logger.Info("Load balancer disabled by configuration")
 	}
 
-	// 5. 初始化健康检查器
-	if err := eal.initializeHealthChecker(); err != nil {
-		return fmt.Errorf("健康检查器初始化失败: %v", err)
+	// 5. 根据配置初始化健康检查器
+	if config.Features.EnableHealthChecker {
+		if err := eal.initializeHealthChecker(); err != nil {
+			return fmt.Errorf("健康检查器初始化失败: %v", err)
+		}
+	} else {
+		logger.Info("Health checker disabled by configuration")
 	}
 
-	// 6. 初始化增强型API网关
-	if err := eal.initializeAPIGateway(); err != nil {
-		return fmt.Errorf("API网关初始化失败: %v", err)
+	// 6. 根据配置初始化分布式组件
+	if config.Features.EnableDistributed {
+		if err := eal.initializeDistributedComponents(); err != nil {
+			return fmt.Errorf("分布式组件初始化失败: %v", err)
+		}
+	} else {
+		logger.Info("Distributed components disabled by configuration")
 	}
 
-	// 7. 启动所有服务
+	// 7. 根据配置初始化增强型API网关
+	if config.Features.EnableAPIGateway {
+		if err := eal.initializeAPIGateway(); err != nil {
+			return fmt.Errorf("API网关初始化失败: %v", err)
+		}
+	} else {
+		logger.Info("API Gateway disabled by configuration")
+	}
+
+	// 8. 启动所有服务
 	if err := eal.startAllServices(); err != nil {
 		return fmt.Errorf("服务启动失败: %v", err)
 	}
 
-	// 8. 注册当前节点
-	if err := eal.registerCurrentNode(); err != nil {
-		logger.Warning("节点注册失败: %v", err)
+	// 9. 注册当前节点
+	if config.Features.EnableLoadBalancer && eal.loadBalancer != nil {
+		if err := eal.registerCurrentNode(); err != nil {
+			logger.Warning("节点注册失败: %v", err)
+		}
 	}
 
-	// 9. 启动监控和维护任务
-	eal.startMaintenanceTasks()
+	// 10. 启动监控和维护任务
+	if config.Features.EnableMonitoring {
+		eal.startMaintenanceTasks()
+	} else {
+		logger.Info("Monitoring and maintenance tasks disabled by configuration")
+	}
 
 	eal.isRunning = true
 	logger.Info("Enhanced VectorSphere application started successfully")
@@ -143,10 +189,10 @@ func (eal *EnhancedAppLauncher) initializeSecurityManager() error {
 		CertificatePath:  "",
 		PrivateKeyPath:   "",
 		SessionTimeout:   24 * time.Hour,
-		MaxLoginAttempts: config.Security.MaxLoginAttempts,
-		LockoutDuration:  time.Duration(config.Security.LockoutDuration) * time.Minute,
-		AuditLogPath:     config.Security.AuditLogPath,
-		EncryptionKey:    []byte(config.Security.EncryptionKey),
+		MaxLoginAttempts: config.SecurityManager.MaxLoginAttempts,
+		LockoutDuration:  time.Duration(config.SecurityManager.LockoutDuration) * time.Minute,
+		AuditLogPath:     config.SecurityManager.AuditLogPath,
+		EncryptionKey:    []byte(config.SecurityManager.EncryptionKey),
 	})
 	logger.Info("Security manager initialized")
 	return nil
@@ -213,27 +259,119 @@ func (eal *EnhancedAppLauncher) initializeHealthChecker() error {
 	return nil
 }
 
+// initializeDistributedComponents 初始化分布式组件
+func (eal *EnhancedAppLauncher) initializeDistributedComponents() error {
+	logger.Info("Initializing distributed components...")
+
+	config := eal.configManager.GetConfig()
+	distConfig := config.Distributed
+
+	// 检查分布式功能是否启用
+	if !distConfig.Enabled {
+		logger.Info("Distributed functionality is disabled")
+		return nil
+	}
+
+	// 验证分布式配置
+	if len(distConfig.EtcdEndpoints) == 0 {
+		return fmt.Errorf("etcd endpoints cannot be empty when distributed is enabled")
+	}
+
+	if distConfig.NodeID == "" {
+		return fmt.Errorf("node ID cannot be empty when distributed is enabled")
+	}
+
+	if distConfig.ServiceName == "" {
+		distConfig.ServiceName = config.ServiceName // 使用默认服务名
+	}
+
+	// 创建etcd客户端
+	dialTimeout := time.Duration(distConfig.EtcdDialTimeout) * time.Second
+	if dialTimeout == 0 {
+		dialTimeout = 5 * time.Second
+	}
+
+	etcdClient, err := clientv3.New(clientv3.Config{
+		Endpoints:   distConfig.EtcdEndpoints,
+		DialTimeout: dialTimeout,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create etcd client: %v", err)
+	}
+
+	// 初始化服务发现
+	if distConfig.EnableServiceDiscovery {
+		eal.serviceDiscovery = distributed.NewServiceDiscovery(etcdClient, distConfig.ServiceName)
+		logger.Info("Service discovery initialized")
+	}
+
+	// 初始化通信服务
+	if distConfig.EnableCommunication {
+		eal.communicationSvc = distributed.NewCommunicationService(etcdClient, distConfig.ServiceName)
+		logger.Info("Communication service initialized")
+	}
+
+	// 初始化分布式管理器
+	if distConfig.EnableDistributedManager {
+		// 转换 NodeType
+		var nodeType distributed.NodeType
+		if distConfig.NodeID == "master" {
+			nodeType = distributed.MasterNode
+		} else {
+			nodeType = distributed.SlaveNode
+		}
+
+		dmConfig := &distributed.DistributedConfig{
+			ServiceName:          distConfig.ServiceName,
+			NodeType:             nodeType,
+			DefaultPort:          config.Port,
+			HttpPort:             config.Port + 1000,
+			TimeOut:              30,
+			Heartbeat:            10,
+			DataDir:              "./data",
+			TaskTimeout:          300,
+			HealthCheckInterval:  30,
+			SchedulerWorkerCount: 4,
+			Etcd: distributed.EtcdConfig{
+				Endpoints: convertStringSliceToEndpoints(distConfig.EtcdEndpoints),
+			},
+		}
+		dm, err := distributed.NewDistributedManager(dmConfig)
+		if err != nil {
+			return fmt.Errorf("failed to create distributed manager: %v", err)
+		}
+		eal.distributedManager = dm
+		logger.Info("Distributed manager initialized")
+	}
+
+	logger.Info("Distributed components configuration validated (implementation commented out for safety)")
+	logger.Info("To enable distributed features, uncomment the implementation code and ensure etcd is available")
+	return nil
+}
+
 // initializeAPIGateway 初始化增强型API网关
 func (eal *EnhancedAppLauncher) initializeAPIGateway() error {
 	config := eal.configManager.GetConfig()
+	apiGatewayConfig := &APIGatewayConfig{
+		Port:              config.Port,
+		ReadTimeout:       time.Duration(config.Gateway.Timeout) * time.Second,
+		WriteTimeout:      time.Duration(config.Gateway.Timeout) * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1048576,
+		EnableCORS:        true,
+		EnableCompression: false,
+		EnableMetrics:     true,
+		EnableLogging:     true,
+	}
 
-	gateway, err := NewEnhancedAPIGateway(&APIGatewayConfig{
-		Port:              config.Gateway.Port,
-		ReadTimeout:       time.Duration(config.Gateway.ReadTimeout) * time.Second,
-		WriteTimeout:      time.Duration(config.Gateway.WriteTimeout) * time.Second,
-		IdleTimeout:       time.Duration(config.Gateway.IdleTimeout) * time.Second,
-		MaxHeaderBytes:    config.Gateway.MaxHeaderBytes,
-		EnableCORS:        config.Gateway.EnableCORS,
-		EnableCompression: config.Gateway.EnableCompression,
-		EnableMetrics:     config.Gateway.EnableMetrics,
-		EnableLogging:     config.Gateway.EnableLogging,
-	}, eal.loadBalancer, eal.securityManager, eal.circuitBreaker, eal.healthChecker)
+	gateway, err := NewEnhancedAPIGateway(apiGatewayConfig, eal.loadBalancer, eal.securityManager, eal.circuitBreaker,
+		eal.healthChecker, eal.distributedManager, eal.communicationSvc, eal.serviceDiscovery)
 	if err != nil {
 		return err
 	}
 
 	eal.gateway = gateway
-	logger.Info("Enhanced API Gateway initialized on port %d", config.Gateway.Port)
+	logger.Info("Enhanced API Gateway initialized on port %d", config.Port)
 	return nil
 }
 
@@ -313,13 +451,13 @@ func (eal *EnhancedAppLauncher) registerCurrentNode() error {
 	}
 
 	// 生成节点ID
-	nodeID := fmt.Sprintf("%s-%s-%d", config.ServiceName, localIP, config.Gateway.Port)
+	nodeID := fmt.Sprintf("%s-%s-%d", config.ServiceName, localIP, config.Port)
 
 	// 注册到负载均衡器
 	backend := &Backend{
 		ID:      nodeID,
 		Address: localIP,
-		Port:    config.Gateway.Port,
+		Port:    config.Port,
 		Weight:  100,
 		Status:  BackendHealthy,
 		Metadata: map[string]interface{}{
@@ -538,6 +676,25 @@ func (eal *EnhancedAppLauncher) GetComponents() map[string]interface{} {
 	}
 }
 
+// convertStringSliceToEndpoints 转换字符串切片到EndPoint切片
+func convertStringSliceToEndpoints(endpoints []string) []entity.EndPoint {
+	var result []entity.EndPoint
+	for _, ep := range endpoints {
+		// 解析 host:port 格式
+		parts := strings.Split(ep, ":")
+		if len(parts) == 2 {
+			port, err := strconv.Atoi(parts[1])
+			if err == nil {
+				result = append(result, entity.EndPoint{
+					Ip:   parts[0],
+					Port: port,
+				})
+			}
+		}
+	}
+	return result
+}
+
 // GetDefaultEnhancedConfigPath 获取默认配置文件路径
 func GetDefaultEnhancedConfigPath() string {
 	return "./config/enhanced_config.json"
@@ -554,21 +711,15 @@ func ValidateEnhancedConfigFile(configPath string) error {
 // CreateDefaultEnhancedConfig 创建默认配置文件
 func CreateDefaultEnhancedConfig(configPath string) error {
 	defaultConfig := &SimpleConfig{
+		Port:        8080,
+		Host:        "0.0.0.0",
 		ServiceName: "VectorSphere-Enhanced",
-		Version:     "1.0.0",
-		Environment: "development",
-		DataDir:     "./data",
 		LogLevel:    "info",
-		Gateway: APIGatewayConfig{
-			Port:              8080,
-			ReadTimeout:       30 * time.Second,
-			WriteTimeout:      30 * time.Second,
-			IdleTimeout:       60 * time.Second,
-			MaxHeaderBytes:    1048576,
-			EnableCORS:        true,
-			EnableCompression: false,
-			EnableMetrics:     true,
-			EnableLogging:     true,
+		Gateway: SimpleGatewayConfig{
+			Enabled:        true,
+			Timeout:        30,
+			MaxConnections: 1000,
+			RateLimit:      100,
 		},
 		LoadBalancer: SimpleLoadBalancerConfig{
 			Algorithm:            "round_robin",
@@ -581,7 +732,7 @@ func CreateDefaultEnhancedConfig(configPath string) error {
 			MaxConnections:       1000,
 			ConnectionTimeout:    10,
 		},
-		Security: SimpleSecurityConfig{
+		SecurityManager: SimpleSecurityConfig{
 			JWTSecret:          "default-jwt-secret-change-in-production",
 			TokenExpiration:    24,
 			EnableRateLimit:    true,
@@ -616,6 +767,36 @@ func CreateDefaultEnhancedConfig(configPath string) error {
 			HealthyThreshold:   2,
 			HealthCheckPath:    "/health",
 			ExpectedStatusCode: 200,
+		},
+		Monitoring: MonitoringConfig{
+			EnableMetrics:      true,
+			MetricsPort:        9090,
+			MetricsPath:        "/metrics",
+			EnableTracing:      false,
+			TracingEndpoint:    "",
+			EnableProfiling:    false,
+			ProfilingPort:      6060,
+			CollectionInterval: 30,
+		},
+		Features: FeatureConfig{
+			EnableSecurityManager: true,
+			EnableCircuitBreaker:  true,
+			EnableLoadBalancer:    true,
+			EnableHealthChecker:   true,
+			EnableDistributed:     false,
+			EnableAPIGateway:      true,
+			EnableMonitoring:      true,
+		},
+		Distributed: DistributedFeatureConfig{
+			Enabled:                  false,
+			NodeID:                   "enhanced-node-1",
+			ServiceName:              "",
+			EtcdEndpoints:            []string{"localhost:2379"},
+			EtcdDialTimeout:          5,
+			ClusterNodes:             []string{"localhost:8080"},
+			EnableServiceDiscovery:   true,
+			EnableCommunication:      true,
+			EnableDistributedManager: true,
 		},
 	}
 

@@ -1,0 +1,84 @@
+# Enhanced App Launcher 配置示例
+# 此配置文件展示了如何通过配置控制各个功能的启用与禁用
+
+# 基础服务配置
+port: 8080
+host: "0.0.0.0"
+service_name: "enhanced-vector-sphere"
+log_level: "info"
+
+# 功能开关配置
+features:
+  enable_security_manager: true      # 启用安全管理器
+  enable_circuit_breaker: true        # 启用熔断器
+  enable_load_balancer: true          # 启用负载均衡器
+  enable_health_checker: true         # 启用健康检查
+  enable_distributed: false          # 禁用分布式功能（默认）
+  enable_api_gateway: true            # 启用API网关
+  enable_monitoring: true             # 启用监控
+
+# API网关配置
+gateway:
+  enabled: true
+  timeout: 30
+  max_connections: 1000
+  rate_limit: 100
+
+# 负载均衡器配置
+load_balancer:
+  algorithm: "round_robin"  # 可选: round_robin, weighted_round_robin, least_connections
+  health_check_interval: 30
+  max_retries: 3
+
+# 安全管理配置
+security_manager:
+  enable_authentication: true
+  enable_authorization: true
+  token_expiry: 3600
+  max_login_attempts: 5
+
+# 熔断器配置
+circuit_breaker:
+  failure_threshold: 5
+  recovery_timeout: 60
+  max_requests: 100
+
+# 健康检查配置
+health_check:
+  interval: 30
+  timeout: 10
+  retries: 3
+  endpoints:
+    - "/health"
+    - "/status"
+
+# 监控配置
+monitoring:
+  enabled: true
+  metrics_port: 9090
+  metrics_path: "/metrics"
+  log_requests: true
+  collect_system_metrics: true
+
+# 分布式功能配置
+# 注意：启用分布式功能需要确保etcd服务可用
+distributed:
+  enabled: false                     # 默认禁用分布式功能
+  node_id: "enhanced-node-1"          # 当前节点ID
+  service_name: ""                    # 服务名（空则使用全局service_name）
+  
+  # etcd配置
+  etcd_endpoints:
+    - "localhost:2379"
+    - "localhost:2380"
+  etcd_dial_timeout: 5                # etcd连接超时（秒）
+  
+  # 集群节点配置
+  cluster_nodes:
+    - "localhost:8080"
+    - "localhost:8081"
+  
+  # 分布式功能开关
+  enable_service_discovery: true      # 启用服务发现
+  enable_communication: true          # 启用节点间通信
+  enable_distributed_manager: true    # 启用分布式管理器

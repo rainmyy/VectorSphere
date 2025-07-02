@@ -1,7 +1,6 @@
 package distributed
 
 import (
-	"VectorSphere/src/enhanced"
 	"VectorSphere/src/library/common"
 	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/logger"
@@ -31,19 +30,19 @@ const (
 
 // DistributedConfig 分布式配置
 type DistributedConfig struct {
-	ServiceName           string     `yaml:"serviceName"`
-	NodeType              NodeType   `yaml:"nodeType"`
-	TimeOut               int        `yaml:"timeOut"`
-	DefaultPort           int        `yaml:"defaultPort"`
-	Heartbeat             int        `yaml:"heartbeat"`
-	Etcd                  EtcdConfig `yaml:"etcd"`
-	SchedulerWorkerCount  int        `yaml:"schedulerWorkerCount"`
-	HttpPort              int        `yaml:"httpPort"`
-	TaskTimeout           int        `yaml:"taskTimeout"`
-	HealthCheckInterval   int        `yaml:"healthCheckInterval"`
-	DataDir               string     `yaml:"dataDir"`
-	LoadBalancerConfig    *enhanced.EnhancedLoadBalancer
-	EnhancedConfigManager *enhanced.EnhancedConfigManager
+	ServiceName          string     `yaml:"serviceName"`
+	NodeType             NodeType   `yaml:"nodeType"`
+	TimeOut              int        `yaml:"timeOut"`
+	DefaultPort          int        `yaml:"defaultPort"`
+	Heartbeat            int        `yaml:"heartbeat"`
+	Etcd                 EtcdConfig `yaml:"etcd"`
+	SchedulerWorkerCount int        `yaml:"schedulerWorkerCount"`
+	HttpPort             int        `yaml:"httpPort"`
+	TaskTimeout          int        `yaml:"taskTimeout"`
+	HealthCheckInterval  int        `yaml:"healthCheckInterval"`
+	DataDir              string     `yaml:"dataDir"`
+	//LoadBalancerConfig    *enhanced.EnhancedLoadBalancer
+	//EnhancedConfigManager *enhanced.EnhancedConfigManager
 }
 
 type EtcdConfig struct {

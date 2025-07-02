@@ -1,4 +1,5 @@
 //go:build !windows
+// +build !windows
 
 package vector
 
@@ -18,7 +19,7 @@ func (c *MultiLevelCache) getAvailableDiskSpaceUnix(path string) (int64, error) 
 		fmt.Printf("Warning: 在Windows系统上调用了Unix磁盘空间检测函数\n")
 		return c.getAvailableDiskSpaceFallback(path)
 	}
-
+	
 	// 使用syscall.Statfs获取文件系统统计信息
 	var stat syscall.Statfs_t
 	err := syscall.Statfs(path, &stat)
@@ -27,10 +28,10 @@ func (c *MultiLevelCache) getAvailableDiskSpaceUnix(path string) (int64, error) 
 		fmt.Printf("Warning: 系统调用获取磁盘空间失败: %v，使用fallback方法\n", err)
 		return c.getAvailableDiskSpaceFallbackUnix(path)
 	}
-
+	
 	// 计算可用空间：可用块数 * 块大小
 	availableBytes := int64(stat.Bavail) * int64(stat.Bsize)
-	fmt.Printf("Info: 使用系统调用获取磁盘空间: %d bytes (%.2f GB)\n",
+	fmt.Printf("Info: 使用系统调用获取磁盘空间: %d bytes (%.2f GB)\n", 
 		availableBytes, float64(availableBytes)/(1024*1024*1024))
 	return availableBytes, nil
 }
@@ -39,17 +40,17 @@ func (c *MultiLevelCache) getAvailableDiskSpaceUnix(path string) (int64, error) 
 func (c *MultiLevelCache) getAvailableDiskSpaceFallbackUnix(path string) (int64, error) {
 	// 使用os包的功能来估算磁盘空间
 	tempFile := filepath.Join(path, ".temp_unix_space_check")
-
+	
 	// 尝试创建一个测试文件
 	file, err := os.Create(tempFile)
 	if err != nil {
 		return 0, fmt.Errorf("无法在路径 %s 创建测试文件: %v", path, err)
 	}
 	file.Close()
-
+	
 	// 立即删除测试文件
 	os.Remove(tempFile)
-
+	
 	// 对于Unix系统，返回一个较大的估计值
 	fmt.Printf("Info: 在Unix系统上使用简化的磁盘空间检测\n")
 	return 2 * 1024 * 1024 * 1024, nil // 假设有2GB可用空间
