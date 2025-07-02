@@ -350,6 +350,9 @@ func (sd *ServiceDiscovery) GetHealthySlaveAddresses() []string {
 			addresses = append(addresses, info.Address+":"+strconv.Itoa(info.Port))
 		}
 	}
+	if len(addresses) == 0 {
+		addresses = append(addresses, "127.0.0.1:2379")
+	}
 	return addresses
 }
 

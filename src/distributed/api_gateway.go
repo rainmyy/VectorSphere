@@ -174,10 +174,13 @@ func (gw *APIGateway) handleBackupTable(w http.ResponseWriter, r *http.Request) 
 
 	// 返回成功
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": fmt.Sprintf("表 %s 备份成功", req.TableName),
 	})
+	if err != nil {
+		logger.Error("API Gateway handle backup table error: %v", err)
+	}
 }
 
 // handleRestoreTable 处理表恢复请求
@@ -219,10 +222,13 @@ func (gw *APIGateway) handleRestoreTable(w http.ResponseWriter, r *http.Request)
 
 	// 返回成功
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": fmt.Sprintf("表 %s 恢复成功到 %s", req.TableName, destDir),
 	})
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // handleListBackups 处理列出备份请求
@@ -243,10 +249,13 @@ func (gw *APIGateway) handleListBackups(w http.ResponseWriter, r *http.Request) 
 
 	// 返回备份列表
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	err = json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"tables":  tables,
 	})
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // 中间件
@@ -394,6 +403,32 @@ func (gw *APIGateway) handleDeleteTable(w http.ResponseWriter, r *http.Request) 
 }
 
 func (gw *APIGateway) handleAddDocument(w http.ResponseWriter, r *http.Request) {
+	/*
+		{
+		  "table_name": "my_document_table",
+		  "document": {
+		    "Id": "doc_001",
+		    "ScoreId": 100,
+		    "BitsFeature": 12345,
+		    "keWords": [
+		      {
+		        "Field": "title",
+		        "Word": "machine learning"
+		      },
+		      {
+		        "Field": "category",
+		        "Word": "technology"
+		      },
+		      {
+		        "Field": "author",
+		        "Word": "john doe"
+		      }
+		    ],
+		    "Bytes": "VGhpcyBpcyBhIHNhbXBsZSBkb2N1bWVudCBjb250ZW50IGVuY29kZWQgaW4gYmFzZTY0"
+		  },
+		  "vectorized_type": 1
+		}
+	*/
 	var req struct {
 		TableName      string              `json:"table_name"`
 		Document       *messages2.Document `json:"document"`
@@ -633,7 +668,10 @@ func (gw *APIGateway) handleSystemInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		logger.Error(err.Error())
+	}
 }
 
 // SetAuthConfig 设置认证配置

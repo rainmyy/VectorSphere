@@ -35,20 +35,24 @@ type Logger struct {
 	toStdout bool
 }
 
-var DefaultLogger *Logger
+var defaultLogger *Logger
 
 // 默认初始化
 func init() {
 	basePath, err := util.GetProjectRoot()
 	if err != nil {
-		return
+		println("read log dir failed:%v", err.Error())
 	}
 
 	_ = InitLogger(INFO, path.Join(basePath, "log", "vector_sphere.log"), 10, true) // 默认INFO级别，输出到终端，最大10MB
 }
 
 func SetLogLevel(l Level) {
-	DefaultLogger.level = l
+	if defaultLogger == nil {
+		return
+	}
+
+	defaultLogger.level = l
 }
 
 // InitLogger 初始化日志，filePath为空则输出到终端，否则输出到文件
@@ -60,10 +64,14 @@ func InitLogger(level Level, filePath string, maxSizeMB int64, toStdout bool) er
 		dir := filepath.Dir(filePath)
 		err = os.MkdirAll(dir, 0755)
 		if err != nil {
+			output = os.Stdout
+			println(err.Error())
 			return err
 		}
 		file, err = os.OpenFile(filePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
+			output = os.Stdout
+			println(err.Error())
 			return err
 		}
 		output = file
@@ -73,7 +81,7 @@ func InitLogger(level Level, filePath string, maxSizeMB int64, toStdout bool) er
 	} else {
 		output = os.Stdout
 	}
-	DefaultLogger = &Logger{
+	defaultLogger = &Logger{
 		level:    level,
 		logger:   log.New(output, "", log.Ldate|log.Ltime|log.Lshortfile),
 		file:     file,
@@ -100,7 +108,11 @@ func (l *Logger) rotateIfNeeded() {
 		return
 	}
 	backupName := l.filePath + "." + time.Now().Format("20060102_150405")
-	os.Rename(l.filePath, backupName)
+	err = os.Rename(l.filePath, backupName)
+	if err != nil {
+		println(err.Error())
+		return
+	}
 	file, err := os.OpenFile(l.filePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err == nil {
 		l.file = file
@@ -142,9 +154,21 @@ func formatLog(format string, v ...interface{}) string {
 }
 
 // Fatal 对外接口
-func Fatal(format string, v ...interface{})   { DefaultLogger.logf(FATAL, format, v...) }
-func Error(format string, v ...interface{})   { DefaultLogger.logf(ERROR, format, v...) }
-func Warning(format string, v ...interface{}) { DefaultLogger.logf(WARNING, format, v...) }
-func Info(format string, v ...interface{})    { DefaultLogger.logf(INFO, format, v...) }
-func Trace(format string, v ...interface{})   { DefaultLogger.logf(TRACE, format, v...) }
-func Debug(format string, v ...interface{})   { DefaultLogger.logf(DEBUG, format, v...) }
+func Fatal(format string, v ...interface{}) {
+	defaultLogger.logf(FATAL, format, v...)
+}
+func Error(format string, v ...interface{}) {
+	defaultLogger.logf(ERROR, format, v...)
+}
+func Warning(format string, v ...interface{}) {
+	defaultLogger.logf(WARNING, format, v...)
+}
+func Info(format string, v ...interface{}) {
+	defaultLogger.logf(INFO, format, v...)
+}
+func Trace(format string, v ...interface{}) {
+	defaultLogger.logf(TRACE, format, v...)
+}
+func Debug(format string, v ...interface{}) {
+	defaultLogger.logf(DEBUG, format, v...)
+}
