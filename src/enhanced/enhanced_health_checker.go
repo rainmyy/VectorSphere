@@ -1385,3 +1385,102 @@ func (hc *EnhancedHealthChecker) triggerCallbacks(serviceHealth *ServiceHealth) 
 		}
 	}()
 }
+
+// GetMetrics 获取健康检查指标
+func (hc *EnhancedHealthChecker) GetMetrics() map[string]interface{} {
+	hc.mu.RLock()
+	defer hc.mu.RUnlock()
+
+	// 计算各种状态的服务数量
+	healthyCount := 0
+	degradedCount := 0
+	unhealthyCount := 0
+	criticalCount := 0
+
+	for _, serviceHealth := range hc.serviceHealth {
+		switch serviceHealth.OverallStatus {
+		case Healthy:
+			healthyCount++
+		case Degraded:
+			degradedCount++
+		case Unhealthy:
+			unhealthyCount++
+		case Critical:
+			criticalCount++
+		}
+	}
+
+	// 计算检查成功率
+	totalChecks := int64(len(hc.checks))
+	successfulChecks := int64(0)
+	// 从服务健康状态中统计成功率
+	for _, serviceHealth := range hc.serviceHealth {
+		if len(serviceHealth.CheckResults) > 0 {
+			for _, result := range serviceHealth.CheckResults {
+				if result.Status == Healthy {
+					successfulChecks += 1
+				}
+			}
+		}
+	}
+
+	successRate := 0.0
+	if totalChecks > 0 {
+		successRate = float64(successfulChecks) / float64(totalChecks) * 100.0
+	}
+
+	return map[string]interface{}{
+		"total_services":    len(hc.serviceHealth),
+		"healthy_services":  healthyCount,
+		"degraded_services": degradedCount,
+		"unhealthy_services": unhealthyCount,
+		"critical_services": criticalCount,
+		"total_checks":      len(hc.checks),
+		"active_checks":     len(hc.checks),
+		"success_rate":      successRate,
+		"total_alerts":      0, // 暂时设为0，因为没有alertHistory字段
+		"last_update":       time.Now(),
+	}
+}
+
+// GetHealthStatus 获取所有服务的健康状态
+func (hc *EnhancedHealthChecker) GetHealthStatus() map[string]*ServiceHealth {
+	hc.mu.RLock()
+	defer hc.mu.RUnlock()
+
+	// 创建服务健康状态的副本
+	result := make(map[string]*ServiceHealth, len(hc.serviceHealth))
+	for serviceName, health := range hc.serviceHealth {
+		// 创建深拷贝
+		healthCopy := &ServiceHealth{
+			ServiceName:   health.ServiceName,
+			NodeID:        health.NodeID,
+			OverallStatus: health.OverallStatus,
+			OverallScore:  health.OverallScore,
+			LastUpdate:    health.LastUpdate,
+			Uptime:        health.Uptime,
+			StartTime:     health.StartTime,
+			CheckResults:  health.CheckResults,
+			Metrics:       health.Metrics,
+			Trends:        health.Trends,
+			Alerts:        make([]*HealthAlert, len(health.Alerts)),
+			Dependencies:  health.Dependencies,
+		}
+
+		// 复制切片和映射
+		// 复制检查结果
+		if health.CheckResults != nil {
+			healthCopy.CheckResults = make(map[string]*HealthResult)
+			for k, v := range health.CheckResults {
+				healthCopy.CheckResults[k] = v
+			}
+		}
+		if health.Alerts != nil {
+			copy(healthCopy.Alerts, health.Alerts)
+		}
+
+		result[serviceName] = healthCopy
+	}
+
+	return result
+}

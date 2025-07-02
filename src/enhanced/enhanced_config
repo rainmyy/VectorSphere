@@ -1,0 +1,455 @@
+package enhanced
+
+import (
+	"VectorSphere/src/library/logger"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+)
+
+// EnhancedConfig 增强型配置
+type EnhancedConfig struct {
+	// 基础配置
+	ServiceName string `json:"service_name"`
+	Version     string `json:"version"`
+	Environment string `json:"environment"`
+	DataDir     string `json:"data_dir"`
+	LogLevel    string `json:"log_level"`
+
+	// 网关配置
+	Gateway APIGatewayConfig `json:"gateway"`
+
+	// 负载均衡器配置
+	LoadBalancer SimpleLoadBalancerConfig `json:"load_balancer"`
+
+	// 安全管理配置
+	Security SimpleSecurityConfig `json:"security"`
+
+	// 熔断器配置
+	CircuitBreaker SimpleCircuitBreakerConfig `json:"circuit_breaker"`
+
+	// 健康检查配置
+	HealthCheck SimpleHealthCheckConfig `json:"health_check"`
+
+	// 监控配置
+	Monitoring MonitoringConfig `json:"monitoring"`
+}
+
+// SimpleLoadBalancerConfig 简化的负载均衡器配置
+type SimpleLoadBalancerConfig struct {
+	Algorithm             string `json:"algorithm"`               // "round_robin", "weighted_round_robin", "least_connections", "ip_hash"
+	HealthCheckInterval   int    `json:"health_check_interval"`   // 秒
+	MaxRetries            int    `json:"max_retries"`
+	RetryDelay            int    `json:"retry_delay"`              // 毫秒
+	EnableStickySessions  bool   `json:"enable_sticky_sessions"`
+	SessionTimeout        int    `json:"session_timeout"`         // 分钟
+	EnableMetrics         bool   `json:"enable_metrics"`
+	MaxConnections        int    `json:"max_connections"`
+	ConnectionTimeout     int    `json:"connection_timeout"`      // 秒
+}
+
+// SimpleSecurityConfig 简化的安全配置
+type SimpleSecurityConfig struct {
+	JWTSecret           string   `json:"jwt_secret"`
+	TokenExpiration     int      `json:"token_expiration"`      // 小时
+	EnableRateLimit     bool     `json:"enable_rate_limit"`
+	RateLimitPerSecond  int      `json:"rate_limit_per_second"`
+	EnableIPWhitelist   bool     `json:"enable_ip_whitelist"`
+	IPWhitelist         []string `json:"ip_whitelist"`
+	EnableEncryption    bool     `json:"enable_encryption"`
+	EncryptionKey       string   `json:"encryption_key"`
+	EnableAuditLog      bool     `json:"enable_audit_log"`
+	AuditLogPath        string   `json:"audit_log_path"`
+	MaxLoginAttempts    int      `json:"max_login_attempts"`
+	LockoutDuration     int      `json:"lockout_duration"`       // 分钟
+}
+
+// SimpleCircuitBreakerConfig 简化的熔断器配置
+type SimpleCircuitBreakerConfig struct {
+	FailureThreshold    int  `json:"failure_threshold"`
+	RecoveryTimeout     int  `json:"recovery_timeout"`      // 秒
+	MaxRequests         int  `json:"max_requests"`
+	Interval            int  `json:"interval"`              // 秒
+	Timeout             int  `json:"timeout"`               // 秒
+	EnableMetrics       bool `json:"enable_metrics"`
+	EnableNotification  bool `json:"enable_notification"`
+	NotificationURL     string `json:"notification_url"`
+	HalfOpenMaxRequests int  `json:"half_open_max_requests"`
+}
+
+// SimpleHealthCheckConfig 简化的健康检查配置
+type SimpleHealthCheckConfig struct {
+	Interval            int    `json:"interval"`              // 秒
+	Timeout             int    `json:"timeout"`               // 秒
+	RetryCount          int    `json:"retry_count"`
+	RetryDelay          int    `json:"retry_delay"`           // 毫秒
+	EnableDeepCheck     bool   `json:"enable_deep_check"`
+	EnableMetrics       bool   `json:"enable_metrics"`
+	EnableNotification  bool   `json:"enable_notification"`
+	UnhealthyThreshold  int    `json:"unhealthy_threshold"`
+	HealthyThreshold    int    `json:"healthy_threshold"`
+	HealthCheckPath     string `json:"health_check_path"`
+	ExpectedStatusCode  int    `json:"expected_status_code"`
+}
+
+// MonitoringConfig 监控配置
+type MonitoringConfig struct {
+	EnableMetrics     bool   `json:"enable_metrics"`
+	MetricsPort       int    `json:"metrics_port"`
+	MetricsPath       string `json:"metrics_path"`
+	EnableTracing     bool   `json:"enable_tracing"`
+	TracingEndpoint   string `json:"tracing_endpoint"`
+	EnableProfiling   bool   `json:"enable_profiling"`
+	ProfilingPort     int    `json:"profiling_port"`
+	CollectionInterval int   `json:"collection_interval"` // 秒
+}
+
+// EnhancedConfigManager 增强型配置管理器
+type EnhancedConfigManager struct {
+	configPath   string
+	config       *EnhancedConfig
+	lastModTime  time.Time
+	mutex        sync.RWMutex
+	watchers     []func(*EnhancedConfig)
+	watchersMutex sync.RWMutex
+}
+
+// NewEnhancedConfigManager 创建增强型配置管理器
+func NewEnhancedConfigManager(configPath string) (*EnhancedConfigManager, error) {
+	manager := &EnhancedConfigManager{
+		configPath: configPath,
+		watchers:   make([]func(*EnhancedConfig), 0),
+	}
+
+	// 加载配置
+	if err := manager.loadConfig(); err != nil {
+		return nil, err
+	}
+
+	return manager, nil
+}
+
+// LoadConfig 加载配置
+func (ecm *EnhancedConfigManager) LoadConfig() (*EnhancedConfig, error) {
+	return ecm.config, nil
+}
+
+// GetConfig 获取配置
+func (ecm *EnhancedConfigManager) GetConfig() *EnhancedConfig {
+	ecm.mutex.RLock()
+	defer ecm.mutex.RUnlock()
+	return ecm.config
+}
+
+// ReloadConfig 重新加载配置
+func (ecm *EnhancedConfigManager) ReloadConfig() (*EnhancedConfig, error) {
+	logger.Info("Reloading enhanced configuration...")
+
+	if err := ecm.loadConfig(); err != nil {
+		return nil, err
+	}
+
+	// 通知观察者
+	ecm.notifyWatchers()
+
+	return ecm.config, nil
+}
+
+// ValidateConfig 验证配置
+func (ecm *EnhancedConfigManager) ValidateConfig(config *EnhancedConfig) error {
+	if config.ServiceName == "" {
+		return fmt.Errorf("service_name不能为空")
+	}
+
+	if config.Gateway.Port <= 0 || config.Gateway.Port > 65535 {
+		return fmt.Errorf("gateway.port必须在1-65535范围内")
+	}
+
+	if config.LoadBalancer.Algorithm == "" {
+		return fmt.Errorf("load_balancer.algorithm不能为空")
+	}
+
+	validAlgorithms := []string{"round_robin", "weighted_round_robin", "least_connections", "ip_hash"}
+	validAlgorithm := false
+	for _, alg := range validAlgorithms {
+		if config.LoadBalancer.Algorithm == alg {
+			validAlgorithm = true
+			break
+		}
+	}
+	if !validAlgorithm {
+		return fmt.Errorf("load_balancer.algorithm必须是: %v", validAlgorithms)
+	}
+
+	if config.Security.JWTSecret == "" {
+		return fmt.Errorf("security.jwt_secret不能为空")
+	}
+
+	if config.CircuitBreaker.FailureThreshold <= 0 {
+		return fmt.Errorf("circuit_breaker.failure_threshold必须大于0")
+	}
+
+	if config.HealthCheck.Interval <= 0 {
+		return fmt.Errorf("health_check.interval必须大于0")
+	}
+
+	return nil
+}
+
+// HasConfigChanged 检查配置是否已更改
+func (ecm *EnhancedConfigManager) HasConfigChanged() bool {
+	fileInfo, err := os.Stat(ecm.configPath)
+	if err != nil {
+		return false
+	}
+
+	ecm.mutex.RLock()
+	lastModTime := ecm.lastModTime
+	ecm.mutex.RUnlock()
+
+	return fileInfo.ModTime().After(lastModTime)
+}
+
+// AddWatcher 添加配置变更观察者
+func (ecm *EnhancedConfigManager) AddWatcher(watcher func(*EnhancedConfig)) {
+	ecm.watchersMutex.Lock()
+	defer ecm.watchersMutex.Unlock()
+	ecm.watchers = append(ecm.watchers, watcher)
+}
+
+// GetConfigSummary 获取配置摘要
+func (ecm *EnhancedConfigManager) GetConfigSummary() map[string]interface{} {
+	ecm.mutex.RLock()
+	defer ecm.mutex.RUnlock()
+
+	return map[string]interface{}{
+		"service_name": ecm.config.ServiceName,
+		"version":      ecm.config.Version,
+		"environment":  ecm.config.Environment,
+		"gateway_port": ecm.config.Gateway.Port,
+		"load_balancer_algorithm": ecm.config.LoadBalancer.Algorithm,
+		"security_enabled": ecm.config.Security.EnableRateLimit,
+		"circuit_breaker_enabled": ecm.config.CircuitBreaker.EnableMetrics,
+		"health_check_interval": ecm.config.HealthCheck.Interval,
+		"last_modified": ecm.lastModTime,
+	}
+}
+
+// loadConfig 加载配置文件
+func (ecm *EnhancedConfigManager) loadConfig() error {
+	// 检查文件是否存在
+	if _, err := os.Stat(ecm.configPath); os.IsNotExist(err) {
+		// 创建默认配置
+		logger.Info("Configuration file not found, creating default: %s", ecm.configPath)
+		if err := ecm.createDefaultConfig(); err != nil {
+			return fmt.Errorf("创建默认配置失败: %v", err)
+		}
+	}
+
+	// 读取配置文件
+	data, err := ioutil.ReadFile(ecm.configPath)
+	if err != nil {
+		return fmt.Errorf("读取配置文件失败: %v", err)
+	}
+
+	// 解析配置
+	var config EnhancedConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		return fmt.Errorf("解析配置文件失败: %v", err)
+	}
+
+	// 获取文件修改时间
+	fileInfo, err := os.Stat(ecm.configPath)
+	if err != nil {
+		return fmt.Errorf("获取文件信息失败: %v", err)
+	}
+
+	// 更新配置
+	ecm.mutex.Lock()
+	ecm.config = &config
+	ecm.lastModTime = fileInfo.ModTime()
+	ecm.mutex.Unlock()
+
+	logger.Info("Configuration loaded successfully: %s", config.ServiceName)
+	return nil
+}
+
+// createDefaultConfig 创建默认配置
+func (ecm *EnhancedConfigManager) createDefaultConfig() error {
+	defaultConfig := &EnhancedConfig{
+		ServiceName: "enhanced-vector-sphere",
+		Version:     "1.0.0",
+		Environment: "development",
+		DataDir:     "./data",
+		LogLevel:    "info",
+		Gateway: APIGatewayConfig{
+			Port:              8080,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       60 * time.Second,
+			MaxHeaderBytes:    1 << 20, // 1MB
+			EnableCORS:        true,
+			EnableCompression: true,
+			EnableMetrics:     true,
+			EnableLogging:     true,
+		},
+		LoadBalancer: LoadBalancerConfig{
+			Algorithm:             "round_robin",
+			HealthCheckInterval:   30,
+			MaxRetries:            3,
+			RetryDelay:            1000,
+			EnableStickySessions:  false,
+			SessionTimeout:        30,
+			EnableMetrics:         true,
+			MaxConnections:        1000,
+			ConnectionTimeout:     10,
+		},
+		Security: SecurityConfig{
+			JWTSecret:           "your-secret-key-change-in-production",
+			TokenExpiration:     24,
+			EnableRateLimit:     true,
+			RateLimitPerSecond:  100,
+			EnableIPWhitelist:   false,
+			IPWhitelist:         []string{"127.0.0.1", "::1"},
+			EnableEncryption:    false,
+			EncryptionKey:       "",
+			EnableAuditLog:      true,
+			AuditLogPath:        "./logs/audit.log",
+			MaxLoginAttempts:    5,
+			LockoutDuration:     15,
+		},
+		CircuitBreaker: CircuitBreakerConfig{
+			FailureThreshold:    5,
+			RecoveryTimeout:     60,
+			MaxRequests:         100,
+			Interval:            60,
+			Timeout:             30,
+			EnableMetrics:       true,
+			EnableNotification:  false,
+			NotificationURL:     "",
+			HalfOpenMaxRequests: 10,
+		},
+		HealthCheck: HealthCheckConfig{
+			Interval:            30,
+			Timeout:             10,
+			RetryCount:          3,
+			RetryDelay:          1000,
+			EnableDeepCheck:     true,
+			EnableMetrics:       true,
+			EnableNotification:  false,
+			UnhealthyThreshold:  3,
+			HealthyThreshold:    2,
+			HealthCheckPath:     "/health",
+			ExpectedStatusCode:  200,
+		},
+		Monitoring: MonitoringConfig{
+			EnableMetrics:      true,
+			MetricsPort:        9090,
+			MetricsPath:        "/metrics",
+			EnableTracing:      false,
+			TracingEndpoint:    "",
+			EnableProfiling:    false,
+			ProfilingPort:      6060,
+			CollectionInterval: 60,
+		},
+	}
+
+	// 确保目录存在
+	dir := filepath.Dir(ecm.configPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("创建配置目录失败: %v", err)
+	}
+
+	// 序列化配置
+	data, err := json.MarshalIndent(defaultConfig, "", "  ")
+	if err != nil {
+		return fmt.Errorf("序列化默认配置失败: %v", err)
+	}
+
+	// 写入文件
+	if err := ioutil.WriteFile(ecm.configPath, data, 0644); err != nil {
+		return fmt.Errorf("写入配置文件失败: %v", err)
+	}
+
+	logger.Info("Default configuration created: %s", ecm.configPath)
+	return nil
+}
+
+// notifyWatchers 通知观察者
+func (ecm *EnhancedConfigManager) notifyWatchers() {
+	ecm.watchersMutex.RLock()
+	watchers := make([]func(*EnhancedConfig), len(ecm.watchers))
+	copy(watchers, ecm.watchers)
+	ecm.watchersMutex.RUnlock()
+
+	ecm.mutex.RLock()
+	config := ecm.config
+	ecm.mutex.RUnlock()
+
+	for _, watcher := range watchers {
+		go func(w func(*EnhancedConfig)) {
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Error("Config watcher panic: %v", r)
+				}
+			}()
+			w(config)
+		}(watcher)
+	}
+}
+
+// SaveConfig 保存配置
+func (ecm *EnhancedConfigManager) SaveConfig(config *EnhancedConfig) error {
+	// 验证配置
+	if err := ecm.ValidateConfig(config); err != nil {
+		return fmt.Errorf("配置验证失败: %v", err)
+	}
+
+	// 序列化配置
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("序列化配置失败: %v", err)
+	}
+
+	// 写入文件
+	if err := ioutil.WriteFile(ecm.configPath, data, 0644); err != nil {
+		return fmt.Errorf("写入配置文件失败: %v", err)
+	}
+
+	// 更新内存中的配置
+	ecm.mutex.Lock()
+	ecm.config = config
+	ecm.lastModTime = time.Now()
+	ecm.mutex.Unlock()
+
+	// 通知观察者
+	ecm.notifyWatchers()
+
+	logger.Info("Configuration saved successfully")
+	return nil
+}
+
+// 辅助函数
+
+// GetDefaultEnhancedConfigPath 获取默认配置路径
+func GetDefaultEnhancedConfigPath() string {
+	return "./config/enhanced_config.json"
+}
+
+// ValidateEnhancedConfigFile 验证配置文件
+func ValidateEnhancedConfigFile(configPath string) error {
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return fmt.Errorf("配置文件不存在: %s", configPath)
+	}
+	return nil
+}
+
+// CreateDefaultEnhancedConfig 创建默认配置文件
+func CreateDefaultEnhancedConfig(configPath string) error {
+	manager := &EnhancedConfigManager{configPath: configPath}
+	return manager.createDefaultConfig()
+}

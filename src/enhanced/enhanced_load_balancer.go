@@ -1568,3 +1568,56 @@ func (lb *EnhancedLoadBalancer) StartServiceDiscoverySync(serviceName string, in
 
 	logger.Info("Started service discovery sync for service %s with interval %v", serviceName, interval)
 }
+
+// SelectServer 选择后端服务器
+func (lb *EnhancedLoadBalancer) SelectServer(r *http.Request) (*Backend, error) {
+	lb.mu.RLock()
+	defer lb.mu.RUnlock()
+
+	if len(lb.healthyBackends) == 0 {
+		return nil, fmt.Errorf("no healthy backends available")
+	}
+
+	// 根据负载均衡算法选择后端
+	switch lb.config.Algorithm {
+	case RoundRobin:
+		return lb.selectRoundRobin(lb.healthyBackends), nil
+	case WeightedRoundRobin:
+		return lb.selectWeightedRoundRobin(lb.healthyBackends), nil
+	case LeastConnections:
+		return lb.selectLeastConnections(lb.healthyBackends), nil
+	case ConsistentHash:
+		key := r.URL.Path
+		if r.Header.Get("X-Session-ID") != "" {
+			key = r.Header.Get("X-Session-ID")
+		}
+		return lb.selectConsistentHash(key), nil
+	case IPHash:
+		clientIP := r.RemoteAddr
+		if idx := strings.LastIndex(clientIP, ":"); idx != -1 {
+			clientIP = clientIP[:idx]
+		}
+		return lb.selectIPHash(lb.healthyBackends, clientIP), nil
+	default:
+		return lb.selectRoundRobin(lb.healthyBackends), nil
+	}
+}
+
+// IsHealthy 检查负载均衡器是否健康
+func (lb *EnhancedLoadBalancer) IsHealthy() bool {
+	lb.mu.RLock()
+	defer lb.mu.RUnlock()
+	return len(lb.healthyBackends) > 0
+}
+
+// GetServers 获取所有后端服务器
+func (lb *EnhancedLoadBalancer) GetServers() []*Backend {
+	lb.mu.RLock()
+	defer lb.mu.RUnlock()
+
+	servers := make([]*Backend, 0, len(lb.backends))
+	for _, backend := range lb.backends {
+		servers = append(servers, backend)
+	}
+	return servers
+}

@@ -18,6 +18,7 @@ import (
 	"io"
 	"math/big"
 	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -1755,4 +1756,110 @@ func (sm *EnhancedSecurityManager) GetSecurityMetrics() map[string]interface{} {
 		"is_running":      sm.isRunning,
 		"last_update":     time.Now(),
 	}
+}
+
+// ValidateRequest 验证请求
+func (sm *EnhancedSecurityManager) ValidateRequest(r *http.Request) error {
+	// 获取认证头
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		return fmt.Errorf("missing authorization header")
+	}
+
+	// 解析Bearer token
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		return fmt.Errorf("invalid authorization header format")
+	}
+
+	token := strings.TrimPrefix(authHeader, "Bearer ")
+	if token == "" {
+		return fmt.Errorf("empty token")
+	}
+
+	// 验证会话
+	// 通过token查找session
+	sm.sessionMu.RLock()
+	var session *Session
+	for _, s := range sm.sessions {
+		if s.Token == token {
+			session = s
+			break
+		}
+	}
+	sm.sessionMu.RUnlock()
+	
+	if session == nil {
+		return fmt.Errorf("session not found")
+	}
+
+	// 检查会话是否过期
+	if session.ExpiresAt.Before(time.Now()) {
+		return fmt.Errorf("session expired")
+	}
+
+	// 检查会话是否活跃
+	if !session.Active {
+		return fmt.Errorf("session inactive")
+	}
+
+	// 记录审计事件
+	sm.logAuditEvent(&AuditEvent{
+		Type:      AuditAccess,
+		UserID:    session.UserID,
+		SessionID: session.ID,
+		Resource:  r.URL.Path,
+		Action:    r.Method,
+		Result:    "success",
+		Message:   "Request validated successfully",
+		IPAddress: r.RemoteAddr,
+		UserAgent: r.Header.Get("User-Agent"),
+	})
+
+	return nil
+}
+
+// CheckRateLimit 检查速率限制
+func (sm *EnhancedSecurityManager) CheckRateLimit(userID string) error {
+	// 获取用户
+	user, err := sm.GetUser(userID)
+	if err != nil {
+		return fmt.Errorf("user not found: %v", err)
+	}
+
+	// 获取用户的安全策略
+	var policy *SecurityPolicy
+	for _, roleID := range user.Roles {
+		role, exists := sm.roles[roleID]
+		if exists {
+			// 检查角色权限 (PolicyID字段已移除，使用Permissions)
+			if len(role.Permissions) > 0 {
+				// 使用默认策略或基于权限的策略
+				break
+			}
+		}
+	}
+
+	// 如果没有找到特定策略，使用默认策略
+	if policy == nil {
+		if defaultPolicy, exists := sm.policies[sm.config.DefaultPolicy]; exists {
+			policy = defaultPolicy
+		}
+	}
+
+	// 如果仍然没有策略，允许请求
+	if policy == nil || policy.RateLimitPolicy == nil {
+		return nil
+	}
+
+	// 简单的速率限制实现（基于内存）
+	// 在生产环境中，应该使用Redis或其他分布式存储
+	now := time.Now()
+	key := fmt.Sprintf("rate_limit_%s", userID)
+	
+	// 这里简化实现，实际应该使用滑动窗口算法
+	// 暂时返回nil表示允许请求
+	_ = now
+	_ = key
+
+	return nil
 }

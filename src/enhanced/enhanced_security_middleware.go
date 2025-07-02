@@ -135,7 +135,10 @@ func LoadBalancingMiddleware(balancer balance.Balancer) func(http.Handler) http.
 			startTime := time.Now()
 
 			// 创建响应记录器来捕获响应信息
-			rec := &responseRecorder{
+			rec := &struct {
+				http.ResponseWriter
+				status int
+			}{
 				ResponseWriter: w,
 				status:         200,
 			}
@@ -161,23 +164,17 @@ func LoadBalancingMiddleware(balancer balance.Balancer) func(http.Handler) http.
 	}
 }
 
-// responseRecorder 用于记录响应信息
-type responseRecorder struct {
-	http.ResponseWriter
-	status int
-}
 
-func (r *responseRecorder) WriteHeader(status int) {
-	r.status = status
-	r.ResponseWriter.WriteHeader(status)
-}
 
 // CircuitBreakerMiddleware 熔断器中间件
 func CircuitBreakerMiddleware(cb *gobreaker.CircuitBreaker) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			result, err := cb.Execute(func() (interface{}, error) {
-				rec := &responseRecorder{
+				rec := &struct {
+					http.ResponseWriter
+					status int
+				}{
 					ResponseWriter: w,
 					status:         200,
 				}

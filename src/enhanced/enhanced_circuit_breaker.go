@@ -2,6 +2,7 @@ package enhanced
 
 import (
 	"VectorSphere/src/library/logger"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -169,4 +170,226 @@ func (cb *CircuitBreaker) RecordFailure() {
 			logger.Warning("Circuit breaker %s opened from half-open due to failure", cb.Name)
 		}
 	}
+}
+
+// RecordSuccess 记录成功
+func (cb *CircuitBreaker) RecordSuccess() {
+	cb.recordSuccess()
+}
+
+// GetMetrics 获取指标
+func (cb *CircuitBreaker) GetMetrics() *CircuitBreakerMetrics {
+	cb.mu.RLock()
+	defer cb.mu.RUnlock()
+	return cb.metrics
+}
+
+// GetState 获取状态
+func (cb *CircuitBreaker) GetState() CircuitBreakerState {
+	cb.mu.RLock()
+	defer cb.mu.RUnlock()
+	return cb.state
+}
+
+// Reset 重置熔断器
+func (cb *CircuitBreaker) Reset() {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	cb.state = Closed
+	cb.failureCount = 0
+	cb.successCount = 0
+	cb.requestCount = 0
+	cb.halfOpenCalls = 0
+	cb.lastStateChange = time.Now()
+	cb.metrics.StateChanges++
+	cb.metrics.CurrentState = "closed"
+	logger.Info("Circuit breaker %s reset", cb.Name)
+}
+
+// EnhancedCircuitBreaker 增强型熔断器管理器
+type EnhancedCircuitBreaker struct {
+	circuitBreakers map[string]*CircuitBreaker
+	mu              sync.RWMutex
+	isRunning       bool
+}
+
+// NewEnhancedCircuitBreaker 创建增强型熔断器管理器
+func NewEnhancedCircuitBreaker() *EnhancedCircuitBreaker {
+	return &EnhancedCircuitBreaker{
+		circuitBreakers: make(map[string]*CircuitBreaker),
+	}
+}
+
+// Start 启动增强型熔断器
+func (ecb *EnhancedCircuitBreaker) Start() error {
+	ecb.mu.Lock()
+	defer ecb.mu.Unlock()
+
+	if ecb.isRunning {
+		return fmt.Errorf("enhanced circuit breaker is already running")
+	}
+
+	ecb.isRunning = true
+	logger.Info("Enhanced circuit breaker started")
+	return nil
+}
+
+// Stop 停止增强型熔断器
+func (ecb *EnhancedCircuitBreaker) Stop() error {
+	ecb.mu.Lock()
+	defer ecb.mu.Unlock()
+
+	if !ecb.isRunning {
+		return fmt.Errorf("enhanced circuit breaker is not running")
+	}
+
+	ecb.isRunning = false
+	logger.Info("Enhanced circuit breaker stopped")
+	return nil
+}
+
+// CreateCircuitBreaker 创建熔断器
+func (ecb *EnhancedCircuitBreaker) CreateCircuitBreaker(name string, config *CircuitBreakerConfig) *CircuitBreaker {
+	ecb.mu.Lock()
+	defer ecb.mu.Unlock()
+
+	if config == nil {
+		config = &CircuitBreakerConfig{
+			FailureThreshold:  5,
+			SuccessThreshold:  3,
+			Timeout:           30 * time.Second,
+			ResetTimeout:      60 * time.Second,
+			HalfOpenMaxCalls:  3,
+			FailureRate:       0.5,
+			MinRequestAmount:  10,
+			SlidingWindowSize: 100,
+		}
+	}
+
+	cb := &CircuitBreaker{
+		Name:            name,
+		config:          config,
+		state:           Closed,
+		lastStateChange: time.Now(),
+		metrics: &CircuitBreakerMetrics{
+			CurrentState:    "closed",
+			LastStateChange: time.Now(),
+		},
+	}
+
+	ecb.circuitBreakers[name] = cb
+	logger.Info("Circuit breaker created: %s", name)
+	return cb
+}
+
+// GetCircuitBreaker 获取熔断器
+func (ecb *EnhancedCircuitBreaker) GetCircuitBreaker(name string) *CircuitBreaker {
+	ecb.mu.RLock()
+	defer ecb.mu.RUnlock()
+	return ecb.circuitBreakers[name]
+}
+
+// RemoveCircuitBreaker 移除熔断器
+func (ecb *EnhancedCircuitBreaker) RemoveCircuitBreaker(name string) {
+	ecb.mu.Lock()
+	defer ecb.mu.Unlock()
+	delete(ecb.circuitBreakers, name)
+	logger.Info("Circuit breaker removed: %s", name)
+}
+
+// GetAllMetrics 获取所有熔断器指标
+func (ecb *EnhancedCircuitBreaker) GetAllMetrics() map[string]*CircuitBreakerMetrics {
+	ecb.mu.RLock()
+	defer ecb.mu.RUnlock()
+
+	result := make(map[string]*CircuitBreakerMetrics)
+	for name, cb := range ecb.circuitBreakers {
+		result[name] = cb.GetMetrics()
+	}
+	return result
+}
+
+// AllowRequest 检查是否允许请求（使用默认熔断器）
+func (ecb *EnhancedCircuitBreaker) AllowRequest() bool {
+	ecb.mu.RLock()
+	defaultCB, exists := ecb.circuitBreakers["default"]
+	ecb.mu.RUnlock()
+
+	if !exists {
+		// 如果没有默认熔断器，创建一个
+		defaultConfig := &CircuitBreakerConfig{
+			FailureThreshold:    5,
+			SuccessThreshold:    3,
+			Timeout:             30 * time.Second,
+			ResetTimeout:        60 * time.Second,
+			HalfOpenMaxCalls:    3,
+			FailureRate:         0.5,
+			MinRequestAmount:    10,
+			SlidingWindowSize:   100,
+		}
+		ecb.CreateCircuitBreaker("default", defaultConfig)
+		ecb.mu.RLock()
+		defaultCB = ecb.circuitBreakers["default"]
+		ecb.mu.RUnlock()
+	}
+
+	return defaultCB.AllowRequest()
+}
+
+// RecordSuccess 记录成功（使用默认熔断器）
+func (ecb *EnhancedCircuitBreaker) RecordSuccess() {
+	ecb.mu.RLock()
+	defaultCB, exists := ecb.circuitBreakers["default"]
+	ecb.mu.RUnlock()
+
+	if exists {
+		defaultCB.RecordSuccess()
+	}
+}
+
+// RecordFailure 记录失败（使用默认熔断器）
+func (ecb *EnhancedCircuitBreaker) RecordFailure() {
+	ecb.mu.RLock()
+	defaultCB, exists := ecb.circuitBreakers["default"]
+	ecb.mu.RUnlock()
+
+	if exists {
+		defaultCB.RecordFailure()
+	}
+}
+
+// GetState 获取状态（使用默认熔断器）
+func (ecb *EnhancedCircuitBreaker) GetState() string {
+	ecb.mu.RLock()
+	defaultCB, exists := ecb.circuitBreakers["default"]
+	ecb.mu.RUnlock()
+
+	if !exists {
+		return "closed"
+	}
+
+	state := defaultCB.GetState()
+	switch state {
+	case Closed:
+		return "closed"
+	case Open:
+		return "open"
+	case HalfOpen:
+		return "half-open"
+	default:
+		return "unknown"
+	}
+}
+
+// GetMetrics 获取指标（使用默认熔断器）
+func (ecb *EnhancedCircuitBreaker) GetMetrics() *CircuitBreakerMetrics {
+	ecb.mu.RLock()
+	defaultCB, exists := ecb.circuitBreakers["default"]
+	ecb.mu.RUnlock()
+
+	if !exists {
+		return &CircuitBreakerMetrics{}
+	}
+
+	return defaultCB.GetMetrics()
 }
