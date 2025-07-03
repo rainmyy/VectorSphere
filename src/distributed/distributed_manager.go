@@ -126,7 +126,7 @@ func (dm *DistributedManager) Start() error {
 		return fmt.Errorf("启动基础服务失败: %v", err)
 	}
 
-	// 根据节点类型启动相应服务
+	// 优化的启动逻辑：检查etcd中是否已有master节点
 	if dm.config.NodeType == MasterNode {
 		// 配置为master节点，直接启动master服务和API Gateway
 		logger.Info("Node configured as master, starting master services...")
@@ -134,17 +134,11 @@ func (dm *DistributedManager) Start() error {
 			return fmt.Errorf("启动master服务失败: %v", err)
 		}
 	} else {
-		// 配置为slave或auto，先启动slave服务，然后进行etcd竞选
-		logger.Info("Node configured as slave/auto, starting slave service first...")
-		// 先启动slave服务
-		if err := dm.startSlaveServices(); err != nil {
-			return fmt.Errorf("启动slave服务失败: %v", err)
+		// 配置为slave或auto，检查etcd中是否已有master节点
+		logger.Info("Node configured as slave/auto, checking for existing master...")
+		if err := dm.startWithMasterCheck(); err != nil {
+			return fmt.Errorf("启动服务失败: %v", err)
 		}
-		// 等待slave服务完全启动
-		time.Sleep(1 * time.Second)
-		logger.Info("Slave service started, now starting election process...")
-		// 然后启动leader选举
-		go dm.runLeaderElection()
 	}
 
 	dm.isRunning = true
@@ -244,6 +238,148 @@ func (dm *DistributedManager) initLeaderElection() error {
 	return nil
 }
 
+// startWithMasterCheck 检查master节点并决定启动逻辑
+func (dm *DistributedManager) startWithMasterCheck() error {
+	// 创建服务发现组件来检查master节点
+	serviceDiscovery := NewServiceDiscovery(dm.etcdClient, dm.config.ServiceName)
+	
+	// 检查etcd中是否已有master节点
+	masterInfo, err := serviceDiscovery.DiscoverMaster(dm.ctx)
+	if err != nil {
+		// 没有找到master节点，尝试竞选master
+		logger.Info("No existing master found, attempting to become master...")
+		return dm.attemptMasterElection()
+	}
+	
+	// 已有master节点，启动为slave
+	logger.Info("Found existing master: %s:%d, starting as slave...", masterInfo.Address, masterInfo.Port)
+	return dm.startAsSlaveNode()
+}
+
+// attemptMasterElection 尝试竞选master节点
+func (dm *DistributedManager) attemptMasterElection() error {
+	// 尝试立即竞选master
+	ctx, cancel := context.WithTimeout(dm.ctx, 5*time.Second)
+	defer cancel()
+	
+	if err := dm.election.Campaign(ctx, dm.localhost); err != nil {
+		// 竞选失败，说明其他节点已经成为master，启动为slave
+		logger.Info("Master election failed, starting as slave: %v", err)
+		return dm.startAsSlaveNode()
+	}
+	
+	// 竞选成功，启动为master
+	logger.Info("Successfully elected as master: %s", dm.localhost)
+	return dm.startAsMasterNode()
+}
+
+// startAsMasterNode 启动为master节点
+func (dm *DistributedManager) startAsMasterNode() error {
+	dm.setMaster(true)
+	logger.Info("Starting as master node...")
+	
+	// 启动master服务
+	if err := dm.startMasterServices(); err != nil {
+		return fmt.Errorf("启动master服务失败: %v", err)
+	}
+	
+	// 注册master节点信息到etcd
+	if err := dm.registerMasterService(); err != nil {
+		logger.Error("注册master服务失败: %v", err)
+	}
+	
+	// 启动leader选举监听（处理失去leadership的情况）
+	go dm.monitorLeadership()
+	
+	return nil
+}
+
+// startAsSlaveNode 启动为slave节点
+func (dm *DistributedManager) startAsSlaveNode() error {
+	dm.setMaster(false)
+	logger.Info("Starting as slave node...")
+	
+	// 启动slave服务
+	if err := dm.startSlaveServices(); err != nil {
+		return fmt.Errorf("启动slave服务失败: %v", err)
+	}
+	
+	// 注册slave节点信息到etcd
+	if err := dm.registerSlaveService(); err != nil {
+		logger.Error("注册slave服务失败: %v", err)
+	}
+	
+	// 启动leader选举监听（等待成为master的机会）
+	go dm.runLeaderElection()
+	
+	return nil
+}
+
+// monitorLeadership 监听leadership状态
+func (dm *DistributedManager) monitorLeadership() {
+	logger.Info("Starting leadership monitoring...")
+	
+	for {
+		select {
+		case <-dm.session.Done():
+			logger.Info("Lost leadership due to session expiry")
+			dm.onLoseLeader()
+			// 重新启动选举
+			go dm.runLeaderElection()
+			return
+		case <-dm.stopCh:
+			logger.Info("Leadership monitoring stopped")
+			return
+		}
+	}
+}
+
+// registerSlaveService 注册slave服务到etcd
+func (dm *DistributedManager) registerSlaveService() error {
+	// 获取当前节点的IP地址
+	localIP, err := common.GetLocalHost()
+	if err != nil {
+		return fmt.Errorf("获取本地IP失败: %v", err)
+	}
+	
+	// 创建slave服务信息
+	slaveInfo := &ServiceInfo{
+		ServiceName: dm.config.ServiceName,
+		NodeID:      dm.localhost, // 使用localhost作为节点ID
+		Address:     localIP,
+		Port:        dm.config.DefaultPort,
+		NodeType:    "slave",
+		Status:      "active",
+		Metadata: map[string]string{
+			"grpc_address": dm.localhost,
+			"version":      "1.0.0",
+		},
+		LastSeen: time.Now(),
+		Version:  "1.0.0",
+	}
+	
+	// 创建服务发现组件并注册slave服务
+	serviceDiscovery := NewServiceDiscovery(dm.etcdClient, dm.config.ServiceName)
+	if err := serviceDiscovery.RegisterService(dm.ctx, slaveInfo, int64(dm.config.Heartbeat*3)); err != nil {
+		return fmt.Errorf("注册slave服务失败: %v", err)
+	}
+	
+	logger.Info("Slave service registered successfully: %s", localIP)
+	return nil
+}
+
+// unregisterSlaveService 注销slave服务信息
+func (dm *DistributedManager) unregisterSlaveService() error {
+	// 创建服务发现组件并注销slave服务
+	serviceDiscovery := NewServiceDiscovery(dm.etcdClient, dm.config.ServiceName)
+	if err := serviceDiscovery.UnregisterService(dm.ctx, "slave", dm.localhost); err != nil {
+		return fmt.Errorf("注销slave服务失败: %v", err)
+	}
+	
+	logger.Info("Slave service unregistered successfully")
+	return nil
+}
+
 // runLeaderElection 运行leader选举
 func (dm *DistributedManager) runLeaderElection() {
 	logger.Info("Starting leader election...")
@@ -264,15 +400,9 @@ func (dm *DistributedManager) runLeaderElection() {
 			logger.Info("Became leader: %s", dm.localhost)
 			dm.onBecomeLeader()
 
-			// 等待失去leadership
-			select {
-			case <-dm.session.Done():
-				logger.Info("Lost leadership due to session expiry")
-				dm.onLoseLeader()
-			case <-dm.stopCh:
-				logger.Info("Leader election stopped")
-				return
-			}
+			// 启动leadership监听
+			dm.monitorLeadership()
+			return
 		}
 	}
 }
@@ -295,6 +425,11 @@ func (dm *DistributedManager) onBecomeLeader() {
 		// 等待一段时间确保slave服务完全停止
 		time.Sleep(2 * time.Second)
 		logger.Info("Slave service stopped successfully")
+	}
+
+	// 注销slave服务信息
+	if err := dm.unregisterSlaveService(); err != nil {
+		logger.Error("注销slave服务失败: %v", err)
 	}
 
 	// 启动master服务

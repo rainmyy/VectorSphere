@@ -1,5 +1,5 @@
 serviceName: vector_sphere
-nodeType: 0
+nodeType: 2
 timeOut: 30
 defaultPort: 8080
 heartbeat: 10
