@@ -1,13 +1,18 @@
 serviceName: vector_sphere
-nodeType: 0
+nodeType: 1
 timeOut: 30
 defaultPort: 8080
 heartbeat: 10
 etcd:
   endpoints:
-  - ip: "localhost"
+  - ip: 127.0.0.1
     port: 2379
+    tags: {}
     isMaster: true
+    name: ""
+    weight: 0
+    currentweight: 0
+    effectiveweight: 0
 schedulerWorkerCount: 10
 httpPort: 8090
 taskTimeout: 60

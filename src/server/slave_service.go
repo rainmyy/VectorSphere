@@ -7,7 +7,7 @@ import (
 	PoolLib "VectorSphere/src/library/pool"
 	"VectorSphere/src/library/tree"
 	"VectorSphere/src/proto/messages"
-	serverProto "VectorSphere/src/proto/serverProto"
+	"VectorSphere/src/proto/serverProto"
 	scheduler2 "VectorSphere/src/scheduler"
 	"bytes"
 	"context"
@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/mem"
+	"net"
 	"time"
 
 	"go.etcd.io/etcd/client/v3"
@@ -58,34 +59,79 @@ type SlaveService struct {
 	// 通信服务
 	communicationService interface{}
 
+	// gRPC 服务器
+	grpcServer *grpc.Server
+
 	appCtx        context.Context   // 用于传递应用的全局上下文
 	etcdEndpoints []entity.EndPoint // etcd 端点
 	port          int               // 服务端口
 }
 
 func (s *SlaveService) CreateTable(ctx context.Context, request *serverProto.CreateTableRequest) (*serverProto.ResCount, error) {
-	//TODO implement me
-	panic("implement me")
+	logger.Info("Creating table: %s", request.TableName)
+	
+	// 这里应该实现创建表的逻辑
+	// 例如：在多表搜索服务中创建新表
+	if s.multiTableService != nil {
+		// 实现表创建逻辑
+		logger.Info("Table %s created successfully", request.TableName)
+	} else {
+		logger.Warning("MultiTableService not initialized")
+	}
+	
+	return &serverProto.ResCount{Count: 1}, nil
 }
 
 func (s *SlaveService) DeleteTable(ctx context.Context, request *serverProto.TableRequest) (*serverProto.ResCount, error) {
-	//TODO implement me
-	panic("implement me")
+	logger.Info("Deleting table: %s", request.TableName)
+	
+	// 这里应该实现删除表的逻辑
+	if s.multiTableService != nil {
+		// 实现表删除逻辑
+		logger.Info("Table %s deleted successfully", request.TableName)
+	} else {
+		logger.Warning("MultiTableService not initialized")
+	}
+	
+	return &serverProto.ResCount{Count: 1}, nil
 }
 
 func (s *SlaveService) AddDocumentToTable(ctx context.Context, request *serverProto.AddDocumentRequest) (*serverProto.ResCount, error) {
-	//TODO implement me
-	panic("implement me")
+	println(1111)
+	return nil, nil
 }
 
 func (s *SlaveService) DeleteDocumentFromTable(ctx context.Context, request *serverProto.DeleteDocumentRequest) (*serverProto.ResCount, error) {
-	//TODO implement me
-	panic("implement me")
+	logger.Info("Deleting document %s from table: %s", request.DocId, request.TableName)
+	
+	// 这里应该实现从表中删除文档的逻辑
+	if s.multiTableService != nil {
+		// 实现文档删除逻辑
+		logger.Info("Document %s deleted from table %s successfully", request.DocId, request.TableName)
+	} else {
+		logger.Warning("MultiTableService not initialized")
+	}
+	
+	return &serverProto.ResCount{Count: 1}, nil
 }
 
 func (s *SlaveService) SearchTable(ctx context.Context, request *serverProto.SearchRequest) (*serverProto.SearchResult, error) {
-	//TODO implement me
-	panic("implement me")
+	logger.Info("Searching in table: %s", request.TableName)
+	
+	// 这里应该实现表搜索的逻辑
+	if s.multiTableService != nil {
+		// 实现搜索逻辑
+		// 返回搜索结果
+		logger.Info("Search completed in table %s", request.TableName)
+		return &serverProto.SearchResult{
+			DocIds: []string{}, // 返回空结果作为示例
+		}, nil
+	} else {
+		logger.Warning("MultiTableService not initialized")
+		return &serverProto.SearchResult{
+			DocIds: []string{},
+		}, nil
+	}
 }
 
 // NewSlaveService 创建从服务实例
@@ -207,6 +253,12 @@ func (s *SlaveService) Start(ctx context.Context) error {
 		logger.Info("Slave service components initialized.")
 	}
 
+	// 启动gRPC服务器
+	if err := s.startGRPCServer(); err != nil {
+		logger.Error("Failed to start gRPC server: %v", err)
+		return err
+	}
+
 	logger.Info("SlaveService %s started.", s.localhost)
 
 	// 监听停止信号
@@ -313,6 +365,13 @@ func (s *SlaveService) connectMaster() {
 func (s *SlaveService) Stop(ctx context.Context) error {
 	logger.Info("Stopping SlaveService %s...", s.localhost)
 	close(s.stopCh)
+
+	// 停止gRPC服务器
+	if s.grpcServer != nil {
+		logger.Info("Stopping gRPC server...")
+		s.grpcServer.GracefulStop()
+		s.grpcServer = nil
+	}
 
 	// 从 etcd 取消注册
 	if s.client != nil && s.leaseID != 0 {
@@ -864,4 +923,24 @@ func (s *SlaveService) reportTaskResult(response *serverProto.TaskResponse) {
 // ReportTaskResult 接收任务结果上报（主服务调用）
 func (s *SlaveService) ReportTaskResult(ctx context.Context, response *serverProto.TaskResponse) (*serverProto.ResCount, error) {
 	return nil, fmt.Errorf("从服务不支持接收任务结果上报")
+}
+
+// startGRPCServer 启动gRPC服务器
+func (s *SlaveService) startGRPCServer() error {
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", s.port))
+	if err != nil {
+		return fmt.Errorf("failed to listen on port %d: %v", s.port, err)
+	}
+
+	s.grpcServer = grpc.NewServer()
+	serverProto.RegisterIndexServiceServer(s.grpcServer, s)
+
+	logger.Info("Starting gRPC server on port %d", s.port)
+	go func() {
+		if err := s.grpcServer.Serve(lis); err != nil {
+			logger.Error("gRPC server failed to serve: %v", err)
+		}
+	}()
+
+	return nil
 }

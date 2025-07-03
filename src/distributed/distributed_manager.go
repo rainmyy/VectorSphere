@@ -447,10 +447,24 @@ func (dm *DistributedManager) GetService(serviceName string) interface{} {
 }
 
 // RegisterService 注册服务
-func (dm *DistributedManager) RegisterService(serviceName string, service interface{}) {
+func (dm *DistributedManager) RegisterService(name string, service interface{}) {
 	dm.mutex.Lock()
 	defer dm.mutex.Unlock()
-	dm.services[serviceName] = service
+	dm.services[name] = service
+}
+
+// GetServiceDiscovery 获取服务发现实例
+func (dm *DistributedManager) GetServiceDiscovery() *ServiceDiscovery {
+	dm.mutex.RLock()
+	defer dm.mutex.RUnlock()
+	return dm.serviceDiscovery
+}
+
+// GetCommunicationService 获取通信服务实例
+func (dm *DistributedManager) GetCommunicationService() *CommunicationService {
+	dm.mutex.RLock()
+	defer dm.mutex.RUnlock()
+	return dm.communicationSvc
 }
 
 // GetConfig 获取配置

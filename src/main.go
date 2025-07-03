@@ -66,8 +66,19 @@ func main_1() {
 	//if err != nil {
 	//	logger.Fatal("Failed to initialize config manager: %v", err)
 	//}
-	endpoints := make(map[string]entity.EndPoint)
-	endpoints["127.0.0.1"] = entity.EndPoint{Ip: "127.0.0.1", Port: 2379}
+	// 转换etcd端点配置
+	var etcdEndpoints []entity.EndPoint
+	for _, endpoint := range config.EtcdEndpoints {
+		// 解析endpoint字符串，格式为 "host:port"
+		host, port := distributed.ParseHostPort(endpoint)
+		etcdEndpoints = append(etcdEndpoints, entity.EndPoint{Ip: host, Port: port})
+	}
+	
+	// 如果没有配置etcd端点，使用默认值
+	if len(etcdEndpoints) == 0 {
+		etcdEndpoints = append(etcdEndpoints, entity.EndPoint{Ip: "localhost", Port: 2379})
+	}
+	
 	// 创建分布式管理器配置
 	dmConfig := &distributed.DistributedConfig{
 		ServiceName: config.ServiceName,
@@ -75,16 +86,14 @@ func main_1() {
 		TimeOut:     config.EtcdTimeout,
 		DefaultPort: config.Port,
 		Heartbeat:   int(config.HeartbeatInterval.Seconds()),
-		//Etcd: distributed.EtcdConfig{
-		//	Endpoints: config.EtcdEndpoints,
-		//},
+		Etcd: distributed.EtcdConfig{
+			Endpoints: etcdEndpoints,
+		},
 		SchedulerWorkerCount: 10,
 		HttpPort:             config.HttpPort,
 		TaskTimeout:          30000000,
 		HealthCheckInterval:  int(config.HealthCheckInterval.Seconds()),
 		DataDir:              "data",
-		//LoadBalancerConfig:    loadBalancer,
-		//EnhancedConfigManager: configManager,
 	}
 
 	// 创建分布式管理器
@@ -161,11 +170,9 @@ func createAPIGateway(dm *distributed.DistributedManager, config *bootstrap.AppC
 		return nil
 	}
 
-	// 创建服务发现
-	sd := distributed.NewServiceDiscovery(dm.GetEtcdClient(), config.ServiceName)
-
-	// 创建通信服务
-	commSvc := distributed.NewCommunicationService(dm.GetEtcdClient(), config.ServiceName)
+	// 使用DistributedManager中已创建的服务发现和通信服务
+	sd := dm.GetServiceDiscovery()
+	commSvc := dm.GetCommunicationService()
 
 	// 创建API网关
 	return distributed.NewAPIGateway(dm, commSvc, sd, config.HttpPort)

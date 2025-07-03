@@ -66,13 +66,11 @@ func InitLogger(level Level, filePath string, maxSizeMB int64, toStdout bool) er
 		if err != nil {
 			output = os.Stdout
 			println(err.Error())
-			return err
 		}
 		file, err = os.OpenFile(filePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
 			output = os.Stdout
 			println(err.Error())
-			return err
 		}
 		output = file
 		if toStdout {

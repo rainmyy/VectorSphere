@@ -1,6 +1,7 @@
 package distributed
 
 import (
+	"strconv"
 	"strings"
 )
 
@@ -25,4 +26,26 @@ func ParseEndpoints(endpoints string) []string {
 	}
 	
 	return result
+}
+
+// ParseHostPort 解析host:port格式的字符串
+// 输入格式: "host:port"
+// 输出: host (string), port (int)
+func ParseHostPort(endpoint string) (string, int) {
+	parts := strings.Split(endpoint, ":")
+	if len(parts) != 2 {
+		// 如果格式不正确，返回默认值
+		return "localhost", 2379
+	}
+	
+	host := strings.TrimSpace(parts[0])
+	portStr := strings.TrimSpace(parts[1])
+	
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		// 如果端口解析失败，返回默认端口
+		return host, 2379
+	}
+	
+	return host, port
 }

@@ -16,7 +16,7 @@ import (
 "testing"
 "time"
 
-"VectorSphere/src/index"
+"VectorSphere/src/indx"
 "VectorSphere/src/library/common"
 "VectorSphere/src/messages"
 "github.com/golang/mock/gomock"

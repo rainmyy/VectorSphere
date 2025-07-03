@@ -151,7 +151,7 @@ make help
 - bootstrap/ ：系统启动和初始化
 - conf/ ：配置文件
 - db/ ：数据库实现
-- index/ ：索引实现
+- indx/ ：索引实现
 - library/ ：通用库和工具
 - messages/ ：消息定义和协议
 - scheduler/ ：任务调度
@@ -160,7 +160,7 @@ make help
 ### 扩展指南 添加新的向量化方法
 在 db/vectorized.go 中实现新的 DocumentVectorized 函数。
  添加新的索引类型
-实现 index/index.go 中定义的 IndexInterface 接口。
+实现 indx/indx.go 中定义的 IndexInterface 接口。
  添加新的调度任务
 实现 scheduler/task_pool.go 中定义的 ScheduledTask 接口。
 

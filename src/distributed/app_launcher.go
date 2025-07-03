@@ -62,7 +62,7 @@ func (al *AppLauncher) Start() error {
 
 	// 4. 创建服务发现组件
 	al.serviceDiscovery = NewServiceDiscovery(al.distributedManager.GetEtcdClient(), config.ServiceName)
-
+	
 	// 5. 注册当前节点
 	if err := al.registerCurrentNode(); err != nil {
 		logger.Warning("注册当前节点失败: %v", err)

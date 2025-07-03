@@ -57,7 +57,6 @@ type SearchContext struct {
 
 // StrategySelector 智能策略选择器
 type StrategySelector struct {
-	db          *VectorDB
 	performance map[IndexStrategy]*PerformanceMetrics
 	mu          sync.RWMutex
 }
@@ -97,13 +96,13 @@ type PerformanceStats struct {
 }
 
 type VectorDB struct {
-	vectors       map[string][]float64
-	mu            sync.RWMutex
-	filePath      string              // 数据库文件的存储路径
-	backupPath    string              //数据备份逻辑
-	clusters      []Cluster           // 存储簇信息，用于IVF索引
-	numClusters   int                 // K-Means中的K值，即簇的数量
-	indexed       bool                // 标记数据库是否已建立索引
+	vectors     map[string][]float64
+	mu          sync.RWMutex
+	filePath    string    // 数据库文件的存储路径
+	backupPath  string    //数据备份逻辑
+	clusters    []Cluster // 存储簇信息，用于IVF索引
+	numClusters int       // K-Means中的K值，即簇的数量
+	indexed     bool      // 标记数据库是否已建立索引
 	// 移除原有的简单倒排索引，统一使用MVCC倒排索引
 
 	// 统一的MVCC倒排索引
@@ -229,7 +228,7 @@ type IVFHNSWIndex struct {
 	PerformanceStats IVFHNSWPerformanceStats `json:"performance_stats"`
 
 	// 并发控制
-	mu     sync.RWMutex `json:"-"`
+	Mu     sync.RWMutex `json:"-"`
 	Enable bool         `json:"enable"`
 }
 
@@ -946,7 +945,10 @@ func (db *VectorDB) MonitorGPUHealth() {
 				// 连续失败达到阈值，通过硬件管理器禁用GPU
 				if failureCount >= maxFailures {
 					logger.Error("GPU连续%d次健康检查失败，自动禁用GPU加速", maxFailures)
-					db.hardwareManager.DisableGPU()
+					err := db.hardwareManager.DisableGPU()
+					if err != nil {
+						return
+					}
 
 					// 尝试重新初始化GPU加速器
 					go func() {
@@ -1737,7 +1739,7 @@ func NewVectorDBWithDimension(dimension int, distanceType string) (*VectorDB, er
 		usePQCompression:         false,
 		stopCh:                   make(chan struct{}),
 	}
-	
+
 	// 初始化MVCC倒排索引
 	db.mvccInvertedIndex = index.NewMVCCBPlusTreeInvertedIndex(16, nil, nil, nil)
 
@@ -1778,10 +1780,10 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 		currentStrategy:         acceler.StrategyStandard,
 		strategySelector:        &StrategySelector{},
 	}
-	
+
 	// 初始化MVCC倒排索引
 	db.mvccInvertedIndex = index.NewMVCCBPlusTreeInvertedIndex(16, nil, nil, nil)
-	
+
 	// 检测硬件能力
 	db.HardwareCaps = db.strategyComputeSelector.GetHardwareCapabilities()
 	logger.Info("硬件检测结果: AVX2=%v, AVX512=%v, GPU=%v, CPU核心=%d",
@@ -6090,7 +6092,7 @@ func (db *VectorDB) BuildIVFHNSWIndex(config *IVFHNSWConfig) error {
 	}
 
 	// 1. 初始化索引结构
-	index := &IVFHNSWIndex{
+	indx := &IVFHNSWIndex{
 		Clusters:         make([]IVFHNSWCluster, config.NumClusters),
 		ClusterCentroids: make([][]float64, config.NumClusters),
 		ClusterSizes:     make([]int, config.NumClusters),
@@ -6115,7 +6117,7 @@ func (db *VectorDB) BuildIVFHNSWIndex(config *IVFHNSWConfig) error {
 	}
 	centroids, err := db.performKMeansForIVFHNSW(trainingData, config.NumClusters)
 	if err != nil {
-		return fmt.Errorf("K-means聚类失败: %w", err)
+		return fmt.Errorf("k-means聚类失败: %w", err)
 	}
 	if len(centroids) != config.NumClusters {
 		return fmt.Errorf("聚类中心数量不匹配，期望: %d, 实际: %d", config.NumClusters, len(centroids))
@@ -6123,8 +6125,8 @@ func (db *VectorDB) BuildIVFHNSWIndex(config *IVFHNSWConfig) error {
 
 	// 4. 初始化聚类
 	for i, centroid := range centroids {
-		index.ClusterCentroids[i] = centroid
-		index.Clusters[i] = IVFHNSWCluster{
+		indx.ClusterCentroids[i] = centroid
+		indx.Clusters[i] = IVFHNSWCluster{
 			Centroid:     centroid,
 			VectorIDs:    make([]string, 0),
 			UseHNSW:      false,
@@ -6138,21 +6140,21 @@ func (db *VectorDB) BuildIVFHNSWIndex(config *IVFHNSWConfig) error {
 	logger.Info("分配向量到聚类...")
 	for id, vector := range db.vectors {
 		clusterID := db.findNearestClusterForIVFHNSW(vector, centroids)
-		index.Clusters[clusterID].VectorIDs = append(index.Clusters[clusterID].VectorIDs, id)
-		index.ClusterSizes[clusterID]++
+		indx.Clusters[clusterID].VectorIDs = append(indx.Clusters[clusterID].VectorIDs, id)
+		indx.ClusterSizes[clusterID]++
 	}
 
 	// 6. 为大聚类构建HNSW图
 	logger.Info("为大聚类构建HNSW图...")
-	for i := range index.Clusters {
-		clusterSize := len(index.Clusters[i].VectorIDs)
+	for i := range indx.Clusters {
+		clusterSize := len(indx.Clusters[i].VectorIDs)
 		if clusterSize >= config.MinClusterSize {
 			// 构建聚类内的HNSW图
 			hnswGraph := graph.NewHNSWGraph(config.MaxConnections, config.EfConstruction, config.EfSearch)
 
 			// 添加聚类内的向量到HNSW图
 			successCount := 0
-			for _, vectorID := range index.Clusters[i].VectorIDs {
+			for _, vectorID := range indx.Clusters[i].VectorIDs {
 				if vector, exists := db.vectors[vectorID]; exists {
 					if err := hnswGraph.AddNode(vectorID, vector); err != nil {
 						logger.Warning("添加向量到HNSW图失败: %v", err)
@@ -6164,9 +6166,9 @@ func (db *VectorDB) BuildIVFHNSWIndex(config *IVFHNSWConfig) error {
 
 			// 只有成功添加了足够的向量才使用HNSW
 			if successCount >= config.MinClusterSize/2 {
-				index.Clusters[i].HNSWGraph = hnswGraph
-				index.Clusters[i].UseHNSW = true
-				index.ClusterGraphs[i] = hnswGraph
+				indx.Clusters[i].HNSWGraph = hnswGraph
+				indx.Clusters[i].UseHNSW = true
+				indx.ClusterGraphs[i] = hnswGraph
 				logger.Info("聚类 %d 构建HNSW图完成，向量数: %d/%d", i, successCount, clusterSize)
 			} else {
 				logger.Warning("聚类 %d HNSW图构建失败，成功向量数不足: %d/%d", i, successCount, clusterSize)
@@ -6187,17 +6189,17 @@ func (db *VectorDB) BuildIVFHNSWIndex(config *IVFHNSWConfig) error {
 		}
 	}
 	if globalSuccessCount > 0 {
-		index.GlobalGraph = globalGraph
+		indx.GlobalGraph = globalGraph
 		logger.Info("全局HNSW图构建完成，成功添加聚类中心: %d/%d", globalSuccessCount, len(centroids))
 	} else {
 		logger.Warning("全局HNSW图构建失败，无法添加任何聚类中心")
 	}
 
 	// 8. 计算聚类指标
-	db.calculateIVFHNSWClusterMetrics(index)
+	db.calculateIVFHNSWClusterMetrics(indx)
 
 	// 9. 保存索引
-	db.ivfHnswIndex = index
+	db.ivfHnswIndex = indx
 	db.ivfHnswConfig = config
 	db.useIVFHNSWIndex = true
 
@@ -6227,7 +6229,7 @@ func (db *VectorDB) ivfHnswSearchWithScores(query []float64, k int, ctx SearchCo
 	}
 
 	startTime := time.Now()
-	index := db.ivfHnswIndex
+	indx := db.ivfHnswIndex
 	config := db.ivfHnswConfig
 
 	// 1. 使用全局HNSW图找到最相关的聚类
@@ -6247,11 +6249,11 @@ func (db *VectorDB) ivfHnswSearchWithScores(query []float64, k int, ctx SearchCo
 	// 3. 在候选聚类中搜索
 	allResults := make([]entity.Result, 0)
 	for _, clusterID := range candidateClusters {
-		if clusterID >= len(index.Clusters) {
+		if clusterID >= len(indx.Clusters) {
 			continue
 		}
 
-		cluster := &index.Clusters[clusterID]
+		cluster := &indx.Clusters[clusterID]
 		cluster.AccessCount++
 		cluster.LastAccessed = time.Now()
 
@@ -6428,14 +6430,14 @@ func (db *VectorDB) findNearestClusterForIVFHNSW(vector []float64, centroids [][
 
 // findCandidateClustersIVFHNSW 找到候选聚类
 func (db *VectorDB) findCandidateClustersIVFHNSW(query []float64, nprobe int) []int {
-	index := db.ivfHnswIndex
+	indx := db.ivfHnswIndex
 	candidates := make([]struct {
 		clusterID int
 		distance  float64
-	}, 0, len(index.ClusterCentroids))
+	}, 0, len(indx.ClusterCentroids))
 
 	// 计算查询向量到所有聚类中心的距离
-	for i, centroid := range index.ClusterCentroids {
+	for i, centroid := range indx.ClusterCentroids {
 		dist, _ := algorithm.EuclideanDistanceSquared(query, centroid)
 		candidates = append(candidates, struct {
 			clusterID int
@@ -6559,8 +6561,8 @@ func (db *VectorDB) updateIVFHNSWPerformanceStats(latency time.Duration, resultC
 		return
 	}
 
-	db.ivfHnswIndex.mu.Lock()
-	defer db.ivfHnswIndex.mu.Unlock()
+	db.ivfHnswIndex.Mu.Lock()
+	defer db.ivfHnswIndex.Mu.Unlock()
 
 	stats := &db.ivfHnswIndex.PerformanceStats
 	stats.TotalQueries++
@@ -6650,8 +6652,8 @@ func (db *VectorDB) GetIVFHNSWStats() *IVFHNSWPerformanceStats {
 		return nil
 	}
 
-	db.ivfHnswIndex.mu.RLock()
-	defer db.ivfHnswIndex.mu.RUnlock()
+	db.ivfHnswIndex.Mu.RLock()
+	defer db.ivfHnswIndex.Mu.RUnlock()
 
 	stats := db.ivfHnswIndex.PerformanceStats
 	return &stats

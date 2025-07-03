@@ -11,12 +11,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.etcd.io/etcd/client/v3"
@@ -26,6 +28,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 
 	"VectorSphere/src/library/logger"
+	"VectorSphere/src/proto/messages"
 )
 
 // TaskResult 任务结果结构体
@@ -86,15 +89,13 @@ type MasterService struct {
 	httpServer     *http.Server
 	httpServerPort int
 
+	// gRPC 服务器相关
+	grpcServer *grpc.Server
+
 	// 通信服务
 	communicationService interface{}
 
 	appCtx context.Context // 用于传递应用的全局上下文
-}
-
-func (m *MasterService) HealthCheck(ctx context.Context, request *serverProto.HealthCheckRequest) (*serverProto.HealthCheckResponse, error) {
-	//TODO implement me
-	panic("implement me")
 }
 
 // --- 认证中间件 ---
@@ -131,7 +132,10 @@ func (m *MasterService) sendMasterNotify(msg string) {
 		}
 		body := map[string]string{"msg": msg, "time": time.Now().Format(time.RFC3339)}
 		jsonBody, _ := json.Marshal(body)
-		http.Post(webhookUrl, "application/json", bytes.NewReader(jsonBody))
+		_, err := http.Post(webhookUrl, "application/json", bytes.NewReader(jsonBody))
+		if err != nil {
+			logger.Error(err.Error())
+		}
 	}()
 }
 
@@ -162,7 +166,10 @@ func NewMasterService(
 	// 创建会话
 	session, err := concurrency.NewSession(client, concurrency.WithTTL(10))
 	if err != nil {
-		client.Close()
+		e := client.Close()
+		if e != nil {
+			logger.Error(e.Error())
+		}
 		return nil, fmt.Errorf("创建 etcd 会话失败: %v", err)
 	}
 
@@ -239,7 +246,10 @@ func (m *MasterService) ScheduleTask(task scheduler2.ScheduledTask) error {
 		subtask.SetTarget(slave.Ip)
 
 		// 提交子任务
-		m.taskScheduler.Submit(subtask)
+		err := m.taskScheduler.Submit(subtask)
+		if err != nil {
+			return err
+		}
 
 		// 记录任务分配信息
 		taskInfo.Slaves = append(taskInfo.Slaves, slave.Ip)
@@ -261,6 +271,16 @@ func (m *MasterService) ScheduleTask(task scheduler2.ScheduledTask) error {
 // Start 启动 MasterService
 func (m *MasterService) Start(ctx context.Context) error {
 	logger.Info("Starting MasterService...")
+
+	// 初始化停止通道
+	m.stopCh = make(chan struct{})
+
+	// 启动gRPC服务器
+	go func() {
+		if err := m.startGRPCServer(); err != nil {
+			logger.Error("启动gRPC服务器失败: %v", err)
+		}
+	}()
 
 	// 尝试成为主节点
 	go m.runElection(ctx) // 使用传递的上下文
@@ -387,7 +407,10 @@ func (m *MasterService) getOrCreateGRPCConn(slaveIP string) (*grpc.ClientConn, e
 			return clientConn, nil
 		}
 		// 如果连接不是 Ready 或 Idle，则关闭并重新创建
-		clientConn.Close()
+		err := clientConn.Close()
+		if err != nil {
+			return nil, err
+		}
 		m.connPool.Delete(slaveIP)
 	}
 
@@ -519,7 +542,10 @@ func (m *MasterService) runElection(ctx context.Context) {
 				m.masterMutex.Unlock()
 				// 停止主节点特定的服务
 				if m.httpServer != nil {
-					m.httpServer.Close()
+					err := m.httpServer.Close()
+					if err != nil {
+						logger.Error(err.Error())
+					}
 					m.httpServer = nil
 				}
 			}
@@ -539,10 +565,19 @@ func (m *MasterService) resignLeadership() {
 		}
 		m.isMaster = false
 		// 停止主节点特定的服务
-		// if m.httpServer != nil { m.httpServer.Close(); m.httpServer = nil }
+		if m.httpServer != nil {
+			err := m.httpServer.Close()
+			if err != nil {
+				logger.Error(err.Error())
+			}
+			m.httpServer = nil
+		}
 	}
 	if m.session != nil {
-		m.session.Close() // 关闭会话
+		err := m.session.Close()
+		if err != nil {
+			logger.Error(err.Error())
+		} // 关闭会话
 		m.session = nil
 	}
 }
@@ -658,7 +693,10 @@ func (m *MasterService) registerService() error {
 
 			case <-m.appCtx.Done(): // 监听应用全局上下文
 				logger.Info("Application context cancelled, stopping MasterService.")
-				m.Stop(context.Background()) // 调用 Stop 进行清理
+				err := m.Stop(context.Background())
+				if err != nil {
+					logger.Error(err.Error())
+				} // 调用 Stop 进行清理
 			}
 		}
 	}()
@@ -774,7 +812,11 @@ func (m *MasterService) getGrpcConn(point entity.EndPoint) *grpc.ClientConn {
 		if state != connectivity.TransientFailure && state != connectivity.Shutdown {
 			return conn
 		}
-		conn.Close()
+		err := conn.Close()
+		if err != nil {
+			logger.Error(err.Error())
+			return nil
+		}
 		m.connPool.Delete(point.Ip)
 	}
 
@@ -868,6 +910,12 @@ func (m *MasterService) Stop(ctx context.Context) error {
 		close(m.stopCh) // 发送停止信号
 	}
 
+	// 停止gRPC服务器
+	if m.grpcServer != nil {
+		m.grpcServer.GracefulStop()
+		m.grpcServer = nil
+	}
+
 	// 关闭 HTTP 服务器
 	if m.httpServer != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -904,7 +952,10 @@ func (m *MasterService) Stop(ctx context.Context) error {
 	// 关闭连接池中的所有连接
 	m.connPool.Range(func(key, value interface{}) bool {
 		if conn, ok := value.(*grpc.ClientConn); ok {
-			conn.Close()
+			err := conn.Close()
+			if err != nil {
+				return false
+			}
 		}
 		return true
 	})
@@ -1144,6 +1195,547 @@ func (m *MasterService) Stop(ctx context.Context) error {
 //
 //	// return &ResCount{Count: totalCount}, nil
 //}
+
+// 实现 IndexServiceServer 接口的 gRPC 方法
+
+// DelDoc 删除文档
+func (m *MasterService) DelDoc(ctx context.Context, docId *serverProto.DocId) (*serverProto.ResCount, error) {
+	// 检查是否是主节点
+	m.masterMutex.RLock()
+	isMaster := m.isMaster
+	m.masterMutex.RUnlock()
+
+	if !isMaster {
+		return nil, errors.New("当前节点不是主节点")
+	}
+
+	// 获取可用的从节点
+	slaves := m.getAvailableSlaves()
+	if len(slaves) == 0 {
+		return nil, errors.New("没有可用的从节点")
+	}
+
+	// 并发删除文档
+	var totalCount int32
+	var wg sync.WaitGroup
+	wg.Add(len(slaves))
+
+	for _, slave := range slaves {
+		go func(endpoint entity.EndPoint) {
+			defer wg.Done()
+
+			// 获取连接
+			conn := m.getGrpcConn(endpoint)
+			if conn == nil {
+				return
+			}
+
+			// 创建客户端
+			client := serverProto.NewIndexServiceClient(conn)
+
+			// 发送删除请求
+			resp, err := client.DelDoc(ctx, docId)
+			if err != nil {
+				logger.Error("从节点删除文档失败: %s, %v", endpoint.Ip, err)
+				return
+			}
+
+			// 累加删除数量
+			atomic.AddInt32(&totalCount, resp.Count)
+		}(slave)
+	}
+
+	// 等待所有请求完成
+	wg.Wait()
+
+	return &serverProto.ResCount{Count: totalCount}, nil
+}
+
+// AddDoc 添加文档
+func (m *MasterService) AddDoc(ctx context.Context, doc *messages.Document) (*serverProto.ResCount, error) {
+	// 检查是否是主节点
+	m.masterMutex.RLock()
+	isMaster := m.isMaster
+	m.masterMutex.RUnlock()
+
+	if !isMaster {
+		return nil, errors.New("当前节点不是主节点")
+	}
+
+	// 获取最佳从节点
+	slave, err := m.getBestSlave()
+	if err != nil {
+		return nil, err
+	}
+
+	// 获取连接
+	conn := m.getGrpcConn(slave)
+	if conn == nil {
+		return nil, fmt.Errorf("无法连接到从节点: %s", slave.Ip)
+	}
+
+	// 创建客户端
+	client := serverProto.NewIndexServiceClient(conn)
+
+	// 发送添加请求
+	resp, err := client.AddDoc(ctx, doc)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+// Search 搜索文档
+func (m *MasterService) Search(ctx context.Context, request *serverProto.Request) (*serverProto.Result, error) {
+	// 检查是否是主节点
+	m.masterMutex.RLock()
+	isMaster := m.isMaster
+	m.masterMutex.RUnlock()
+
+	if !isMaster {
+		return nil, errors.New("当前节点不是主节点")
+	}
+
+	// 获取可用的从节点
+	slaves := m.getAvailableSlaves()
+	if len(slaves) == 0 {
+		return nil, errors.New("没有可用的从节点")
+	}
+
+	// 并发搜索
+	resultChan := make(chan *messages.Document, 1000)
+	var wg sync.WaitGroup
+	wg.Add(len(slaves))
+
+	for _, slave := range slaves {
+		go func(endpoint entity.EndPoint) {
+			defer wg.Done()
+
+			// 获取连接
+			conn := m.getGrpcConn(endpoint)
+			if conn == nil {
+				return
+			}
+
+			// 创建客户端
+			client := serverProto.NewIndexServiceClient(conn)
+
+			// 发送搜索请求
+			resp, err := client.Search(ctx, request)
+			if err != nil {
+				logger.Error("从节点搜索失败: %s, %v", endpoint.Ip, err)
+				return
+			}
+
+			// 收集结果
+			for _, doc := range resp.Results {
+				resultChan <- doc
+			}
+		}(slave)
+	}
+
+	// 等待所有请求完成
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	// 收集结果
+	var results []*messages.Document
+	for doc := range resultChan {
+		results = append(results, doc)
+	}
+
+	// 对结果进行去重
+	deduped := m.deduplicateResults(results)
+	return &serverProto.Result{Results: deduped}, nil
+}
+
+// Count 计数文档
+func (m *MasterService) Count(ctx context.Context, request *serverProto.CountRequest) (*serverProto.ResCount, error) {
+	// 检查是否是主节点
+	m.masterMutex.RLock()
+	isMaster := m.isMaster
+	m.masterMutex.RUnlock()
+
+	if !isMaster {
+		return nil, errors.New("当前节点不是主节点")
+	}
+
+	// 获取可用的从节点
+	slaves := m.getAvailableSlaves()
+	if len(slaves) == 0 {
+		return nil, errors.New("没有可用的从节点")
+	}
+
+	// 并发计数
+	var totalCount int32
+	var wg sync.WaitGroup
+	wg.Add(len(slaves))
+
+	for _, slave := range slaves {
+		go func(endpoint entity.EndPoint) {
+			defer wg.Done()
+
+			// 获取连接
+			conn := m.getGrpcConn(endpoint)
+			if conn == nil {
+				return
+			}
+
+			// 创建客户端
+			client := serverProto.NewIndexServiceClient(conn)
+
+			// 发送计数请求
+			resp, err := client.Count(ctx, request)
+			if err != nil {
+				logger.Error("从节点计数失败: %s, %v", endpoint.Ip, err)
+				return
+			}
+
+			// 累加计数
+			atomic.AddInt32(&totalCount, resp.Count)
+		}(slave)
+	}
+
+	// 等待所有请求完成
+	wg.Wait()
+
+	return &serverProto.ResCount{Count: totalCount}, nil
+}
+
+// ExecuteTask 执行任务
+func (m *MasterService) ExecuteTask(ctx context.Context, request *serverProto.TaskRequest) (*serverProto.TaskResponse, error) {
+	// Master节点通常不直接执行任务，而是分发给slave节点
+	return nil, errors.New("Master节点不直接执行任务")
+}
+
+// CreateTable 创建表
+func (m *MasterService) CreateTable(ctx context.Context, request *serverProto.CreateTableRequest) (*serverProto.ResCount, error) {
+	// 检查是否是主节点
+	m.masterMutex.RLock()
+	isMaster := m.isMaster
+	m.masterMutex.RUnlock()
+
+	if !isMaster {
+		return nil, errors.New("当前节点不是主节点")
+	}
+
+	// 获取可用的从节点
+	slaves := m.getAvailableSlaves()
+	if len(slaves) == 0 {
+		return nil, errors.New("没有可用的从节点")
+	}
+
+	// 在所有从节点上创建表
+	var successCount int32
+	var wg sync.WaitGroup
+	wg.Add(len(slaves))
+
+	for _, slave := range slaves {
+		go func(endpoint entity.EndPoint) {
+			defer wg.Done()
+
+			// 获取连接
+			conn := m.getGrpcConn(endpoint)
+			if conn == nil {
+				return
+			}
+
+			// 创建客户端
+			client := serverProto.NewIndexServiceClient(conn)
+
+			// 发送创建表请求
+			_, err := client.CreateTable(ctx, request)
+			if err != nil {
+				logger.Error("从节点创建表失败: %s, %v", endpoint.Ip, err)
+				return
+			}
+
+			atomic.AddInt32(&successCount, 1)
+		}(slave)
+	}
+
+	// 等待所有请求完成
+	wg.Wait()
+
+	return &serverProto.ResCount{Count: successCount}, nil
+}
+
+// DeleteTable 删除表
+func (m *MasterService) DeleteTable(ctx context.Context, request *serverProto.TableRequest) (*serverProto.ResCount, error) {
+	// 检查是否是主节点
+	m.masterMutex.RLock()
+	isMaster := m.isMaster
+	m.masterMutex.RUnlock()
+
+	if !isMaster {
+		return nil, errors.New("当前节点不是主节点")
+	}
+
+	// 获取可用的从节点
+	slaves := m.getAvailableSlaves()
+	if len(slaves) == 0 {
+		return nil, errors.New("没有可用的从节点")
+	}
+
+	// 在所有从节点上删除表
+	var successCount int32
+	var wg sync.WaitGroup
+	wg.Add(len(slaves))
+
+	for _, slave := range slaves {
+		go func(endpoint entity.EndPoint) {
+			defer wg.Done()
+
+			// 获取连接
+			conn := m.getGrpcConn(endpoint)
+			if conn == nil {
+				return
+			}
+
+			// 创建客户端
+			client := serverProto.NewIndexServiceClient(conn)
+
+			// 发送删除表请求
+			_, err := client.DeleteTable(ctx, request)
+			if err != nil {
+				logger.Error("从节点删除表失败: %s, %v", endpoint.Ip, err)
+				return
+			}
+
+			atomic.AddInt32(&successCount, 1)
+		}(slave)
+	}
+
+	// 等待所有请求完成
+	wg.Wait()
+
+	return &serverProto.ResCount{Count: successCount}, nil
+}
+
+// AddDocumentToTable 向表中添加文档
+func (m *MasterService) AddDocumentToTable(ctx context.Context, request *serverProto.AddDocumentRequest) (*serverProto.ResCount, error) {
+	// 检查是否是主节点
+	m.masterMutex.RLock()
+	isMaster := m.isMaster
+	m.masterMutex.RUnlock()
+
+	if !isMaster {
+		return nil, errors.New("当前节点不是主节点")
+	}
+
+	// 获取最佳从节点
+	slave, err := m.getBestSlave()
+	if err != nil {
+		return nil, err
+	}
+
+	// 获取连接
+	conn := m.getGrpcConn(slave)
+	if conn == nil {
+		return nil, fmt.Errorf("无法连接到从节点: %s", slave.Ip)
+	}
+
+	// 创建客户端
+	client := serverProto.NewIndexServiceClient(conn)
+
+	// 发送添加文档请求
+	resp, err := client.AddDocumentToTable(ctx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+// DeleteDocumentFromTable 从表中删除文档
+func (m *MasterService) DeleteDocumentFromTable(ctx context.Context, request *serverProto.DeleteDocumentRequest) (*serverProto.ResCount, error) {
+	// 检查是否是主节点
+	m.masterMutex.RLock()
+	isMaster := m.isMaster
+	m.masterMutex.RUnlock()
+
+	if !isMaster {
+		return nil, errors.New("当前节点不是主节点")
+	}
+
+	// 获取可用的从节点
+	slaves := m.getAvailableSlaves()
+	if len(slaves) == 0 {
+		return nil, errors.New("没有可用的从节点")
+	}
+
+	// 并发删除文档
+	var totalCount int32
+	var wg sync.WaitGroup
+	wg.Add(len(slaves))
+
+	for _, slave := range slaves {
+		go func(endpoint entity.EndPoint) {
+			defer wg.Done()
+
+			// 获取连接
+			conn := m.getGrpcConn(endpoint)
+			if conn == nil {
+				return
+			}
+
+			// 创建客户端
+			client := serverProto.NewIndexServiceClient(conn)
+
+			// 发送删除文档请求
+			resp, err := client.DeleteDocumentFromTable(ctx, request)
+			if err != nil {
+				logger.Error("从节点删除文档失败: %s, %v", endpoint.Ip, err)
+				return
+			}
+
+			// 累加删除数量
+			atomic.AddInt32(&totalCount, resp.Count)
+		}(slave)
+	}
+
+	// 等待所有请求完成
+	wg.Wait()
+
+	return &serverProto.ResCount{Count: totalCount}, nil
+}
+
+// SearchTable 搜索表
+func (m *MasterService) SearchTable(ctx context.Context, request *serverProto.SearchRequest) (*serverProto.SearchResult, error) {
+	// 检查是否是主节点
+	m.masterMutex.RLock()
+	isMaster := m.isMaster
+	m.masterMutex.RUnlock()
+
+	if !isMaster {
+		return nil, errors.New("当前节点不是主节点")
+	}
+
+	// 获取可用的从节点
+	slaves := m.getAvailableSlaves()
+	if len(slaves) == 0 {
+		return nil, errors.New("没有可用的从节点")
+	}
+
+	// 并发搜索
+	resultChan := make(chan string, 1000)
+	var wg sync.WaitGroup
+	wg.Add(len(slaves))
+
+	for _, slave := range slaves {
+		go func(endpoint entity.EndPoint) {
+			defer wg.Done()
+
+			// 获取连接
+			conn := m.getGrpcConn(endpoint)
+			if conn == nil {
+				return
+			}
+
+			// 创建客户端
+			client := serverProto.NewIndexServiceClient(conn)
+
+			// 发送搜索请求
+			resp, err := client.SearchTable(ctx, request)
+			if err != nil {
+				logger.Error("从节点搜索失败: %s, %v", endpoint.Ip, err)
+				return
+			}
+
+			// 收集结果
+			for _, docId := range resp.DocIds {
+				resultChan <- docId
+			}
+		}(slave)
+	}
+
+	// 等待所有请求完成
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	// 收集结果
+	var results []string
+	for docId := range resultChan {
+		results = append(results, docId)
+	}
+
+	// 对结果进行去重
+	deduped := m.deduplicateDocIds(results)
+	return &serverProto.SearchResult{DocIds: deduped}, nil
+}
+
+// HealthCheck 健康检查
+func (m *MasterService) HealthCheck(ctx context.Context, request *serverProto.HealthCheckRequest) (*serverProto.HealthCheckResponse, error) {
+	return &serverProto.HealthCheckResponse{
+		Status: serverProto.HealthCheckResponse_SERVING,
+	}, nil
+}
+
+// deduplicateResults 对搜索结果进行去重
+func (m *MasterService) deduplicateResults(docs []*messages.Document) []*messages.Document {
+	deduped := make([]*messages.Document, 0, len(docs))
+	idMap := make(map[string]bool)
+
+	for _, doc := range docs {
+		if _, exists := idMap[doc.Id]; !exists {
+			deduped = append(deduped, doc)
+			idMap[doc.Id] = true
+		}
+	}
+
+	return deduped
+}
+
+// deduplicateDocIds 对文档ID进行去重
+func (m *MasterService) deduplicateDocIds(docIds []string) []string {
+	deduped := make([]string, 0, len(docIds))
+	idMap := make(map[string]bool)
+
+	for _, docId := range docIds {
+		if _, exists := idMap[docId]; !exists {
+			deduped = append(deduped, docId)
+			idMap[docId] = true
+		}
+	}
+
+	return deduped
+}
+
+// startGRPCServer 启动gRPC服务器
+func (m *MasterService) startGRPCServer() error {
+	// 创建gRPC服务器
+	m.grpcServer = grpc.NewServer()
+
+	// 注册IndexService
+	serverProto.RegisterIndexServiceServer(m.grpcServer, m)
+
+	// 监听端口
+	grpcPort := ":50051" // 默认gRPC端口
+	if port := os.Getenv("GRPC_PORT"); port != "" {
+		grpcPort = ":" + port
+	}
+
+	lis, err := net.Listen("tcp", grpcPort)
+	if err != nil {
+		return fmt.Errorf("监听gRPC端口失败: %v", err)
+	}
+
+	logger.Info("gRPC服务器启动在端口: %s", grpcPort)
+
+	// 启动服务器
+	if err = m.grpcServer.Serve(lis); err != nil {
+		if !errors.Is(err, grpc.ErrServerStopped) {
+			return fmt.Errorf("gRPC服务器启动失败: %v", err)
+		}
+	}
+
+	return nil
+}
 
 // ReportTaskResult 接收从节点的任务执行结果
 func (m *MasterService) ReportTaskResult(ctx context.Context, result *serverProto.TaskResponse) (*serverProto.ResCount, error) {
