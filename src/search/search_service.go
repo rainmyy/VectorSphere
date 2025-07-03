@@ -18,7 +18,7 @@ type SearchService struct {
 
 func NewSearchService(vectorDBPath string, numClusters int, invertedIndexOrder int, txMgr *tree.TransactionManager, lockMgr *tree.LockManager, wal *tree.WALManager) *SearchService {
 	vectorDB := vector.NewVectorDB(vectorDBPath, numClusters)
-	invertedIndex := index.NewMVCCBPlusTreeInvertedIndex(invertedIndexOrder, txMgr, lockMgr, wal, vectorDB)
+	invertedIndex := index.NewMVCCBPlusTreeInvertedIndex(invertedIndexOrder, nil, nil, nil)
 
 	return &SearchService{
 		VectorDB:      vectorDB,

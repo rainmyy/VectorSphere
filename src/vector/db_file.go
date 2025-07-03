@@ -18,7 +18,6 @@ type dataToSave struct {
 	Clusters                 []Cluster
 	NumClusters              int
 	Indexed                  bool
-	InvertedIndex            map[string][]string
 	VectorDim                int
 	VectorizedType           int
 	NormalizedVectors        map[string][]float64
@@ -67,7 +66,6 @@ func (db *VectorDB) SaveToFileWithMmap(filePath string) error {
 		Clusters:                 db.clusters,
 		NumClusters:              db.numClusters,
 		Indexed:                  db.indexed,
-		InvertedIndex:            db.invertedIndex,
 		VectorDim:                db.vectorDim,
 		VectorizedType:           db.vectorizedType,
 		NormalizedVectors:        db.normalizedVectors,
@@ -163,7 +161,6 @@ func (db *VectorDB) saveToFileStandard(filePath string) error {
 		Clusters:                 db.clusters,
 		NumClusters:              db.numClusters,
 		Indexed:                  db.indexed,
-		InvertedIndex:            db.invertedIndex,
 		VectorDim:                db.vectorDim,
 		VectorizedType:           db.vectorizedType,
 		NormalizedVectors:        db.normalizedVectors,
@@ -306,7 +303,6 @@ func (db *VectorDB) loadFromFileStandard(filePath string) error {
 			db.vectors = make(map[string][]float64)
 			db.clusters = make([]Cluster, 0)
 			db.indexed = false
-			db.invertedIndex = make(map[string][]string)
 			db.normalizedVectors = make(map[string][]float64)
 			db.compressedVectors = make(map[string]entity.CompressedVector)
 			db.pqCodebook = nil
@@ -328,7 +324,6 @@ func (db *VectorDB) loadFromFileStandard(filePath string) error {
 		Clusters                 []Cluster
 		NumClusters              int
 		Indexed                  bool
-		InvertedIndex            map[string][]string
 		VectorDim                int
 		VectorizedType           int
 		NormalizedVectors        map[string][]float64
@@ -352,7 +347,6 @@ func (db *VectorDB) loadFromFileStandard(filePath string) error {
 		db.vectors = make(map[string][]float64)
 		db.clusters = make([]Cluster, 0)
 		db.indexed = false
-		db.invertedIndex = make(map[string][]string)
 		db.normalizedVectors = make(map[string][]float64)
 		db.compressedVectors = make(map[string]entity.CompressedVector)
 		db.pqCodebook = nil
@@ -364,7 +358,6 @@ func (db *VectorDB) loadFromFileStandard(filePath string) error {
 	db.clusters = data.Clusters
 	db.numClusters = data.NumClusters
 	db.indexed = data.Indexed
-	db.invertedIndex = data.InvertedIndex
 	db.vectorDim = data.VectorDim
 	db.vectorizedType = data.VectorizedType
 	db.normalizedVectors = data.NormalizedVectors
@@ -383,9 +376,6 @@ func (db *VectorDB) loadFromFileStandard(filePath string) error {
 	// 确保 map 在 nil 的情况下被初始化
 	if db.vectors == nil {
 		db.vectors = make(map[string][]float64)
-	}
-	if db.invertedIndex == nil {
-		db.invertedIndex = make(map[string][]string)
 	}
 	if db.normalizedVectors == nil {
 		db.normalizedVectors = make(map[string][]float64)

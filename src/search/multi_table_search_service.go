@@ -163,7 +163,7 @@ func (mts *MultiTableSearchService) CreateTable(tableName string, vectorDBBasePa
 	vectorDBPath := fmt.Sprintf("%s/%s", vectorDBBasePath, tableName) // 假设每个表有独立的 VectorDB 存储路径
 	vectorDB := vector.NewVectorDB(vectorDBPath, numClusters)
 	// InvertedIndex 需要 VectorDB 实例，所以先创建 VectorDB
-	invertedIndex := index.NewMVCCBPlusTreeInvertedIndex(invertedIndexOrder, mts.TxMgr, mts.LockMgr, mts.WAL, vectorDB)
+	invertedIndex := index.NewMVCCBPlusTreeInvertedIndex(invertedIndexOrder, nil, nil, nil)
 
 	mts.tables[tableName] = &TableInstance{
 		InvertedIndex: invertedIndex,

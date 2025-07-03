@@ -1,17 +1,13 @@
 package index
 
 import (
-	"VectorSphere/src/library/entity"
 	"VectorSphere/src/library/logger"
 	"VectorSphere/src/library/tree"
 	messages2 "VectorSphere/src/proto/messages"
-	"VectorSphere/src/vector"
 	"fmt"
 	"hash/fnv"
 	"runtime"
 	"sort"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -70,10 +66,9 @@ type AdaptiveConfig struct {
 }
 
 type MVCCBPlusTreeInvertedIndex struct {
-	tree     *tree.MVCCBPlusTree
-	order    int
-	mu       sync.RWMutex
-	vectorDB *vector.VectorDB // Add VectorDB field
+	tree  *tree.MVCCBPlusTree
+	order int
+	mu    sync.RWMutex
 	// 新增字段
 	stats   PerformanceStats
 	statsMu sync.RWMutex
@@ -85,14 +80,13 @@ type MVCCBPlusTreeInvertedIndex struct {
 	cacheTTL   int64 // 缓存有效期（秒）
 }
 
-func NewMVCCBPlusTreeInvertedIndex(order int, txMgr *tree.TransactionManager, lockMgr *tree.LockManager, wal *tree.WALManager, vectorDB *vector.VectorDB) *MVCCBPlusTreeInvertedIndex {
+func NewMVCCBPlusTreeInvertedIndex(order int, txMgr *tree.TransactionManager, lockMgr *tree.LockManager, wal *tree.WALManager) *MVCCBPlusTreeInvertedIndex {
 	return &MVCCBPlusTreeInvertedIndex{
 		tree:  tree.NewMVCCBPlusTree(order, txMgr, lockMgr, wal),
 		order: order,
 		// 初始化新增字段
 		queryCache: make(map[string]queryCache),
-		cacheTTL:   300,      // 默认缓存5分钟
-		vectorDB:   vectorDB, // Initialize vectorDB
+		cacheTTL:   300, // 默认缓存5分钟
 		config: AdaptiveConfig{
 			IndexRebuildThreshold: 0.2,
 			CacheTimeout:          5 * time.Minute,
@@ -293,13 +287,10 @@ func GenerateScoreId(doc messages2.Document) int64 {
 	return scoreId
 }
 
+// Close 关闭索引，释放资源
 func (idx *MVCCBPlusTreeInvertedIndex) Close() {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
-
-	if idx.vectorDB != nil {
-		idx.vectorDB.Close()
-	}
 
 	idx.cacheMu.Lock()
 	idx.queryCache = make(map[string]queryCache)
@@ -354,39 +345,13 @@ func (idx *MVCCBPlusTreeInvertedIndex) cleanupCache() {
 
 // Add 插入文档到倒排索引
 func (idx *MVCCBPlusTreeInvertedIndex) Add(tx *tree.Transaction, doc messages2.Document) error {
-	idx.mu.Lock() // Consider lock granularity; this locks the whole Add operation
+	idx.mu.Lock()
 	defer idx.mu.Unlock()
 	scoreId := GenerateScoreId(doc)
 
-	// 获取文档向量
-	var docVector []float64
-	if idx.vectorDB != nil {
-		// 从vectorDB获取向量
-		var docTextForVectorDB string
-		if len(doc.Bytes) > 0 {
-			docTextForVectorDB = string(doc.Bytes)
-		} else if len(doc.KeWords) > 0 {
-			var words []string
-			for _, kw := range doc.KeWords {
-				words = append(words, kw.Word)
-			}
-			docTextForVectorDB = strings.Join(words, " ")
-		}
-
-		if docTextForVectorDB != "" {
-			// 使用GetVectorForText获取向量
-			vector, err := idx.vectorDB.GetVectorForTextWithCache(docTextForVectorDB, vector.DefaultVectorized)
-			if err == nil {
-				docVector = vector
-			}
-		}
-	}
-
-	var keywords []*messages2.KeyWord // Track keywords successfully added to B+Tree
-
 	// Add to B+Tree (Inverted List for keywords)
 	for _, keyword := range doc.KeWords {
-		val, ok := idx.tree.Get(tx, keyword) // Get within transaction
+		val, ok := idx.tree.Get(tx, keyword)
 		var list InvertedList
 		if ok && val != nil {
 			list = val.(InvertedList)
@@ -403,7 +368,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) Add(tx *tree.Transaction, doc messages2.D
 					Id:          doc.Id,
 					BitsFeature: doc.BitsFeature,
 					ScoreId:     scoreId,
-					Vector:      docVector,
+					Vector:      nil, // 暂时不支持向量
 				})
 			}
 		} else {
@@ -412,50 +377,15 @@ func (idx *MVCCBPlusTreeInvertedIndex) Add(tx *tree.Transaction, doc messages2.D
 					Id:          doc.Id,
 					BitsFeature: doc.BitsFeature,
 					ScoreId:     scoreId,
-					Vector:      docVector,
+					Vector:      nil, // 暂时不支持向量
 				},
 			}
 		}
-		if err := idx.tree.Put(tx, keyword, list); err != nil { // Put within transaction
-			// If B+Tree Put fails, we stop and return error. No VectorDB operation was attempted yet.
+		if err := idx.tree.Put(tx, keyword, list); err != nil {
 			return fmt.Errorf("failed to put keyword %v to B+Tree: %w", keyword, err)
 		}
-		keywords = append(keywords, keyword) // Mark as successfully added
 	}
 
-	// 2. Add to VectorDB
-	if idx.vectorDB != nil {
-		var docTextForVectorDB string
-		if len(doc.Bytes) > 0 {
-			docTextForVectorDB = string(doc.Bytes)
-		} else if len(doc.KeWords) > 0 {
-			var words []string
-			for _, kw := range doc.KeWords {
-				words = append(words, kw.Word) // Assuming KeyWord has a 'Word' field
-			}
-			docTextForVectorDB = strings.Join(words, " ")
-		} else {
-			// No content to vectorize, maybe log a warning or skip
-			// fmt.Printf("Warning: Document %s has no content (Bytes or KeWords) for vectorization.\n", doc.Id)
-			// If no content for vectorization, we are done.
-			return nil
-		}
-
-		if docTextForVectorDB != "" {
-			// Use a default vectorization type or make it configurable
-			if err := idx.vectorDB.AddDocument(doc.Id, docTextForVectorDB, vector.DefaultVectorized); err != nil {
-				// VectorDB Add failed, attempt to roll back B+Tree changes for successfully added keywords
-				fmt.Printf("Warning: Failed to add document %s to VectorDB: %v. Attempting B+Tree rollback.\n", doc.Id, err)
-				rollbackErr := idx.rollbackBTreeAdd(tx, doc.Id, keywords)
-				if rollbackErr != nil {
-					fmt.Printf("CRITICAL ERROR: Failed to rollback B+Tree changes for document %s after VectorDB add failure: %v. System might be in an inconsistent state.\n", doc.Id, rollbackErr)
-					// A more robust system would require a transaction manager coordinating both DBs
-					// or a background process to reconcile inconsistencies.
-				}
-				return fmt.Errorf("failed to add document %s to VectorDB: %w", doc.Id, err)
-			}
-		}
-	}
 	// 清除查询缓存
 	idx.cacheMu.Lock()
 	idx.queryCache = make(map[string]queryCache)
@@ -561,14 +491,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) Delete(tx *tree.Transaction, docId string
 
 	}
 
-	// 2. Delete from VectorDB
-	if idx.vectorDB != nil {
-		if err := idx.vectorDB.DeleteVector(docId); err != nil {
-			// Log or handle error. What if BTree deletion succeeded, but VectorDB failed?
-			// This indicates a need for a more robust 2PC or compensation mechanism if strict consistency is required.
-			return fmt.Errorf("failed to delete document %s from VectorDB: %w", docId, err)
-		}
-	}
+	// VectorDB 删除功能暂时移除
 
 	return nil
 }
@@ -721,13 +644,11 @@ func (idx *MVCCBPlusTreeInvertedIndex) Search(
 	defer idx.mu.RUnlock()
 
 	var bTreeDocIds map[string]MvccSkipListValue
-	var vectorSearchDocs map[string]float64
 
-	var bTreeErr, vectorErr error
+	var bTreeErr error
 	var wg sync.WaitGroup
 
 	performBTreeSearch := query != nil && (query.Keyword != nil || len(query.Must) > 0 || len(query.Should) > 0)
-	performVectorSearch := vectorQueryText != "" && idx.vectorDB != nil && kNearest > 0
 
 	// 并行执行B+树搜索和向量搜索
 	if performBTreeSearch {
@@ -747,99 +668,7 @@ func (idx *MVCCBPlusTreeInvertedIndex) Search(
 		}()
 	}
 
-	if performVectorSearch {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			// 生成缓存键
-			vectorCacheKey := fmt.Sprintf("vec:%s:%d:%t", vectorQueryText, kNearest, useANN)
-
-			// 检查缓存
-			idx.cacheMu.RLock()
-			if cache, ok := idx.queryCache[vectorCacheKey]; ok && time.Now().Unix()-cache.timestamp < idx.cacheTTL {
-				vectorSearchDocs = make(map[string]float64)
-				// 从缓存恢复结果
-				for _, id := range cache.results {
-					parts := strings.Split(id, ":")
-					if len(parts) == 2 {
-						score, _ := strconv.ParseFloat(parts[1], 64)
-						vectorSearchDocs[parts[0]] = score
-					}
-				}
-				// 更新缓存命中统计
-				cacheItem := idx.queryCache[vectorCacheKey]
-				cacheItem.hitCount++
-				idx.queryCache[vectorCacheKey] = cacheItem
-
-				idx.cacheMu.RUnlock()
-			} else {
-				idx.cacheMu.RUnlock()
-
-				// 缓存未命中，执行向量搜索
-				queryVec, errVec := idx.vectorDB.GetVectorForTextWithCache(vectorQueryText, vector.DefaultVectorized)
-				if errVec != nil {
-					vectorErr = fmt.Errorf("error vectorizing query text for vector search: %w", errVec)
-					return
-				}
-
-				if queryVec != nil {
-					vectorSearchDocs = make(map[string]float64)
-					var ids []entity.Result
-					var err error
-
-					// 根据数据规模自动选择搜索策略
-					vectorCount := len(idx.vectorDB.GetVectors())
-
-					// 大规模数据使用ANN
-					if useANN || vectorCount > 1000 {
-						// 动态调整ANN参数
-						nprobe := 8
-						if vectorCount > 10000 {
-							nprobe = 16
-						} else if vectorCount > 100000 {
-							nprobe = 32
-						}
-
-						options := entity.SearchOptions{
-							Nprobe:        nprobe,
-							NumHashTables: 4 + vectorCount/10000, // 根据数据规模调整哈希表数量
-							UseANN:        true,
-						}
-						ids, err = idx.vectorDB.HybridSearch(queryVec, kNearest, options, nprobe)
-					} else {
-						// 小规模数据使用精确搜索
-						ids, err = idx.vectorDB.FindNearestWithScores(queryVec, kNearest, 0.0)
-					}
-
-					if err != nil {
-						vectorErr = fmt.Errorf("vector search failed: %w", err)
-						return
-					}
-
-					// 处理搜索结果
-					for i, id := range ids {
-						vectorSearchDocs[id.Id] = ids[i].Similarity
-					}
-
-					// 缓存结果
-					if len(vectorSearchDocs) > 0 {
-						cacheResults := make([]string, 0, len(vectorSearchDocs))
-						for id, score := range vectorSearchDocs {
-							cacheResults = append(cacheResults, fmt.Sprintf("%s:%f", id, score))
-						}
-
-						idx.cacheMu.Lock()
-						idx.queryCache[vectorCacheKey] = queryCache{
-							results:   cacheResults,
-							timestamp: time.Now().Unix(),
-							hitCount:  1,
-						}
-						idx.cacheMu.Unlock()
-					}
-				}
-			}
-		}()
-	}
+	// 向量搜索功能暂时禁用
 
 	// 等待所有搜索完成
 	wg.Wait()
@@ -847,61 +676,14 @@ func (idx *MVCCBPlusTreeInvertedIndex) Search(
 	if bTreeErr != nil {
 		return nil, bTreeErr
 	}
-	if vectorErr != nil {
-		return nil, vectorErr
-	}
 
 	// Combine results and apply scoring
 	finalResultCandidates := make(map[string]float64) // docId -> combined_score
 
-	if performBTreeSearch && performVectorSearch {
-		// 使用更复杂的评分策略
-		for vecId, vecScore := range vectorSearchDocs {
-			if bTreeVal, exists := bTreeDocIds[vecId]; exists {
-				// 归一化向量相似度分数 (通常在0-1之间)
-				normalizedVecScore := vecScore
-
-				// 计算关键词匹配分数
-				keywordScore := 1.0
-
-				// 可以根据关键词匹配的数量增加分数
-				if query != nil && query.Keyword != nil {
-					keywordScore = 1.0
-				} else if query != nil && len(query.Must) > 0 {
-					// 必须匹配的关键词越多，分数越高
-					keywordScore = 1.0 + float64(len(query.Must))*0.2
-				} else if query != nil && len(query.Should) > 0 {
-					// 可选匹配的关键词也增加分数，但权重较低
-					keywordScore = 1.0 + float64(len(query.Should))*0.1
-				}
-
-				// 考虑文档特征位
-				featureScore := 0.0
-				if bTreeVal.BitsFeature&onFlag == onFlag {
-					featureScore += 0.5 // 匹配所有必需特征位加分
-				}
-
-				// 加权组合分数 (可以调整权重)
-				keywordWeight := 0.4
-				vectorWeight := 0.5
-				featureWeight := 0.1
-
-				combinedScore := keywordWeight*keywordScore +
-					vectorWeight*normalizedVecScore +
-					featureWeight*featureScore
-
-				finalResultCandidates[vecId] = combinedScore
-			}
-		}
-	} else if performBTreeSearch {
+	if performBTreeSearch {
 		// Only B+Tree search was performed, assign a default score for sorting
 		for id := range bTreeDocIds {
 			finalResultCandidates[id] = 1.0 // Default score for BTree matches
-		}
-	} else if performVectorSearch {
-		// Only VectorDB search was performed, use vector similarity score
-		for id, score := range vectorSearchDocs {
-			finalResultCandidates[id] = score
 		}
 	} else {
 		// No search criteria provided, or neither search type was applicable
@@ -1000,6 +782,122 @@ func (idx *MVCCBPlusTreeInvertedIndex) UnionList(lists ...InvertedList) Inverted
 		result = append(result, v)
 	}
 	return result
+}
+
+// Clear 清空倒排索引
+func (idx *MVCCBPlusTreeInvertedIndex) Clear() error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	// 重新创建B+树
+	idx.tree = tree.NewMVCCBPlusTree(idx.order, nil, nil, nil)
+
+	// 清除查询缓存
+	idx.cacheMu.Lock()
+	idx.queryCache = make(map[string]queryCache)
+	idx.cacheMu.Unlock()
+
+	return nil
+}
+
+// AddTerm 添加词项到倒排索引
+func (idx *MVCCBPlusTreeInvertedIndex) AddTerm(keyword *messages2.KeyWord, docId string) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	val, ok := idx.tree.Get(nil, keyword)
+	var list InvertedList
+	if ok && val != nil {
+		list = val.(InvertedList)
+		// 检查是否已存在相同的 docId，避免重复添加
+		for _, v := range list {
+			if v.Id == docId {
+				return nil // 已存在，不重复添加
+			}
+		}
+		list = append(list, MvccSkipListValue{
+			Id:          docId,
+			BitsFeature: 0,
+			ScoreId:     0,
+			Vector:      nil,
+		})
+	} else {
+		list = InvertedList{
+			MvccSkipListValue{
+				Id:          docId,
+				BitsFeature: 0,
+				ScoreId:     0,
+				Vector:      nil,
+			},
+		}
+	}
+
+	return idx.tree.Put(nil, keyword, list)
+}
+
+// DeleteDocument 从倒排索引中删除文档
+func (idx *MVCCBPlusTreeInvertedIndex) DeleteDocument(docId string) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	// 获取所有关键词
+	keywords := idx.getAllKeywords()
+
+	// 从每个关键词的倒排列表中删除该文档
+	for _, keyword := range keywords {
+		val, ok := idx.tree.Get(nil, &keyword)
+		if !ok || val == nil {
+			continue
+		}
+
+		list := val.(InvertedList)
+		newList := make(InvertedList, 0, len(list))
+		for _, v := range list {
+			if v.Id != docId {
+				newList = append(newList, v)
+			}
+		}
+
+		if len(newList) == 0 {
+			// 如果列表为空，删除该关键词
+			err := idx.tree.Delete(nil, &keyword)
+			if err != nil {
+				return err
+			}
+		} else {
+			// 更新倒排列表
+			err := idx.tree.Put(nil, &keyword, newList)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// 清除查询缓存
+	idx.cacheMu.Lock()
+	idx.queryCache = make(map[string]queryCache)
+	idx.cacheMu.Unlock()
+
+	return nil
+}
+
+// SearchTerm 搜索词项
+func (idx *MVCCBPlusTreeInvertedIndex) SearchTerm(keyword *messages2.KeyWord) ([]string, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	val, ok := idx.tree.Get(nil, keyword)
+	if !ok || val == nil {
+		return []string{}, nil
+	}
+
+	list := val.(InvertedList)
+	result := make([]string, 0, len(list))
+	for _, v := range list {
+		result = append(result, v.Id)
+	}
+
+	return result, nil
 }
 
 // IntersectionList 交集

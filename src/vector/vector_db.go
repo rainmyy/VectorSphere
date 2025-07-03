@@ -1,6 +1,7 @@
 package vector
 
 import (
+	"VectorSphere/src/index"
 	"VectorSphere/src/library/acceler"
 	"VectorSphere/src/library/algorithm"
 	"VectorSphere/src/library/entity"
@@ -8,6 +9,7 @@ import (
 	"VectorSphere/src/library/graph"
 	"VectorSphere/src/library/logger"
 	"VectorSphere/src/library/tree"
+	messages2 "VectorSphere/src/proto/messages"
 	"container/heap"
 	"encoding/binary"
 	"fmt"
@@ -102,9 +104,10 @@ type VectorDB struct {
 	clusters      []Cluster           // 存储簇信息，用于IVF索引
 	numClusters   int                 // K-Means中的K值，即簇的数量
 	indexed       bool                // 标记数据库是否已建立索引
-	invertedIndex map[string][]string // 倒排索引，关键词 -> 文件ID列表
-	// 添加倒排索引锁，细化锁粒度
-	invertedMu sync.RWMutex
+	// 移除原有的简单倒排索引，统一使用MVCC倒排索引
+
+	// 统一的MVCC倒排索引
+	mvccInvertedIndex *index.MVCCBPlusTreeInvertedIndex
 
 	// 距离计算器
 	distanceCalculator algorithm.DistanceCalculator // 用于计算向量距离的通用组件
@@ -1665,9 +1668,13 @@ func (db *VectorDB) Close() {
 	db.clusters = make([]Cluster, 0)        // 清空簇信息
 	db.indexed = false                      // 重置索引状态
 
-	db.invertedMu.Lock()
-	db.invertedIndex = make(map[string][]string) // 清空倒排索引
-	db.invertedMu.Unlock()
+	// 清空MVCC倒排索引
+	if db.mvccInvertedIndex != nil {
+		err := db.mvccInvertedIndex.Clear()
+		if err != nil {
+			logger.Warning("清空MVCC倒排索引失败: %v", err)
+		}
+	}
 
 	db.normalizedVectors = make(map[string][]float64)               // 清空归一化向量
 	db.compressedVectors = make(map[string]entity.CompressedVector) // 清空压缩向量
@@ -1716,7 +1723,6 @@ func NewVectorDBWithDimension(dimension int, distanceType string) (*VectorDB, er
 		numClusters:        10, // 默认簇数
 		clusters:           make([]Cluster, 0),
 		indexed:            false,
-		invertedIndex:      make(map[string][]string),
 		vectorDim:          dimension,
 		vectorizedType:     DefaultVectorized,
 		normalizedVectors:  make(map[string][]float64),
@@ -1731,6 +1737,9 @@ func NewVectorDBWithDimension(dimension int, distanceType string) (*VectorDB, er
 		usePQCompression:         false,
 		stopCh:                   make(chan struct{}),
 	}
+	
+	// 初始化MVCC倒排索引
+	db.mvccInvertedIndex = index.NewMVCCBPlusTreeInvertedIndex(16, nil, nil, nil)
 
 	return db, nil
 }
@@ -1745,7 +1754,6 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 		numClusters:        numClusters,
 		clusters:           make([]Cluster, 0),
 		indexed:            false,
-		invertedIndex:      make(map[string][]string),
 		vectorDim:          0,
 		vectorizedType:     DefaultVectorized,
 		normalizedVectors:  make(map[string][]float64),
@@ -1770,6 +1778,10 @@ func NewVectorDB(filePath string, numClusters int) *VectorDB {
 		currentStrategy:         acceler.StrategyStandard,
 		strategySelector:        &StrategySelector{},
 	}
+	
+	// 初始化MVCC倒排索引
+	db.mvccInvertedIndex = index.NewMVCCBPlusTreeInvertedIndex(16, nil, nil, nil)
+	
 	// 检测硬件能力
 	db.HardwareCaps = db.strategyComputeSelector.GetHardwareCapabilities()
 	logger.Info("硬件检测结果: AVX2=%v, AVX512=%v, GPU=%v, CPU核心=%d",
@@ -3104,26 +3116,17 @@ func (db *VectorDB) AddDocument(id string, doc string, vectorizedType int) error
 			db.compressedVectors[id] = compressedVec
 		}
 	}
-	// 更新倒排索引
-	db.invertedMu.Lock()
-	words := strings.Fields(doc)
-	for _, word := range words {
-		if _, exists := db.invertedIndex[word]; !exists {
-			db.invertedIndex[word] = make([]string, 0, 1)
-		}
-		// 检查ID是否已存在，避免重复
-		found := false
-		for _, existingID := range db.invertedIndex[word] {
-			if existingID == id {
-				found = true
-				break
+	// 更新MVCC倒排索引
+	if db.mvccInvertedIndex != nil {
+		words := strings.Fields(doc)
+		for _, word := range words {
+			keyword := &messages2.KeyWord{Word: word}
+			err := db.mvccInvertedIndex.AddTerm(keyword, id)
+			if err != nil {
+				logger.Warning("添加词项到MVCC倒排索引失败: %v", err)
 			}
 		}
-		if !found {
-			db.invertedIndex[word] = append(db.invertedIndex[word], id)
-		}
 	}
-	db.invertedMu.Unlock()
 
 	if db.indexed {
 		db.indexed = false // 索引失效，需要重建
@@ -3638,22 +3641,13 @@ func (db *VectorDB) Delete(id string) error {
 	delete(db.normalizedVectors, id)
 	delete(db.compressedVectors, id) // 删除压缩向量
 
-	// 从倒排索引中删除
-	db.invertedMu.Lock()
-	for word, ids := range db.invertedIndex {
-		newIDs := make([]string, 0, len(ids))
-		for _, existingID := range ids {
-			if existingID != id {
-				newIDs = append(newIDs, existingID)
-			}
-		}
-		if len(newIDs) == 0 {
-			delete(db.invertedIndex, word)
-		} else {
-			db.invertedIndex[word] = newIDs
+	// 从MVCC倒排索引中删除
+	if db.mvccInvertedIndex != nil {
+		err := db.mvccInvertedIndex.DeleteDocument(id)
+		if err != nil {
+			logger.Warning("从MVCC倒排索引删除文档失败: %v", err)
 		}
 	}
-	db.invertedMu.Unlock()
 
 	if db.indexed {
 		db.indexed = false // 索引失效，需要重建
@@ -3882,7 +3876,6 @@ func (db *VectorDB) initializeEmptyDB() {
 	db.vectors = make(map[string][]float64)
 	db.clusters = make([]Cluster, 0)
 	db.indexed = false
-	db.invertedIndex = make(map[string][]string)
 	db.normalizedVectors = make(map[string][]float64)
 	db.compressedVectors = make(map[string]entity.CompressedVector)
 	db.pqCodebook = nil
@@ -3894,7 +3887,6 @@ func (db *VectorDB) restoreDataFromStruct(data dataToSave) {
 	db.clusters = data.Clusters
 	db.numClusters = data.NumClusters
 	db.indexed = data.Indexed
-	db.invertedIndex = data.InvertedIndex
 	db.vectorDim = data.VectorDim
 	db.vectorizedType = data.VectorizedType
 	db.normalizedVectors = data.NormalizedVectors
@@ -3914,9 +3906,6 @@ func (db *VectorDB) restoreDataFromStruct(data dataToSave) {
 	// 确保 map 不为 nil
 	if db.vectors == nil {
 		db.vectors = make(map[string][]float64)
-	}
-	if db.invertedIndex == nil {
-		db.invertedIndex = make(map[string][]string)
 	}
 	if db.normalizedVectors == nil {
 		db.normalizedVectors = make(map[string][]float64)
@@ -5381,12 +5370,17 @@ func (db *VectorDB) FileSystemSearch(query string, vectorizedType int, k int, np
 	db.mu.RLock()
 	defer db.mu.RUnlock()
 
-	// 首先使用倒排索引快速筛选候选集
+	// 首先使用MVCC倒排索引快速筛选候选集
 	candidateSet := make(map[string]int)
-	for _, word := range words {
-		if docIDs, exists := db.invertedIndex[word]; exists {
-			for _, id := range docIDs {
-				candidateSet[id]++
+	if db.mvccInvertedIndex != nil {
+		for _, word := range words {
+			// 使用MVCC倒排索引搜索单个词
+			keyword := &messages2.KeyWord{Word: word}
+			docIDs, err := db.mvccInvertedIndex.SearchTerm(keyword)
+			if err == nil {
+				for _, id := range docIDs {
+					candidateSet[id]++
+				}
 			}
 		}
 	}
