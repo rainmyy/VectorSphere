@@ -20,6 +20,9 @@ func (b *BBoltDB) NewInstance(path, bucket string) *BBoltDB {
 	return b
 }
 func (b *BBoltDB) Close() error {
+	if b.db == nil {
+		return nil // 如果db为nil，直接返回nil，不需要关闭
+	}
 	return b.db.Close()
 }
 

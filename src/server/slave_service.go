@@ -209,48 +209,53 @@ func (s *SlaveService) Start(ctx context.Context) error {
 	// 如果 etcd client 未初始化，尝试重新初始化
 	if s.client == nil {
 		logger.Info("etcd client not initialized, attempting to connect...")
-		client, err := clientv3.New(clientv3.Config{
-			Endpoints:   etcdEndpoints,
-			DialTimeout: 5 * time.Second,
-		})
-		if err != nil {
-			logger.Warning("Failed to connect to etcd during SlaveService start: %v. Proceeding without etcd.", err)
-		} else {
+		// 异步连接etcd，避免阻塞启动流程
+		go func() {
+			logger.Info("Starting etcd connection...")
+			client, err := clientv3.New(clientv3.Config{
+				Endpoints:   etcdEndpoints,
+				DialTimeout: 5 * time.Second,
+			})
+			if err != nil {
+				logger.Warning("Failed to connect to etcd during SlaveService start: %v. Proceeding without etcd.", err)
+				return
+			}
 			s.client = client
 			logger.Info("Successfully connected to etcd.")
-		}
+			
+			// 连接成功后注册服务
+			if err := s.registerService(); err != nil {
+				logger.Warning("Failed to register slave service with etcd: %v.", err)
+			} else {
+				logger.Info("Slave service registered with etcd successfully.")
+			}
+			
+			// 开始监听主节点
+			go s.watchMaster(context.Background())
+		}()
+		logger.Info("etcd connection started in background.")
 	}
 
-	// 注册服务 (如果 etcd client 存在)
-	if s.client != nil {
-		if err := s.registerService(); err != nil {
-			// 非致命错误，服务可以尝试无etcd运行或依赖master拉取
-			logger.Warning("Failed to register slave service with etcd: %v. Continuing without registration.", err)
-		} else {
-			logger.Info("Slave service registered with etcd successfully.")
-		}
-	} else {
-		logger.Info("Slave service running without etcd registration.")
-	}
-
-	// 监听主节点 (如果 etcd client 存在)
-	if s.client != nil {
-		go s.watchMaster(ctx) // 使用传递的上下文
-	} else {
-		logger.Info("Cannot watch master as etcd client is not available.")
-		// 这里可以考虑实现一个备用机制来发现 master，例如通过配置或广播
-	}
+	// etcd注册和监听已移到异步处理中
+	logger.Info("etcd registration and master watching will be handled asynchronously.")
 
 	// 初始化索引等（如果尚未初始化）
 	if s.Index == nil {
-		// 这里的参数需要从配置中获取或传递
-		// 例如: docNumEstimate, dbType, DataDir 等
-		// 此处仅为示例，您需要根据实际情况调整
-		if err := s.Init(100000, 0, "./data/slave_"+s.localhost, nil, nil, nil); err != nil {
-			logger.Error("Failed to initialize slave service components: %v", err)
-			return err // 初始化失败是致命的
-		}
-		logger.Info("Slave service components initialized.")
+		logger.Info("Starting slave service component initialization...")
+		// 异步初始化索引，避免阻塞启动流程
+		go func() {
+			// 这里的参数需要从配置中获取或传递
+			// 例如: docNumEstimate, dbType, DataDir 等
+			// 此处仅为示例，您需要根据实际情况调整
+			logger.Info("Initializing slave service components...")
+			if err := s.Init(100000, 0, "./data/slave_"+s.localhost, nil, nil, nil); err != nil {
+				logger.Error("Failed to initialize slave service components: %v", err)
+				// 这里可以设置一个标志位表示初始化失败
+				return
+			}
+			logger.Info("Slave service components initialized successfully.")
+		}()
+		logger.Info("Slave service component initialization started in background.")
 	}
 
 	// 启动gRPC服务器
@@ -400,10 +405,15 @@ func (s *SlaveService) Stop(ctx context.Context) error {
 
 	// 关闭索引等资源
 	if s.Index != nil {
+		logger.Info("Closing Index for SlaveService %s...", s.localhost)
 		err := s.Index.Close()
 		if err != nil {
+			logger.Warning("Failed to close Index for SlaveService %s: %v", s.localhost, err)
 			return err
 		}
+		logger.Info("Index closed successfully for SlaveService %s", s.localhost)
+	} else {
+		logger.Info("Index is nil, skipping close for SlaveService %s", s.localhost)
 	}
 
 	logger.Info("SlaveService %s stopped.", s.localhost)

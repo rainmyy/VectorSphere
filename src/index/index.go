@@ -32,6 +32,9 @@ func (is *Index) NewIndexServer(docNumEstimate int, dbType int, bucket, dbDir st
 }
 
 func (is *Index) Close() error {
+	if is.db == nil {
+		return nil // 如果db为nil，直接返回nil，不需要关闭
+	}
 	return is.db.Close()
 }
 

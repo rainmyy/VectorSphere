@@ -121,13 +121,29 @@ func (dm *DistributedManager) Start() error {
 		return fmt.Errorf("初始化leader选举失败: %v", err)
 	}
 
-	// 启动服务
-	if err := dm.startServices(); err != nil {
-		return fmt.Errorf("启动服务失败: %v", err)
+	// 启动基础服务
+	if err := dm.startBaseServices(); err != nil {
+		return fmt.Errorf("启动基础服务失败: %v", err)
 	}
 
-	// 如果配置为自动选举，启动leader选举
-	if dm.config.NodeType != MasterNode && dm.config.NodeType != SlaveNode {
+	// 根据节点类型启动相应服务
+	if dm.config.NodeType == MasterNode {
+		// 配置为master节点，直接启动master服务和API Gateway
+		logger.Info("Node configured as master, starting master services...")
+		if err := dm.startMasterServices(); err != nil {
+			return fmt.Errorf("启动master服务失败: %v", err)
+		}
+	} else {
+		// 配置为slave或auto，先启动slave服务，然后进行etcd竞选
+		logger.Info("Node configured as slave/auto, starting slave service first...")
+		// 先启动slave服务
+		if err := dm.startSlaveServices(); err != nil {
+			return fmt.Errorf("启动slave服务失败: %v", err)
+		}
+		// 等待slave服务完全启动
+		time.Sleep(1 * time.Second)
+		logger.Info("Slave service started, now starting election process...")
+		// 然后启动leader选举
 		go dm.runLeaderElection()
 	}
 
@@ -267,21 +283,35 @@ func (dm *DistributedManager) onBecomeLeader() {
 	defer dm.mutex.Unlock()
 
 	dm.setMaster(true)
-	logger.Info("Node became master")
-
-	// 启动master服务
-	if dm.masterService == nil {
-		if err := dm.startMasterService(dm.communicationSvc); err != nil {
-			logger.Error("启动master服务失败: %v", err)
-		}
-	}
+	logger.Info("Node became master through election")
 
 	// 停止slave服务（如果正在运行）
 	if dm.slaveService != nil {
+		logger.Info("Stopping slave service...")
 		if err := dm.slaveService.Stop(dm.ctx); err != nil {
 			logger.Error("停止slave服务失败: %v", err)
 		}
 		dm.slaveService = nil
+		// 等待一段时间确保slave服务完全停止
+		time.Sleep(2 * time.Second)
+		logger.Info("Slave service stopped successfully")
+	}
+
+	// 启动master服务
+	if dm.masterService == nil {
+		logger.Info("Starting master service after election...")
+		if err := dm.startMasterService(dm.communicationSvc); err != nil {
+			logger.Error("启动master服务失败: %v", err)
+			return
+		}
+	}
+
+	// 启动API Gateway（监听HTTP请求）
+	if dm.apiGateway == nil {
+		logger.Info("Starting API Gateway after becoming master...")
+		if err := dm.startAPIGateway(); err != nil {
+			logger.Error("启动API Gateway失败: %v", err)
+		}
 	}
 }
 
@@ -300,26 +330,37 @@ func (dm *DistributedManager) onLoseLeader() {
 	defer dm.mutex.Unlock()
 
 	dm.setMaster(false)
-	logger.Info("Node lost master status")
+	logger.Info("Node lost master status, switching to slave mode")
+
+	// 停止API Gateway
+	if dm.apiGateway != nil {
+		logger.Info("Stopping API Gateway...")
+		if err := dm.apiGateway.Stop(dm.ctx); err != nil {
+			logger.Error("停止API Gateway失败: %v", err)
+		}
+		dm.apiGateway = nil
+	}
 
 	// 停止master服务
 	if dm.masterService != nil {
+		logger.Info("Stopping master service...")
 		if err := dm.masterService.Stop(dm.ctx); err != nil {
 			logger.Error("停止master服务失败: %v", err)
 		}
 		dm.masterService = nil
 	}
 
-	// 启动slave服务
+	// 启动slave服务（监听gRPC请求）
 	if dm.slaveService == nil {
+		logger.Info("Starting slave service after losing master status...")
 		if err := dm.startSlaveService(dm.communicationSvc); err != nil {
 			logger.Error("启动slave服务失败: %v", err)
 		}
 	}
 }
 
-// startServices 启动服务
-func (dm *DistributedManager) startServices() error {
+// startBaseServices 启动基础服务
+func (dm *DistributedManager) startBaseServices() error {
 	// 创建服务发现
 	dm.serviceDiscovery = NewServiceDiscovery(dm.etcdClient, dm.config.ServiceName)
 
@@ -334,15 +375,48 @@ func (dm *DistributedManager) startServices() error {
 	// 注册分布式文件服务
 	dm.RegisterService("distributed_file_service", distributedFileService)
 
-	// 根据节点类型启动相应的服务
-	if dm.config.NodeType == MasterNode {
-		return dm.startMasterService(dm.communicationSvc)
-	} else if dm.config.NodeType == SlaveNode {
-		return dm.startSlaveService(dm.communicationSvc)
+	return nil
+}
+
+// startMasterServices 启动master服务和API Gateway
+func (dm *DistributedManager) startMasterServices() error {
+	// 启动master服务
+	if err := dm.startMasterService(dm.communicationSvc); err != nil {
+		return fmt.Errorf("启动master服务失败: %v", err)
 	}
 
-	// 默认启动slave服务
+	// 启动API Gateway
+	if err := dm.startAPIGateway(); err != nil {
+		return fmt.Errorf("启动API Gateway失败: %v", err)
+	}
+
+	return nil
+}
+
+// startSlaveServices 启动slave服务
+func (dm *DistributedManager) startSlaveServices() error {
 	return dm.startSlaveService(dm.communicationSvc)
+}
+
+// startAPIGateway 启动API Gateway
+func (dm *DistributedManager) startAPIGateway() error {
+	logger.Info("Starting API Gateway...")
+
+	// 创建API Gateway
+	dm.apiGateway = NewAPIGateway(
+		dm,
+		dm.communicationSvc,
+		dm.serviceDiscovery,
+		dm.config.HttpPort,
+	)
+
+	// 启动API Gateway
+	if err := dm.apiGateway.Start(dm.ctx); err != nil {
+		return fmt.Errorf("启动API Gateway失败: %v", err)
+	}
+
+	logger.Info("API Gateway started successfully on port %d", dm.config.HttpPort)
+	return nil
 }
 
 // startMasterService 启动master服务
