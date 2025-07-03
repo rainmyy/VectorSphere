@@ -311,7 +311,13 @@ func (dm *DistributedManager) onBecomeLeader() {
 		logger.Info("Starting API Gateway after becoming master...")
 		if err := dm.startAPIGateway(); err != nil {
 			logger.Error("启动API Gateway失败: %v", err)
+			return
 		}
+	}
+
+	// 注册master节点信息到etcd，包括API Gateway地址
+	if err := dm.registerMasterService(); err != nil {
+		logger.Error("注册master服务到etcd失败: %v", err)
 	}
 }
 
@@ -331,6 +337,11 @@ func (dm *DistributedManager) onLoseLeader() {
 
 	dm.setMaster(false)
 	logger.Info("Node lost master status, switching to slave mode")
+
+	// 从etcd注销master服务信息
+	if err := dm.unregisterMasterService(); err != nil {
+		logger.Error("注销master服务失败: %v", err)
+	}
 
 	// 停止API Gateway
 	if dm.apiGateway != nil {
@@ -402,12 +413,24 @@ func (dm *DistributedManager) startSlaveServices() error {
 func (dm *DistributedManager) startAPIGateway() error {
 	logger.Info("Starting API Gateway...")
 
+	// 获取当前节点的IP地址
+	localIP, err := common.GetLocalHost()
+	if err != nil {
+		return fmt.Errorf("获取本地IP失败: %v", err)
+	}
+
+	// 使用当前节点的IP和HttpPort构建API Gateway地址
+	apiGatewayPort := dm.config.HttpPort
+	apiGatewayAddress := localIP + ":" + strconv.Itoa(apiGatewayPort)
+
+	logger.Info("API Gateway will listen on: %s", apiGatewayAddress)
+
 	// 创建API Gateway
 	dm.apiGateway = NewAPIGateway(
 		dm,
 		dm.communicationSvc,
 		dm.serviceDiscovery,
-		dm.config.HttpPort,
+		apiGatewayPort,
 	)
 
 	// 启动API Gateway
@@ -415,7 +438,7 @@ func (dm *DistributedManager) startAPIGateway() error {
 		return fmt.Errorf("启动API Gateway失败: %v", err)
 	}
 
-	logger.Info("API Gateway started successfully on port %d", dm.config.HttpPort)
+	logger.Info("API Gateway started successfully on %s", apiGatewayAddress)
 	return nil
 }
 
@@ -544,4 +567,51 @@ func (dm *DistributedManager) GetCommunicationService() *CommunicationService {
 // GetConfig 获取配置
 func (dm *DistributedManager) GetConfig() *DistributedConfig {
 	return dm.config
+}
+
+// registerMasterService 注册master服务信息到etcd
+func (dm *DistributedManager) registerMasterService() error {
+	// 获取当前节点的IP地址
+	localIP, err := common.GetLocalHost()
+	if err != nil {
+		return fmt.Errorf("获取本地IP失败: %v", err)
+	}
+
+	// 构建API Gateway地址
+	apiGatewayAddress := localIP + ":" + strconv.Itoa(dm.config.HttpPort)
+
+	// 创建master服务信息
+	masterInfo := &ServiceInfo{
+		ServiceName: dm.config.ServiceName,
+		NodeID:      dm.localhost, // 使用localhost作为节点ID
+		Address:     localIP,
+		Port:        dm.config.HttpPort,
+		NodeType:    "master",
+		Status:      "active",
+		Metadata: map[string]string{
+			"api_gateway_address": apiGatewayAddress,
+			"grpc_address":        dm.localhost,
+			"version":             "1.0.0",
+		},
+		LastSeen: time.Now(),
+		Version:  "1.0.0",
+	}
+
+	// 注册master服务到etcd
+	if err := dm.serviceDiscovery.RegisterService(dm.ctx, masterInfo, int64(dm.config.Heartbeat)); err != nil {
+		return fmt.Errorf("注册master服务失败: %v", err)
+	}
+
+	logger.Info("Master service registered successfully with API Gateway address: %s", apiGatewayAddress)
+	return nil
+}
+
+// unregisterMasterService 从etcd注销master服务信息
+func (dm *DistributedManager) unregisterMasterService() error {
+	if err := dm.serviceDiscovery.UnregisterService(dm.ctx, "master", dm.localhost); err != nil {
+		return fmt.Errorf("注销master服务失败: %v", err)
+	}
+
+	logger.Info("Master service unregistered successfully")
+	return nil
 }
