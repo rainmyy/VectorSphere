@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
+	"math/rand"
 	"strconv"
 	"sync"
 	"time"
@@ -26,6 +27,7 @@ type NodeType int
 const (
 	MasterNode NodeType = iota
 	SlaveNode
+	Auto // 自动模式，根据集群状态决定角色
 )
 
 // DistributedConfig 分布式配置
@@ -125,6 +127,9 @@ func (dm *DistributedManager) Start() error {
 	if err := dm.startBaseServices(); err != nil {
 		return fmt.Errorf("启动基础服务失败: %v", err)
 	}
+
+	// 启动实时master监听服务
+	go dm.startMasterWatcher()
 
 	// 优化的启动逻辑：检查etcd中是否已有master节点
 	if dm.config.NodeType == MasterNode {
@@ -334,6 +339,106 @@ func (dm *DistributedManager) monitorLeadership() {
 	}
 }
 
+// startMasterWatcher 启动master节点实时监听
+func (dm *DistributedManager) startMasterWatcher() {
+	logger.Info("Starting master watcher for real-time monitoring...")
+	
+	// 设置master变化回调函数
+	dm.serviceDiscovery.WatchMaster(dm.ctx, func(masterInfo *ServiceInfo) {
+		dm.HandleMasterChange(masterInfo)
+	})
+}
+
+// HandleMasterChange 处理master节点变化
+func (dm *DistributedManager) HandleMasterChange(masterInfo *ServiceInfo) {
+	logger.Info("HandleMasterChange called with masterInfo: %v", masterInfo)
+	
+	// 先检查当前节点状态，避免在锁内调用IsMaster导致死锁
+	currentIsMaster := dm.config.NodeType == MasterNode
+	logger.Info("Current node IsMaster status: %v", currentIsMaster)
+	
+	if masterInfo == nil {
+		// master节点消失，如果当前不是master则尝试竞选
+		logger.Info("Master node disappeared, checking if should attempt election...")
+		if !currentIsMaster {
+			logger.Info("Current node is not master, attempting election...")
+			go dm.attemptMasterElectionAsync()
+		} else {
+			logger.Info("Current node is already master, no election needed")
+		}
+	} else {
+		// 发现新的master节点
+		logger.Info("Master node detected: %s:%d", masterInfo.Address, masterInfo.Port)
+		
+		// 如果当前节点是master但发现了其他master，需要检查是否应该降级
+		if currentIsMaster && masterInfo.NodeID != dm.localhost {
+			logger.Warning("Detected another master node, checking leadership status...")
+			// 检查当前节点的选举状态
+			go dm.verifyLeadershipStatus()
+		}
+	}
+}
+
+// attemptMasterElectionAsync 异步尝试master选举
+func (dm *DistributedManager) attemptMasterElectionAsync() {
+	logger.Info("Starting async master election attempt...")
+	
+	// 添加随机延迟避免多个节点同时竞选
+	delay := time.Duration(1+rand.Intn(3)) * time.Second
+	logger.Info("Waiting %v before election attempt...", delay)
+	time.Sleep(delay)
+	
+	// 再次检查是否已有master（避免竞争条件）
+	logger.Info("Checking for existing master before election...")
+	masterInfo, err := dm.serviceDiscovery.DiscoverMaster(dm.ctx)
+	if err != nil {
+		logger.Info("Error checking for master: %v", err)
+	} else if masterInfo != nil {
+		logger.Info("Master already exists during election attempt: %s:%d", masterInfo.Address, masterInfo.Port)
+		return
+	}
+	
+	logger.Info("No master found, starting election process...")
+	
+	// 检查election对象是否有效
+	if dm.election == nil {
+		logger.Error("Election object is nil, cannot proceed with election")
+		return
+	}
+	
+	// 尝试竞选master
+	ctx, cancel := context.WithTimeout(dm.ctx, 10*time.Second)
+	defer cancel()
+	
+	logger.Info("Calling election.Campaign with nodeID: %s", dm.localhost)
+	if err := dm.election.Campaign(ctx, dm.localhost); err != nil {
+		logger.Error("Master election failed: %v", err)
+		logger.Info("Will continue as slave node")
+		return
+	}
+	
+	// 竞选成功
+	logger.Info("Successfully elected as master through real-time monitoring: %s", dm.localhost)
+	dm.onBecomeLeader()
+	
+	// 启动leadership监听
+	go dm.monitorLeadership()
+}
+
+// verifyLeadershipStatus 验证当前节点的leadership状态
+func (dm *DistributedManager) verifyLeadershipStatus() {
+	// 检查当前session是否仍然有效
+	select {
+	case <-dm.session.Done():
+		logger.Info("Current session expired, stepping down from master role")
+		dm.onLoseLeader()
+		go dm.runLeaderElection()
+	default:
+		// session仍然有效，保持master状态
+		logger.Info("Leadership status verified, continuing as master")
+	}
+}
+
 // registerSlaveService 注册slave服务到etcd
 func (dm *DistributedManager) registerSlaveService() error {
 	// 获取当前节点的IP地址
@@ -390,6 +495,14 @@ func (dm *DistributedManager) runLeaderElection() {
 			logger.Info("Leader election stopped")
 			return
 		default:
+			// 在尝试选举前，先检查是否已有master
+			masterInfo, err := dm.serviceDiscovery.DiscoverMaster(dm.ctx)
+			if err == nil && masterInfo != nil {
+				logger.Info("Master already exists, waiting for opportunity: %s:%d", masterInfo.Address, masterInfo.Port)
+				time.Sleep(5 * time.Second)
+				continue
+			}
+			
 			// 尝试成为leader
 			if err := dm.election.Campaign(dm.ctx, dm.localhost); err != nil {
 				logger.Error("Leader election campaign failed: %v", err)

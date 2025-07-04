@@ -5,6 +5,8 @@ import (
 	"VectorSphere/src/proto/serverProto"
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -131,6 +133,11 @@ func (cs *CommunicationService) RemoveSlaveConnection(slaveAddr string) {
 		delete(cs.connections, slaveAddr)
 		delete(cs.clients, slaveAddr)
 		logger.Info("Removed connection to slave: %s", slaveAddr)
+
+		// 重新注册etcd的节点信息
+		if err := cs.reregisterNodeToEtcd(slaveAddr); err != nil {
+			logger.Error("Failed to reregister node to etcd for slave %s: %v", slaveAddr, err)
+		}
 	}
 }
 
@@ -167,7 +174,7 @@ func (cs *CommunicationService) BroadcastToSlaves(ctx context.Context, slaveAddr
 			// 如果请求失败，移除连接以便下次重新建立
 			if err != nil {
 				logger.Warning("Request to slave %s failed: %v", slaveAddr, err)
-				cs.RemoveSlaveConnection(slaveAddr)
+				//cs.RemoveSlaveConnection(slaveAddr)
 			}
 		}(addr)
 	}
@@ -333,4 +340,70 @@ func (cs *CommunicationService) GetActiveConnections() []string {
 		addrs = append(addrs, addr)
 	}
 	return addrs
+}
+
+// reregisterNodeToEtcd 重新注册节点信息到etcd
+func (cs *CommunicationService) reregisterNodeToEtcd(slaveAddr string) error {
+	if cs.etcdClient == nil {
+		return fmt.Errorf("etcd client is not initialized")
+	}
+
+	// 创建服务发现实例
+	serviceDiscovery := NewServiceDiscovery(cs.etcdClient, cs.serviceName)
+
+	// 创建上下文
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// 解析地址和端口
+	host, portStr, err := cs.parseAddress(slaveAddr)
+	if err != nil {
+		return fmt.Errorf("failed to parse slave address %s: %v", slaveAddr, err)
+	}
+
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return fmt.Errorf("failed to parse port from address %s: %v", slaveAddr, err)
+	}
+
+	// 构建节点信息
+	nodeInfo := &ServiceInfo{
+		ServiceName: cs.serviceName,
+		NodeID:      slaveAddr,
+		Address:     host,
+		Port:        port,
+		NodeType:    "slave",
+		Status:      "reconnecting",
+		Metadata: map[string]string{
+			"reconnected_at": time.Now().Format(time.RFC3339),
+			"reason":         "connection_removed",
+			"original_addr":  slaveAddr,
+		},
+	}
+
+	// 重新注册slave服务
+	if err := serviceDiscovery.RegisterService(ctx, nodeInfo, 60); err != nil {
+		return fmt.Errorf("failed to reregister slave service: %v", err)
+	}
+
+	logger.Info("Successfully reregistered node to etcd for slave: %s", slaveAddr)
+	return nil
+}
+
+// parseAddress 解析地址，返回主机和端口
+func (cs *CommunicationService) parseAddress(addr string) (host, port string, err error) {
+	// 处理IPv6地址格式 [host]:port
+	if strings.HasPrefix(addr, "[") {
+		if idx := strings.LastIndex(addr, "]:"); idx != -1 {
+			return addr[1:idx], addr[idx+2:], nil
+		}
+		return "", "", fmt.Errorf("invalid IPv6 address format: %s", addr)
+	}
+
+	// 处理IPv4地址格式 host:port
+	if idx := strings.LastIndex(addr, ":"); idx != -1 {
+		return addr[:idx], addr[idx+1:], nil
+	}
+
+	return "", "", fmt.Errorf("address must contain port: %s", addr)
 }
