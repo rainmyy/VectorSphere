@@ -178,10 +178,10 @@ func (dm *DistributedManager) Stop() error {
 		}
 	}
 
-	// 关闭etcd相关资源
-	if dm.session != nil {
-		dm.session.Close()
-	}
+	// 停止租约续约并清理etcd相关资源
+	dm.stopLeaseKeepAlive()
+
+	// 关闭etcd客户端
 	if dm.etcdClient != nil {
 		dm.etcdClient.Close()
 	}
@@ -234,6 +234,9 @@ func (dm *DistributedManager) initLeaderElection() error {
 	}
 	dm.session = session
 	dm.leaseID = session.Lease()
+
+	// 启动租约自动续约
+	go dm.startLeaseKeepAlive()
 
 	// 创建election
 	electionKey := fmt.Sprintf("/vector_sphere/election/%s", dm.config.ServiceName)
@@ -862,4 +865,119 @@ func (dm *DistributedManager) unregisterMasterService() error {
 
 	logger.Info("Master service unregistered successfully")
 	return nil
+}
+
+// startLeaseKeepAlive 启动租约自动续约
+func (dm *DistributedManager) startLeaseKeepAlive() {
+	logger.Info("Starting lease keep-alive for lease ID: %x", dm.leaseID)
+	
+	// 创建租约续约通道
+	keepAliveCh, err := dm.etcdClient.KeepAlive(dm.ctx, dm.leaseID)
+	if err != nil {
+		logger.Error("Failed to start lease keep-alive: %v", err)
+		return
+	}
+	
+	// 启动goroutine处理续约响应
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("Lease keep-alive goroutine panic: %v", r)
+			}
+		}()
+		
+		for {
+			select {
+			case ka := <-keepAliveCh:
+				if ka == nil {
+					logger.Warning("Lease keep-alive channel closed, lease may have expired")
+					// 尝试重新创建session和租约
+					go dm.recreateSessionAndLease()
+					return
+				}
+				logger.Debug("Lease keep-alive response received, TTL: %d", ka.TTL)
+				
+			case <-dm.ctx.Done():
+				logger.Info("Context cancelled, stopping lease keep-alive")
+				return
+				
+			case <-dm.stopCh:
+				logger.Info("Stop signal received, stopping lease keep-alive")
+				return
+			}
+		}
+	}()
+	
+	logger.Info("Lease keep-alive started successfully")
+}
+
+// recreateSessionAndLease 重新创建session和租约
+func (dm *DistributedManager) recreateSessionAndLease() {
+	logger.Info("Attempting to recreate session and lease...")
+	
+	// 等待一段时间再重试，避免频繁重试
+	time.Sleep(2 * time.Second)
+	
+	// 重新创建session
+	newSession, err := concurrency.NewSession(dm.etcdClient, concurrency.WithTTL(dm.config.Heartbeat))
+	if err != nil {
+		logger.Error("Failed to recreate etcd session: %v", err)
+		// 递归重试
+		go func() {
+			time.Sleep(5 * time.Second)
+			dm.recreateSessionAndLease()
+		}()
+		return
+	}
+	
+	// 关闭旧session
+	if dm.session != nil {
+		dm.session.Close()
+	}
+	
+	// 更新session和leaseID
+	dm.session = newSession
+	dm.leaseID = newSession.Lease()
+	
+	// 重新创建election对象
+	electionKey := fmt.Sprintf("/vector_sphere/election/%s", dm.config.ServiceName)
+	dm.election = concurrency.NewElection(newSession, electionKey)
+	
+	// 重新启动租约续约
+	go dm.startLeaseKeepAlive()
+	
+	logger.Info("Session and lease recreated successfully, new lease ID: %x", dm.leaseID)
+	
+	// 如果当前是master节点，需要重新竞选
+	if dm.IsMaster() {
+		logger.Info("Current node was master, attempting to re-elect...")
+		go dm.attemptMasterElectionAsync()
+	} else {
+		// 如果是slave节点，启动选举监听
+		go dm.runLeaderElection()
+	}
+}
+
+// stopLeaseKeepAlive 停止租约续约
+func (dm *DistributedManager) stopLeaseKeepAlive() {
+	logger.Info("Stopping lease keep-alive...")
+	
+	// 撤销租约
+	if dm.leaseID != 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		
+		_, err := dm.etcdClient.Revoke(ctx, dm.leaseID)
+		if err != nil {
+			logger.Error("Failed to revoke lease: %v", err)
+		} else {
+			logger.Info("Lease revoked successfully: %x", dm.leaseID)
+		}
+	}
+	
+	// 关闭session
+	if dm.session != nil {
+		dm.session.Close()
+		logger.Info("Session closed successfully")
+	}
 }

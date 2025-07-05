@@ -276,11 +276,11 @@ func (m *MasterService) Start(ctx context.Context) error {
 	m.stopCh = make(chan struct{})
 
 	// 启动gRPC服务器
-	go func() {
-		if err := m.startGRPCServer(); err != nil {
-			logger.Error("启动gRPC服务器失败: %v", err)
-		}
-	}()
+	//go func() {
+	//	if err := m.startGRPCServer(); err != nil {
+	//		logger.Error("启动gRPC服务器失败: %v", err)
+	//	}
+	//}()
 
 	// 尝试成为主节点
 	go m.runElection(ctx) // 使用传递的上下文

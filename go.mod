@@ -29,6 +29,7 @@ require (
 	github.com/unidoc/unioffice v1.39.0
 	github.com/wangbin/jiebago v0.3.2
 	go.etcd.io/bbolt v1.4.2
+	go.etcd.io/etcd v3.3.27-0.20211004064011-e82c2fd178df+incompatible
 	go.etcd.io/etcd/api/v3 v3.6.1
 	go.etcd.io/etcd/client/pkg/v3 v3.6.1
 	go.etcd.io/etcd/client/v3 v3.6.1
@@ -49,6 +50,7 @@ require (
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/coreos/etcd v2.3.8+incompatible // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect

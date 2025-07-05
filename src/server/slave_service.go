@@ -69,7 +69,7 @@ type SlaveService struct {
 
 func (s *SlaveService) CreateTable(ctx context.Context, request *serverProto.CreateTableRequest) (*serverProto.ResCount, error) {
 	logger.Info("Creating table: %s", request.TableName)
-	
+
 	// 这里应该实现创建表的逻辑
 	// 例如：在多表搜索服务中创建新表
 	if s.multiTableService != nil {
@@ -78,13 +78,13 @@ func (s *SlaveService) CreateTable(ctx context.Context, request *serverProto.Cre
 	} else {
 		logger.Warning("MultiTableService not initialized")
 	}
-	
+
 	return &serverProto.ResCount{Count: 1}, nil
 }
 
 func (s *SlaveService) DeleteTable(ctx context.Context, request *serverProto.TableRequest) (*serverProto.ResCount, error) {
 	logger.Info("Deleting table: %s", request.TableName)
-	
+
 	// 这里应该实现删除表的逻辑
 	if s.multiTableService != nil {
 		// 实现表删除逻辑
@@ -92,18 +92,18 @@ func (s *SlaveService) DeleteTable(ctx context.Context, request *serverProto.Tab
 	} else {
 		logger.Warning("MultiTableService not initialized")
 	}
-	
+
 	return &serverProto.ResCount{Count: 1}, nil
 }
 
 func (s *SlaveService) AddDocumentToTable(ctx context.Context, request *serverProto.AddDocumentRequest) (*serverProto.ResCount, error) {
 	println(1111)
-	return nil, nil
+	return &serverProto.ResCount{Count: 1}, nil
 }
 
 func (s *SlaveService) DeleteDocumentFromTable(ctx context.Context, request *serverProto.DeleteDocumentRequest) (*serverProto.ResCount, error) {
 	logger.Info("Deleting document %s from table: %s", request.DocId, request.TableName)
-	
+
 	// 这里应该实现从表中删除文档的逻辑
 	if s.multiTableService != nil {
 		// 实现文档删除逻辑
@@ -111,13 +111,13 @@ func (s *SlaveService) DeleteDocumentFromTable(ctx context.Context, request *ser
 	} else {
 		logger.Warning("MultiTableService not initialized")
 	}
-	
+
 	return &serverProto.ResCount{Count: 1}, nil
 }
 
 func (s *SlaveService) SearchTable(ctx context.Context, request *serverProto.SearchRequest) (*serverProto.SearchResult, error) {
 	logger.Info("Searching in table: %s", request.TableName)
-	
+
 	// 这里应该实现表搜索的逻辑
 	if s.multiTableService != nil {
 		// 实现搜索逻辑
@@ -222,14 +222,14 @@ func (s *SlaveService) Start(ctx context.Context) error {
 			}
 			s.client = client
 			logger.Info("Successfully connected to etcd.")
-			
+
 			// 连接成功后注册服务
 			if err := s.registerService(); err != nil {
 				logger.Warning("Failed to register slave service with etcd: %v.", err)
 			} else {
 				logger.Info("Slave service registered with etcd successfully.")
 			}
-			
+
 			// 开始监听主节点
 			go s.watchMaster(context.Background())
 		}()

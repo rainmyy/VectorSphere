@@ -451,7 +451,7 @@ func (gw *APIGateway) handleAddDocument(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "No healthy slaves available", http.StatusServiceUnavailable)
 		return
 	}
-
+	slaveAddrs = []string{"127.0.0.1:50051"}
 	results := gw.communicationSvc.AddDocumentToSlaves(r.Context(), slaveAddrs, addReq)
 
 	successCount := 0
