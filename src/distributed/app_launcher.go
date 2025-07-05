@@ -183,6 +183,11 @@ func (al *AppLauncher) startServiceWatchers() {
 		} else {
 			logger.Info("Master removed")
 		}
+		
+		// 将master变化事件传递给分布式管理器处理
+		if al.distributedManager != nil {
+			al.distributedManager.HandleMasterChange(masterInfo)
+		}
 	})
 
 	// 监听slave变化

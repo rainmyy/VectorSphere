@@ -70,7 +70,37 @@ func NewServiceDiscovery(client *clientv3.Client, serviceName string) *ServiceDi
 func (sd *ServiceDiscovery) RegisterService(ctx context.Context, info *ServiceInfo, ttl int64) error {
 	logger.Info("Registering service: %s, type: %s, address: %s", info.ServiceName, info.NodeType, info.Address)
 
-	// 创建租约
+	// 构建key
+	var key string
+	if info.NodeType == "master" {
+		key = path.Join(MasterPath, info.ServiceName)
+	} else {
+		key = path.Join(SlavePath, info.ServiceName, info.NodeID)
+	}
+
+	// 检查服务是否已存在
+	resp, err := sd.client.Get(ctx, key)
+	if err != nil {
+		return fmt.Errorf("检查服务是否存在失败: %v", err)
+	}
+
+	// 如果服务已存在，先删除
+	if len(resp.Kvs) > 0 {
+		logger.Info("Service already exists, deleting before re-registration: %s", key)
+		_, err = sd.client.Delete(ctx, key)
+		if err != nil {
+			return fmt.Errorf("删除已存在服务失败: %v", err)
+		}
+		
+		// 如果有旧的租约，撤销它
+		if sd.leaseID != 0 {
+			sd.client.Revoke(ctx, sd.leaseID)
+			sd.leaseID = 0
+		}
+		logger.Info("Existing service deleted successfully: %s", key)
+	}
+
+	// 创建新租约
 	leaseResp, err := sd.client.Grant(ctx, ttl)
 	if err != nil {
 		return fmt.Errorf("创建租约失败: %v", err)
@@ -81,14 +111,6 @@ func (sd *ServiceDiscovery) RegisterService(ctx context.Context, info *ServiceIn
 	infoBytes, err := json.Marshal(info)
 	if err != nil {
 		return fmt.Errorf("序列化服务信息失败: %v", err)
-	}
-
-	// 构建key
-	var key string
-	if info.NodeType == "master" {
-		key = path.Join(MasterPath, info.ServiceName)
-	} else {
-		key = path.Join(SlavePath, info.ServiceName, info.NodeID)
 	}
 
 	// 注册服务
@@ -204,48 +226,114 @@ func (sd *ServiceDiscovery) WatchMaster(ctx context.Context, callback func(*Serv
 
 	go func() {
 		defer cancel()
-		watchCh := sd.client.Watch(watchCtx, key)
 
-		for {
+		// 首先检查当前是否已有master节点
+		sd.checkInitialMasterState(ctx, key, callback)
+
+		// 启动持续监听
+		sd.startMasterWatch(watchCtx, key, callback)
+	}()
+}
+
+// checkInitialMasterState 检查初始master状态
+func (sd *ServiceDiscovery) checkInitialMasterState(ctx context.Context, key string, callback func(*ServiceInfo)) {
+	resp, err := sd.client.Get(ctx, key)
+	if err != nil {
+		logger.Error("Failed to check initial master state: %v", err)
+		return
+	}
+
+	if len(resp.Kvs) > 0 {
+		var info ServiceInfo
+		if err := json.Unmarshal(resp.Kvs[0].Value, &info); err != nil {
+			logger.Error("Failed to parse initial master info: %v", err)
+			return
+		}
+
+		sd.mutex.Lock()
+		sd.masterInfo = &info
+		sd.mutex.Unlock()
+
+		logger.Info("Initial master found: %s:%d", info.Address, info.Port)
+		if callback != nil {
+			callback(&info)
+		}
+	} else {
+		logger.Info("No initial master found")
+		if callback != nil {
+			callback(nil)
+		}
+	}
+}
+
+// startMasterWatch 启动master监听
+func (sd *ServiceDiscovery) startMasterWatch(ctx context.Context, key string, callback func(*ServiceInfo)) {
+	for {
+		select {
+		case <-sd.stopCh:
+			return
+		case <-ctx.Done():
+			return
+		default:
+			// 创建watch
+			watchCh := sd.client.Watch(ctx, key)
+
+			sd.processMasterWatchEvents(ctx, watchCh, callback)
+
+			// 如果watch断开，等待一段时间后重试
 			select {
-			case watchResp := <-watchCh:
-				if watchResp.Err() != nil {
-					logger.Error("Watch master error: %v", watchResp.Err())
-					return
-				}
-
-				for _, event := range watchResp.Events {
-					switch event.Type {
-					case clientv3.EventTypePut:
-						var info ServiceInfo
-						if err := json.Unmarshal(event.Kv.Value, &info); err != nil {
-							logger.Error("解析master信息失败: %v", err)
-							continue
-						}
-						sd.mutex.Lock()
-						sd.masterInfo = &info
-						sd.mutex.Unlock()
-						logger.Info("Master changed: %s", info.Address)
-						if callback != nil {
-							callback(&info)
-						}
-					case clientv3.EventTypeDelete:
-						sd.mutex.Lock()
-						sd.masterInfo = nil
-						sd.mutex.Unlock()
-						logger.Info("Master removed")
-						if callback != nil {
-							callback(nil)
-						}
-					}
-				}
+			case <-time.After(2 * time.Second):
+				logger.Info("Reconnecting master watch...")
 			case <-sd.stopCh:
 				return
-			case <-watchCtx.Done():
+			case <-ctx.Done():
 				return
 			}
 		}
-	}()
+	}
+}
+
+// processMasterWatchEvents 处理master监听事件
+func (sd *ServiceDiscovery) processMasterWatchEvents(ctx context.Context, watchCh clientv3.WatchChan, callback func(*ServiceInfo)) {
+	for {
+		select {
+		case watchResp := <-watchCh:
+			if watchResp.Err() != nil {
+				logger.Error("Watch master error: %v", watchResp.Err())
+				return
+			}
+
+			for _, event := range watchResp.Events {
+				switch event.Type {
+				case clientv3.EventTypePut:
+					var info ServiceInfo
+					if err := json.Unmarshal(event.Kv.Value, &info); err != nil {
+						logger.Error("Failed to parse master info: %v", err)
+						continue
+					}
+					sd.mutex.Lock()
+					sd.masterInfo = &info
+					sd.mutex.Unlock()
+					logger.Info("Master changed: %s:%d", info.Address, info.Port)
+					if callback != nil {
+						callback(&info)
+					}
+				case clientv3.EventTypeDelete:
+					sd.mutex.Lock()
+					sd.masterInfo = nil
+					sd.mutex.Unlock()
+					logger.Info("Master removed")
+					if callback != nil {
+						callback(nil)
+					}
+				}
+			}
+		case <-sd.stopCh:
+			return
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 // WatchSlaves 监听slaves变化
